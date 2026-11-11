@@ -78,7 +78,9 @@ const sumFor = (counts: Record<string, number>, name: string) =>
   Object.entries(counts)
     .filter(([label]) => label.endsWith(` ${name}`))
     .reduce((s, [, n]) => s + n, 0);
-const othersSum = (counts: Record<string, number>, except: string[]) =>
+// rowLabels are the counted labels that belong to a row: the header's select-all box and the selection bar's buttons are not rows.
+const rowLabels = (counts: Record<string, number>) => Object.keys(counts).filter((label) => /Row \d+$/.test(label));
+const othersSum =(counts: Record<string, number>, except: string[]) =>
   rows.filter((r) => !except.includes(r.name)).reduce((s, r) => s + sumFor(counts, r.name), 0);
 
 let undoView: () => void = () => undefined;
@@ -98,7 +100,7 @@ describe("a preset list draws a row again only when its own state changes (decis
     expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("true");
     expect(checks["Select Row 4"]).toBeGreaterThan(0);
     expect(othersSum(checks, ["Row 4"])).toBe(0);
-    expect(Object.keys(buttons)).toEqual([]);
+    expect(rowLabels(buttons)).toEqual([]);
   });
 
   it("a press (focus on the press, then the click) is one pass over the rows", () => {
@@ -144,15 +146,15 @@ describe("a preset list draws a row again only when its own state changes (decis
     reset();
     fireEvent.pointerEnter(rowOf("Row 6"), { pointerType: "mouse" });
     fireEvent.pointerLeave(rowOf("Row 6"), { pointerType: "mouse" });
-    expect(Object.keys(buttons)).toEqual([]);
+    expect(rowLabels(buttons)).toEqual([]);
   });
 
   it("a page render with new callbacks and the same data draws no row's buttons or checkbox again", () => {
     const { rerender } = render(<Listing<Row> {...props()} />);
     reset();
     rerender(<Listing<Row> {...props()} />);
-    expect(Object.keys(buttons)).toEqual([]);
-    expect(Object.keys(checks)).toEqual([]);
+    expect(rowLabels(buttons)).toEqual([]);
+    expect(rowLabels(checks)).toEqual([]);
   });
 });
 

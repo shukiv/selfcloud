@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -11,6 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type DragEvent as ReactDragEvent,
+  type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent,
   type CSSProperties,
   type ReactNode,
@@ -30,7 +32,7 @@ import type { ViewMode } from "../../lib/files/viewPrefs";
 import { isTextField } from "../../lib/files/keys";
 import { useCoarsePointer } from "../../lib/pointer";
 import { HEADER_H, THEAD_H } from "../../lib/files/layout";
-import { useListKeys, useListSelection } from "../../lib/lists";
+import { useListKeys, useListSelection, type ListSelection } from "../../lib/lists";
 import { getRowHover, setRowHover, subscribeRowHover } from "./rowHover";
 import Icon from "./Icon";
 import KindMarks from "./KindMarks";
@@ -234,6 +236,536 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
   return hovered || show ? <>{children()}</> : null;
 }
 
+// usePressFocus makes a press on a row and its click one update. The browser focuses a row on the press, and the click then
+// selects it, and both used to set state: two renders of the list for one click. A focus that comes during a press is the press's
+// own, so it is held, and the click applies it (in its capture phase, ahead of the click's own update, so the two are one render).
+// pressing is the row whose press has not ended; pendingClick is a row whose release was on that same row, so its click is still to
+// come. A release anywhere else, or a cancel (a touch that turns into a scroll), has no click on the row: the focus is applied
+// there if it is in the row, which is what the browser did on the press, and otherwise left alone. Any key ends a press that
+// was never released, so a keyboard focus is never held.
+function usePressFocus(apply: (id: string) => void) {
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+  const pressing = useRef<string | null>(null);
+  const pendingClick = useRef<string | null>(null);
+  useEffect(() => {
+    const release = (e: PointerEvent) => {
+      const id = pressing.current;
+      if (id === null) return;
+      pressing.current = null;
+      const target = e.target instanceof Element ? e.target : null;
+      if (e.type === "pointerup" && target?.closest(`[data-id="${CSS.escape(id)}"]`)) {
+        pendingClick.current = id;
+        return;
+      }
+      const focusedRow = document.activeElement instanceof Element ? document.activeElement.closest("[data-id]") : null;
+      if (focusedRow?.getAttribute("data-id") === id) applyRef.current(id);
+    };
+    const key = () => {
+      pressing.current = null;
+      pendingClick.current = null;
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("keydown", key, true);
+    };
+  }, []);
+  return useMemo(
+    () => ({
+      // down is a press on the row.
+      down: (id: string) => {
+        pressing.current = id;
+        pendingClick.current = null;
+      },
+      // focus is a focus that reached the row: a press's own is held, any other is applied.
+      focus: (id: string) => {
+        if (pressing.current === id) return;
+        applyRef.current(id);
+      },
+      // clickCapture applies the focus a press held, when its click comes.
+      clickCapture: (id: string) => {
+        if (pendingClick.current !== id) return;
+        pendingClick.current = null;
+        applyRef.current(id);
+      },
+    }),
+    [],
+  );
+}
+
+// keysStop stops Enter and Space at a row's button, so its own click is the one activation; the arrow keys reach the item's
+// handler, so they move on from the button.
+function keysStop(e: { key: string; stopPropagation: () => void }) {
+  if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+}
+
+const MORE_ICON = <EllipsisVertical size={18} aria-hidden="true" focusable="false" />;
+
+// menuItemOf is a ⋮ entry. An entry with an address is a real link: the browser opens a middle or a modified click in a new
+// tab, and a plain click or a key runs the entry here, in this tab (review L2).
+function menuItemOf(e: ListMenuEntry, select: () => void): NonNullable<MenuProps["items"]>[number] {
+  return {
+    key: e.key,
+    icon: e.icon,
+    danger: e.danger,
+    disabled: e.disabled,
+    label: e.href ? <a href={e.href}>{e.label}</a> : e.label,
+    onClick: ({ domEvent }) => {
+      if (e.href && "button" in domEvent && (domEvent.button !== 0 || domEvent.metaKey || domEvent.ctrlKey || domEvent.shiftKey || domEvent.altKey)) return;
+      domEvent.preventDefault();
+      select();
+    },
+  };
+}
+
+// ---- A row's and a tile's content, memoised (decision 128). ----
+// Each is drawn again only when its own props change: the item, whether it is selected or focused, the rename state when the row
+// is the one being renamed. The page's callbacks are read through one handler object that is the same on every render, so a page
+// render that makes new callbacks does not draw every row again.
+
+// FileHandlers are the files preset's callbacks, by item ID. They read the page's current props at the call.
+interface FileHandlers {
+  click: (id: string, e: Click) => void;
+  dbl: (id: string) => void;
+  renameChange: (value: string) => void;
+  rename: (commit: boolean) => void;
+  keyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
+  focus: (id: string) => void;
+  context: (id: string, x: number, y: number, keyboardOrigin?: HTMLElement) => void;
+  acts: (n: Node) => RowAct[];
+  act: (n: Node, key: string) => void;
+}
+
+// RowHandlers are the DOM handlers of a row or a tile. They name the item by the element's data-id, so one set serves every row.
+type RowHandlers = Record<string, unknown>;
+
+// FileCellProps are the props of a files row's or tile's content.
+interface FileCellProps {
+  n: Node;
+  selected: boolean;
+  coarse: boolean;
+  renaming: boolean;
+  renameValue: string;
+  renameError: string | null;
+  H: FileHandlers;
+}
+
+const CTRL_CLICK: Click = { shiftKey: false, ctrlKey: true, metaKey: false };
+
+function LinkBadge({ node }: { node: Node }) {
+  const { t } = useT();
+  const { token } = antdTheme.useToken();
+  if (!node.has_link) return null;
+  return (
+    <span style={{ display: "inline-flex", marginInlineStart: 8, color: token.colorTextSecondary, verticalAlign: "middle" }}>
+      <Link2 size={14} aria-hidden="true" focusable="false" />
+      <span className="sr-only">{t("files.linkBadge")}</span>
+    </span>
+  );
+}
+
+// StarMark: a starred item shows a small filled star after its name. The star is changed from the hover icon, the ⋮ menu or the
+// Starred page; the mark is not a button.
+function StarMark({ node }: { node: Node }) {
+  const { t } = useT();
+  const { token } = antdTheme.useToken();
+  if (!node.starred) return null;
+  return (
+    <span style={{ display: "inline-flex", marginInlineStart: 4, color: token.colorWarning, verticalAlign: "middle", flex: "none" }}>
+      <Star size={14} fill="currentColor" aria-hidden="true" focusable="false" />
+      <span className="sr-only">{t("star.mark")}</span>
+    </span>
+  );
+}
+
+function RenameError({ error }: { error: string | null }) {
+  const { token } = antdTheme.useToken();
+  if (!error) return null;
+  return (
+    <div id="rename-error" role="alert" style={{ flexBasis: "100%", color: token.colorError, fontSize: token.fontSizeSM }}>
+      {error}
+    </div>
+  );
+}
+
+// FileRename is the name field of a row or tile being renamed.
+function FileRename({ value, error, H }: { value: string; error: string | null; H: FileHandlers }) {
+  const { t } = useT();
+  return (
+    <Input
+      className="rename"
+      aria-label={t("files.rename.label")}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? "rename-error" : undefined}
+      value={value}
+      onChange={(e) => H.renameChange(e.target.value)}
+      onKeyDown={(e) => {
+        // Keys typed in the name field stay in the field: Enter must not also open the row.
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          H.rename(true);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          H.rename(false);
+        }
+      }}
+      onBlur={() => H.rename(true)}
+      ref={(el) => {
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      }}
+      style={{ flex: "1 1 160px", minWidth: 0, minHeight: 44 }}
+    />
+  );
+}
+
+// FileMore is a row's or a tile's ⋮ button. It opens the item's menu where the right-click menu opens: at the button.
+const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H: FileHandlers }) {
+  const { t } = useT();
+  return (
+    <IconButton
+      tabIndex={tab}
+      label={t("files.tile.menu", { name: n.name })}
+      tip={t("files.selection.more")}
+      aria-haspopup="menu"
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        // The menu opens at the button's start edge: its left in English, its right in Hebrew (review fix 11). A key's click has
+        // no pointer, so its detail is 0: the menu then takes the focus (review fix 1).
+        // The start edge is the button's x in English and its x plus its width in Hebrew, where the start is on the right.
+        const rtl = document.documentElement.dir === "rtl";
+        const startX = rtl ? r.x + r.width : r.x;
+        H.context(n.id, startX, r.bottom, e.detail === 0 ? e.currentTarget : undefined);
+      }}
+      onKeyDown={keysStop}
+      onDoubleClick={(e) => e.stopPropagation()}
+      icon={MORE_ICON}
+    />
+  );
+});
+
+// FileNameCell is the name cell of a list row: the row's icon (or a mouse's checkbox in its place), the name, its marks.
+const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming, renameValue, renameError, H }: FileCellProps) {
+  const { t } = useT();
+  return (
+    // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
+    // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
+      {coarse ? (
+        <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
+      ) : (
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
+          <span className="row-icon">
+            <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
+          </span>
+          {/* A mouse's checkbox takes the file icon's place when the row is hovered, or selected, or when anything is selected (the CSS
+              in index.css decides); it is not a tab stop, and a click on it selects by the box alone. */}
+          <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
+            <Checkbox checked={selected} tabIndex={-1} aria-label={t("files.select.item", { name: n.name })} onChange={() => H.click(n.id, CTRL_CLICK)} />
+          </span>
+        </span>
+      )}
+      {renaming ? <FileRename value={renameValue} error={renameError} H={H} /> : <bdi style={{ overflowWrap: "anywhere", minWidth: 0 }}>{n.name}</bdi>}
+      <LinkBadge node={n} />
+      <KindMarks node={n} />
+      <StarMark node={n} />
+      <RenameError error={renaming ? renameError : null} />
+    </span>
+  );
+});
+
+// FileRowEnd is a list row's end: the page's row icons (drawn with a mouse, where the row is hovered, selected or focused) and the
+// ⋮ button. sig is the row's actions as text, given for a selected or focused row: it is not read, but a change in it draws the
+// row's end again, so an icon follows the page's actions. A row that is only hovered reads the actions when it draws its icons.
+const FileRowEnd = memo(function FileRowEnd({ n, selected, focused, coarse, H }: { n: Node; selected: boolean; focused: boolean; coarse: boolean; sig: string; H: FileHandlers }) {
+  const tab = focused ? 0 : -1;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+      {!coarse && (
+        <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end", minWidth: ROW_ICON_PX * ROW_ICONS }}>
+          <RowActs id={n.id} show={selected || focused}>
+            {() =>
+              // A files action that is not enabled is one the item's menu does not offer, so it is not drawn (unlike a
+              // preset list's disabled action, which is one on its way).
+              H.acts(n)
+                .filter((a) => a.enabled)
+                .map((a) => (
+                  <IconButton
+                    key={a.key}
+                    label={a.label}
+                    icon={a.icon}
+                    tabIndex={tab}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      H.act(n, a.key);
+                    }}
+                    onKeyDown={keysStop}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  />
+                ))
+            }
+          </RowActs>
+        </span>
+      )}
+      <FileMore n={n} tab={tab} H={H} />
+    </div>
+  );
+});
+
+// actsSig is a row's actions as text: the keys, which are enabled, and the labels.
+function actsSig(acts: RowAct[]): string {
+  return acts.map((a) => `${a.key}${a.enabled ? "+" : "-"}${a.label}`).join("|");
+}
+
+// TypeIcon is a file's type icon, which keeps its size when the name is long.
+function TypeIcon({ n }: { n: Node }) {
+  return (
+    <span style={{ display: "inline-flex", flex: "none" }}>
+      <Icon kind={kindOf(n)} size={20} colour={n.color} node={n} />
+    </span>
+  );
+}
+
+// OneLine is a tile's name: one line, cut with an ellipsis, with its full text in the title. Being renamed, it is the name field.
+// The box takes the row's direction and sits at its start, so a name in another script does not drift to the far end; the bdi keeps
+// the name's own direction.
+function OneLine({ n, renaming, renameValue, renameError, H }: { n: Node; renaming: boolean; renameValue: string; renameError: string | null; H: FileHandlers }) {
+  if (renaming) return <FileRename value={renameValue} error={renameError} H={H} />;
+  return (
+    <span
+      style={{
+        display: "block",
+        flex: "1 1 auto",
+        minWidth: 0,
+        overflow: "hidden",
+        direction: "inherit",
+        textAlign: "start",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <bdi title={n.name}>{n.name}</bdi>
+    </span>
+  );
+}
+
+// TileCheck is a finger's checkbox on a tile: a tile has no click that selects it, so its checkbox does (a list row has one already).
+// The wrapper stops the click: the checkbox toggles the item, and the item does not also open. A mouse has none.
+function TileCheck({ n, selected, H }: { n: Node; selected: boolean; H: FileHandlers }) {
+  const { t } = useT();
+  return (
+    <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", flex: "none" }}>
+      <Checkbox checked={selected} tabIndex={-1} aria-label={t("files.select.item", { name: n.name })} onChange={() => H.click(n.id, CTRL_CLICK)} />
+    </span>
+  );
+}
+
+// rowDomAttrs gives a row or a tile its role, name, selection state, roving focus and handlers. Both views use it, so the keyboard
+// model is the same in each.
+function rowDomAttrs(n: Node, selected: boolean, focused: boolean, RH: RowHandlers) {
+  return {
+    role: "row",
+    "aria-label": n.name,
+    "aria-selected": selected,
+    tabIndex: focused ? 0 : -1,
+    "data-id": n.id,
+    // A folder is a place an item can be dropped on: the page reads where from these (see useGestures). Nothing else is.
+    ...(n.kind === "dir" ? { "data-drop-folder": n.folder_id, "data-drop-dir": n.id, "data-drop-role": n.role ?? "", "data-drop-name": n.name } : {}),
+    ...RH,
+  };
+}
+
+interface TileProps extends FileCellProps {
+  kind: "chip" | "card";
+  focused: boolean;
+  cut: boolean;
+  scrollMarginTop: number;
+  RH: RowHandlers;
+}
+
+// FileTile is a tile of the tile view: a folder's chip or a file's card, with its box, its state and its content.
+const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coarse, renaming, renameValue, renameError, scrollMarginTop, H, RH }: TileProps) {
+  const { token } = antdTheme.useToken();
+  const outer = {
+    position: "relative" as const,
+    display: "flex",
+    minWidth: 0,
+    border: `1px solid ${selected ? token.colorPrimary : token.colorBorderSecondary}`,
+    borderRadius: token.borderRadiusLG,
+    // A selected tile has an outline as well as its tint, so the selection shows at a glance.
+    outline: selected ? `2px solid ${token.colorPrimary}` : undefined,
+    outlineOffset: selected ? -2 : undefined,
+    cursor: "default",
+    userSelect: "none" as const,
+    scrollMarginTop,
+    opacity: cut ? CUT_OPACITY : undefined,
+  };
+  if (kind === "chip") {
+    return (
+      <div
+        {...rowDomAttrs(n, selected, focused, RH)}
+        role="option"
+        style={{
+          ...outer,
+          alignItems: "center",
+          gap: 6,
+          minHeight: coarse ? 44 : 40,
+          paddingInlineStart: 10,
+          paddingInlineEnd: 4,
+          boxSizing: "border-box",
+          background: selected ? token.colorPrimaryBg : undefined,
+        }}
+      >
+        {coarse && <TileCheck n={n} selected={selected} H={H} />}
+        <TypeIcon n={n} />
+        <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
+        <KindMarks node={n} />
+        <StarMark node={n} />
+        <FileMore n={n} tab={-1} H={H} />
+        <RenameError error={renaming ? renameError : null} />
+      </div>
+    );
+  }
+  return (
+    <div
+      {...rowDomAttrs(n, selected, focused, RH)}
+      role="option"
+      style={{
+        ...outer,
+        flexDirection: "column",
+        overflow: "hidden",
+        background: selected ? token.colorPrimaryBg : token.colorBgContainer,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
+        {coarse && <TileCheck n={n} selected={selected} H={H} />}
+        <TypeIcon n={n} />
+        <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
+        <StarMark node={n} />
+        <FileMore n={n} tab={-1} H={H} />
+      </div>
+      {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
+          there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. */}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
+        {thumbable(n) ? (
+          <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />} />
+        ) : (
+          <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
+        )}
+        <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
+          <KindMarks node={n} />
+          <LinkBadge node={n} />
+        </span>
+      </div>
+      <RenameError error={renaming ? renameError : null} />
+    </div>
+  );
+});
+
+// PresetHandlers are a preset list's callbacks that a row's content runs, read from the page's current props at the call, so a row
+// that was not drawn again still runs the page's latest action.
+interface PresetHandlers {
+  act: (row: { id: string }, key: string) => void;
+  entry: (row: { id: string }, key: string) => void;
+  pick: ListSelection["pick"];
+}
+
+// PresetCheck is a preset row's checkbox, which takes the icon's place on a mouse's screen.
+const PresetCheck = memo(function PresetCheck({ id, checked, name, pick }: { id: string; checked: boolean; name: string; pick: ListSelection["pick"] }) {
+  const { t } = useT();
+  return (
+    <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
+      <Checkbox checked={checked} tabIndex={-1} aria-label={t("files.select.item", { name })} onChange={() => pick(id, { toggle: true })} />
+    </span>
+  );
+});
+
+interface PresetEndProps {
+  row: { id: string };
+  // sig is the row's actions and entries as text: it is what decides, with the row, whether the end is drawn again. The icons
+  // and the entries follow their key and label; a page that changes an action's picture changes its label with it.
+  sig: string;
+  inline: ListAction[];
+  entries: ListMenuEntry[];
+  moreLabel: string;
+  moreTip: string;
+  PH: PresetHandlers;
+}
+
+// PresetEnd is a preset row's end: up to three icons inline, and the ⋮ menu with the rest of the actions and the page's entries.
+// A row is drawn again only when its item or its actions change. An icon and an entry run the page's latest action at the click.
+const PresetEnd = memo(
+  function PresetEnd({ row, inline, entries, moreLabel, moreTip, PH }: PresetEndProps) {
+    const { token } = antdTheme.useToken();
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+        {inline.length > 0 && (
+          <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end" }}>
+            {inline.map((a) => (
+              // An icon's click is its own: it does not reach the row. A disabled one keeps its place and the focus: it is
+              // aria-disabled, drawn in the disabled colour, and its click and keys do nothing. It is not a disabled button, since a
+              // browser takes the focus from a button that turns disabled (the re-check's e2e found the focus on BODY), and the
+              // row's icons turn disabled under the pressed one while its request is on its way (decision 114). index.css passes its
+              // pointer to the wrapper, as for a disabled one, so it has no hover background and shows the not-allowed cursor; its
+              // colour is set here too, so it wins over a danger icon's, which IconButton sets inline.
+              <IconButton
+                key={a.key}
+                label={a.label}
+                icon={a.icon}
+                pressed={a.pressed}
+                href={a.href}
+                aria-disabled={a.disabled ? true : undefined}
+                danger={a.danger}
+                style={a.disabled ? { color: token.colorTextDisabled } : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (a.disabled) return;
+                  // A link follows its own address: the browser's click does that, so run is not called for it.
+                  if (a.href) return;
+                  PH.act(row, a.key);
+                }}
+                onKeyDown={keysStop}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            ))}
+          </span>
+        )}
+        {entries.length > 0 && (
+          <Dropdown menu={{ items: entries.map((e) => menuItemOf(e, () => PH.entry(row, e.key))) }} trigger={["click"]}>
+            <IconButton
+              aria-haspopup="menu"
+              label={moreLabel}
+              tip={moreTip}
+              icon={MORE_ICON}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+        )}
+      </div>
+    );
+  },
+  (a, b) => a.row === b.row && a.sig === b.sig && a.moreLabel === b.moreLabel && a.moreTip === b.moreTip && a.PH === b.PH,
+);
+
+// presetSig is a preset row's end as text: each inline action and each ⋮ entry with the parts the page changes while the row is
+// there (its label, whether it is disabled, danger or pressed, its address).
+function presetSig(inline: ListAction[], entries: ListMenuEntry[]): string {
+  const flag = (b: boolean | undefined) => (b === undefined ? "-" : b ? "1" : "0");
+  return [
+    ...inline.map((a) => `i:${a.key}:${a.label}:${flag(a.disabled)}${flag(a.danger)}${flag(a.pressed)}:${a.href ?? ""}`),
+    ...entries.map((e) => `e:${e.key}:${e.label}:${flag(e.disabled)}${flag(e.danger)}:${e.href ?? ""}`),
+  ].join("\u0001");
+}
+
 // Listing is the one list of the web interface (the design, not in this repository; decision 114). Without columns it is the files preset, My files:
 // a folder's items, a table in list view and tiles in grid view, whose keyboard handling belongs to the page; it reports
 // clicks, keys and focus, and marks what is selected. With columns it is a preset list: the page's columns, rows, actions
@@ -288,6 +820,142 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     press.current = null;
   };
   useEffect(() => endPress, []);
+  // The page's props as of the last render. The handlers below read them at the call, so they are the same functions on every
+  // render, and the rows and tiles that hold them are drawn again only when their own props change (decision 128).
+  const latest = useRef(p);
+  latest.current = p;
+  const H = useMemo<FileHandlers>(() => {
+    const files = () => latest.current as ListingProps;
+    const at = (id: string) => (files().items as Node[]).findIndex((x) => x.id === id);
+    return {
+      click: (id, e) => {
+        const i = at(id);
+        if (i >= 0) files().onRowClick(i, e);
+      },
+      dbl: (id) => files().onRowDoubleClick(id),
+      renameChange: (value) => files().onRenameChange(value),
+      rename: (commit) => files().onRename(commit),
+      keyDown: (e) => files().onKeyDown(e),
+      focus: (id) => {
+        const i = at(id);
+        if (i >= 0) files().onFocusItem(i);
+      },
+      // The menu's origin is passed only for a key's press, as the page took it before (four arguments otherwise).
+      context: (id, x, y, origin) => {
+        const i = at(id);
+        if (i < 0) return;
+        if (origin) files().onRowContext?.(id, i, x, y, origin);
+        else files().onRowContext?.(id, i, x, y);
+      },
+      acts: (n) => files().rowActs?.(n) ?? [],
+      act: (n, key) => files().rowActs?.(n).find((a) => a.key === key && a.enabled)?.run(),
+    };
+  }, []);
+  const PH = useMemo<PresetHandlers>(() => {
+    const items = () => latest.current as unknown as ItemListingProps<{ id: string }>;
+    // entriesOf is a row's ⋮ menu: the row's actions and the page's menu entries, all of them.
+    const entriesOf = (row: { id: string }): ListMenuEntry[] => [
+      ...(items().actions?.(row) ?? []).map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, href: a.href, onSelect: a.run })),
+      ...(items().menu?.(row) ?? []),
+    ];
+    return {
+      act: (row, key) => {
+        const a = items().actions?.(row).find((x) => x.key === key);
+        if (a && !a.disabled && !a.href) a.run();
+      },
+      entry: (row, key) => entriesOf(row).find((x) => x.key === key)?.onSelect(),
+      pick: (id, how) => sel.pick(id, how),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // A press on a row focuses it, and its click selects it: one update (usePressFocus). A preset list's focus is the shared
+  // selection's; My files' is the page's.
+  const pf = usePressFocus((id) => {
+    if (isItems(latest.current)) sel.setFocus(id);
+    else H.focus(id);
+  });
+  // RH are the DOM handlers of My files' rows and tiles. They name the item by the element's data-id, so one set serves every
+  // row and tile, and a row or tile that holds them is not drawn again when the page renders.
+  const RH = useMemo<RowHandlers>(() => {
+    const files = () => latest.current as ListingProps;
+    const idOf = (e: { currentTarget: HTMLElement }) => e.currentTarget.dataset.id ?? "";
+    // inSelectionColumn: a key or a click from the row's checkbox belongs to the checkbox.
+    const inCheck = (e: { target: EventTarget }) => !!(e.target as HTMLElement).closest(".ant-table-selection-column, .row-check");
+    return {
+      // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
+      onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
+      onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+        const id = idOf(e);
+        pf.down(id);
+        pointer.current = e.pointerType;
+        pressed.current = false;
+        endPress();
+        if (e.pointerType !== "touch" || files().renameID === id || !files().onRowContext) return;
+        const { clientX: x, clientY: y } = e;
+        press.current = {
+          x,
+          y,
+          timer: setTimeout(() => {
+            press.current = null;
+            pressed.current = true;
+            liftPending.current = true;
+            H.context(id, x, y);
+          }, LONG_PRESS_MS),
+        };
+      },
+      onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+        const cur = press.current;
+        if (cur && Math.hypot(e.clientX - cur.x, e.clientY - cur.y) > PRESS_SLOP_PX) endPress();
+      },
+      onPointerUp: endPress,
+      onPointerCancel: endPress,
+      // The row under a mouse is known to the icons that draw at its end (review fix 7); a touch does not hover.
+      onPointerEnter: (e: ReactPointerEvent<HTMLElement>) => {
+        if (e.pointerType === "mouse") setRowHover(idOf(e));
+      },
+      onPointerLeave: (e: ReactPointerEvent<HTMLElement>) => {
+        if (e.pointerType === "mouse" && getRowHover() === idOf(e)) setRowHover(null);
+      },
+      onContextMenu: (e: ReactMouseEvent<HTMLElement>) => {
+        // The browser's own menu stays in a field the person types in, and on a row being renamed.
+        if (files().renameID === idOf(e) || isTextField(e.target)) return;
+        e.preventDefault();
+        endPress();
+        H.context(idOf(e), e.clientX, e.clientY);
+      },
+      // The focus of a press is applied here, in the click's capture phase, so the click's selection and its focus are one render.
+      onClickCapture: (e: ReactMouseEvent<HTMLElement>) => pf.clickCapture(idOf(e)),
+      onClick: (e: ReactMouseEvent<HTMLElement>) => {
+        // The checkbox column has its own handler, so a click on it must not also select the row.
+        if (inCheck(e)) return;
+        // A click in the row's own rename field places the cursor there; the item is not opened by it.
+        if (files().renameID === idOf(e)) return;
+        // The tap that ends a long press is part of the press: it selects and opens nothing.
+        if (pressed.current) {
+          pressed.current = false;
+          return;
+        }
+        H.click(idOf(e), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, touch: pointer.current === "touch" });
+      },
+      onDoubleClick: (e: ReactMouseEvent<HTMLElement>) => {
+        // A finger's double tap has opened the item already, on its first tap. A double click in the rename field selects
+        // a word in it, and does not open the item.
+        if (pointer.current === "touch" || files().renameID === idOf(e)) return;
+        // The item is the one the event reached: its ID is read from the row, not from its place in the list.
+        const id = idOf(e);
+        if (id) H.dbl(id);
+      },
+      // A key from the row's checkbox belongs to the checkbox, except the arrows that move the selection.
+      onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
+        if (inCheck(e) && !e.key.startsWith("Arrow")) return;
+        H.keyDown(e);
+      },
+      // A focus that comes from a press is the click's (onClickCapture); any other focus is the row's own.
+      onFocus: (e: ReactFocusEvent<HTMLElement>) => pf.focus(idOf(e)),
+    };
+    // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [H, pf]);
   // liftPending says a long press has opened its menu and no new press has begun since. Until one does, the mousedowns the
   // browser sends for the lifted finger are stopped, since the menu closes on a mousedown and would close at the lift. A
   // real mouse press always begins with a pointerdown, which clears the flag first. The listeners are added at mount, so
@@ -340,58 +1008,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // The actions column's header: a name for a screen reader, shown to no one (review L4).
   const actionsHead = <span className="sr-only">{t("storage.actions")}</span>;
 
-  // A row's icons and More button, and a tile's menu button, are IconButtons: 40 pixels with a mouse and 44 on a finger (index.css).
-  // Enter and Space stop at a button, so its own click is the one activation; the arrow keys reach the item's handler, so they move
-  // on from the button. A button is a tab stop only in the focused row or tile (the caller's tab value).
-  const keysStop = (e: { key: string; stopPropagation: () => void }) => {
-    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-  };
-  // rowIcon is one of a row's icons. Its click is its own: it does not reach the row. A disabled one keeps its place and the
-  // focus: it is aria-disabled, drawn in the disabled colour, and its click and keys do nothing. It is not a disabled button,
-  // since a browser takes the focus from a button that turns disabled (the re-check's e2e found the focus on BODY), and the
-  // row's icons turn disabled under the pressed one while its request is on its way (decision 114). index.css passes its
-  // pointer to the wrapper, as for a disabled one, so it has no hover background and shows the not-allowed cursor; its colour is
-  // set here too, so it wins over a danger icon's, which IconButton sets inline.
-  const rowIcon = (a: ListAction, tab?: number) => (
-    <IconButton
-      key={a.key}
-      label={a.label}
-      icon={a.icon}
-      tabIndex={tab}
-      pressed={a.pressed}
-      href={a.href}
-      aria-disabled={a.disabled ? true : undefined}
-      danger={a.danger}
-      style={a.disabled ? { color: token.colorTextDisabled } : undefined}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (a.disabled) return;
-        // A link follows its own address: the browser's click does that, so run is not called for it.
-        if (a.href) return;
-        a.run();
-      }}
-      onKeyDown={keysStop}
-      onDoubleClick={(e) => e.stopPropagation()}
-    />
-  );
-  const moreIcon = <EllipsisVertical size={18} aria-hidden="true" focusable="false" />;
+  // A row's icons and More button, and a tile's menu button, are IconButtons (above): 40 pixels with a mouse and 44 on a finger
+  // (index.css). A button is a tab stop only in the focused row or tile.
 
   // ---- The preset list. ----
-
-  // menuItem is a ⋮ entry. An entry with an address is a real link: the browser opens a middle or a modified click in a new
-  // tab, and a plain click or a key runs the entry here, in this tab (review L2).
-  const menuItem = (e: ListMenuEntry): NonNullable<MenuProps["items"]>[number] => ({
-    key: e.key,
-    icon: e.icon,
-    danger: e.danger,
-    disabled: e.disabled,
-    label: e.href ? <a href={e.href}>{e.label}</a> : e.label,
-    onClick: ({ domEvent }) => {
-      if (e.href && "button" in domEvent && (domEvent.button !== 0 || domEvent.metaKey || domEvent.ctrlKey || domEvent.shiftKey || domEvent.altKey)) return;
-      domEvent.preventDefault();
-      e.onSelect();
-    },
-  });
 
   const renderItems = (q: ItemListingProps<T>) => {
     const [nameCol, ...others] = q.columns;
@@ -415,7 +1035,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           ...rest.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, href: a.href, onSelect: a.run })),
           ...(q.menu?.(r) ?? []),
         ];
-        return [r.id, { inline, entries }] as const;
+        return [r.id, { inline, entries, sig: presetSig(inline, entries) }] as const;
       }),
     );
     const slots = Math.max(0, ...[...ends.values()].map((e) => e.inline.length));
@@ -433,11 +1053,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
     // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
     // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
-    const check = (r: T) => (
-      <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-        <Checkbox checked={picked.has(r.id)} tabIndex={-1} aria-label={t("files.select.item", { name: q.rowLabel(r) })} onChange={() => sel.pick(r.id, { toggle: true })} />
-      </span>
-    );
+    const check = (r: T) => <PresetCheck id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={sel.pick} />;
     const nameCell = (r: T) => (
       <div style={{ minWidth: 0 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
@@ -467,25 +1083,15 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       const end = ends.get(r.id);
       if (!end) return null;
       return (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
-          {end.inline.length > 0 && (
-            <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end" }}>
-              {end.inline.map((a) => rowIcon(a))}
-            </span>
-          )}
-          {end.entries.length > 0 && (
-            <Dropdown menu={{ items: end.entries.map(menuItem) }} trigger={["click"]}>
-              <IconButton
-                aria-haspopup="menu"
-                label={q.moreLabel?.(r) ?? t("files.tile.menu", { name: q.rowLabel(r) })}
-                tip={t("files.selection.more")}
-                icon={moreIcon}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-              />
-            </Dropdown>
-          )}
-        </div>
+        <PresetEnd
+          row={r}
+          sig={end.sig}
+          inline={end.inline}
+          entries={end.entries}
+          moreLabel={q.moreLabel?.(r) ?? t("files.tile.menu", { name: q.rowLabel(r) })}
+          moreTip={t("files.selection.more")}
+          PH={PH}
+        />
       );
     };
 
@@ -542,7 +1148,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       tabIndex: sel.focusID === r.id ? 0 : -1,
       "data-id": r.id,
       "data-testid": q.rowTestID?.(r),
-      onFocus: () => sel.setFocus(r.id),
+      // The focus that comes from a press is the click's (onClickCapture), so a press that selects is one update; any other focus is
+      // the row's own.
+      onFocus: () => pf.focus(r.id),
+      onClickCapture: () => pf.clickCapture(r.id),
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         if (isControl(e)) return;
@@ -556,6 +1165,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         else if (selectable) sel.pick(r.id);
       },
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+        pf.down(r.id);
         endPress();
         pressed.current = false;
         if (e.pointerType !== "touch" || entriesOf(r).length === 0) return;
@@ -652,7 +1262,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             if (!open) setRowMenu(null);
           }}
           trigger={[]}
-          menu={{ items: menuList.map(menuItem), onClick: () => setRowMenu(null) }}
+          menu={{ items: menuList.map((e) => menuItemOf(e, e.onSelect)), onClick: () => setRowMenu(null) }}
         >
           {/* The anchor sits at the pointer, which is a place in the window (clientX from the left), so its inset is physical. */}
           <span aria-hidden="true" style={{ position: "fixed", inset: `${rowMenu?.y ?? 0}px auto auto ${rowMenu?.x ?? 0}px`, width: 0, height: 0 }} />
@@ -665,155 +1275,20 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
   // ---- The files preset (My files), as it was. ----
 
-  // rowAttrs gives a row or a tile its role, name, selection state, roving focus and handlers. Both views use
-  // it, so the keyboard model is the same in each.
-  const rowAttrs = (n: Node, i: number) => ({
-    role: "row",
-    "aria-label": n.name,
-    "aria-selected": p.selected.has(n.id),
-    tabIndex: p.focusID === n.id ? 0 : -1,
-    "data-id": n.id,
-    // A folder is a place an item can be dropped on: the page reads where from these (see useGestures). Nothing else is.
-    ...(n.kind === "dir" ? { "data-drop-folder": n.folder_id, "data-drop-dir": n.id, "data-drop-role": n.role ?? "", "data-drop-name": n.name } : {}),
-    // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
-    onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
-    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
-      pointer.current = e.pointerType;
-      pressed.current = false;
-      endPress();
-      if (e.pointerType !== "touch" || p.renameID === n.id || !p.onRowContext) return;
-      const { clientX: x, clientY: y } = e;
-      press.current = {
-        x,
-        y,
-        timer: setTimeout(() => {
-          press.current = null;
-          pressed.current = true;
-          liftPending.current = true;
-          p.onRowContext?.(n.id, i, x, y);
-        }, LONG_PRESS_MS),
-      };
-    },
-    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
-      const cur = press.current;
-      if (cur && Math.hypot(e.clientX - cur.x, e.clientY - cur.y) > PRESS_SLOP_PX) endPress();
-    },
-    onPointerUp: endPress,
-    onPointerCancel: endPress,
-    // The row under a mouse is known to the icons that draw at its end (review fix 7); a touch does not hover.
-    onPointerEnter: (e: ReactPointerEvent<HTMLElement>) => {
-      if (e.pointerType === "mouse") setRowHover(n.id);
-    },
-    onPointerLeave: (e: ReactPointerEvent<HTMLElement>) => {
-      if (e.pointerType === "mouse" && getRowHover() === n.id) setRowHover(null);
-    },
-    onContextMenu: (e: ReactMouseEvent<HTMLElement>) => {
-      // The browser's own menu stays in a field the person types in, and on a row being renamed.
-      if (p.renameID === n.id || isTextField(e.target)) return;
-      e.preventDefault();
-      endPress();
-      p.onRowContext?.(n.id, i, e.clientX, e.clientY);
-    },
-    onClick: (e: ReactMouseEvent<HTMLElement>) => {
-      // The checkbox column has its own handler, so a click on it must not also select the row.
-      if ((e.target as HTMLElement).closest(".ant-table-selection-column, .row-check")) return;
-      // A click in the row's own rename field places the cursor there; the item is not opened by it.
-      if (p.renameID === n.id) return;
-      // The tap that ends a long press is part of the press: it selects and opens nothing.
-      if (pressed.current) {
-        pressed.current = false;
-        return;
-      }
-      p.onRowClick(i, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, touch: pointer.current === "touch" });
-    },
-    onDoubleClick: (e: ReactMouseEvent<HTMLElement>) => {
-      // A finger's double tap has opened the item already, on its first tap. A double click in the rename field selects
-      // a word in it, and does not open the item.
-      if (pointer.current === "touch" || p.renameID === n.id) return;
-      // The item is the one the event reached: its ID is read from the row, not from its place in the list.
-      const id = e.currentTarget.dataset.id;
-      if (id) p.onRowDoubleClick(id);
-    },
-    // A key from the row's checkbox belongs to the checkbox, except the arrows that move the selection.
-    onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
-      if ((e.target as HTMLElement).closest(".ant-table-selection-column, .row-check") && !e.key.startsWith("Arrow")) return;
-      p.onKeyDown(e);
-    },
-    onFocus: () => p.onFocusItem(i),
-  });
-
-  const nameField = (n: Node) =>
-    p.renameID === n.id ? (
-      <Input
-        className="rename"
-        aria-label={t("files.rename.label")}
-        aria-invalid={p.renameError ? true : undefined}
-        aria-describedby={p.renameError ? "rename-error" : undefined}
-        value={p.renameValue}
-        onChange={(e) => p.onRenameChange(e.target.value)}
-        onKeyDown={(e) => {
-          // Keys typed in the name field stay in the field: Enter must not also open the row.
-          e.stopPropagation();
-          if (e.key === "Enter") {
-            e.preventDefault();
-            p.onRename(true);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            p.onRename(false);
-          }
-        }}
-        onBlur={() => p.onRename(true)}
-        ref={(el) => {
-          if (el) {
-            el.focus();
-            el.select();
-          }
-        }}
-        style={{ flex: "1 1 160px", minWidth: 0, minHeight: 44 }}
-      />
-    ) : (
-      <bdi style={{ overflowWrap: "anywhere", minWidth: 0 }}>{n.name}</bdi>
-    );
-
-  const linkBadge = (n: Node) =>
-    n.has_link ? (
-      <span style={{ display: "inline-flex", marginInlineStart: 8, color: token.colorTextSecondary, verticalAlign: "middle" }}>
-        <Link2 size={14} aria-hidden="true" focusable="false" />
-        <span className="sr-only">{t("files.linkBadge")}</span>
-      </span>
-    ) : null;
-
-  // A starred item shows a small filled star after its name. The star is changed from the hover icon, the ⋮ menu or the
-  // Starred page; the mark is not a button.
-  const starMark = (n: Node) =>
-    n.starred ? (
-      <span style={{ display: "inline-flex", marginInlineStart: 4, color: token.colorWarning, verticalAlign: "middle", flex: "none" }}>
-        <Star size={14} fill="currentColor" aria-hidden="true" focusable="false" />
-        <span className="sr-only">{t("star.mark")}</span>
-      </span>
-    ) : null;
-
-  const renameErr = (n: Node) =>
-    p.renameID === n.id && p.renameError ? (
-      <div id="rename-error" role="alert" style={{ flexBasis: "100%", color: token.colorError, fontSize: token.fontSizeSM }}>
-        {p.renameError}
-      </div>
-    ) : null;
-
-  // indexOf is each item's place in the page's order, for the handlers that name a row by its index.
-  const indexOf = new Map(p.items.map((n, i) => [n.id, i]));
-  // rowCheck is a mouse's checkbox for a row. It takes the file icon's place when the row is hovered, or selected, or when
-  // anything is selected (the CSS in index.css decides); it is not a tab stop, and a click on it selects by the box alone.
-  const rowCheck = (n: Node) => (
-    <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-      <Checkbox
-        checked={p.selected.has(n.id)}
-        tabIndex={-1}
-        aria-label={t("files.select.item", { name: n.name })}
-        onChange={() => p.onRowClick(indexOf.get(n.id) ?? 0, { shiftKey: false, ctrlKey: true, metaKey: false })}
-      />
-    </span>
-  );
+  // contentOf is the props of a row's or a tile's content (FileCellProps). The rename state is passed only to the row being renamed,
+  // so the other rows' content is not drawn again when a rename starts or changes.
+  const contentOf = (n: Node): FileCellProps => {
+    const renaming = p.renameID === n.id;
+    return {
+      n,
+      selected: p.selected.has(n.id),
+      coarse,
+      renaming,
+      renameValue: renaming ? p.renameValue : "",
+      renameError: renaming ? p.renameError : null,
+      H,
+    };
+  };
   // The select-all box sits in the name's header on a mouse; it shows when something is selected or on the header's hover.
   const someSelected = p.items.some((n) => p.selected.has(n.id));
   const allSelected = p.items.length > 0 && p.items.every((n) => p.selected.has(n.id));
@@ -826,50 +1301,14 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // The active column shows its direction as an arrow after the label (headCell, the frame's header).
   const sortHead = (key: SortKey, label: string) => headCell(label, p.sortKey === key ? p.sortDir : null, () => p.onSort(key));
 
-  // The More button opens the item's menu, where the right-click menu opens: at the button. A list row and a tile both have it.
-  const moreButton = (n: Node, i: number, tab = -1) => (
-    <IconButton
-      tabIndex={tab}
-      label={t("files.tile.menu", { name: n.name })}
-      tip={t("files.selection.more")}
-      aria-haspopup="menu"
-      onClick={(e) => {
-        e.stopPropagation();
-        const r = e.currentTarget.getBoundingClientRect();
-        // The menu opens at the button's start edge: its left in English, its right in Hebrew (review fix 11). A key's click has
-        // no pointer, so its detail is 0: the menu then takes the focus (review fix 1).
-        // The start edge is the button's x in English and its x plus its width in Hebrew, where the start is on the right.
-        const rtl = document.documentElement.dir === "rtl";
-        const startX = rtl ? r.x + r.width : r.x;
-        p.onRowContext?.(n.id, i, startX, r.bottom, e.detail === 0 ? e.currentTarget : undefined);
-      }}
-      onKeyDown={keysStop}
-      onDoubleClick={(e) => e.stopPropagation()}
-      icon={moreIcon}
-    />
-  );
-  const tileMenu = (n: Node, i: number) => moreButton(n, i);
-
   // The row end: the four icons of the page's row actions (drawn with a mouse, where the row is hovered or selected) and the
-  // More button, which every row has. The icons keep their room, so a row does not move when they appear.
+  // More button, which every row has. The icons keep their room, so a row does not move when they appear. The signature is of the
+  // actions the row draws now: only a selected or focused row draws them without a hover.
   const rowEnd = (n: Node) => {
     const focused = p.focusID === n.id;
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
-        {!coarse && (
-          <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end", minWidth: ROW_ICON_PX * ROW_ICONS }}>
-            <RowActs id={n.id} show={p.selected.has(n.id) || focused}>
-              {() =>
-                // A files action that is not enabled is one the item's menu does not offer, so it is not drawn (unlike a
-                // preset list's disabled action, which is one on its way).
-                (p.rowActs?.(n) ?? []).filter((a) => a.enabled).map((a) => rowIcon(a, focused ? 0 : -1))
-              }
-            </RowActs>
-          </span>
-        )}
-        {moreButton(n, indexOf.get(n.id) ?? 0, focused ? 0 : -1)}
-      </div>
-    );
+    const selected = p.selected.has(n.id);
+    const sig = p.rowActs && (focused || selected) ? actsSig(H.acts(n)) : "";
+    return <FileRowEnd n={n} selected={selected} focused={focused} coarse={coarse} sig={sig} H={H} />;
   };
   const nameHead = sortHead("name", t("files.col.name"));
 
@@ -885,27 +1324,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             {nameHead.title}
           </span>
         ),
-        render: (_v, n) => (
-          // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
-          // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
-            {coarse ? (
-              <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
-            ) : (
-              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
-                <span className="row-icon">
-                  <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
-                </span>
-                {rowCheck(n)}
-              </span>
-            )}
-            {nameField(n)}
-            {linkBadge(n)}
-            <KindMarks node={n} />
-            {starMark(n)}
-            {renameErr(n)}
-          </span>
-        ),
+        render: (_v, n) => <FileNameCell {...contentOf(n)} />,
       },
       {
         key: "size",
@@ -952,7 +1371,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           tableLayout="fixed"
           columns={columns}
           dataSource={p.items}
-          // A mouse has no checkbox column: each row's checkbox is in its icon's place (see rowCheck). A finger keeps the column.
+          // A mouse has no checkbox column: each row's checkbox is in its icon's place (see FileNameCell). A finger keeps the column.
           rowSelection={coarse ? {
             type: "checkbox",
             columnWidth: 44,
@@ -967,10 +1386,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             getCheckboxProps: () => ({ tabIndex: -1 }),
             selectedRowKeys: p.items.filter((n) => p.selected.has(n.id)).map((n) => n.id),
             // A checkbox toggles its row, as Ctrl or Cmd does; the header box selects or clears all.
-            onSelect: (record) => p.onRowClick(p.items.findIndex((x) => x.id === record.id), { shiftKey: false, ctrlKey: true, metaKey: false }),
+            onSelect: (record) => H.click(record.id, CTRL_CLICK),
             onSelectAll: (checked) => p.onSelectAll(checked),
           } : undefined}
-          onRow={(n, i) => {
+          onRow={(n) => {
             // The selected band and the hovered band are painted on the cells (index.css), as antd paints a row's cells.
             const style = {
               ...(p.cutIDs?.has(n.id) ? { opacity: CUT_OPACITY } : {}),
@@ -978,7 +1397,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
               userSelect: "none" as const,
               scrollMarginTop,
             };
-            return { ...rowAttrs(n, i ?? 0), style: Object.keys(style).length ? style : undefined } as Record<string, unknown>;
+            return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH), style } as Record<string, unknown>;
           }}
         />
       </div>
@@ -990,135 +1409,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const folders = p.items.filter((n) => n.kind === "dir");
   const files = p.items.filter((n) => n.kind !== "dir");
   const band = { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${TILE_MIN_PX}px), 1fr))`, gap: 12 } as const;
-  // The checkbox of a finger's screen: a tile has no click that selects it, so its checkbox does (a list row has one already).
-  // The wrapper stops the click: the checkbox toggles the item, and the item does not also open.
-  const tileCheck = (n: Node, i: number) =>
-    coarse ? (
-      <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", flex: "none" }}>
-        <Checkbox
-          checked={p.selected.has(n.id)}
-          tabIndex={-1}
-          aria-label={t("files.select.item", { name: n.name })}
-          onChange={() => p.onRowClick(i, { shiftKey: false, ctrlKey: true, metaKey: false })}
-        />
-      </span>
-    ) : null;
-  // The type's icon keeps its size when the name is long: a flex item would shrink to nothing beside it.
-  const typeIcon = (n: Node) => (
-    <span style={{ display: "inline-flex", flex: "none" }}>
-      <Icon kind={kindOf(n)} size={20} colour={n.color} node={n} />
-    </span>
+  // A folder's chip or a file's card: a memoised tile, drawn again only when its own state changes.
+  const tile = (n: Node, kind: "chip" | "card") => (
+    <FileTile key={n.id} kind={kind} focused={p.focusID === n.id} cut={p.cutIDs?.has(n.id) ?? false} scrollMarginTop={scrollMarginTop} RH={RH} {...contentOf(n)} />
   );
-  // The name is one line: it is cut with an ellipsis, and its full text is in the title. The box takes the row's direction
-  // and sits at its start, so a name in another script does not drift to the far end; the bdi keeps the name's own direction.
-  const oneLine = (n: Node) =>
-    p.renameID === n.id ? (
-      nameField(n)
-    ) : (
-      <span
-        style={{
-          display: "block",
-          flex: "1 1 auto",
-          minWidth: 0,
-          overflow: "hidden",
-          direction: "inherit",
-          textAlign: "start",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        <bdi title={n.name}>{n.name}</bdi>
-      </span>
-    );
-  const chip = (n: Node) => {
-    const i = indexOf.get(n.id) ?? 0;
-    const isSel = p.selected.has(n.id);
-    return (
-      <div
-        key={n.id}
-        {...rowAttrs(n, i)}
-        role="option"
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          minWidth: 0,
-          minHeight: coarse ? 44 : 40,
-          paddingInlineStart: 10,
-          paddingInlineEnd: 4,
-          boxSizing: "border-box",
-          border: `1px solid ${isSel ? token.colorPrimary : token.colorBorderSecondary}`,
-          borderRadius: token.borderRadiusLG,
-          background: isSel ? token.colorPrimaryBg : undefined,
-          outline: isSel ? `2px solid ${token.colorPrimary}` : undefined,
-          outlineOffset: isSel ? -2 : undefined,
-          cursor: "default",
-          userSelect: "none",
-          scrollMarginTop,
-          opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
-        }}
-      >
-        {tileCheck(n, i)}
-        {typeIcon(n)}
-        {oneLine(n)}
-        <KindMarks node={n} />
-        {starMark(n)}
-        {tileMenu(n, i)}
-        {renameErr(n)}
-      </div>
-    );
-  };
-  const card = (n: Node) => {
-    const i = indexOf.get(n.id) ?? 0;
-    const isSel = p.selected.has(n.id);
-    return (
-      <div
-        key={n.id}
-        {...rowAttrs(n, i)}
-        role="option"
-        style={{
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
-          overflow: "hidden",
-          border: `1px solid ${isSel ? token.colorPrimary : token.colorBorderSecondary}`,
-          borderRadius: token.borderRadiusLG,
-          background: isSel ? token.colorPrimaryBg : token.colorBgContainer,
-          // A selected tile has an outline as well as its tint, so the selection shows at a glance.
-          outline: isSel ? `2px solid ${token.colorPrimary}` : undefined,
-          outlineOffset: isSel ? -2 : undefined,
-          cursor: "default",
-          userSelect: "none",
-          scrollMarginTop,
-          opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
-          {tileCheck(n, i)}
-          {typeIcon(n)}
-          {oneLine(n)}
-          {starMark(n)}
-          {tileMenu(n, i)}
-        </div>
-        {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
-            there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
-          {thumbable(n) ? (
-            <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />} />
-          ) : (
-            <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
-          )}
-          <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
-            <KindMarks node={n} />
-            {linkBadge(n)}
-          </span>
-        </div>
-        {renameErr(n)}
-      </div>
-    );
-  };
+  const chip = (n: Node) => tile(n, "chip");
+  const card = (n: Node) => tile(n, "card");
   return (
     // The padding is the gutter a rubber band starts in, as the grid had before the bands.
     <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={p.containerRef} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
