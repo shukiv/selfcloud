@@ -50,7 +50,8 @@ function dir(id: string, parent: string | null, name: string): Record<string, un
 
 const folder = { id: 'fld_a', name: 'Team A', role: 'editor', no_download_for_viewers: false } as unknown as FolderAccess;
 
-// chainOf answers the ancestors of a node the way the server does for a caller who reaches the given nodes.
+// setTree makes the stand-in network's tree for a caller who reaches the given nodes: each node's stat, and each directory's
+// ancestors answer, topmost first, stopping at the first node the caller does not reach, as the server does.
 function setTree(reached: string[]): void {
   const all = [dir('nod_root', null, ''), dir('nod_a', 'nod_root', 'a'), dir('nod_b', 'nod_a', 'b'), dir('nod_c', 'nod_b', 'c')];
   net.nodes.clear();
