@@ -2036,15 +2036,18 @@ paths:
         - a PNG whose header does not give its size, or gives more than 4096 pixels on a side or 4194304 pixels in
           all, read before anything else of it: `400 invalid_request`, `details.reason` `invalid_picture`. Every page
           that shows the logo has the browser decode it whole, so the cap keeps that small. The logo file is not
-          held to this cap; one over it gets a warning at start.
+          held to this cap; one over it gets a warning at start. The cap covers a PNG upload only: an SVG may embed
+          a raster image, which only the 256 KiB byte cap bounds, and the SVG's sandbox policy stops scripts, not
+          the cost of decoding such an image.
 
         The picture is stored under the data folder with a name the server makes from its hash, and recorded with
         its type and hash in one transaction with an `installation.settings` audit entry, whose details give
         `ui.brand.logo` `{old, new, source}`, each value its type and hash (`image/png sha256:<hex>`) or `none`.
-        The same picture again changes nothing. The logo shows at once at `/brand/logo`, in `/api/v1/info` and in the
-        app icons and the favicon where decision 119 picks it; the SelfCloud wordmark is no longer served. An SVG is
-        served only with a sandbox policy, never inlined. If the brand cannot be built or stored, the answer is an
-        error and nothing changes.
+        The same picture as the one in use changes nothing and writes no entry; over a stored logo the server did not
+        use at start, it restores the file, and the entry's `old` and `new` are both that row. The logo shows at once
+        at `/brand/logo`, in `/api/v1/info` and in the app icons and the favicon where decision 119 picks it; the
+        SelfCloud wordmark is no longer served. An SVG is served only with a sandbox policy, never inlined. If the
+        brand cannot be built or stored, the answer is an error and nothing changes.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
