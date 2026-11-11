@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter, go } from "./lib/router";
@@ -139,6 +139,23 @@ describe("an installation admin reaches the admin pages and no drive page", () =
     );
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(new URLSearchParams(window.location.search).get("next")).toBe("/admin/installation");
+    view.unmount();
+  });
+
+  it("signing in on a page that asked for the old address draws Settings, not a blank page", async () => {
+    session.set(null);
+    window.history.replaceState(null, "", "/admin/installation");
+    const router = createAppRouter([{ path: "*", element: <Gate /> }]);
+    const view = render(
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    // The same gate, the same slot: the sign-in redirect replaces the sign-out one.
+    act(() => session.set(person("admin")));
+    await waitFor(() => expect(window.location.pathname).toBe("/admin/settings"));
+    await waitFor(() => expect(document.body.textContent).toContain("stub admin settings"));
     view.unmount();
   });
 
