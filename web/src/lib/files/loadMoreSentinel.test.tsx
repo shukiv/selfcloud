@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The sentinel asks for the next page once each time its element comes into view, and never while a page loads (tl4 r1,
-// finding 2; design 2.2, paging).
+// The sentinel asks for the next page once each time its element comes into view, and never while a page loads (design 2.2, paging).
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLoadMoreSentinel } from "./loadMoreSentinel";
@@ -64,7 +63,7 @@ describe("useLoadMoreSentinel", () => {
     expect(more).toHaveBeenCalledTimes(1);
   });
 
-  // tl4 r2, N1: a failed next page must not be asked for again by the sentinel. Its observer would fire at once, since the
+  // A failed next page must not be asked for again by the sentinel. Its observer would fire at once, since the
   // sentinel is still in view, and the request would fail and repeat with no delay. Only Load more tries again, and a later
   // successful load re-arms the sentinel.
   it("after a failed next page, asks nothing on its own: no observer is made until a load succeeds", () => {

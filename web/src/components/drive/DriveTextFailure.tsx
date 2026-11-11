@@ -3,8 +3,8 @@
 import { Alert, Button } from "antd";
 import { useT } from "../../lib/i18n";
 
-// DriveTextFailure says a drive list's own strings did not load, and offers Try again, which loads them once more (tl4 r1,
-// finding 10). The list draws no table until they are there.
+// DriveTextFailure says a drive list's own strings did not load, and offers Try again, which loads them once more.
+// The list draws no table until they are there.
 export default function DriveTextFailure({ retry }: { retry: () => void }) {
   const { t } = useT();
   return (

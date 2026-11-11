@@ -40,7 +40,7 @@ export interface DriveText {
 }
 
 // useDriveText loads the drive lists' strings of the current language. The component re-renders when they arrive. A table waits
-// for them: its column titles are these keys until then. A failed load is shown, and retry loads them again (tl4 r1, finding 10).
+// for them: its column titles are these keys until then. A failed load is shown, and retry loads them again.
 export function useDriveText(): DriveText {
   const l = useLang();
   const [, bump] = useReducer((n: number) => n + 1, 0);

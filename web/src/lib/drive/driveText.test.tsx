@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A drive list's own strings that fail to load show an error with Try again, and Try again loads them (tl4 r1, finding 10).
+// A drive list's own strings that fail to load show an error with Try again, and Try again loads them.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

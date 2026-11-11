@@ -14,7 +14,7 @@ const PAGES = [
   // wrapClass: the class the old element had, which owner.mjs waits for on Recent (`.empty`), kept on EmptyState's wrapper.
   { key: 'starred', path: '/starred', text: 'Nothing is starred yet. Star a file or folder to find it here.', wrapClass: 'empty' },
   { key: 'recent', path: '/recent', text: 'Nothing here yet. Files you open or change appear here.', wrapClass: 'empty' },
-  // The Trash title has no full stop: the drive lists' titles are short (tl4 r1), and the words are the same.
+  // The Trash title has no full stop: the drive lists' titles are short, and the words are the same.
   { key: 'trash', path: '/trash', text: 'The trash is empty' },
 ];
 const VERSIONS_TEXT = 'There are no earlier versions.';
@@ -150,7 +150,7 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   for (const f of found) {
     if (!f.empty) check(false, `em1: ${f.what} shows antd's Empty (none on the page: ${JSON.stringify(f.empty ?? null)})`);
     if (f.name) check(f.empty.text.startsWith('This folder is empty.'), `em1: ${f.what} shows the heading and the hint in antd's Empty (${f.empty.text})`);
-    // A drive list's empty body holds a short title and then the description (tl4 r1). The words the page gives are the
+    // A drive list's empty body holds a short title and then the description. The words the page gives are the
     // description, read exactly; a page with no description (Trash) has its title as its words, read exactly too.
     else check((f.empty.desc ?? f.empty.text) === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.desc ?? f.empty.text})`);
     if (f.status !== null) check(f.empty.status === true, `em1: ${f.what} keeps its status region`);

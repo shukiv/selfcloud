@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The spaces a drive list names a location from include the spaces the caller has hidden (tl4 r1, finding 6): the caller reaches
+// The spaces a drive list names a location from include the spaces the caller has hidden: the caller reaches
 // them, so their names are known, and a top-level item in one shows the space's name. The hidden list is read once per session,
-// so a drive list mounted again reads nothing (tl4 r2, N4).
+// so a drive list mounted again reads nothing.
 import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -52,7 +52,7 @@ describe("useLocationSpaces", () => {
     expect(get(folders).map((f) => f.id)).toEqual(["fld_a"]);
   });
 
-  // tl4 r2, N4: the hidden list is read once per session. A drive list mounted again (another page, or the same one after a
+  // The hidden list is read once per session. A drive list mounted again (another page, or the same one after a
   // visit elsewhere) finds it there and makes no request.
   it("reads the hidden spaces once per session: a drive list mounted again makes no new request", async () => {
     const first = renderHook(() => useLocationSpaces(true), { wrapper });

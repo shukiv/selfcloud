@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A drive name is text in the text colour at weight 500, as the approved mockup draws it (tl4 r1, finding 5). Search keeps the
+// A drive name is text in the text colour at weight 500, as the approved mockup draws it. Search keeps the
 // link colour, which its contrast check reads (docs/design.md, decision 137).
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
