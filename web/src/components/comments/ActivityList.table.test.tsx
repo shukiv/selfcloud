@@ -3,7 +3,7 @@
 // The activity of an item on the one table (tl5, decision 138), in the comments panel: When first and marked newest first, the event
 // as the line under it at any width (the panel is narrow, so the phone layout is always used), the frame and the words of an empty
 // list, and an entry's time as a time element.
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadComments } from "../../lib/comments/i18n";
@@ -64,6 +64,44 @@ describe("the activity is one table in its panel (tl5, decision 138)", () => {
     expect(within(region).getByRole("columnheader", { name: "When" })).toBeTruthy();
     expect(within(region).getByText("Nothing recorded yet")).toBeTruthy();
     expect(within(region).getByText("Nothing has been recorded for this item yet.")).toBeTruthy();
+  });
+
+  it("asks for the next page through the sentinel, and a failed next page is asked for once, not again by itself", async () => {
+    const before = (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+    // Each observer reports its element as in view at once, which is what the sentinel does for a short page.
+    let watched = 0;
+    class InView {
+      constructor(private cb: (entries: { isIntersecting: boolean }[]) => void) {}
+      observe() {
+        watched++;
+        this.cb([{ isIntersecting: true }]);
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = InView;
+    try {
+      const { calls } = stubFetch(async (c: Call): Promise<Answer> => {
+        if (!c.url.startsWith("/api/v1/nodes/nod_1/activity")) return fail(404, "not_found");
+        if (!c.url.includes("cursor=")) return { status: 200, body: { items: [entry], next_cursor: "c1" } };
+        // The page takes time to fail, as a network does, so the list is seen loading before it is seen failed.
+        await new Promise((r) => setTimeout(r, 20));
+        return fail(500, "internal");
+      });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <ActivityList nodeID="nod_1" />
+        </QueryClientProvider>,
+      );
+      await screen.findByText(/could not be refreshed/);
+      // The effects of the commit that showed the failure have run: the end of the list is not watched again.
+      await act(async () => {});
+      expect(watched).toBe(1);
+      expect(calls.filter((c) => c.url.includes("cursor=c1"))).toHaveLength(1);
+    } finally {
+      (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver = before;
+    }
   });
 
   it("gives the time as a time element with its ISO value", async () => {

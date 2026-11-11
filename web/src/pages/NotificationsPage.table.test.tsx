@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The notifications on the one table (tl5, decision 138): the columns, the newest first mark on When, a row that opens its notice
-// once, the notice's button that does not open twice, the sentinel that asks for the next page once, and the phone layout.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+// once, the notice's button that opens it once too, the sentinel that asks for the next page once, and the phone layout.
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntdApp } from "antd";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -126,25 +126,26 @@ describe("notifications are one table (tl5, decision 138)", () => {
     expect(calls.filter(isRead)).toHaveLength(1);
   });
 
-  it("does not open a notice twice when Enter is pressed on its button", async () => {
+  it("opens a notice once and marks it read once when its button is clicked", async () => {
     const { calls } = stubFetch((c) => {
       if (isRead(c)) return ok(null);
       return isList(c) ? ok({ items: [mention] }) : isSettings(c) ? ok({ email: true }) : fail(404, "not_found");
     });
     mount();
     const button = await screen.findByRole("button", { name: /Ann mentioned you in plan\.txt/ });
-    fireEvent.keyDown(button, { key: "Enter" });
-    await new Promise((r) => setTimeout(r, 30));
-    expect(calls.filter(isRead)).toHaveLength(0);
-    expect(screen.getByTestId("where").textContent).toBe("/notifications");
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/n/nod_abcdefgh?details=comments"));
+    expect(calls.filter(isRead)).toHaveLength(1);
   });
 
   it("asks for the next page through the sentinel once, and a failed next page is not asked again by itself", async () => {
     const before = (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
     // Each observer reports its element as in view at once, which is what the sentinel does for a short page.
+    let watched = 0;
     class InView {
       constructor(private cb: (entries: { isIntersecting: boolean }[]) => void) {}
       observe() {
+        watched++;
         this.cb([{ isIntersecting: true }]);
       }
       disconnect() {}
@@ -152,13 +153,20 @@ describe("notifications are one table (tl5, decision 138)", () => {
     }
     (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = InView;
     try {
-      const { calls } = stubFetch((c) => {
-        if (isList(c)) return c.url.includes("cursor=") ? fail(500, "internal") : ok({ items: [mention], next_cursor: "c1" });
+      const { calls } = stubFetch(async (c) => {
+        if (isList(c)) {
+          if (!c.url.includes("cursor=")) return ok({ items: [mention], next_cursor: "c1" });
+          // The page takes time to fail, as a network does, so the list is seen loading before it is seen failed.
+          await new Promise((r) => setTimeout(r, 20));
+          return fail(500, "internal");
+        }
         return isSettings(c) ? ok({ email: true }) : fail(404, "not_found");
       });
       mount();
-      await waitFor(() => expect(calls.some((c) => c.url.includes("cursor=c1"))).toBe(true));
-      await new Promise((r) => setTimeout(r, 80));
+      await screen.findByText(/next notifications could not be loaded/);
+      // The effects of the commit that showed the failure have run: the end of the list is not watched again.
+      await act(async () => {});
+      expect(watched).toBe(1);
       expect(calls.filter((c) => c.url.includes("cursor=c1"))).toHaveLength(1);
     } finally {
       (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver = before;
