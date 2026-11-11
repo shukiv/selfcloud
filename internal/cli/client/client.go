@@ -73,9 +73,11 @@ type Options struct {
 
 // Client makes requests to one server.
 type Client struct {
-	base          *url.URL
-	cred          string
-	http          *http.Client
+	base *url.URL
+	cred string
+	http *http.Client
+	// stream shares http's transport and redirect rule, with no overall timeout: a transfer is bounded by its stall limit.
+	stream        *http.Client
 	now           func() time.Time
 	sleep         func(context.Context, time.Duration) error
 	maxRetryAfter time.Duration
@@ -89,6 +91,13 @@ type Request struct {
 	Accept      string
 	ContentType string
 	Body        []byte
+	// Header holds extra headers, such as the tus and range headers. It may not set Authorization,
+	// Proxy-Authorization, Cookie or Host: the credential goes only where the client puts it.
+	Header http.Header
+	// Upload is a body read as it is sent, UploadLength bytes long. Only Stream takes it: Do may repeat a request, and a
+	// reader cannot be read twice.
+	Upload       io.Reader
+	UploadLength int64
 }
 
 // Response is an answer with a 2xx status. Its body has been read whole, up to MaxResponseBytes.
@@ -217,16 +226,14 @@ func New(o Options) (*Client, error) {
 		ResponseHeaderTimeout: o.HeaderTimeout,
 		ForceAttemptHTTP2:     true,
 	}
+	// A redirect is not followed: the credential would go to the new address, and an https to http redirect would send
+	// it in clear. The answer is the redirect itself, which is an error.
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{
-		base: base,
-		cred: o.Credential,
-		http: &http.Client{
-			Transport: tr,
-			Timeout:   o.Timeout,
-			// A redirect is not followed: the credential would go to the new address, and an https to http
-			// redirect would send it in clear. The answer is the redirect itself, which is an error.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
+		base:          base,
+		cred:          o.Credential,
+		http:          &http.Client{Transport: tr, Timeout: o.Timeout, CheckRedirect: noRedirect},
+		stream:        &http.Client{Transport: tr, CheckRedirect: noRedirect},
 		now:           o.Now,
 		sleep:         o.Sleep,
 		maxRetryAfter: o.MaxRetryAfter,
@@ -236,21 +243,26 @@ func New(o Options) (*Client, error) {
 // BaseURL returns the server's address. It carries no credential.
 func (c *Client) BaseURL() string { return c.base.String() }
 
+// WithCredential returns a copy of the client that sends cred, to the same address and over the same connections. The
+// client itself keeps its own credential. A share link's visitor credential is renewed this way.
+func (c *Client) WithCredential(cred string) *Client {
+	cp := *c
+	cp.cred = cred
+	return &cp
+}
+
 // Do makes the request. A 429 or 503 to a GET or HEAD is repeated, up to maxAttempts, after the server's Retry-After
 // (seconds or an HTTP date), or after a second when it gives none. A wait longer than MaxRetryAfter is not made: the
 // error returns at once with the Retry-After in it. Other methods are never repeated.
 func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
-	if err := checkPath(r.Path); err != nil {
+	if r.Upload != nil {
+		return nil, errors.New("a streamed body needs Stream, which never repeats a request")
+	}
+	if err := checkRequest(r); err != nil {
 		return nil, err
 	}
-	method := r.Method
-	if method == "" {
-		method = http.MethodGet
-	}
-	target := *c.base
-	target.Path = c.base.Path + r.Path
-	target.RawPath = ""
-	target.RawQuery = r.Query.Encode()
+	method := methodOf(r)
+	target := c.target(r)
 	for attempt := 1; ; attempt++ {
 		resp, err := c.send(ctx, method, &target, r)
 		if err != nil {
@@ -278,14 +290,34 @@ func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
 	}
 }
 
-func (c *Client) send(ctx context.Context, method string, u *url.URL, r Request) (*Response, error) {
-	var body io.Reader
-	if r.Body != nil {
-		body = bytes.NewReader(r.Body)
+// methodOf is the request's method, GET when none is named.
+func methodOf(r Request) string {
+	if r.Method == "" {
+		return http.MethodGet
 	}
+	return r.Method
+}
+
+// target is the request's URL on the client's own address. Only the path and the query come from the request, so no
+// request can name another host.
+func (c *Client) target(r Request) url.URL {
+	u := *c.base
+	u.Path = c.base.Path + r.Path
+	u.RawPath = ""
+	u.RawQuery = r.Query.Encode()
+	return u
+}
+
+// newHTTPRequest builds the request with its headers. The credential is set here and nowhere else.
+func (c *Client) newHTTPRequest(ctx context.Context, method string, u *url.URL, r Request, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err
+	}
+	for k, vs := range r.Header {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if r.Accept != "" {
@@ -296,6 +328,18 @@ func (c *Client) send(ctx context.Context, method string, u *url.URL, r Request)
 	}
 	if c.cred != "" {
 		req.Header.Set("Authorization", "Bearer "+c.cred)
+	}
+	return req, nil
+}
+
+func (c *Client) send(ctx context.Context, method string, u *url.URL, r Request) (*Response, error) {
+	var body io.Reader
+	if r.Body != nil {
+		body = bytes.NewReader(r.Body)
+	}
+	req, err := c.newHTTPRequest(ctx, method, u, r, body)
+	if err != nil {
+		return nil, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -410,6 +454,26 @@ func retryAfter(h http.Header, now time.Time) (time.Duration, bool) {
 		return 0, true
 	}
 	return 0, false
+}
+
+// reservedHeaders are the headers a request may not set through Header: the client alone sets the credential, and the
+// host is the client's own address.
+var reservedHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie", "Host"}
+
+// checkRequest checks the path, and refuses extra headers that would carry a credential or name another host. The
+// refusal names the header, never its value.
+func checkRequest(r Request) error {
+	if err := checkPath(r.Path); err != nil {
+		return err
+	}
+	for k := range r.Header {
+		for _, name := range reservedHeaders {
+			if strings.EqualFold(k, name) {
+				return fmt.Errorf("a request may not set the %s header; the client sets it", name)
+			}
+		}
+	}
+	return nil
 }
 
 // checkPath refuses a path that is not absolute, that carries a query or fragment, or that climbs with "..".
