@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The installation's picture for the app icons and the favicon (decision 119). The server makes this choice once, at start, from
-// the icon file and the logo file it was given as data. The first that applies is used:
+// The installation's picture for the app icons and the favicon (decision 119). The server makes this choice each time it builds
+// the brand, at start and after an admin changes it (decision 141), from the icon and the logo it was given as data, each from
+// the config file or an upload. The first that applies is used:
 //
 //  1. ui.brand.icon_file, a PNG (the icons) or an SVG (the favicon);
 //  2. ui.brand.logo_file, a PNG for the icons when no icon file is a PNG, and an SVG for the favicon when no icon file is set;
@@ -57,20 +58,20 @@ func digest(data []byte) string {
 func decodeLogo(l *Logo) (image.Image, string) {
 	cfg, err := png.DecodeConfig(bytes.NewReader(l.data))
 	if err != nil {
-		return nil, fmt.Sprintf("ui.brand.logo_file cannot be read as a PNG (%v), so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", err)
+		return nil, fmt.Sprintf("%s cannot be read as a PNG (%v), so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", l.setting(), err)
 	}
 	if cfg.Width > maxIconPixels || cfg.Height > maxIconPixels {
-		return nil, fmt.Sprintf("ui.brand.logo_file is %dx%d pixels, more than %d on a side, so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", cfg.Width, cfg.Height, maxIconPixels)
+		return nil, fmt.Sprintf("%s is %dx%d pixels, more than %d on a side, so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", l.setting(), cfg.Width, cfg.Height, maxIconPixels)
 	}
 	img, err := png.Decode(bytes.NewReader(l.data))
 	if err != nil {
-		return nil, fmt.Sprintf("ui.brand.logo_file cannot be decoded (%v), so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", err)
+		return nil, fmt.Sprintf("%s cannot be decoded (%v), so the app icons and the favicon show the SelfCloud mark; the logo is still served at /brand/logo", l.setting(), err)
 	}
 	return img, ""
 }
 
-// pickIcons applies the rule to the two files. The icon file is a PNG or an SVG and was checked at start; the logo is checked here,
-// and only when the icons or the favicon would use it.
+// pickIcons applies the rule to the two pictures. The icon is a PNG or an SVG that passed checkPicture; the logo's pixels are
+// checked here, and only when the icons or the favicon would use it.
 func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 	var p iconPick
 	var iconPic image.Image
@@ -92,7 +93,7 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 		} else {
 			logoPic = img
 			if w, h := img.Bounds().Dx(), img.Bounds().Dy(); max(w, h) < plainLogoSide(fullIconPixels) {
-				p.notes = append(p.notes, fmt.Sprintf("ui.brand.logo_file is %dx%d pixels, smaller than the %d pixel icon, so the app icons enlarge it; a square PNG of %d pixels or more in ui.brand.icon_file gives sharper icons", w, h, fullIconPixels, fullIconPixels))
+				p.notes = append(p.notes, fmt.Sprintf("%s is %dx%d pixels, smaller than the %d pixel icon, so the app icons enlarge it; a square PNG of %d pixels or more in ui.brand.icon_file gives sharper icons", logo.setting(), w, h, fullIconPixels, fullIconPixels))
 			}
 		}
 	}

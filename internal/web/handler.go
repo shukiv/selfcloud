@@ -19,6 +19,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -60,8 +61,8 @@ type Options struct {
 	BrandAccent string
 	// BrandArtwork says the installation shows the SelfCloud artwork: it has no logo file, whatever its name (decision 126).
 	BrandArtwork bool
-	// IconFile is ui.brand.icon_file, read at start, or nil. LogoFile is ui.brand.logo_file, or nil. The icons and the
-	// favicon are drawn from them (decision 119); the server reads them with LoadIconFile and LoadLogo.
+	// IconFile is the icon, LogoFile the logo, or nil: the config file's (read with LoadIconFile and LoadLogo) or an
+	// upload's. The icons and the favicon are drawn from them (decision 119).
 	IconFile *Logo
 	LogoFile *Logo
 }
@@ -73,22 +74,76 @@ type Handler struct {
 	origins string
 	// officeOrigin is the origin of the office editor, with a leading space, or empty when office editing is off.
 	officeOrigin string
-	// index is index.html split at the nonce placeholder, or nil when the build has none. Joining
-	// the parts with a nonce gives the page for that response.
-	index []string
-	// brand names the manifest and colours the icons; icons are the drawn icons by path (pwa.go).
-	brand brandInfo
+	// page is index.html split at the nonce placeholder, with the name's placeholder still in it, or nil when the build has
+	// none. Each brand holds its own copy with the name in it.
+	page []string
+	// brand is the brand in use. A change builds a new one whole and swaps it in (decision 141), and a request reads it once,
+	// so no answer mixes two brands.
+	brand atomic.Pointer[Brand]
+}
+
+// Brand is one build of the installation's look in the web interface: the name the pages and the manifest carry, the drawn
+// icons, the brand's SVG files and the notes about them. It is never changed.
+type Brand struct {
+	// info names the manifest and colours the icons; icons are the drawn icons by path (pwa.go).
+	info  brandInfo
 	icons map[string]icon
 	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decisions 109 and 119).
 	svgs map[string]brandSVG
-	// notes are the lines the server logs at start about the icons (decision 119).
+	// index is the handler's page with the name in it, or nil when the build has none. Joining the parts with a nonce gives
+	// the page for that response.
+	index []string
+	// notes are the lines the server logs about the icons (decision 119).
 	notes []string
 }
 
-// IconNotes are the lines the server logs at start about the app icons and the favicon: why they show the mark, or that a logo
-// is refused for them. None is the usual case.
+// BrandOptions are what a brand is built from (decision 141): the name, the accent, whether the SelfCloud artwork shows (no
+// logo at all, decision 126), and the icon and the logo, from the config file or an upload, or nil.
+type BrandOptions struct {
+	Name    string
+	Accent  string
+	Artwork bool
+	Icon    *Logo
+	Logo    *Logo
+}
+
+// BuildBrand builds a brand whole: the icons, the favicon, the manifest's name and the page. It changes nothing the handler
+// serves until UseBrand swaps it in, so a brand that cannot be built leaves the one in use.
+func (h *Handler) BuildBrand(o BrandOptions) (*Brand, error) {
+	info := newBrandInfo(o.Name, o.Accent, o.Artwork)
+	pick, err := pickIcons(o.Icon, o.Logo, info)
+	if err != nil {
+		return nil, err
+	}
+	icons, err := buildIcons(info, pick.art)
+	if err != nil {
+		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
+	}
+	b := &Brand{info: info, icons: icons, svgs: brandSVGs(info, pick.favicon), notes: pick.notes}
+	if h.page != nil {
+		// The title and the noscript text carry the installation's name before any script runs (decision 109).
+		b.index = make([]string, len(h.page))
+		for i, part := range h.page {
+			b.index[i] = strings.ReplaceAll(part, brandPlaceholder, brandHTML(info.name))
+		}
+	}
+	return b, nil
+}
+
+// UseBrand swaps in a brand BuildBrand built: the next request is served from it.
+func (h *Handler) UseBrand(b *Brand) {
+	h.brand.Store(b)
+}
+
+// Notes are the lines about the brand's app icons and favicon: why they show the mark, or that a logo is refused for them.
+// None is the usual case.
+func (b *Brand) Notes() []string {
+	return b.notes
+}
+
+// IconNotes are the notes of the brand in use.
 func (h *Handler) IconNotes() []string {
-	return h.notes
+	return h.brand.Load().notes
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
@@ -111,29 +166,21 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
-	brand := newBrandInfo(opts.BrandName, opts.BrandAccent, opts.BrandArtwork)
-	pick, err := pickIcons(opts.IconFile, opts.LogoFile, brand)
-	if err != nil {
-		return nil, err
-	}
-	icons, err := buildIcons(brand, pick.art)
-	if err != nil {
-		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
-	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons,
-		svgs: brandSVGs(brand, pick.favicon), notes: pick.notes}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
 		if len(parts) == 1 {
 			return nil, errors.New("web: index.html has no CSP nonce placeholder; rebuild the web interface")
 		}
-		// The title and the noscript text carry the installation's name before any script runs (decision 109).
-		for i := range parts {
-			parts[i] = strings.ReplaceAll(parts[i], brandPlaceholder, brandHTML(brand.name))
-		}
-		h.index = parts
+		h.page = parts
 	}
+	b, err := h.BuildBrand(BrandOptions{Name: opts.BrandName, Accent: opts.BrandAccent, Artwork: opts.BrandArtwork,
+		Icon: opts.IconFile, Logo: opts.LogoFile})
+	if err != nil {
+		return nil, err
+	}
+	h.UseBrand(b)
 	return h, nil
 }
 
@@ -174,7 +221,7 @@ func (h *Handler) Serves(r *http.Request) bool {
 		return false
 	}
 	p := r.URL.Path
-	if p == wordmarkPath && !h.brand.artwork {
+	if p == wordmarkPath && !h.brand.Load().info.artwork {
 		return false
 	}
 	if isPWAPath(p) {
@@ -200,8 +247,9 @@ func hidden(p string) bool {
 }
 
 // ServeHTTP serves the file at the request path. A path with no file gets index.html, so the
-// client-side router can answer it.
+// client-side router can answer it. The brand is read once, so the answer comes from one brand.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b := h.brand.Load()
 	if r.URL.Path == shareTargetPath {
 		// The share target (decision 82). The body is never read: with no service worker in control, nothing the person
 		// shared reaches the server, and the page at /share says so. The answer is the same for every method.
@@ -227,7 +275,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "robots.txt", time.Time{}, strings.NewReader(robotsTxt))
 		return
 	}
-	if h.servePWA(w, r) {
+	if h.servePWA(w, r, b) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
@@ -245,7 +293,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		name, fallback = "index.html", true
 		data, err = fs.ReadFile(h.files, name)
 		if err != nil {
-			data = []byte(strings.ReplaceAll(notBuiltPage, brandPlaceholder, brandHTML(h.brand.name)))
+			data = []byte(strings.ReplaceAll(notBuiltPage, brandPlaceholder, brandHTML(b.info.name)))
 		}
 	}
 	hd := w.Header()
@@ -293,14 +341,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if name == "index.html" && h.index != nil && err == nil {
+	if name == "index.html" && b.index != nil && err == nil {
 		// The page is built per response: a fresh nonce, drawn from the system's random source.
 		nonce, nerr := newNonce()
 		if nerr != nil {
 			http.Error(w, "web: cannot draw a CSP nonce", http.StatusInternalServerError)
 			return
 		}
-		data = []byte(strings.Join(h.index, nonce))
+		data = []byte(strings.Join(b.index, nonce))
 		hd.Set("Content-Security-Policy", h.policy(nonce))
 	} else {
 		// Any other file and the not-built page: the policy with no nonce.
@@ -309,7 +357,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hd.Set("Content-Type", contentType(name))
 	if name == "offline.html" && err == nil {
 		// The offline page names the installation, so the worker's cached copy shows the installation's name.
-		data = bytes.ReplaceAll(data, []byte(brandPlaceholder), []byte(brandHTML(h.brand.name)))
+		data = bytes.ReplaceAll(data, []byte(brandPlaceholder), []byte(brandHTML(b.info.name)))
 		// Its validator covers the name it carries, so a renamed installation gives the worker a new copy to fetch (decision 65).
 		sum := sha256.Sum256(data)
 		hd.Set("ETag", `"`+hex.EncodeToString(sum[:16])+`"`)

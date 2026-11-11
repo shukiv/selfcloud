@@ -263,11 +263,12 @@ func manifestFor(b brandInfo) webManifest {
 	}
 }
 
-// servePWA answers the manifest or an icon. It reports false when p is neither.
-func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request) bool {
+// servePWA answers the manifest, an icon or one of the brand's SVG files, from the brand b. It reports false when p is none
+// of them.
+func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) bool {
 	p := r.URL.Path
 	if p == manifestPath {
-		data, err := json.Marshal(manifestFor(h.brand))
+		data, err := json.Marshal(manifestFor(b.info))
 		if err != nil {
 			http.Error(w, "web: cannot build the manifest", http.StatusInternalServerError)
 			return true
@@ -279,11 +280,20 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request) bool {
 		http.ServeContent(w, r, "manifest.webmanifest", time.Time{}, bytes.NewReader(data))
 		return true
 	}
-	if body, ok := h.svgs[p]; ok {
+	if body, ok := b.svgs[p]; ok {
 		serveBrandSVG(w, r, body)
 		return true
 	}
-	ic, ok := h.icons[p]
+	if isBrandSVGPath(p) {
+		// A brand file this brand has none of: the wordmark once the installation has its own logo (decision 126). Serves
+		// says so, but a request that read an older brand there reaches here; it gets 404, never the app page.
+		hd := w.Header()
+		hd.Set("Content-Security-Policy", h.policy(""))
+		hd.Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return true
+	}
+	ic, ok := b.icons[p]
 	if !ok {
 		return false
 	}

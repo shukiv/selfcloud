@@ -45,7 +45,10 @@ func brandFile(name string) []byte {
 }
 
 // artworkLogo is the SelfCloud logo, the tile with the wordmark, for the default brand's logo.
-var artworkLogo = &Logo{data: brandFile("selfcloud-logo.svg"), contentType: "image/svg+xml"}
+var artworkLogo = func() *Logo {
+	data := brandFile("selfcloud-logo.svg")
+	return &Logo{data: data, contentType: TypeSVG, sum: digest(data)}
+}()
 
 // ArtworkLogo is the SelfCloud logo served at /brand/logo when the installation shows the artwork.
 func ArtworkLogo() *Logo {
