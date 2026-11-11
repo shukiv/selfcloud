@@ -74,12 +74,15 @@ var settingDefs = []settingDef{
 	{key: "office.max_file_bytes", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "search.enabled", typ: TypeBool},
 	{key: "search.office_text", typ: TypeBool},
-	{key: "sessions.admin_idle_timeout", typ: TypeDuration, min: 5 * minute, max: day},
-	{key: "sessions.admin_max_age", typ: TypeDuration, min: hour, max: 30 * day},
+	// The admin pair can only shorten decision 84's hardening (12 hours idle, 7 days in all); the file stays free.
+	{key: "sessions.admin_idle_timeout", typ: TypeDuration, min: 5 * minute, max: 12 * hour},
+	{key: "sessions.admin_max_age", typ: TypeDuration, min: hour, max: 7 * day},
 	{key: "sessions.idle_timeout", typ: TypeDuration, min: 15 * minute, max: 30 * day},
 	{key: "sessions.max_age", typ: TypeDuration, min: hour, max: 90 * day},
 	{key: "sharing.max_expiry", typ: TypeDuration, min: hour, max: 3650 * day, zero: true},
-	{key: "storage.min_free", typ: TypeBytes, min: 0, max: int64(TiB)},
+	// The database shares the data disk: 256 MiB keeps room for its writes (sessions, the audit, the journal), so uploads
+	// and readiness refuse before the disk is full. The file may still set less.
+	{key: "storage.min_free", typ: TypeBytes, min: 256 * int64(MiB), max: int64(TiB)},
 	{key: "trash.retention", typ: TypeDuration, min: day, max: 3650 * day},
 	{key: "upload.max_chunk_size", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "upload.max_file_size", typ: TypeBytes, min: int64(MiB), max: int64(16 * TiB)},
