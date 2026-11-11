@@ -72,7 +72,31 @@ export async function launchBrowser(binary, profileDir, { mouse = false, finger 
   const targets = await (await fetch(`${base}/json/list`)).json();
   const page = targets.find((t) => t.type === 'page');
   if (!page) throw new Error('the browser has no page target');
-  return { proc, wsUrl: page.webSocketDebuggerUrl };
+  const version = await (await fetch(`${base}/json/version`)).json();
+  return { proc, wsUrl: page.webSocketDebuggerUrl, browserWsUrl: version.webSocketDebuggerUrl };
+}
+
+// watchTargetCrashes listens at the browser, not at a page, for crashed targets. A page's own Inspector.targetCrashed carries
+// nothing, while the browser's Target.targetCrashed names why the process ended (killed, crashed, oom or abnormal) and its exit
+// code or signal. crashes holds one line for each crash.
+export function watchTargetCrashes(browserWsUrl) {
+  const socket = new WebSocket(browserWsUrl);
+  const crashes = [];
+  const known = new Map();
+  socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: 'Target.setDiscoverTargets', params: { discover: true } }));
+  socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    const info = msg.params?.targetInfo;
+    if (info && (msg.method === 'Target.targetCreated' || msg.method === 'Target.targetInfoChanged')) {
+      known.set(info.targetId, info);
+    } else if (msg.method === 'Target.targetCrashed') {
+      const { targetId, status, errorCode } = msg.params;
+      const t = known.get(targetId);
+      crashes.push(`${t ? `${t.type} ${targetId} at ${t.url}` : `target ${targetId}`} crashed: ${status} (code ${errorCode})`);
+    }
+  };
+  socket.onerror = () => undefined;
+  return { crashes, socket, close: () => socket.close() };
 }
 
 // openedTab waits for the tab a script opened (decision 102): the browser's page list holds it at pathPart, and the returned

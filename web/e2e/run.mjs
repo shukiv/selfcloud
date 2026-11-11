@@ -7,13 +7,13 @@
 //
 // Run with make e2e, which builds the binary and the interface first.
 import { execFile, spawn } from 'node:child_process';
-import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { freePort, launchBrowser, openTab, Page } from './cdp.mjs';
+import { freePort, launchBrowser, openTab, Page, watchTargetCrashes } from './cdp.mjs';
 import { linkChecks } from './sharePublic.mjs';
 import { peopleFocusChecks, sharingChecks } from './shareDialog.mjs';
 import * as owner from './owner.mjs';
@@ -757,6 +757,8 @@ async function main() {
   server.stdout.on('data', (d) => (serverLog += d));
   server.stderr.on('data', (d) => (serverLog += d));
   let browser = null;
+  // crashWatch hears the browser's own report of a crashed process (its reason and exit code); see watchTargetCrashes.
+  let crashWatch = null;
   // l1Browser is the list's own browser, while its checks run (see the l1 call).
   let l1Browser = null;
   let ic2Browser = null;
@@ -800,6 +802,7 @@ async function main() {
 
     const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'), { ignoreCertificateErrors: true });
     browser = launched.proc;
+    crashWatch = watchTargetCrashes(launched.browserWsUrl);
     page = new Page(launched.wsUrl);
     page.base = base;
     await page.start(EXPECTED);
@@ -1185,6 +1188,18 @@ async function main() {
     sec2Browser?.kill();
     server.kill();
     await fake.close();
+    crashWatch?.close();
+    let crashReport = '';
+    if (crashWatch?.crashes.length || page?.errors?.some((e) => e.includes('renderer crashed'))) {
+      const profile = join(dir, 'chrome-profile');
+      const log = await readFile(`${profile}.stderr.log`, 'utf8').catch(() => '');
+      const dumps = await readdir(`${profile}.crashes`).catch(() => []);
+      crashReport = [
+        `browser crashes: ${crashWatch?.crashes.join(' | ') || '(the browser reported none)'}`,
+        `browser stderr, last 40 lines:\n${log.trimEnd().split('\n').slice(-40).join('\n')}`,
+        `browser crash dumps: ${dumps.join(' ') || 'none'}`,
+      ].join('\n');
+    }
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
       await new Promise((r) => setTimeout(r, 200));
       // Chrome can still be writing its profile after the kill (gates d3d and fu1b failed a passed run on ENOTEMPTY), so
@@ -1194,6 +1209,9 @@ async function main() {
     if (!passed || results.some((r) => !r.ok)) {
       console.error(serverLog);
       if (page?.errors?.length) console.error(`browser errors: ${page.errors.join(' | ')}`);
+      // A crashed process is explained here, while the run's folder is still there: the browser's own report, the last lines of
+      // its stderr (a CHECK failure, a shared-memory or GPU fault) and the crash dumps it wrote.
+      if (crashReport) console.error(crashReport);
     }
   }
 }
