@@ -187,6 +187,41 @@ describe("Listing focus: the press's focus is applied with the click's own updat
     expect((container.querySelector('[data-id="n6"]') as HTMLElement).getAttribute("tabindex")).toBe("0");
   });
 
+  it("a click on a row's checkbox is one page render, and the focus held for it is dropped, not applied a turn later", async () => {
+    let focusCalls = 0;
+    function Probe() {
+      const [sel, setSel] = useState<Set<string>>(new Set());
+      const [focus, setFocus] = useState<string | null>(null);
+      pageRenders.n += 1;
+      return (
+        <Listing
+          {...props(sel, focus)}
+          onFocusItem={() => {
+            focusCalls += 1;
+          }}
+          onRowClick={(i) => {
+            setSel(new Set([items[i].id]));
+            setFocus(items[i].id);
+          }}
+        />
+      );
+    }
+    const { container } = render(<Probe />);
+    const box = container.querySelector('[data-id="n4"] .row-check input[type="checkbox"]') as HTMLElement;
+    expect(box).not.toBeNull();
+    pageRenders.n = 0;
+    fireEvent.pointerDown(box, { pointerType: "mouse" });
+    act(() => box.focus());
+    fireEvent.pointerUp(box, { pointerType: "mouse" });
+    fireEvent.click(box);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(pageRenders.n).toBe(1);
+    expect(focusCalls).toBe(0);
+    expect((container.querySelector('[data-id="n4"]') as HTMLElement).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("is applied after the release when no click comes of it (the control stopped it)", async () => {
     const { container } = render(<Page />);
     const row = container.querySelector('[data-id="n8"]') as HTMLElement;
@@ -230,6 +265,16 @@ describe("Listing focus: a press released off its row (decision 128)", () => {
     fireEvent.keyDown(document.body, { key: "Tab" });
     act(() => row5.focus());
     expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a press that the browser cancels does not move the focus when no focus is in the row", async () => {
+    const onFocusItem = vi.fn();
+    const { container } = render(<Listing {...props(new Set())} onFocusItem={onFocusItem} />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    fireEvent.pointerCancel(row5, { pointerType: "mouse" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(onFocusItem).not.toHaveBeenCalled();
   });
 
   it("a touch that the browser cancels for a scroll does not move the focus when no focus is in the row", async () => {
