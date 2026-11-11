@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -306,6 +307,29 @@ func TestSettingsPatchRefusesValuesPastTheirBounds(t *testing.T) {
 		if keys, _ := e.Details["keys"].([]any); e.Details["reason"] != "invalid_setting" || !slices.Equal(keys, []any{key}) {
 			t.Errorf("%s = %s: details = %v", key, value, e.Details)
 		}
+	}
+}
+
+// TestSettingsPatchRefusesARepeatedKey: a key named twice inside set is refused and named, and nothing changes; set must
+// be an object.
+func TestSettingsPatchRefusesARepeatedKey(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	body := json.RawMessage(`{"set":{"trash.retention":"48h","search.enabled":false,"trash.retention":"72h"}}`)
+	e := wantError(t, call(t, s, "PATCH", "/api/v1/settings", admin, body), 400, apierr.InvalidRequest)
+	if keys, _ := e.Details["keys"].([]any); !strings.Contains(e.Message, "trash.retention") ||
+		!slices.Equal(keys, []any{"trash.retention"}) {
+		t.Errorf("a repeated key: %q %v", e.Message, e.Details)
+	}
+	if v := getSettings(t, s, admin).get(t, "trash.retention"); v.Source != "default" {
+		t.Errorf("trash.retention = %+v after a refused change", v)
+	}
+	if n := len(settingsAudit(t, s)); n != 0 {
+		t.Errorf("a refused change wrote %d audit rows", n)
+	}
+	for _, raw := range []string{`{"set":["trash.retention"]}`, `{"set":"trash.retention"}`} {
+		wantError(t, call(t, s, "PATCH", "/api/v1/settings", admin, json.RawMessage(raw)), 400, apierr.InvalidRequest)
 	}
 }
 
