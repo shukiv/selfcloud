@@ -465,7 +465,10 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     await mouse(page, 'mouseMoved', start);
     await mouse(page, 'mousePressed', start);
     await glide(page, start, bottom, {});
-    await sleepMs(1500);
+    // The edge scroll runs a frame at a time, so its pace depends on the machine's load: the hold lasts until the first tile is off
+    // the top (or 8 s pass), and only then is the page read.
+    const offTop = `(() => { const t = document.querySelector(${q(itemSel('l01.txt'))}); return t ? t.getBoundingClientRect().bottom < 0 : false; })()`;
+    for (const end = Date.now() + 8000; Date.now() < end && !(await page.evaluate(offTop)); ) await sleepMs(200);
     const scrolled = await page.evaluate(`window.scrollY`);
     const sel = await selectedNames(page);
     await mouse(page, 'mouseReleased', bottom);
@@ -599,7 +602,11 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
       const from = await nameAt(page, 'g11.txt');
       const to = await centre(page, itemSel('Alpha'));
       const mid = await dragTo(page, from, to, {
-        during: () => page.evaluate(`(() => { const g = document.querySelector('[data-testid="drag-ghost"]'); if (!g) return null; const r = g.getBoundingClientRect(); return { text: g.textContent, left: r.left, right: r.right, top: r.top, wide: innerWidth }; })()`),
+        // The ghost follows the pointer once the gesture has begun, which can be after the glide's last move: it is waited for.
+        during: async () => {
+          await page.waitFor(`!!document.querySelector('[data-testid="drag-ghost"]')`, 3000).catch(() => undefined);
+          return page.evaluate(`(() => { const g = document.querySelector('[data-testid="drag-ghost"]'); if (!g) return null; const r = g.getBoundingClientRect(); return { text: g.textContent, left: r.left, right: r.right, top: r.top, wide: innerWidth }; })()`);
+        },
       });
       check(mid !== null && mid.text.includes('העברה'), `the ghost is in Hebrew (${mid?.text})`);
       check(mid !== null && mid.right <= to.x && mid.left >= 0, `the ghost lies on the pointer's left, the end side in right to left, and inside the window (ghost ${mid?.left} to ${mid?.right}, pointer ${to.x})`);
