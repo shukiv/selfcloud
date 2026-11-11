@@ -485,6 +485,41 @@ func TestPictureSizeIsCappedBeforeTheBodyIsRead(t *testing.T) {
 	}
 }
 
+// TestPictureAtTheCapIsStored: the route's cap is the file's: a picture of exactly 256 KiB is stored and one byte more is
+// refused, whether the body declares its length or not.
+func TestPictureAtTheCapIsStored(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	sized := func(n int, pad byte) []byte {
+		svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
+		return append(svg, bytes.Repeat([]byte{pad}, n-len(svg))...)
+	}
+	send := func(body []byte, declared bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, logoRoute, bytes.NewReader(body))
+		if !declared {
+			req.ContentLength = -1
+		}
+		req.Header.Set("Content-Type", "image/svg+xml")
+		req.Header.Set("Authorization", "Bearer "+admin)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	for i, declared := range []bool{true, false} {
+		pad := []byte{' ', '\n'}[i]
+		at := sized(web.MaxLogoBytes, pad)
+		wantStatus(t, send(at, declared), 200)
+		if p := pictureIn(t, getSettings(t, s, admin), "ui.brand.logo"); p.SHA256 != sha256Hex(at) {
+			t.Errorf("declared %v: logo = %+v", declared, p)
+		}
+		e := wantError(t, send(sized(web.MaxLogoBytes+1, pad), declared), 413, apierr.TooLarge)
+		if e.Details["limit_bytes"] != float64(web.MaxLogoBytes) {
+			t.Errorf("declared %v: details %v", declared, e.Details)
+		}
+	}
+}
+
 // TestPictureFileLocksIt: a picture the config file sets is locked: PUT, DELETE and an empty body are 409, a PATCH cannot
 // name it or its file key, and the settings show the file's picture with no path. The other picture stays open.
 func TestPictureFileLocksIt(t *testing.T) {
@@ -505,6 +540,20 @@ func TestPictureFileLocksIt(t *testing.T) {
 		e := wantError(t, rec, 409, apierr.Conflict)
 		if keys, _ := e.Details["keys"].([]any); e.Details["reason"] != "setting_locked" || !slices.Equal(keys, []any{"ui.brand.logo"}) {
 			t.Errorf("details %v", e.Details)
+		}
+	}
+	// The lock refuses before the body is read: none of it, whether it declares its length or not.
+	for _, length := range []int64{-1, 64 << 20} {
+		body := &pngStream{n: 64 << 20}
+		req := httptest.NewRequest(http.MethodPut, logoRoute, body)
+		req.ContentLength = length
+		req.Header.Set("Content-Type", "image/png")
+		req.Header.Set("Authorization", "Bearer "+admin)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		wantError(t, rec, 409, apierr.Conflict)
+		if body.read != 0 {
+			t.Errorf("length %d: a locked upload read %d bytes", length, body.read)
 		}
 	}
 	for _, change := range []map[string]any{
@@ -871,6 +920,34 @@ func TestPictureThatCannotBeStoredIsNotUsed(t *testing.T) {
 	}
 	if info := decode[infoResponse](t, do(t, s.Handler(), "GET", "/api/v1/info")); !info.Brand.Artwork {
 		t.Errorf("info brand = %+v", info.Brand)
+	}
+}
+
+// TestFailedChangeKeepsTheStoredPictureAndItsFile: the file of the picture an upload replaces, or a DELETE removes, goes only
+// after the change is stored. When the transaction fails, the picture in use, its row and its file all stay.
+func TestFailedChangeKeepsTheStoredPictureAndItsFile(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	wantStatus(t, putPicture(t, s, admin, logoRoute, "image/svg+xml", []byte(testLogoSVG)), 200)
+	sum := sha256Hex([]byte(testLogoSVG))
+	execOn(t, s, "CREATE TRIGGER refuse_settings_audit BEFORE INSERT ON audit_log "+
+		"WHEN NEW.action = 'installation.settings' BEGIN SELECT RAISE(ABORT, 'audit refused'); END")
+	next := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><title>next</title></svg>`)
+	for _, send := range []func() *httptest.ResponseRecorder{
+		func() *httptest.ResponseRecorder { return putPicture(t, s, admin, logoRoute, "image/svg+xml", next) },
+		func() *httptest.ResponseRecorder { return call(t, s, http.MethodDelete, logoRoute, admin, nil) },
+	} {
+		wantStatus(t, send(), 500)
+		if names := brandFiles(t, s); !slices.Equal(names, []string{"logo-" + sum + ".svg"}) {
+			t.Errorf("brand folder = %v", names)
+		}
+		if rows, err := s.store.Settings(context.Background()); err != nil || rows["ui.brand.logo"] != "image/svg+xml sha256:"+sum {
+			t.Errorf("rows = %v, %v", rows, err)
+		}
+		if logo := serveRaw(t, s, http.MethodGet, "/brand/logo"); logo.Body.String() != testLogoSVG {
+			t.Errorf("/brand/logo: %.80s", logo.Body.String())
+		}
 	}
 }
 
