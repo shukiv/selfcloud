@@ -100,8 +100,8 @@ type infoBrand struct {
 	Name    string  `json:"name"`
 	Accent  string  `json:"accent"`
 	LogoURL *string `json:"logo_url"`
-	// Artwork is true when the installation shows the SelfCloud artwork, which is whenever it has no logo file (decisions 109 and
-	// 126).
+	// Artwork is true when the installation shows the SelfCloud artwork, which is whenever it has no logo, from the file or an
+	// upload (decisions 109, 126 and 141).
 	Artwork bool         `json:"artwork"`
 	Palette *infoPalette `json:"palette,omitempty"`
 	Sidebar *infoSidebar `json:"sidebar,omitempty"`

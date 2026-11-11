@@ -7860,10 +7860,10 @@ components:
           example: "#053D8E"
         logo_url:
           type: [string, "null"]
-          description: The URL of the installation's own logo file (`/brand/logo`), or null when it has no logo file. The file's path is never sent. The SelfCloud artwork has no URL here; `artwork` says whether it is shown.
+          description: The URL of the installation's own logo (`/brand/logo`), from the config file or an admin's upload, or null when it has neither. The file's path is never sent. The SelfCloud artwork has no URL here; `artwork` says whether it is shown.
         artwork:
           type: boolean
-          description: "True when the installation shows the SelfCloud artwork, which is whenever it has no logo file, whatever its name. The artwork is one picture with the SelfCloud name inside it, so the web interface draws no name beside it; the installation's name labels the picture and titles the pages (decisions 109 and 126)."
+          description: "True when the installation shows the SelfCloud artwork, which is whenever it has no logo, from the config file or an upload, whatever its name. The artwork is one picture with the SelfCloud name inside it, so the web interface draws no name beside it; the installation's name labels the picture and titles the pages (decisions 109, 126 and 141)."
         palette:
           type: object
           description: The colour tokens the installation overrides, one set per theme. Absent when it overrides none; a theme with no override is absent too. Each token is #rrggbb.
