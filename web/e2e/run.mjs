@@ -7,7 +7,7 @@
 //
 // Run with make e2e, which builds the binary and the interface first.
 import { execFile, spawn } from 'node:child_process';
-import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, statfs, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -82,6 +82,18 @@ const ADMIN = { email: 'ada@example.com', name: 'Ada Admin', password: 'correct 
 const BRAND = { name: 'E2E Drive', accent: E2E_ACCENT };
 const INVITEE = { email: 'dana@example.com', name: 'Dana Invited', password: 'correct horse battery staple' };
 const TENANT = { name: 'Acme Ltd', owner: { email: 'owen@example.com', name: 'Owen Owner' } };
+
+// cgroupMemory reads this process's cgroup (v2) memory figures for a crash report: current, peak and limit in MiB, and the
+// counts of limit hits and kills. A machine without them says so.
+async function cgroupMemory() {
+  const own = (await readFile('/proc/self/cgroup', 'utf8').catch(() => '')).match(/^0::(.*)$/m)?.[1];
+  if (own === undefined) return 'no cgroup v2';
+  const base = join('/sys/fs/cgroup', own);
+  const read = (f) => readFile(join(base, f), 'utf8').then((s) => s.trim()).catch(() => '?');
+  const mib = (v) => (/^\d+$/.test(v) ? `${Math.round(Number(v) / 2 ** 20)} MiB` : v);
+  const events = (await read('memory.events')).replace(/\n/g, ', ');
+  return `current ${mib(await read('memory.current'))}, peak ${mib(await read('memory.peak'))}, max ${mib(await read('memory.max'))}, events: ${events}`;
+}
 
 const results = [];
 function check(ok, what) {
@@ -1198,6 +1210,8 @@ async function main() {
         `browser crashes: ${crashWatch?.crashes.join(' | ') || '(the browser reported none)'}`,
         `browser stderr, last 40 lines:\n${log.trimEnd().split('\n').slice(-40).join('\n')}`,
         `browser crash dumps: ${dumps.join(' ') || 'none'}`,
+        `free disk where the profile lives: ${await statfs(dir).then((s) => `${((s.bavail * s.bsize) / 2 ** 30).toFixed(2)} GiB`).catch((e) => e.code)}`,
+        `memory of this cgroup: ${await cgroupMemory()}`,
       ].join('\n');
     }
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
