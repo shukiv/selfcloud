@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -552,9 +553,18 @@ func TestSettingsLowerIdleEndsTheSwitchPrompt(t *testing.T) {
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
-	s.sessionClock = func() time.Time { return time.Now().Add(-16 * time.Minute) }
-	_, ann := verifiedUser(t, s, key, acc.ID, "ann@example.com")
-	s.sessionClock = time.Now
+	annUser, _ := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	// Ann's browser holds a session last used sixteen minutes ago, inside the default week.
+	secret, hash := auth.NewToken()
+	csrf, _ := auth.NewToken()
+	seen := time.Now().Add(-16 * time.Minute)
+	if err := s.store.Write(context.Background(), func(tx *store.Tx) error {
+		return tx.InsertSession(context.Background(), &store.Session{IDHash: hash, UserID: annUser.ID, AccountID: acc.ID,
+			CSRFToken: csrf, CreatedAt: seen, LastSeenAt: seen, ExpiresAt: seen.Add(7 * 24 * time.Hour)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ann := testSession{cookie: &http.Cookie{Name: s.sessionCookie, Value: secret}, csrf: csrf}
 	benID := newMemberUser(t, s, key, acc.ID, "ben@example.com")
 	_, tok := signInLinkOf(t, s, key, acc.ID, benID, nil)
 	wantStatus(t, patchSettings(t, s, admin, map[string]any{"sessions.idle_timeout": "15m"}), 200)
