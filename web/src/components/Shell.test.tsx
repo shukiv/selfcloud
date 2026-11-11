@@ -410,6 +410,21 @@ describe("Shell", () => {
       expect(alert.textContent).not.toContain("server text");
     });
 
+    // With the hidden spaces shown off, a hide still reads the hidden list again. The drive lists name a
+    // location from that list, and no list mounts again to read it, so without this read a hidden space's items lose its name.
+    it("hiding a space with the hidden spaces shown off reads the hidden list again, so the drive lists keep its name", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      mocks.loadFolders.mockResolvedValue([team("fld_a", "Team A")]);
+      renderShell("/files");
+      const nav = await openNav();
+      const before = mocks.loadHiddenFolders.mock.calls.length;
+      fireEvent.click(await within(nav).findByRole("button", { name: "Options for Team A" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Hide" }));
+      await waitFor(() => expect(mocks.setHidden).toHaveBeenCalledWith("fld_a", true));
+      await waitFor(() => expect(mocks.loadHiddenFolders.mock.calls.length).toBeGreaterThan(before));
+    });
+
     it("a refused hide shows the refusal by its code, and the page stays", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A")]);

@@ -362,7 +362,8 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   // hideSpace hides a team space from the caller's own list, or shows it again. Access does not change. A refused
   // change leaves the lists as they are; both are read again either way, so they show the truth. A failed read
-  // keeps the list it had.
+  // keeps the list it had. The hidden list is read even while the hidden spaces are not shown: the drive lists name a
+  // location from it, and none mounts again to read it.
   // A failure is shown by its code, and a late answer after a change of person is dropped (sessionChanged is taken first).
   const hideSpace = async (team: FolderAccess, hidden: boolean) => {
     const stale = sessionChanged();
@@ -371,7 +372,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     };
     setShellError(null);
     await setHidden(team.id, hidden).catch(failed);
-    await Promise.all([loadFolders().catch(failed), showHidden ? loadHiddenFolders().catch(failed) : undefined]);
+    await Promise.all([loadFolders().catch(failed), loadHiddenFolders().catch(failed)]);
   };
 
   const go = (key: string) => {
