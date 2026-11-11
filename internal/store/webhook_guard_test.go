@@ -72,6 +72,9 @@ var webhookAuditNoEvent = map[string]string{
 	"cli.sign_in":       "sign-in activity is not on the event list (cli4, decision 125)",
 	"cli.device_revoke": "sign-in activity is not on the event list (cli4, decision 125)",
 
+	// The installation's settings belong to no account (decision 139).
+	"installation.settings": "the installation's settings belong to no account, so there is nothing to report to",
+
 	"user.password_reset":     "password changes are not on the event list",
 	"user.password_set":       "password changes are not on the event list",
 	"admin.password_refused":  "a refused attempt changes nothing: no event (decision 41)",

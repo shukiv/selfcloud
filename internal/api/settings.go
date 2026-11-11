@@ -78,9 +78,6 @@ const (
 	maxSettingKey     = 128
 )
 
-// actionSettings is the audit action of a change to the settings. Its entry belongs to the installation (no account).
-const actionSettings = "installation.settings"
-
 // handlePatchSettings changes settings: set stores values, reset removes them so the defaults apply. All or nothing: an
 // unknown key is a 400, a locked key a 409, and any invalid value a 400 that names every invalid key.
 func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) error {
@@ -141,7 +138,8 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 					return err
 				}
 			}
-			return tx.InsertAudit(ctx, s.auditEntry(r, "", actionSettings, "settings", changes))
+			// The entry belongs to the installation (no account). The action is a literal, as the audit guards read it.
+			return tx.InsertAudit(ctx, s.auditEntry(r, "", "installation.settings", "settings", changes))
 		})
 		if err != nil {
 			return err
