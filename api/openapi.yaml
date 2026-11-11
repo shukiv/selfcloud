@@ -3283,8 +3283,10 @@ paths:
       operationId: listAncestors
       summary: The reachable ancestors of a node, in one answer
       description: |
-        The folders above a file or a directory, from the folder's root down to the parent, topmost first, the
-        parent last. The node itself is not in the list. A folder's root has none, and gets an empty list.
+        The folders above a file or a directory, topmost first, the parent last: from the folder's root down to the
+        parent, but at most the 64 nearest ancestors. For a node more than 64 levels below its root the list starts at
+        the 64th-nearest ancestor, not at the root. The node itself is not in the list. A folder's root has none, and
+        gets an empty list.
         Each item is the answer `GET /nodes/{nod}` gives for that node, with the caller's `role` on it.
         The walk stops at the first node the caller cannot reach, and nothing above that node is returned or
         hinted at. Reach is the same access `GET /nodes/{nod}` uses: a share link stops at the link's node, a
