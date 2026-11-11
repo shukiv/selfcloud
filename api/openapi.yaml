@@ -2030,7 +2030,7 @@ paths:
           `setting_locked`, `details.keys` `["ui.brand.logo"]`, before the body is read;
         - a `Content-Type` other than `image/png` or `image/svg+xml`: `415 unsupported_media_type`;
         - a body over 256 KiB: `413 too_large` with `details.limit_bytes`; a declared length over it is refused
-          unread, and an undeclared one is read no further than the cap;
+          unread, and an undeclared one is read no more than one byte past the cap;
         - a PNG without the PNG signature, an SVG without `<svg`, or a PNG sent as SVG: `400 invalid_request`,
           `details.reason` `invalid_picture`;
         - a PNG whose header does not give its size, or gives more than 4096 pixels on a side or 4194304 pixels in
