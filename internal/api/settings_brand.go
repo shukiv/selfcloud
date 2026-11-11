@@ -32,11 +32,16 @@ const (
 	pictureUploaded = "uploaded"
 )
 
+// pictureInvalid is the audit's old value for a stored row the server did not write. Its text is never shown.
+const pictureInvalid = "invalid"
+
 // picture is one of the installation's pictures as the server serves it: its bytes, or nil for none, and where it comes
-// from.
+// from. ignored is the stored row the start did not use because it or its file failed the checks; DELETE or an upload
+// clears it.
 type picture struct {
-	img  *web.Logo
-	from string
+	img     *web.Logo
+	from    string
+	ignored string
 }
 
 // brandPictures are the installation's logo and icon as the server serves them now. It is never changed: a change swaps in
@@ -97,6 +102,31 @@ func pictureText(p picture) string {
 	return p.img.ContentType() + " sha256:" + p.img.SHA256()
 }
 
+// storedText is what the settings table holds for p, as the audit shows it: the picture's type and hash, the row the start
+// ignored, or none. A row the server did not write is shown as invalid.
+func storedText(p picture) string {
+	if p.img != nil || p.ignored == "" {
+		return pictureText(p)
+	}
+	if !pictureRowPattern.MatchString(p.ignored) {
+		return pictureInvalid
+	}
+	return p.ignored
+}
+
+// uploadedFile is the name of p's file in the brand folder: the upload in use, or the one a row the start ignored names
+// when the server wrote that row. It is empty for none, for the config file's picture, and for a row the server did not
+// write, so no path is ever made from such a row.
+func (k pictureKind) uploadedFile(p picture) string {
+	if p.from == pictureUploaded {
+		return k.fileName(p.img.ContentType(), p.img.SHA256())
+	}
+	if m := pictureRowPattern.FindStringSubmatch(p.ignored); m != nil {
+		return k.fileName(m[1], m[2])
+	}
+	return ""
+}
+
 // brandDir is the folder of the uploaded pictures.
 func (s *Server) brandDir() string {
 	return filepath.Join(s.cfg.DataDir, "brand")
@@ -136,6 +166,7 @@ func (s *Server) startPictures(cfg *config.Config, rows map[string]string) (*bra
 		img, err := s.readStoredPicture(k, row)
 		if err != nil {
 			s.log.Warn("an uploaded picture is not used", "key", k.key, "reason", err.Error())
+			p = k.with(p, picture{from: pictureNone, ignored: row})
 			continue
 		}
 		p = k.with(p, picture{img: img, from: pictureUploaded})
@@ -325,7 +356,7 @@ func (s *Server) putPicture(w http.ResponseWriter, r *http.Request, k pictureKin
 		return err
 	}
 	ctx := r.Context()
-	changes := map[string]any{k.key: map[string]any{"old": pictureText(old), "new": pictureText(k.of(next)), "source": string(config.SourceSettings)}}
+	changes := map[string]any{k.key: map[string]any{"old": storedText(old), "new": pictureText(k.of(next)), "source": string(config.SourceSettings)}}
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := tx.SetSetting(ctx, k.key, pictureText(k.of(next))); err != nil {
 			return err
@@ -338,17 +369,16 @@ func (s *Server) putPicture(w http.ResponseWriter, r *http.Request, k pictureKin
 		return err
 	}
 	s.useBrand(set, next, built)
-	if old.from == pictureUploaded {
-		if oldName := k.fileName(old.img.ContentType(), old.img.SHA256()); oldName != name {
-			s.removePicture(oldName)
-		}
+	if oldName := k.uploadedFile(old); oldName != "" && oldName != name {
+		s.removePicture(oldName)
 	}
 	writeJSON(w, http.StatusOK, s.settingsAnswer())
 	return nil
 }
 
 // deletePicture removes the upload of the kind k: the picture goes back to the SelfCloud artwork (decision 126), or for the
-// icon to what decision 119 picks without it. With no upload in use it changes nothing.
+// icon to what decision 119 picks without it. A stored row the start ignored is removed too, with the file it names, so the
+// start stops warning about it. With neither it changes nothing.
 func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k pictureKind) error {
 	if err := requireAdmin(r); err != nil {
 		return err
@@ -360,7 +390,7 @@ func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k picture
 	defer s.settingsMu.Unlock()
 	cur := s.pics.Load()
 	old := k.of(cur)
-	if old.from != pictureUploaded {
+	if old.from != pictureUploaded && old.ignored == "" {
 		writeJSON(w, http.StatusOK, s.settingsAnswer())
 		return nil
 	}
@@ -371,7 +401,7 @@ func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k picture
 		return err
 	}
 	ctx := r.Context()
-	changes := map[string]any{k.key: map[string]any{"old": pictureText(old), "new": pictureNone, "source": string(config.SourceDefault)}}
+	changes := map[string]any{k.key: map[string]any{"old": storedText(old), "new": pictureNone, "source": string(config.SourceDefault)}}
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := tx.DeleteSetting(ctx, k.key); err != nil {
 			return err
@@ -382,7 +412,9 @@ func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k picture
 		return err
 	}
 	s.useBrand(set, next, built)
-	s.removePicture(k.fileName(old.img.ContentType(), old.img.SHA256()))
+	if name := k.uploadedFile(old); name != "" {
+		s.removePicture(name)
+	}
 	writeJSON(w, http.StatusOK, s.settingsAnswer())
 	return nil
 }

@@ -2069,8 +2069,10 @@ paths:
       description: |
         As the upload: an installation admin, refused with `409 setting_locked` when the config file sets
         `ui.brand.logo_file`. The logo goes back to the SelfCloud artwork (decision 126); the stored file and its row
-        are removed, in one transaction with an audit entry whose `new` is `none` and `source` `default`. With no
-        uploaded logo in use, nothing changes and nothing is audited.
+        are removed, in one transaction with an audit entry whose `new` is `none` and `source` `default`. A stored logo
+        the server did not use at start, because it or its file failed the checks, is removed the same way, so the
+        start stops warning about it; the audit's `old` is its row, or `invalid` for a row the server did not write,
+        whose text names no file that is touched. With neither, nothing changes and nothing is audited.
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":
