@@ -4,7 +4,7 @@
 // test needs no Chrome: the test emits the browser's events and answers the calls itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Page } from './cdp.mjs';
+import { Page, watchTargetCrashes } from './cdp.mjs';
 
 // FakeSocket answers each call with an empty result, except the evaluations the test sets an answer for. A call is not answered
 // while silent is set, which is how a test holds a call open.
@@ -96,6 +96,27 @@ test('a call waiting on a socket that closes fails at once, with the socket name
     const answer = page.send('Runtime.evaluate', { expression: '1' }, 0);
     page.close();
     await assert.rejects(answer, /the page socket closed/);
+  });
+});
+
+test('a crashed target is recorded with the browser\'s reason, its exit code and its address', async () => {
+  await withFakeSocket(async () => {
+    const watch = watchTargetCrashes('ws://127.0.0.1:1/devtools/browser/one');
+    await tick();
+    assert.deepEqual(
+      watch.socket.sent.map((m) => [m.method, m.params]),
+      [['Target.setDiscoverTargets', { discover: true }]],
+    );
+    watch.socket.emit('Target.targetCreated', { targetInfo: { targetId: 'T1', type: 'page', url: 'http://127.0.0.1:9/files' } });
+    watch.socket.emit('Target.targetInfoChanged', { targetInfo: { targetId: 'T1', type: 'page', url: 'http://127.0.0.1:9/files/x' } });
+    watch.socket.emit('Target.targetCrashed', { targetId: 'T1', status: 'killed', errorCode: 9 });
+    watch.socket.emit('Target.targetCrashed', { targetId: 'T2', status: 'oom', errorCode: 0 });
+    await tick();
+    assert.deepEqual(watch.crashes, [
+      'page T1 at http://127.0.0.1:9/files/x crashed: killed (code 9)',
+      'target T2 crashed: oom (code 0)',
+    ]);
+    watch.close();
   });
 });
 
