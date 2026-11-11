@@ -154,7 +154,7 @@ func (s *Server) signedInUser(ctx context.Context, tx *store.Tx, r *http.Request
 	if err != nil {
 		return nil, err
 	}
-	if !now.Before(sess.ExpiresAt) {
+	if !s.sessionLive(sess, now) {
 		return nil, nil
 	}
 	u, err := tx.UserByID(ctx, sess.UserID)

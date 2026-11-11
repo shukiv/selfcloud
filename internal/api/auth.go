@@ -94,11 +94,7 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 		return nil, nil, apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
 			With("reason", reasonTenantAccessOff)
 	}
-	// The stored end is the one the session was last given. The session limits as they are now end it too, so a lower
-	// sessions.idle_timeout or max_age set through the settings takes effect at the next request (decision 139). A
-	// sign-in-as keeps its own hour.
-	if !now.Before(sess.ExpiresAt) || (sess.ImpersonatorID == "" &&
-		!now.Before(s.sessionExpiry(sess.CreatedAt, sess.LastSeenAt, sess.Short, sess.AccountID == ""))) {
+	if !s.sessionLive(sess, now) {
 		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has expired; sign in again")
 	}
 	u, err := s.store.User(ctx, sess.AccountID, sess.UserID)
@@ -178,6 +174,19 @@ func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time
 
 // sessionExpiry returns when a session that began at created, and was last used at now, ends. A session the browser
 // did not keep (short) ends sessions.short_idle_timeout after its last use; a kept one, sessions.idle_timeout.
+// sessionLive reports whether a browser session is still live at now. The stored end is the one the session was last
+// given; the session limits as they are now end it too, so a lower sessions.idle_timeout or max_age set through the
+// settings takes effect at the session's next use (decision 139). A sign-in-as keeps its own hour, which its callers
+// check. Every reader of a session row asks this: the session check of each request, the editor's check of the browser
+// session that opened it, Go back, and the "signed in as another user" prompt.
+func (s *Server) sessionLive(sess *store.Session, now time.Time) bool {
+	if !now.Before(sess.ExpiresAt) {
+		return false
+	}
+	return sess.ImpersonatorID != "" ||
+		now.Before(s.sessionExpiry(sess.CreatedAt, sess.LastSeenAt, sess.Short, sess.AccountID == ""))
+}
+
 func (s *Server) sessionExpiry(created, now time.Time, short, admin bool) time.Time {
 	limits := s.settings().Sessions
 	idleFor := limits.IdleTimeout.D()

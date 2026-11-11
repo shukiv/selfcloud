@@ -341,7 +341,7 @@ func (s *Server) authenticateWOPI(ctx context.Context, rd wopiReader, tok string
 		if err != nil {
 			return nil, tokenPayload{}, err
 		}
-		if !now.Before(bs.ExpiresAt) || bs.UserID != pl.UserID {
+		if !s.sessionLive(bs, now) || bs.UserID != pl.UserID {
 			return nil, tokenPayload{}, wopiRefused("ended browser session", &pl, errBadToken)
 		}
 	}
