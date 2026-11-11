@@ -247,8 +247,8 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
 // too), or the checkbox's selection, which sets the focus itself (consume). If none does, the click did not come: the focus is
 // applied a turn later. A release anywhere else, or a cancel, has no click on the row: the focus is applied there if it is in the
 // row, which is what the browser did on the press, and otherwise left alone. A finger's focus comes after its release (the
-// browser's mouse events for a tap), so a touch holds nothing. Any key ends a press that was never released, so a keyboard focus
-// is never held.
+// browser's mouse events for a tap), so a touch holds nothing. Any key, or a window that loses its focus, ends a press that was
+// never released (the focus is applied if it is in the row), so a keyboard focus is never held.
 function usePressFocus(apply: (id: string) => void) {
   const applyRef = useRef(apply);
   applyRef.current = apply;
@@ -280,18 +280,25 @@ function usePressFocus(apply: (id: string) => void) {
       const focusedRow = document.activeElement instanceof Element ? document.activeElement.closest("[data-id]") : null;
       if (focusedRow?.getAttribute("data-id") === id) applyRef.current(id);
     };
-    const key = () => {
+    // end is a key, or a window that loses its focus, during a press: the press is over, and the focus it holds is applied if it is
+    // still in the row, as a cancel does.
+    const end = () => {
+      const id = pressing.current;
       pressing.current = null;
       pendingClick.current = null;
       clearTimer();
+      if (id !== null && document.activeElement?.closest("[data-id]")?.getAttribute("data-id") === id) applyRef.current(id);
     };
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
-    window.addEventListener("keydown", key, true);
+    window.addEventListener("keydown", end, true);
+    // A blur that reaches the window itself (it does not bubble, so a control's blur is not one).
+    window.addEventListener("blur", end);
     return () => {
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
-      window.removeEventListener("keydown", key, true);
+      window.removeEventListener("keydown", end, true);
+      window.removeEventListener("blur", end);
       clearTimer();
     };
     // clearTimer reads a ref only: it is the same at every render.
