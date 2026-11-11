@@ -138,8 +138,8 @@ describe("Listing focus: a press on a row renders the page once (decision 128)",
   });
 });
 
-// A press released off its row (a drag, or a release on blank space) focuses the row it was pressed on, as base did: the browser
-// focused that row on the press, and the click that would have chosen it is swallowed by the drag (review round 1, HIGH).
+// A press released off its row (a drag, or a release on blank space) focuses the row it was pressed on: the browser focused that
+// row on the press, and the click that would have chosen it is swallowed by the drag (decision 128).
 // A browser lets React's microtask run between the root's capture listener and its bubble listener, so an update made in the click's
 // capture phase is drawn before the click's own handlers run: a second pass over the list, and a controlled checkbox that React draws
 // in between loses its click. The held focus is therefore applied in the click's bubble phase, in the batch of the click's own update.
@@ -289,7 +289,7 @@ describe("Listing focus: a press released off its row (decision 128)", () => {
 });
 
 // A selected row's icons follow its actions: when the page's actions for the row change (an action that stops being enabled), the
-// row is drawn again, so its icon goes (the row's end is memoised on the actions' signature, review round 1, MED-2).
+// row is drawn again, so its icon goes (the row's end is memoised on the actions' signature, decision 128).
 describe("Listing rows: a row's icons follow its actions (decision 128)", () => {
   const action = (key: string, label: string, enabled: boolean) => ({ key, label, icon: <span>{label[0]}</span>, enabled, run: () => undefined });
 
@@ -361,5 +361,89 @@ describe("Listing rows: a click, a focus move and a hover leave the other rows' 
     rerender(<Listing {...props(new Set(["n3"]), "n3")} />);
     expect(Object.values(renders).reduce((a, b) => a + b, 0)).toBe(0);
     expect(moreOfOthers([])).toBe(0);
+  });
+});
+
+const rowAction = (key: string, label: string) => ({ key, label, icon: <span>{label[0]}</span>, enabled: true, run: () => undefined });
+// withActs gives a list the page's row actions, as new functions at each call.
+const withActs = (selected: Set<string>, focusID: string | null): ListingProps => ({
+  ...props(selected, focusID),
+  rowActs: () => [rowAction("share", "Share"), rowAction("rename", "Rename")],
+});
+const tab = (container: HTMLElement, id: string, sel: string) => (container.querySelector(`[data-id="${id}"] ${sel}`) as HTMLElement).getAttribute("tabindex");
+
+describe("Listing rows: the buttons at a row's end follow the focus, in a selection of several rows (decision 128)", () => {
+  it("moving the focus from one selected row to another moves the tab stops of its icons and its ⋮ button", () => {
+    const { container, rerender } = render(<Listing {...withActs(new Set(["n3", "n4"]), "n3")} />);
+    expect(tab(container, "n3", 'button[aria-label="Rename"]')).toBe("0");
+    expect(tab(container, "n4", 'button[aria-label="Rename"]')).toBe("-1");
+    rerender(<Listing {...withActs(new Set(["n3", "n4"]), "n4")} />);
+    for (const sel of ['button[aria-label="Rename"]', 'button[aria-label="Share"]', 'button[aria-haspopup="menu"]']) {
+      expect(tab(container, "n3", sel)).toBe("-1");
+      expect(tab(container, "n4", sel)).toBe("0");
+    }
+  });
+
+  it("moves the tab stop of the ⋮ button when the list has no row actions", () => {
+    const { container, rerender } = render(<Listing {...props(new Set(["n3", "n4"]), "n3")} />);
+    expect(tab(container, "n3", 'button[aria-haspopup="menu"]')).toBe("0");
+    rerender(<Listing {...props(new Set(["n3", "n4"]), "n4")} />);
+    expect(tab(container, "n3", 'button[aria-haspopup="menu"]')).toBe("-1");
+    expect(tab(container, "n4", 'button[aria-haspopup="menu"]')).toBe("0");
+  });
+});
+
+describe("Listing rows: a page render with new callbacks draws no row's end again (decision 128)", () => {
+  it("a selected, focused row with row actions keeps its icons and its ⋮ button", () => {
+    const { rerender } = render(<Listing {...withActs(new Set(["n3"]), "n3")} />);
+    expect(buttons["Rename"]).toBeGreaterThan(0);
+    resetCounts();
+    rerender(<Listing {...withActs(new Set(["n3"]), "n3")} />);
+    expect(buttons["Share"] ?? 0).toBe(0);
+    expect(buttons["Rename"] ?? 0).toBe(0);
+    expect(moreOfOthers([])).toBe(0);
+  });
+});
+
+describe("Listing tiles: a page render and a selection change draw only the tiles they change (decision 128)", () => {
+  const grid = (selected: Set<string>, focusID: string | null = null): ListingProps => ({ ...props(selected, focusID), view: "grid" });
+
+  it("a page render with new callbacks and the same data draws no tile again", () => {
+    const { container, rerender } = render(<Listing {...grid(new Set(["n3"]), "n3")} />);
+    expect(container.querySelector('[data-id="n3"]')).not.toBeNull();
+    expect(renders["file-3.txt"]).toBeGreaterThan(0);
+    resetCounts();
+    rerender(<Listing {...grid(new Set(["n3"]), "n3")} />);
+    expect(Object.values(renders).reduce((a, b) => a + b, 0)).toBe(0);
+  });
+
+  it("selecting one tile draws that tile only, not the other 49", () => {
+    const { rerender } = render(<Listing {...grid(new Set())} />);
+    resetCounts();
+    rerender(<Listing {...grid(new Set(["n3"]))} />);
+    const drawn = items.filter((n) => (renders[n.name] ?? 0) > 0).map((n) => n.id);
+    expect(drawn).toEqual(["n3"]);
+  });
+});
+
+describe("Listing focus: a key during a press, and a window that loses its focus (decision 128)", () => {
+  it("a key pressed during a press applies the focus the press holds, as a cancel does", () => {
+    const { container } = render(<Page />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    const row9 = container.querySelector('[data-id="n9"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    act(() => row5.focus());
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    fireEvent.pointerUp(row9, { pointerType: "mouse" });
+    expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a window that loses its focus ends the press: the focus that comes back to the row is applied", () => {
+    const { container } = render(<Page />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    fireEvent.blur(window);
+    act(() => row5.focus());
+    expect(row5.getAttribute("tabindex")).toBe("0");
   });
 });
