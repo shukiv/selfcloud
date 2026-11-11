@@ -189,6 +189,10 @@ func (c *Config) StoredText(key string) (string, bool) {
 	return t, ok
 }
 
+// MaxSettingValue is the longest JSON value of a setting, in bytes. The longest a setting needs is a size in bytes, 20
+// digits at most.
+const MaxSettingValue = 64
+
 // ValueText returns the value of the setting key as the text the table would hold for it, or "" for an unknown key.
 func (c *Config) ValueText(key string) string {
 	d, ok := lookupDef(key)
@@ -200,13 +204,17 @@ func (c *Config) ValueText(key string) string {
 
 // SettingText turns a JSON value from the settings API into the text the setting is stored as. The JSON type must be the
 // setting's: a string is not a bool, and a fraction, an exponent or an overflow is not an integer. The text is parsed and
-// bounded later, by Change.
+// bounded later, by Change. A value longer than MaxSettingValue bytes is refused before it is read, so no error repeats a
+// long input.
 func SettingText(key string, raw []byte) (string, error) {
 	d, ok := lookupDef(key)
 	if !ok {
 		return "", fmt.Errorf("config: %s is not a setting", key)
 	}
 	raw = bytes.TrimSpace(raw)
+	if len(raw) > MaxSettingValue {
+		return "", fmt.Errorf("config: %s is longer than %d bytes", key, MaxSettingValue)
+	}
 	s := string(raw)
 	bad := func(want string) error { return fmt.Errorf("config: %s must be %s", key, want) }
 	switch d.typ {
