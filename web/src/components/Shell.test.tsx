@@ -415,7 +415,6 @@ describe("Shell", () => {
     it("hiding a space with the hidden spaces shown off reads the hidden list again, so the drive lists keep its name", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A")]);
-      mocks.loadFolders.mockResolvedValue([team("fld_a", "Team A")]);
       renderShell("/files");
       const nav = await openNav();
       const before = mocks.loadHiddenFolders.mock.calls.length;
