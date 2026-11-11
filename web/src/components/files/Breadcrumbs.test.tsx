@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { theme } from "antd";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -45,6 +46,18 @@ describe("the mark for the folders above", () => {
   it("takes no drop", () => {
     render(<Breadcrumbs crumbs={marked} />);
     expect(screen.getByTestId("crumbs-above").closest("[data-drop-folder]")).toBeNull();
+  });
+
+  // A trail can show the mark and the menu of hidden folders together; the mark is muted so the two "…" do not look the same.
+  it("is muted, unlike the menu of hidden folders", () => {
+    const gap = { kind: "gap" as const, hidden: [{ key: "h", label: "Hidden", href: "/files/a/h" }] };
+    render(<Breadcrumbs crumbs={[{ kind: "above" as const }, crumbs[0], gap, crumbs[1]]} />);
+    // The token goes through the same style parser, which writes a colour its own way.
+    const probe = document.createElement("span");
+    probe.style.color = theme.getDesignToken().colorTextTertiary;
+    const muted = probe.style.color;
+    expect(screen.getByTestId("crumbs-above").style.color).toBe(muted);
+    expect(screen.getByLabelText("More places").style.color).not.toBe(muted);
   });
 });
 

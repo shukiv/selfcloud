@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Breadcrumb, Tooltip } from "antd";
+import { Breadcrumb, Tooltip, theme } from "antd";
 import { ChevronRight } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useT } from "../../lib/i18n";
@@ -33,18 +33,19 @@ function openPlace(e: MouseEvent, href: string) {
 // Breadcrumbs shows the places from the top down to here. A long path collapses its middle into one menu.
 export default function Breadcrumbs({ crumbs }: { crumbs: Crumb<Place>[] }) {
   const { t } = useT();
+  const { token } = theme.useToken();
   const items = crumbs.map((crumb, i) => {
     const last = i === crumbs.length - 1;
     if (crumb.kind === "above") {
       // The mark for the folders above a trail cut at the 64 nearest (decision 140). It leads nowhere and takes no drop: the
       // folders it stands for are not known here. A screen reader reads its name; the dots are for the eye, with the name as
-      // a tooltip.
+      // a tooltip. It is muted, so it does not look like the "…" of the menu of hidden folders that can follow it.
       const name = t("files.crumbs.above");
       return {
         key: "above",
         title: (
           <Tooltip title={name}>
-            <span data-testid="crumbs-above">
+            <span data-testid="crumbs-above" style={{ color: token.colorTextTertiary, cursor: "default" }}>
               <span aria-hidden="true">…</span>
               <span className="sr-only">{name}</span>
             </span>

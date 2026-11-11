@@ -6,7 +6,8 @@ import type { FolderAccess, Node, Role } from './types';
 
 // Here is where the browser is: a folder, and a directory in it (null for the folder's root). trail is the
 // reachable ancestors of the directory below the root, root first; it is empty when the root itself cannot
-// be reached, in which case path is null and nothing can be created by path there.
+// be reached, in which case path is null and nothing can be created by path there. A truncated trail (below)
+// is the exception: the root is not known, yet trail holds the 64 nearest ancestors.
 export interface Here {
   folder: string;
   folderName: string | null;
