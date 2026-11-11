@@ -25,9 +25,10 @@ type remoteCommand struct {
 	// credential that the test cannot make (a person's approval in the browser, for a device token). Its own package records
 	// its calls instead.
 	notProbed string
-	// reads lists the routes a command calls for a check of its own, which another command owns (design-cli 3.7: rm
-	// reads a node's name before it asks). docs/cli-parity.tsv has a row for each, naming that other command, and the
-	// probe checks that a command's calls stay within its routes and these reads.
+	// reads lists the routes a command calls for a need of its own, which another command owns (design-cli 3.7: rm
+	// reads a node's name before it asks; put ends an upload it could not record, which upload cancel owns).
+	// docs/cli-parity.tsv has a row for each, naming that other command, and the probe checks that a command's calls
+	// stay within its routes and these reads.
 	reads []string
 	help  string
 	run   func(args []string, stdout, stderr io.Writer) int
@@ -119,6 +120,27 @@ var remoteCommands = []remoteCommand{
 	{name: "unlock", route: "POST /api/v1/nodes/{nod}/unlock",
 		help: `  unlock NODE                    break the editing lock on a file
 `, run: files.Unlock},
+	// put reads the piece limit from info and the new file from its node, and ends an upload it could not record.
+	{name: "put", route: "POST /api/v1/uploads",
+		more:  []string{"PATCH /api/v1/uploads/{upl}", "HEAD /api/v1/uploads/{upl}", "POST /api/v1/uploads/{upl}/commit"},
+		reads: []string{"GET /api/v1/info", "GET /api/v1/nodes/{nod}", "DELETE /api/v1/uploads/{upl}"},
+		help: `  put LOCAL [--folder FOLDER] [DIR] [--name NAME] [--parents] [--replace | --rename] [--piece-size SIZE]
+                                 send a file in checked pieces that resume after a cut (DIR: a path or a node id)
+  put --resume UPLOAD [--name NAME] [--replace | --rename]
+                                 go on with an upload this client began
+`, run: files.Put},
+	// get reads the file's node, and a path's directory to find it; a share link is opened and renewed with no sign-in.
+	{name: "get", route: "GET /api/v1/nodes/{nod}/content",
+		more:  []string{"POST /api/v1/share/open", "POST /api/v1/share/renew"},
+		reads: []string{"GET /api/v1/nodes/{nod}", "GET /api/v1/folders/{fld}/children"},
+		help: `  get NODE | --folder FOLDER PATH | SHARE-LINK [DEST] [--overwrite] [--password-stdin] [--piece-size SIZE]
+                                 read a file in ranges into DEST.part, resume after a cut, check it, then name it
+`, run: files.Get},
+	{name: "upload ls", help: `  upload ls [--json]             the uploads this client began and can resume
+`, run: files.UploadLs},
+	{name: "upload cancel", route: "DELETE /api/v1/uploads/{upl}",
+		help: `  upload cancel UPLOAD           end an upload; the server drops the bytes it holds
+`, run: files.UploadCancel},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
