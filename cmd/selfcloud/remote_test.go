@@ -198,6 +198,18 @@ func TestRemoteDispatch(t *testing.T) {
 	}
 }
 
+// TestEveryRemoteCommandIsReachedFromTheTop: each command of the remote table is reached by its words from run, the
+// program's own entry, and prints its flags for -h.
+func TestEveryRemoteCommandIsReachedFromTheTop(t *testing.T) {
+	isolateRemote(t)
+	for _, c := range remoteCommands {
+		code, out, errOut := runCmd(t, append(strings.Fields(c.name), "-h")...)
+		if code != 0 || !strings.Contains(out, "usage: selfcloud "+c.name) {
+			t.Errorf("%s -h: exit %d, stdout %.60q, stderr %.60q", c.name, code, out, errOut)
+		}
+	}
+}
+
 // TestExitCodesReachTheTop: the exit code a command returns is the one run returns.
 func TestExitCodesReachTheTop(t *testing.T) {
 	isolateRemote(t)
