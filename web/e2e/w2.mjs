@@ -199,6 +199,8 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(mid.body === true, 'the page is in its gesture state (no text selection) during the drag');
     await waitIn(api, base, teamA, '/w2/drag/Alpha', accountKey, 'g01.txt');
     await waitIn(api, base, teamA, '/w2/drag', accountKey, 'g01.txt', false);
+    // The server has the move before the page has redrawn its listing: wait for the row to leave the page (15 s at most), then check.
+    await page.waitFor(`!document.querySelector(${q(itemSel('g01.txt'))})`, 15000).catch(() => {});
     check(!(await present(page, 'g01.txt')), 'the moved file left the listing');
     check((await ghost(page)) === null && (await dropState(page, itemSel('Alpha'))) === null, 'the ghost and the mark are gone after the drop');
     check(await page.evaluate(`document.body.innerText.includes('Moved')`), 'the move offers its undo, as a paste does');
