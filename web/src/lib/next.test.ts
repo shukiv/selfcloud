@@ -67,7 +67,14 @@ describe("afterSignIn goes straight to the home of the person's role", () => {
   });
 
   it("an admin with a next address goes there", () => {
-    expect(afterSignIn("/admin/installation", admin)).toBe("/admin/installation");
+    expect(afterSignIn("/admin/tenants", admin)).toBe("/admin/tenants");
+  });
+
+  it("the old Installation address goes straight to Settings, with its trailing slash and query dropped or kept", () => {
+    expect(afterSignIn("/admin/installation", admin)).toBe("/admin/settings");
+    expect(afterSignIn("/admin/installation/", admin)).toBe("/admin/settings");
+    expect(afterSignIn("/admin/installation?x=1", admin)).toBe("/admin/settings?x=1");
+    expect(afterSignIn("/admin/installations", admin)).toBe("/admin/installations");
   });
 
   it("a member with no next goes straight to My files, and a path back to the sign-in page does too", () => {

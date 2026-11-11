@@ -36,7 +36,9 @@ export function safeNext(raw: string | null | undefined): string {
 // going to "/" first and letting the gate send an admin on was a second navigation that could be
 // lost, and the page stayed blank (v4a).
 export function afterSignIn(raw: string | null | undefined, user?: User): string {
-  const path = safeNext(raw);
+  // The old Installation address is Settings now (decision 143): the sign-in goes to the new address in one step, so no second
+  // redirect follows it.
+  const path = safeNext(raw).replace(/^\/admin\/installation\/?(?=$|[?#])/, '/admin/settings');
   // Only the sign-in page itself (with a query or a trailing slash): /login-help is an ordinary path.
   const onSignIn = path === SIGN_IN_PATH || path.startsWith(SIGN_IN_PATH + '?') || path.startsWith(SIGN_IN_PATH + '/');
   if (onSignIn) return homeFor(user);

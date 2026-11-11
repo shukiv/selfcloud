@@ -37,7 +37,8 @@ export function targetOf(path: string): Target | null {
     return { area: 'admin', section: 'tenants', account: null };
   }
   if (clean === '/admin/admins') return { area: 'admin', section: 'admins', account: null };
-  if (clean === '/admin/settings') return { area: 'admin', section: 'settings', account: null };
+  // The old Installation address is a second name for Settings (decision 143): a signed-out visit goes to sign-in like any admin page.
+  if (clean === '/admin/settings' || clean === '/admin/installation') return { area: 'admin', section: 'settings', account: null };
   const tenant = /^\/admin\/tenants\/([A-Za-z0-9_]+)$/.exec(clean);
   if (tenant) return { area: 'admin', section: 'tenant', account: tenant[1] };
   return null;
