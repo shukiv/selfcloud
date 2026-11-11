@@ -53,7 +53,7 @@ async function contentBytes(base, id, key) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// etagFree says a list of response headers carries no ETag, whatever its case.
+// hasETag says whether a list of response headers carries an ETag, whatever its case.
 const hasETag = (headers) => (headers ?? []).some((h) => h.name.toLowerCase() === 'etag');
 
 // et1Checks runs the section. The interception is on for this file's content answers only, and it is off again when the section ends.
