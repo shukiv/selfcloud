@@ -15,6 +15,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/web"
 )
 
 // The settings API (decision 139). An installation admin, by key or by its own session, reads and changes the settings
@@ -46,10 +47,12 @@ type factJSON struct {
 	Source string `json:"source"`
 }
 
-// settingsJSON is the answer of GET and PATCH /api/v1/settings.
+// settingsJSON is the answer of GET and PATCH /api/v1/settings, and of the picture routes.
 type settingsJSON struct {
 	Settings []settingJSON `json:"settings"`
 	Facts    []factJSON    `json:"facts"`
+	// Pictures are the logo and the icon (decision 141).
+	Pictures []pictureJSON `json:"pictures"`
 }
 
 func settingsOf(c *config.Config) settingsJSON {
@@ -69,7 +72,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) error
 	if err := requireAdmin(r); err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, settingsOf(s.settings()))
+	writeJSON(w, http.StatusOK, s.settingsAnswer())
 	return nil
 }
 
@@ -132,6 +135,15 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 	}
 
 	if changes := settingChanges(cur, next, keys); len(changes) > 0 {
+		// A change to the brand builds the web interface's brand first (decision 141): one that cannot be built refuses the
+		// change before anything is stored, and the brand in use stays.
+		var built *web.Brand
+		rebrand := brandChanged(changes)
+		if rebrand {
+			if built, err = s.prepareBrand(next, s.pics.Load()); err != nil {
+				return err
+			}
+		}
 		ctx := r.Context()
 		err := s.store.Write(ctx, func(tx *store.Tx) error {
 			for _, k := range keys {
@@ -150,9 +162,12 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		s.snap.Store(next)
+		if rebrand {
+			s.useBrand(next, s.pics.Load(), built)
+		}
 		s.settingsChanged(context.WithoutCancel(ctx), cur, next)
 	}
-	writeJSON(w, http.StatusOK, settingsOf(s.settings()))
+	writeJSON(w, http.StatusOK, s.settingsAnswer())
 	return nil
 }
 

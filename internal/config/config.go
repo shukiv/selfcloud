@@ -1352,13 +1352,6 @@ func setFromString(fv reflect.Value, s string) error {
 
 var accentPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
-// Artwork reports whether the installation shows the SelfCloud artwork: it has no logo file, whatever its name. The owner wants
-// the logo by default, not the name as text (decision 126, which changes decision 109's rule that a name of its own shows as
-// text). The name still titles the pages and labels the picture.
-func (b BrandConfig) Artwork() bool {
-	return b.LogoFile == ""
-}
-
 // validate checks the brand. The accent is only checked for form: MASTER.md asks the UI to refuse
 // a colour that fails contrast, but black or white text always reaches 4.5:1 on any colour, so that
 // rule could never refuse anything and is not enforced. Every wrong value is reported, each naming its

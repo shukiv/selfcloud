@@ -10,7 +10,6 @@ import (
 	"time"
 
 	apispec "github.com/shukiv/selfcloud/api"
-	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/fsutil"
@@ -169,18 +168,20 @@ func (s *Server) features() []string {
 	return out
 }
 
-// brandInfo describes the brand. The logo URL is set only for a custom logo file, so a client that reads it as "has a custom
-// logo" is right; the artwork is named by artwork instead (decision 109).
+// brandInfo describes the brand in use (decision 141). The logo URL is set only for a logo of the installation's own, the file's
+// or an upload, so a client that reads it as "has a custom logo" is right; the artwork, which shows when there is none, is named
+// by artwork instead (decisions 109 and 126).
 func (s *Server) brandInfo() infoBrand {
-	brand := s.cfg.UI.Brand
+	brand := s.settings().UI.Brand
+	logo := s.pics.Load().logo.img
 	b := infoBrand{
 		Name:    brand.Name,
 		Accent:  brand.Accent,
-		Artwork: brand.Artwork(),
+		Artwork: logo == nil,
 		Palette: infoPaletteOf(brand.Palette),
 		Sidebar: infoSidebarOf(brand.Sidebar),
 	}
-	if s.logo != nil {
+	if logo != nil {
 		u := logoPath
 		b.LogoURL = &u
 	}
@@ -225,18 +226,15 @@ func infoSidebarOf(sb config.BrandSidebar) *infoSidebar {
 // logoPath is the URL of the logo. It is served whether or not the web interface is.
 const logoPath = "/brand/logo"
 
-// handleLogo serves the installation's logo, or answers not_found when there is none.
+// handleLogo serves the installation's logo, the file's or an upload (decision 141). With neither, the logo is the SelfCloud
+// artwork, whatever the name (decisions 109 and 126).
 func (s *Server) handleLogo(w http.ResponseWriter, r *http.Request) error {
-	if s.logo != nil {
-		s.logo.ServeHTTP(w, r)
+	if l := s.pics.Load().logo.img; l != nil {
+		l.ServeHTTP(w, r)
 		return nil
 	}
-	if s.cfg.UI.Brand.Artwork() {
-		// With no logo file, the logo is the SelfCloud artwork, whatever the name (decisions 109 and 126).
-		web.ArtworkLogo().ServeHTTP(w, r)
-		return nil
-	}
-	return apierr.New(apierr.NotFound, "the installation has no logo")
+	web.ArtworkLogo().ServeHTTP(w, r)
+	return nil
 }
 
 func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) error {

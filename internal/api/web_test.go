@@ -259,21 +259,31 @@ func TestWordmarkFollowsTheLogoFile(t *testing.T) {
 	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/wordmark.svg"), http.StatusNotFound, "not_found")
 }
 
-// TestConfigArtwork: the artwork shows whenever the installation has no logo file, whatever its name (decision 126, which
-// changes decision 109's Q4).
-func TestConfigArtwork(t *testing.T) {
+// TestArtworkFollowsTheLogo: the artwork shows whenever the installation has no logo, whatever its name and whatever its icon
+// (decision 126, which changes decision 109's Q4); a logo file or an uploaded logo turns it off (decision 141).
+func TestArtworkFollowsTheLogo(t *testing.T) {
 	t.Parallel()
+	logo := iconTestFile(t, "logo.png", squarePNG(t, 600, 150))
+	icon := iconTestFile(t, "icon.png", squarePNG(t, 512, 512))
 	for _, tc := range []struct {
-		name, logo string
-		want       bool
+		name, logo, icon string
+		upload, want     bool
 	}{
-		{"SelfCloud", "", true},
-		{"SelfCloud", "/x/logo.png", false},
-		{"Acme Drive", "", true},
-		{"Acme Drive", "/x/logo.png", false},
+		{"SelfCloud", "", "", false, true},
+		{"SelfCloud", logo, "", false, false},
+		{"Acme Drive", "", "", false, true},
+		{"Acme Drive", "", icon, false, true},
+		{"Acme Drive", logo, "", false, false},
+		{"Acme Drive", "", "", true, false},
 	} {
-		if got := (config.BrandConfig{Name: tc.name, LogoFile: tc.logo}).Artwork(); got != tc.want {
-			t.Errorf("name %q logo %q: Artwork() = %v, want %v", tc.name, tc.logo, got, tc.want)
+		s := newTestServer(t, func(c *config.Config) {
+			c.UI.Brand.Name, c.UI.Brand.LogoFile, c.UI.Brand.IconFile = tc.name, tc.logo, tc.icon
+		})
+		if tc.upload {
+			wantStatus(t, putPicture(t, s, adminKey(t, s), logoRoute, "image/png", squarePNG(t, 600, 150)), 200)
+		}
+		if got := decode[infoResponse](t, serveRaw(t, s, http.MethodGet, "/api/v1/info")).Brand.Artwork; got != tc.want {
+			t.Errorf("name %q logo %q icon %q upload %v: artwork %v, want %v", tc.name, tc.logo, tc.icon, tc.upload, got, tc.want)
 		}
 	}
 }

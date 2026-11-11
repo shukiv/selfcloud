@@ -65,7 +65,11 @@ type Server struct {
 	snap       *atomic.Pointer[config.Config]
 	settingsMu sync.Mutex
 	ui         *web.Handler // nil when ui.enabled is false
-	logo       *web.Logo    // nil when no ui.brand.logo_file is set
+	// pics are the logo and the icon the server serves now, from the config file or uploads (decision 141). A change swaps
+	// in new ones under settingsMu, with the web interface's brand that buildBrand built from them. buildBrand is nil when
+	// the web interface is off; tests replace it to make a build fail.
+	pics       atomic.Pointer[brandPictures]
+	buildBrand func(web.BrandOptions) (*web.Brand, error)
 	log        *slog.Logger
 	store      *store.Store
 	blobs      blob.Store
@@ -545,17 +549,16 @@ func New(opts Options) (*Server, error) {
 	s.uploadSlotWait = 5 * time.Second
 	s.metrics.reg.MustRegister(newTotalsCollector(opts.Store, log), newWebhookCollector(opts.Store, log))
 
-	if cfg.UI.Brand.LogoFile != "" {
-		if s.logo, err = web.LoadLogo(cfg.UI.Brand.LogoFile); err != nil {
-			return nil, fmt.Errorf("api: %w", err)
-		}
+	// The pictures: the config file's, or the uploads the settings table records (decision 141).
+	rows, err := opts.Store.Settings(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("api: settings: %w", err)
 	}
-	var iconFile *web.Logo
-	if cfg.UI.Brand.IconFile != "" {
-		if iconFile, err = web.LoadIconFile(cfg.UI.Brand.IconFile); err != nil {
-			return nil, fmt.Errorf("api: %w", err)
-		}
+	pics, err := s.startPictures(cfg, rows)
+	if err != nil {
+		return nil, err
 	}
+	s.pics.Store(pics)
 	if cfg.Office.Enabled {
 		s.office = wopi.NewDiscovery(cfg.Office.DiscoveryURL, nil, nil)
 		d := cfg.Derived
@@ -586,11 +589,14 @@ func New(opts Options) (*Server, error) {
 		if cfg.Office.Enabled {
 			officeURL = cfg.Office.DiscoveryURL
 		}
+		// The brand is built as a change builds it: from the settings in use and the pictures.
+		brand := brandOptions(s.settings(), pics)
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
-			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent, BrandArtwork: cfg.UI.Brand.Artwork(),
-			IconFile: iconFile, LogoFile: s.logo}); err != nil {
+			BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
+			IconFile: brand.Icon, LogoFile: brand.Logo}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
+		s.buildBrand = s.ui.BuildBrand
 		for _, note := range s.ui.IconNotes() {
 			log.Info(note)
 		}
@@ -605,7 +611,7 @@ func New(opts Options) (*Server, error) {
 	// impersonated browser loads the app (decision 41).
 	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched, imp: impAllow}))
 	s.handler = unsafeAssetGuard(s.observe(s.drain(s.cors(s.contentGate(mux)))))
-	for _, w := range cfg.UI.Brand.ContrastWarnings() {
+	for _, w := range s.settings().UI.Brand.ContrastWarnings() {
 		log.Warn("brand colours fall short of the contrast the text needs; the config is kept", "detail", w)
 	}
 	return s, nil
@@ -691,6 +697,11 @@ func (s *Server) routes() []route {
 		// The installation's settings (decision 139): an installation admin by key or by its own session, never a sign-in-as.
 		{method: http.MethodGet, path: "/api/v1/settings", handle: s.handleGetSettings, auth: true, imp: impRefuse},
 		{method: http.MethodPatch, path: "/api/v1/settings", handle: s.handlePatchSettings, auth: true, imp: impRefuse},
+		// The logo and the icon an installation admin uploads (decision 141), by the same rule as the settings.
+		{method: http.MethodPut, path: "/api/v1/settings/brand/logo", handle: s.handlePutLogo, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/settings/brand/logo", handle: s.handleDeleteLogo, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/settings/brand/icon", handle: s.handlePutIcon, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/settings/brand/icon", handle: s.handleDeleteIcon, auth: true, imp: impRefuse},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true, imp: impAllow},

@@ -284,7 +284,7 @@ func (s *Server) writeUnsubscribePage(w http.ResponseWriter, status int, state, 
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
 	w.WriteHeader(status)
-	_ = unsubscribePage.Execute(w, struct{ Brand, State, Action string }{s.cfg.UI.Brand.Name, state, action})
+	_ = unsubscribePage.Execute(w, struct{ Brand, State, Action string }{s.settings().UI.Brand.Name, state, action})
 }
 
 // handleUnsubscribeForm answers the page an unsubscribe link opens. It changes nothing: a mail client or a scanner that opens

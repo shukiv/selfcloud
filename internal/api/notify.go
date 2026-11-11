@@ -249,7 +249,7 @@ func (s *Server) sendUserMail(ctx context.Context, pass *notifyPass, now time.Ti
 		if len(shown) > notifyDigestEntries {
 			shown = shown[:notifyDigestEntries]
 		}
-		purpose, data = mail.PurposeDigest, mail.Digest{Count: len(entries), Brand: s.cfg.UI.Brand.Name, Entries: shown}
+		purpose, data = mail.PurposeDigest, mail.Digest{Count: len(entries), Brand: s.settings().UI.Brand.Name, Entries: shown}
 	}
 	subject, body, err := s.templates.Render(purpose, u.Locale, data)
 	if err != nil {

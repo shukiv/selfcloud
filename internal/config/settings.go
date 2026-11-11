@@ -315,15 +315,20 @@ func IsPicture(key string) bool {
 	return ok
 }
 
-// PictureLocked reports whether the config file or the environment writes the file key of the picture named key, even
-// empty, which locks the picture against the API as decision 139 locks a setting.
+// PictureLocked reports whether the configuration sets the file of the picture named key: the config file or the
+// environment writes its key, even empty, as decision 139 locks a setting, or the key holds a path. It locks the picture
+// against the API.
 func (c *Config) PictureLocked(key string) bool {
 	file, ok := pictureFiles[key]
 	if !ok {
 		return false
 	}
 	_, written := c.present[file]
-	return written
+	path := c.UI.Brand.LogoFile
+	if key == IconPicture {
+		path = c.UI.Brand.IconFile
+	}
+	return written || path != ""
 }
 
 // Problem is one reason a change is refused. Keys are the changed keys its message names.

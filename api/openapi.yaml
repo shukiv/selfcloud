@@ -190,19 +190,29 @@ paths:
       operationId: getBrandLogo
       summary: The installation's logo
       description: |
-        The file named by `ui.brand.logo_file`, read at start (PNG or SVG, at most 256 KiB). Served
-        whether or not the web interface is on. `brand.logo_url` in `/info` is null when there is no
-        logo file. An SVG is sent with a sandbox policy. With no logo file, whatever the installation's
+        The file named by `ui.brand.logo_file`, read at start, or the logo an installation admin uploaded
+        (`PUT /api/v1/settings/brand/logo`, decision 141): PNG or SVG, at most 256 KiB. Served whether or
+        not the web interface is on. `brand.logo_url` in `/info` is null when there is no logo of the
+        installation's own. An SVG is sent with a sandbox policy. With no logo, whatever the installation's
         name, this route answers the SelfCloud artwork, though `brand.logo_url` stays null
-        (`brand.artwork` is true; decisions 109 and 126).
+        (`brand.artwork` is true; decisions 109 and 126). The answer carries a strong `ETag`, the SHA-256
+        of its bytes, and `Cache-Control: no-cache`, so a changed logo shows on the next load.
+      parameters:
+        - name: If-None-Match
+          in: header
+          description: The ETag of a copy the client holds; when it is the logo's, the answer is 304.
+          schema: { type: string }
       responses:
         "200":
           description: The logo, as image/png or image/svg+xml.
+          headers:
+            ETag: { schema: { type: string }, description: 'The hex SHA-256 of the bytes, quoted.' }
           content:
             image/png:
               schema: { type: string, format: binary }
             image/svg+xml:
               schema: { type: string }
+        "304": { description: The client's copy is the logo. }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/openapi.yaml:
@@ -1985,12 +1995,122 @@ paths:
         at their next use: the next request, an open editor's next call, Go back to an admin session, and the
         "signed in as another user" prompt all hold a session to the limits in force. Turning `admin.tenant_access` off
         refuses the next sign-in-as and ends the running ones.
+
+        The brand keys (`ui.brand.name`, `ui.brand.accent`, `ui.brand.palette.light.*`, `ui.brand.palette.dark.*`
+        and `ui.brand.sidebar.*`, decision 141) are `string` settings held to the config file's rules: the name is 1
+        to 64 characters with no control character, a colour is `#rrggbb`, and a palette or sidebar token may be `""`,
+        which keeps the default look for it. The name takes up to 1 KiB of JSON. A change to them shows at the next
+        page load: the page's title, the manifest, the icons, the favicon and `/api/v1/info`. If the web interface's
+        brand cannot be built, the answer is an error and nothing changes. The pictures are not settings here: their
+        keys, and `ui.brand.logo_file` and `ui.brand.icon_file`, are `unknown_setting`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/SettingsChange" }
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/settings/brand/logo:
+    put:
+      tags: [Settings]
+      operationId: putBrandLogo
+      summary: Upload the installation's logo
+      description: |
+        An installation admin, by admin key or by its own session with its CSRF token; a sign-in-as is refused
+        (`403`, `details.reason` `impersonation`). The body is the picture itself, at most 256 KiB, checked as
+        `ui.brand.logo_file` is (decision 141):
+
+        - the config file or the environment sets `ui.brand.logo_file` (even empty): `409 conflict`, `details.reason`
+          `setting_locked`, `details.keys` `["ui.brand.logo"]`, before the body is read;
+        - a `Content-Type` other than `image/png` or `image/svg+xml`: `415 unsupported_media_type`;
+        - a body over 256 KiB: `413 too_large` with `details.limit_bytes`; a declared length over it is refused
+          unread, and an undeclared one is read no further than the cap;
+        - a PNG without the PNG signature, an SVG without `<svg`, or a PNG sent as SVG: `400 invalid_request`,
+          `details.reason` `invalid_picture`.
+
+        The picture is stored under the data folder with a name the server makes from its hash, and recorded with
+        its type and hash in one transaction with an `installation.settings` audit entry, whose details give
+        `ui.brand.logo` `{old, new, source}`, each value its type and hash (`image/png sha256:<hex>`) or `none`.
+        The same picture again changes nothing. The logo shows at once at `/brand/logo`, in `/api/v1/info` and in the
+        app icons and the favicon where decision 119 picks it; the SelfCloud wordmark is no longer served. An SVG is
+        served only with a sandbox policy, never inlined. If the brand cannot be built or stored, the answer is an
+        error and nothing changes.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: { type: string, format: binary, maxLength: 262144 }
+          image/svg+xml:
+            schema: { type: string, maxLength: 262144 }
+      responses:
+        "200":
+          description: The settings after the change, with the logo's state in `pictures`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Settings]
+      operationId: deleteBrandLogo
+      summary: Remove the uploaded logo
+      description: |
+        As the upload: an installation admin, refused with `409 setting_locked` when the config file sets
+        `ui.brand.logo_file`. The logo goes back to the SelfCloud artwork (decision 126); the stored file and its row
+        are removed, in one transaction with an audit entry whose `new` is `none` and `source` `default`. With no
+        uploaded logo in use, nothing changes and nothing is audited.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/settings/brand/icon:
+    put:
+      tags: [Settings]
+      operationId: putBrandIcon
+      summary: Upload the installation's icon
+      description: |
+        As `PUT /api/v1/settings/brand/logo`, for the picture the app icons and the favicon are drawn from
+        (decision 119), checked as `ui.brand.icon_file` is: an SVG, or a square PNG of 512 to 2048 pixels on a side
+        that decodes. The PNG's size is read from its header before it is decoded, so a picture that claims to be
+        larger is refused without being decoded. The lock is `ui.brand.icon_file`, and the audit key
+        `ui.brand.icon`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: { type: string, format: binary, maxLength: 262144 }
+          image/svg+xml:
+            schema: { type: string, maxLength: 262144 }
+      responses:
+        "200":
+          description: The settings after the change, with the icon's state in `pictures`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Settings]
+      operationId: deleteBrandIcon
+      summary: Remove the uploaded icon
+      description: |
+        As `DELETE /api/v1/settings/brand/logo`. The app icons and the favicon go back to what decision 119 picks
+        without an icon: the logo, when it is a PNG, or else the SelfCloud mark on the accent.
+      security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":
           description: The settings after the change.
@@ -8097,7 +8217,7 @@ components:
 
     Settings:
       type: object
-      required: [settings, facts]
+      required: [settings, facts, pictures]
       properties:
         settings:
           type: array
@@ -8105,6 +8225,29 @@ components:
         facts:
           type: array
           items: { $ref: "#/components/schemas/SettingFact" }
+        pictures:
+          type: array
+          description: The logo and the icon, sorted by key (decision 141).
+          items: { $ref: "#/components/schemas/SettingPicture" }
+
+    SettingPicture:
+      type: object
+      description: |
+        One of the installation's pictures. Its path is never shown. A picture the config file sets is `file` and
+        locked; an upload kept under a locked picture is not shown, and is used again once the file stops setting it.
+        An upload that no longer passes its checks at start is logged and not used, so it shows as `none`.
+      required: [key, state, locked]
+      properties:
+        key: { type: string, enum: [ui.brand.icon, ui.brand.logo] }
+        state:
+          type: string
+          enum: [none, file, uploaded]
+          description: "`none`: the SelfCloud artwork for the logo, decision 119's choice for the icon."
+        type: { type: string, enum: [image/png, image/svg+xml], description: Absent for `none`. }
+        sha256: { type: string, description: The hex SHA-256 of the picture's bytes, the logo's ETag. Absent for `none`. }
+        locked:
+          type: boolean
+          description: True when the config file or the environment sets the picture's file (`ui.brand.logo_file` or `ui.brand.icon_file`).
 
     Setting:
       type: object
@@ -8151,9 +8294,10 @@ components:
           maxProperties: 64
           description: |
             New values by key. A `bool` takes `true` or `false`; an `int` a whole number; a `duration` a string such as
-            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes. A value is at most 64
-            bytes of JSON. A value must also lie within the setting's floor and cap (decision 139) and pass the config
-            file's rules on the whole configuration. A key repeated here is refused.
+            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes; a `string` a JSON string.
+            A value is at most 64 bytes of JSON, and `ui.brand.name` at most 1 KiB. A value must also lie within the
+            setting's floor and cap (decision 139) and pass the config file's rules on the whole configuration. A key
+            repeated here is refused.
           additionalProperties: true
         reset:
           type: array

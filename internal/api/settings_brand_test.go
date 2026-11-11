@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -223,8 +224,9 @@ func TestPictureUploadIsServedAndAudited(t *testing.T) {
 	if p := pictureIn(t, got, "ui.brand.icon"); p != (testPicture{Key: "ui.brand.icon", State: "none"}) {
 		t.Errorf("icon = %+v", p)
 	}
-	if strings.Contains(rec.Body.String(), s.cfg.DataDir) || strings.Contains(rec.Body.String(), "se2-logo-marker") {
-		t.Errorf("the settings answer holds a path or the bytes: %s", rec.Body.String())
+	if body := rec.Body.String(); strings.Contains(body, filepath.Join(s.cfg.DataDir, "brand")) || strings.Contains(body, "logo-"+sum) ||
+		strings.Contains(body, "se2-logo-marker") {
+		t.Errorf("the settings answer holds the picture's path or its bytes: %s", body)
 	}
 
 	logo := serveRaw(t, s, http.MethodGet, "/brand/logo")
@@ -611,6 +613,18 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "no such file"},
+		{"a link to the same bytes", func(t *testing.T, s *Server, path string) {
+			elsewhere := filepath.Join(t.TempDir(), "same.svg")
+			if err := os.WriteFile(elsewhere, []byte(testLogoSVG), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(elsewhere, path); err != nil {
+				t.Fatal(err)
+			}
+		}, "not a regular file"},
 		{"a row the server does not write", func(t *testing.T, s *Server, path string) {
 			if err := s.store.Write(context.Background(), func(tx *store.Tx) error {
 				return tx.SetSetting(context.Background(), "ui.brand.logo", "image/svg+xml sha256:../../etc/passwd")
@@ -664,6 +678,76 @@ func TestStoredPictureUnderTheFileIsKept(t *testing.T) {
 	third := serverWithLog(t, configFrom(t, dir, "", nil), &bytes.Buffer{})
 	if logo := serveRaw(t, third, http.MethodGet, "/brand/logo"); logo.Body.String() != testLogoSVG {
 		t.Errorf("the upload did not come back: %.80s", logo.Body.String())
+	}
+}
+
+// TestFailedRebuildKeepsTheOldBrand: when the web interface's brand cannot be built, the change is refused, nothing is
+// stored, no file is left, and the brand in use stays, for a brand key and for each picture route.
+func TestFailedRebuildKeepsTheOldBrand(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	icon := squarePNG(t, 512, 512)
+	wantStatus(t, putPicture(t, s, admin, iconRoute, "image/png", icon), 200)
+	iconETag := serveRaw(t, s, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag")
+	s.buildBrand = func(web.BrandOptions) (*web.Brand, error) { return nil, errors.New("the icons cannot be drawn") }
+
+	wantStatus(t, patchSettings(t, s, admin, map[string]any{"ui.brand.name": "Acme Drive"}), 500)
+	wantStatus(t, putPicture(t, s, admin, logoRoute, "image/svg+xml", []byte(testLogoSVG)), 500)
+	wantStatus(t, putPicture(t, s, admin, iconRoute, "image/png", squarePNG(t, 600, 600)), 500)
+	wantStatus(t, call(t, s, http.MethodDelete, iconRoute, admin, nil), 500)
+
+	if body := serveRaw(t, s, http.MethodGet, "/").Body.String(); !strings.Contains(body, "<title>SelfCloud</title>") {
+		t.Errorf("the page after a failed change: %.200s", body)
+	}
+	if e := serveRaw(t, s, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag"); e != iconETag {
+		t.Errorf("the icons changed: %q, want %q", e, iconETag)
+	}
+	if logo := serveRaw(t, s, http.MethodGet, "/brand/logo"); !strings.Contains(logo.Body.String(), `aria-label="SelfCloud"`) {
+		t.Error("/brand/logo is not the artwork after a failed upload")
+	}
+	got := getSettings(t, s, admin)
+	if v := got.get(t, "ui.brand.name"); v.Value != "SelfCloud" || v.Source != "default" {
+		t.Errorf("ui.brand.name = %+v", v)
+	}
+	if p := pictureIn(t, got, "ui.brand.icon"); p.State != "uploaded" || p.SHA256 != sha256Hex(icon) {
+		t.Errorf("icon = %+v", p)
+	}
+	if p := pictureIn(t, got, "ui.brand.logo"); p.State != "none" {
+		t.Errorf("logo = %+v", p)
+	}
+	if names := brandFiles(t, s); !slices.Equal(names, []string{"icon-" + sha256Hex(icon) + ".png"}) {
+		t.Errorf("brand folder = %v", names)
+	}
+	rows, err := s.store.Settings(context.Background())
+	if err != nil || !maps.Equal(rows, map[string]string{"ui.brand.icon": "image/png sha256:" + sha256Hex(icon)}) {
+		t.Errorf("rows = %v, %v", rows, err)
+	}
+	if n := len(settingsAudit(t, s)); n != 1 {
+		t.Errorf("audit rows = %d, want the first upload's", n)
+	}
+}
+
+// TestPictureThatCannotBeStoredIsNotUsed: an upload whose transaction fails answers an error, and leaves no file, no row and
+// the old logo.
+func TestPictureThatCannotBeStoredIsNotUsed(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	execOn(t, s, "CREATE TRIGGER refuse_settings_audit BEFORE INSERT ON audit_log "+
+		"WHEN NEW.action = 'installation.settings' BEGIN SELECT RAISE(ABORT, 'audit refused'); END")
+	wantStatus(t, putPicture(t, s, admin, logoRoute, "image/svg+xml", []byte(testLogoSVG)), 500)
+	if names := brandFiles(t, s); len(names) != 0 {
+		t.Errorf("brand folder = %v", names)
+	}
+	if rows, err := s.store.Settings(context.Background()); err != nil || len(rows) != 0 {
+		t.Errorf("rows = %v, %v", rows, err)
+	}
+	if logo := serveRaw(t, s, http.MethodGet, "/brand/logo"); !strings.Contains(logo.Body.String(), `aria-label="SelfCloud"`) {
+		t.Error("/brand/logo is not the artwork")
+	}
+	if info := decode[infoResponse](t, do(t, s.Handler(), "GET", "/api/v1/info")); !info.Brand.Artwork {
+		t.Errorf("info brand = %+v", info.Brand)
 	}
 }
 

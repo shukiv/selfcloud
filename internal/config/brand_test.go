@@ -43,8 +43,8 @@ func TestBrandFromEnvironment(t *testing.T) {
 	}
 }
 
-// TestIconFileExtension: ui.brand.icon_file is a .png or .svg file, as logo_file is, and it does not change the artwork (decision
-// 119): an installation with the default name and an icon file still shows the artwork in the sidebar.
+// TestIconFileExtension: ui.brand.icon_file is a .png or .svg file, as logo_file is. That it does not change the artwork
+// (decision 119) is the server's rule, TestArtworkFollowsTheLogo in internal/api.
 func TestIconFileExtension(t *testing.T) {
 	for _, tc := range []struct {
 		file, wantErr string
@@ -64,9 +64,6 @@ func TestIconFileExtension(t *testing.T) {
 		case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "icon_file")):
 			t.Errorf("icon_file %q: %v, want %q naming icon_file", tc.file, err, tc.wantErr)
 		}
-	}
-	if !(BrandConfig{Name: DefaultBrandName, IconFile: "icon.png"}).Artwork() {
-		t.Error("an icon file turned the artwork off")
 	}
 }
 

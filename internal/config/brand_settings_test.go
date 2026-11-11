@@ -232,4 +232,10 @@ func TestPictureIsLockedByItsFileKey(t *testing.T) {
 			t.Errorf("%q %v: icon locked = %v", tc.yaml, tc.env, got)
 		}
 	}
+	// A configuration built in code locks by the path it holds.
+	c := Defaults()
+	c.UI.Brand.IconFile = "/srv/brand/icon.png"
+	if c.PictureLocked(LogoPicture) || !c.PictureLocked(IconPicture) || c.PictureLocked("ui.brand.name") {
+		t.Error("a path set in code does not lock its picture alone")
+	}
 }

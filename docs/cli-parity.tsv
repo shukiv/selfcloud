@@ -229,6 +229,8 @@ route	DELETE /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	planned, cli12
 route	DELETE /api/v1/recent	-	cli11	planned, cli11
 route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
+route	DELETE /api/v1/settings/brand/icon	-	se4	planned, se4 (settings icon remove)
+route	DELETE /api/v1/settings/brand/logo	-	se4	planned, se4 (settings logo remove)
 route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
 route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	-	cli6	planned, cli6
@@ -426,3 +428,5 @@ route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player featu
 route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
 route	PUT /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
 route	PUT /api/v1/playlists/{pls}/order	-	cli12	planned, cli12
+route	PUT /api/v1/settings/brand/icon	-	se4	planned, se4 (settings icon set)
+route	PUT /api/v1/settings/brand/logo	-	se4	planned, se4 (settings logo set)
