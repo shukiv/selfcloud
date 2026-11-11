@@ -7,7 +7,7 @@
 // active colour and its text is the on-active colour, and a folder below it keeps the bar with no fill; in light and dark. The
 // playlist drawer of an audio file opens with its shadow, and the stage and the rows show the file's type icon when there is no
 // cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. The five drive lists (Starred, Recent, Shared with
-// me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Each list's table is right to left in Hebrew, and its body's background in dark differs from light (tl4 r2). Every folder made is deleted for good,
+// me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Each list's table is right to left in Hebrew, and its body's background in dark is darker than in light. Every folder made is deleted for good,
 // and the theme and the window are put back. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures named in the brief are saved.
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -238,7 +238,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     check(!inline, 'on a finger the Restore icon is in the ⋮ menu, not inline on the row (tl4)');
     await snap('ic2-phone-390.png');
 
-    // ---- The five drive lists (tl4 r1): at 375 px each has no sideways scroll, in English and light and in Hebrew (RTL) and dark,
+    // ---- The five drive lists: at 375 px each has no sideways scroll, in English and light and in Hebrew (RTL) and dark,
     // and no uncaught exception shows on any of them in either set.
     // The language and the theme are set at desktop width (the phone layout keeps the theme control in a menu), then the viewport
     // is 375 px for the lists themselves.
@@ -264,23 +264,25 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
         await page.send('Page.navigate', { url: base + path });
         await page.waitFor(`location.pathname === ${q(path.split('?')[0])}`, 15000);
         await page.waitFor(`!!document.querySelector('.items, .shared, .empty, [role="alert"], [role="status"]')`, 15000).catch(() => undefined);
+        // The table is drawn once the list's own words and the first read are in, which can come after the first status.
+        await page.waitFor(`!!document.querySelector('table')`, 15000).catch(() => undefined);
         await sleep(500);
         const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
         check(sideways <= 0, `${path} has no sideways scroll at 375 px in ${set.lang} (${sideways} px over)`);
         const uncaught = page.errors.slice(before).filter((e) => e.startsWith('uncaught') || e.startsWith('the page renderer crashed'));
         check(uncaught.length === 0, `${path} shows no uncaught error in ${set.lang} ${set.theme} (${uncaught.join(' | ') || 'none'})`);
-        // The list table's direction, and its body's background (tl4 r2, 7(f)): right to left in Hebrew, and a body background in
-        // dark that differs from the light one.
-        const grid = await page.evaluate(`(() => { const t = document.querySelector('table'); if (!t) return null; const b = t.querySelector('tbody'); return { dir: getComputedStyle(t).direction, bg: b ? getComputedStyle(b).backgroundColor : null }; })()`);
+        // The list table's direction, and its body's background : right to left in Hebrew, and a body background in
+        // dark that is darker than the light one (the first opaque background up the tree, as a luminance).
+        const grid = await page.evaluate(`(() => { const t = document.querySelector('table'); if (!t) return null; const b = t.querySelector('tbody'); const bg = (el) => { for (let n = el; n; n = n.parentElement) { const c = getComputedStyle(n).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') { const m = c.match(/[\\d.]+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; } } return null; }; return { dir: getComputedStyle(t).direction, lum: b ? bg(b) : null }; })()`);
         check(grid !== null, `${path} draws its table in ${set.lang} (${JSON.stringify(grid)})`);
         if (grid !== null && set.dir === 'rtl') check(grid.dir === 'rtl', `${path} draws its table right to left in Hebrew (${grid.dir})`);
-        if (grid !== null) bodies.set(`${path}|${set.theme}`, grid.bg);
+        if (grid !== null) bodies.set(`${path}|${set.theme}`, grid.lum);
       }
     }
     for (const path of lists) {
       const light = bodies.get(`${path}|Light`);
       const dark = bodies.get(`${path}|Dark`);
-      check(light !== undefined && dark !== undefined && light !== dark, `${path}'s table body is a different background in dark (${dark}) from light (${light})`);
+      check(light !== undefined && dark !== undefined && light !== null && dark !== null && dark < light, `${path}'s table body is darker in dark (luminance ${dark}) than in light (${light})`);
     }
     await snap('ic2-lists-375.png');
   } finally {
