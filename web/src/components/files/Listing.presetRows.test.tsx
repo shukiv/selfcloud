@@ -115,6 +115,28 @@ describe("a preset list draws a row again only when its own state changes (decis
     expect(nameRenders["r7"]).toBe(1);
   });
 
+  it("a press on a row's ⋮ button focuses the row with its click", () => {
+    render(<Listing<Row> {...props()} />);
+    const more = screen.getByRole("button", { name: "More actions for Row 7" });
+    fireEvent.pointerDown(more, { pointerType: "mouse" });
+    act(() => more.focus());
+    fireEvent.pointerUp(more, { pointerType: "mouse" });
+    fireEvent.click(more);
+    expect(rowOf("Row 7").getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a press whose click never reaches the row (a control stopped it) still focuses the row", async () => {
+    render(<Listing<Row> {...props()} />);
+    const row = rowOf("Row 8");
+    fireEvent.pointerDown(row, { pointerType: "mouse" });
+    act(() => row.focus());
+    fireEvent.pointerUp(row, { pointerType: "mouse" });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(row.getAttribute("tabindex")).toBe("0");
+  });
+
   it("a keyboard focus on a row is still its own pass, and moves the roving stop", () => {
     render(<Listing<Row> {...props()} />);
     const row = rowOf("Row 3");

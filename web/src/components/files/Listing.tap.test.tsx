@@ -94,6 +94,54 @@ function tap(target: HTMLElement) {
   fireEvent.click(target);
 }
 
+// A click that lands on a controlled checkbox must reach the checkbox's own handler before anything draws the list again: React
+// draws a checkbox again with its prop's value, which undoes the click the browser made on it, and its change is then not seen.
+// A native listener on the region's bubble phase runs between React's capture dispatch and its bubble dispatch.
+describe("a click on a row's checkbox is not preceded by a focus update (decision 128)", () => {
+  it("a mouse press that holds the focus does not apply it in the click's capture phase", () => {
+    const focusBefore: number[] = [];
+    let focusCalls = 0;
+    function Probe() {
+      const [sel, setSel] = useState<Set<string>>(new Set());
+      const p: ListingProps = {
+        items,
+        view: "list",
+        selected: sel,
+        focusID: null,
+        sortKey: "name",
+        sortDir: "asc",
+        renameID: null,
+        renameValue: "",
+        renameError: null,
+        label: "Files",
+        onRowClick: (i) => setSel((s) => new Set([...s, items[i].id])),
+        onRowDoubleClick: () => undefined,
+        onSelectAll: () => undefined,
+        onSort: () => undefined,
+        onRenameChange: () => undefined,
+        onRename: () => undefined,
+        onKeyDown: () => undefined,
+        onFocusItem: () => {
+          focusCalls += 1;
+        },
+      };
+      return <Listing {...p} />;
+    }
+    const { container } = render(<Probe />);
+    const box = container.querySelector('[data-id="n2"] input[type="checkbox"]') as HTMLElement;
+    expect(box).not.toBeNull();
+    const region = container.querySelector('[role="region"]') as HTMLElement;
+    fireEvent.pointerDown(box, { pointerType: "mouse" });
+    fireEvent.mouseDown(box);
+    act(() => box.focus());
+    fireEvent.pointerUp(box, { pointerType: "mouse" });
+    region.addEventListener("click", () => focusBefore.push(focusCalls));
+    fireEvent.click(box);
+    expect(focusBefore).toEqual([0]);
+    expect((container.querySelector('[data-id="n2"]') as HTMLElement).getAttribute("aria-selected")).toBe("true");
+  });
+});
+
 describe("a finger's tap on a row's checkbox on a phone (decision 128)", () => {
   it("selects the row in a list", () => {
     const { container } = render(<Page view="list" />);

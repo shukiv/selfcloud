@@ -140,6 +140,66 @@ describe("Listing focus: a press on a row renders the page once (decision 128)",
 
 // A press released off its row (a drag, or a release on blank space) focuses the row it was pressed on, as base did: the browser
 // focused that row on the press, and the click that would have chosen it is swallowed by the drag (review round 1, HIGH).
+// A browser lets React's microtask run between the root's capture listener and its bubble listener, so an update made in the click's
+// capture phase is drawn before the click's own handlers run: a second pass over the list, and a controlled checkbox that React draws
+// in between loses its click. The held focus is therefore applied in the click's bubble phase, in the batch of the click's own update.
+// A listener on the list's region (a native bubble listener) runs after React's capture dispatch and before its bubble dispatch.
+describe("Listing focus: the press's focus is applied with the click's own update (decision 128)", () => {
+  it("is not applied during the click's capture phase", () => {
+    const focused: string[] = [];
+    function Probe() {
+      const [sel, setSel] = useState<Set<string>>(new Set());
+      const [focus, setFocus] = useState<string | null>(null);
+      return (
+        <Listing
+          {...props(sel, focus)}
+          onFocusItem={(i) => {
+            focused.push(items[i].id);
+            setFocus(items[i].id);
+          }}
+          onRowClick={(i) => {
+            setSel(new Set([items[i].id]));
+            setFocus(items[i].id);
+          }}
+        />
+      );
+    }
+    const { container } = render(<Probe />);
+    const row = container.querySelector('[data-id="n5"]') as HTMLElement;
+    const region = container.querySelector('[role="region"]') as HTMLElement;
+    fireEvent.pointerDown(row, { pointerType: "mouse" });
+    act(() => row.focus());
+    fireEvent.pointerUp(row, { pointerType: "mouse" });
+    let seen = -1;
+    region.addEventListener("click", () => (seen = focused.length));
+    fireEvent.click(row);
+    expect(seen).toBe(0);
+    expect(focused).toEqual(["n5"]);
+  });
+
+  it("is applied with a click on the row's ⋮ button, which stops the click at the button", () => {
+    const { container } = render(<Page />);
+    const more = container.querySelector('[data-id="n6"] button[aria-haspopup="menu"]') as HTMLElement;
+    fireEvent.pointerDown(more, { pointerType: "mouse" });
+    act(() => more.focus());
+    fireEvent.pointerUp(more, { pointerType: "mouse" });
+    fireEvent.click(more);
+    expect((container.querySelector('[data-id="n6"]') as HTMLElement).getAttribute("tabindex")).toBe("0");
+  });
+
+  it("is applied after the release when no click comes of it (the control stopped it)", async () => {
+    const { container } = render(<Page />);
+    const row = container.querySelector('[data-id="n8"]') as HTMLElement;
+    fireEvent.pointerDown(row, { pointerType: "mouse" });
+    act(() => row.focus());
+    fireEvent.pointerUp(row, { pointerType: "mouse" });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(row.getAttribute("tabindex")).toBe("0");
+  });
+});
+
 describe("Listing focus: a press released off its row (decision 128)", () => {
   it("keeps the focus on the row it was pressed on, when the release is on another row", () => {
     const { container } = render(<Page />);
@@ -159,6 +219,15 @@ describe("Listing focus: a press released off its row (decision 128)", () => {
     act(() => row5.focus());
     fireEvent.pointerUp(row9, { pointerType: "mouse" });
     act(() => row9.focus());
+    act(() => row5.focus());
+    expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a press that is never released does not hold the focus of the next key: a keyboard focus is applied", () => {
+    const { container } = render(<Page />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    fireEvent.keyDown(document.body, { key: "Tab" });
     act(() => row5.focus());
     expect(row5.getAttribute("tabindex")).toBe("0");
   });

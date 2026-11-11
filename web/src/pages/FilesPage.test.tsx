@@ -1858,6 +1858,23 @@ describe("slice w2: the five fixes from w1's notes", () => {
     expect(rowHeight).toBe("56px");
   });
 
+  it("on a finger a tap on a row's checkbox selects the row (decision 128)", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+    renderAt(FOLDER);
+    const row = (await screen.findByRole("row", { name: "alpha.txt" })) as HTMLElement;
+    const box = row.querySelector('input[type="checkbox"]') as HTMLElement;
+    expect(box).not.toBeNull();
+    // A touch makes its pointer events first, then the mouse's events with the focus, then the click.
+    fireEvent.pointerDown(box, { pointerType: "touch" });
+    fireEvent.pointerUp(box, { pointerType: "touch" });
+    fireEvent.mouseDown(box);
+    act(() => box.focus());
+    fireEvent.mouseUp(box);
+    fireEvent.click(box);
+    expect(await screen.findByTestId("selection-panel")).toBeTruthy();
+    expect((rows("alpha.txt") as Element).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("on a finger the panel is 52 pixels with 44 pixel buttons inside it, and the row is the same 52", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
     renderAt(FOLDER);
