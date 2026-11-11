@@ -302,6 +302,9 @@ func (p *Pool) Peek(ctx context.Context, accountID, blobID string, size int) (An
 // Cache returns the pool's cache of rows and files.
 func (p *Pool) Cache() *Cache { return p.o.Cache }
 
+// MinFree is the free space, in bytes, the pool's next write must leave on the disk.
+func (p *Pool) MinFree() uint64 { return minFreeOf(p.o.MinFree, p.o.MinFreeNow) }
+
 // Open opens a ready file for reading.
 func (p *Pool) Open(accountID, derivedID string) (*os.File, error) {
 	path, err := p.o.Cache.Files().Path(accountID, derivedID)

@@ -194,6 +194,9 @@ func (p *ConvertPool) Peek(ctx context.Context, accountID, blobID, kind, convert
 	return answerFor(d), nil
 }
 
+// MinFree is the free space, in bytes, the pool's next write must leave on the disk.
+func (p *ConvertPool) MinFree() uint64 { return minFreeOf(p.o.MinFree, p.o.MinFreeNow) }
+
 // Open opens a ready file for reading.
 func (p *ConvertPool) Open(accountID, derivedID string) (*os.File, error) {
 	path, err := p.o.Cache.Files().Path(accountID, derivedID)
