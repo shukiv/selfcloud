@@ -411,6 +411,8 @@ func TestSettingTextChecksTheJSONType(t *testing.T) {
 		{"upload.max_file_size", `1.5`},
 		{"upload.max_file_size", `true`},
 		{"nope.key", `1`},
+		// A value longer than any setting needs, even one that parses: "0s" forty times and then "1h" is an hour.
+		{"trash.retention", `"` + strings.Repeat("0s", 40) + `1h"`},
 	}
 	for _, b := range bad {
 		if text, err := SettingText(b.key, []byte(b.raw)); err == nil {

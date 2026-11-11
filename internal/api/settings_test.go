@@ -270,6 +270,43 @@ func TestSettingsPatchRefusesWrongJSONTypes(t *testing.T) {
 		apierr.InvalidRequest)
 }
 
+// TestSettingsPatchBoundsItsShape: a change names at most 64 keys, each at most 128 bytes and named once, and a value
+// longer than any setting needs is refused without its text in the answer.
+func TestSettingsPatchBoundsItsShape(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	many := map[string]any{}
+	for i := range 65 {
+		many["k"+strings.Repeat("x", i)] = true
+	}
+	for _, tc := range []struct {
+		name, msg string
+		set       map[string]any
+		reset     []string
+	}{
+		{"65 keys", "at most 64", many, nil},
+		{"a long key", "longer than 128", map[string]any{strings.Repeat("k", 129): true}, nil},
+		{"a key reset twice", "named twice", nil, []string{"trash.retention", "trash.retention"}},
+	} {
+		e := wantError(t, patchSettings(t, s, admin, tc.set, tc.reset...), 400, apierr.InvalidRequest)
+		if !strings.Contains(e.Message, tc.msg) || e.Details["reason"] != nil {
+			t.Errorf("%s: %q %v", tc.name, e.Message, e.Details)
+		}
+	}
+	long := strings.Repeat("0s", 40) + "48h" // 48 hours, within the bounds
+	e := wantError(t, patchSettings(t, s, admin, map[string]any{"trash.retention": long}), 400, apierr.InvalidRequest)
+	if keys, _ := e.Details["keys"].([]any); e.Details["reason"] != "invalid_setting" || !slices.Equal(keys, []any{"trash.retention"}) {
+		t.Errorf("a long value: details = %v", e.Details)
+	}
+	if strings.Contains(e.Message, long) {
+		t.Errorf("the refusal echoes the value: %q", e.Message)
+	}
+	if v := getSettings(t, s, admin).get(t, "trash.retention"); v.Source != "default" {
+		t.Errorf("trash.retention = %+v after a refused change", v)
+	}
+}
+
 func TestSettingsPatchRefusesLockedKeys(t *testing.T) {
 	t.Parallel()
 	s := newSettingsServer(t, "upload:\n  max_file_size: 2GiB\n", map[string]string{"SELFCLOUD_TRASH_RETENTION": "48h"})
@@ -490,8 +527,11 @@ func TestSettingsTableIsReadAtStart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	first := serverOn(t, configFrom(t, dir, "", nil), true)
-	wantStatus(t, patchSettings(t, first, adminKey(t, first), map[string]any{"trash.retention": "48h",
-		"upload.max_chunk_size": "8MiB"}), 200)
+	firstAdmin := adminKey(t, first)
+	wantStatus(t, patchSettings(t, first, firstAdmin, map[string]any{"trash.retention": "48h",
+		"upload.max_chunk_size": "8MiB", "office.lock_minutes": 10}), 200)
+	// A reset removes the row, so the next start does not bring the value back.
+	wantStatus(t, patchSettings(t, first, firstAdmin, nil, "office.lock_minutes"), 200)
 
 	// The next start writes trash.retention in the file: the file wins, and the stored piece size still applies.
 	second := serverOn(t, configFrom(t, dir, "trash:\n  retention: 96h\n", nil), false)
@@ -501,6 +541,9 @@ func TestSettingsTableIsReadAtStart(t *testing.T) {
 	}
 	if v := got.get(t, "trash.retention"); v.Value != "96h0m0s" || v.Source != "file" || !v.Locked {
 		t.Errorf("trash.retention at start = %+v", v)
+	}
+	if v := got.get(t, "office.lock_minutes"); v.Source != "default" {
+		t.Errorf("office.lock_minutes after its reset = %+v", v)
 	}
 	info := decode[infoResponse](t, do(t, second.Handler(), "GET", "/api/v1/info"))
 	if info.Limits.MaxChunkSize != 8<<20 {
