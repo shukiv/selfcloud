@@ -515,7 +515,57 @@ func TestSettingsMinFreeReachesTheDerivedPools(t *testing.T) {
 	}
 }
 
-// TestSettingsSignInAsKeepsItsOwnHour:a lower idle timeout does not end a sign-in-as, which keeps the hour it was given.
+// TestSettingsLowerIdleEndsAnOpenEditor: an editor opened from a browser session stops reading and saving once that
+// session is past a lowered sessions.idle_timeout.
+func TestSettingsLowerIdleEndsAnOpenEditor(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	tok := fx.openToken(t, "edit")
+	fx.lockFor(t, tok, "lock-idle")
+	later := time.Now().Add(16 * time.Minute)
+	fx.s.store.SetClock(func() time.Time { return later })
+	wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil), 200)
+	wantStatus(t, patchSettings(t, fx.s, fx.admin, map[string]any{"sessions.idle_timeout": "15m"}), 200)
+	wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil), 401)
+	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", tok, strings.NewReader("saved"),
+		map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-idle"}), 401)
+}
+
+// TestSettingsLowerAdminIdleRefusesGoBack: Go back does not restore an admin's parked session that is past a lowered
+// sessions.admin_idle_timeout.
+func TestSettingsLowerAdminIdleRefusesGoBack(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, true)
+	t0 := time.Now()
+	clock := t0
+	fx.s.sessionClock = func() time.Time { return clock }
+	imp, par := fx.signedInAsMember(t)
+	clock = t0.Add(16 * time.Minute)
+	wantStatus(t, patchSettings(t, fx.s, fx.admin, map[string]any{"sessions.admin_idle_timeout": "15m"}), 200)
+	wantError(t, goBack(t, fx.s, imp, par), 401, apierr.Unauthenticated)
+}
+
+// TestSettingsLowerIdleEndsTheSwitchPrompt: a browser whose session is past a lowered sessions.idle_timeout is not
+// signed in, so a sign-in link for another user signs it in without asking and names nobody.
+func TestSettingsLowerIdleEndsTheSwitchPrompt(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	s.sessionClock = func() time.Time { return time.Now().Add(-16 * time.Minute) }
+	_, ann := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	s.sessionClock = time.Now
+	benID := newMemberUser(t, s, key, acc.ID, "ben@example.com")
+	_, tok := signInLinkOf(t, s, key, acc.ID, benID, nil)
+	wantStatus(t, patchSettings(t, s, admin, map[string]any{"sessions.idle_timeout": "15m"}), 200)
+	rec := redeemAs(t, s, &ann, tok, false)
+	wantStatus(t, rec, 200)
+	if strings.Contains(rec.Body.String(), "ann@example.com") {
+		t.Errorf("the answer names the ended session's user: %s", rec.Body.String())
+	}
+}
+
+// TestSettingsSignInAsKeepsItsOwnHour: a lower idle timeout does not end a sign-in-as, which keeps the hour it was given.
 func TestSettingsSignInAsKeepsItsOwnHour(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
