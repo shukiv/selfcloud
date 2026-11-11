@@ -360,19 +360,27 @@ file's version (its ETag), and the part file takes the name only when it is comp
 the file's SHA-256, the bytes are checked against it; otherwise only the size is checked, and `get` says so. A
 mismatch removes the part file and exits 5. After a cut, the next range starts at the part file's size. When the file
 changes on the server during the download, the server sends the new version whole instead of a range, and `get` says
-so and starts again on it, at most three times; two versions are never mixed. A part file that a `get` of the same
-file left behind is continued by the next one, or started again when the file changed meanwhile; one that this client
-did not begin is refused (exit 2), or emptied and used with `--overwrite`. `get` prints `path`, `size`, `sha256` (of the bytes
-written) and `checked` (`sha256` or `size`).
+so and starts again on it, at most three times; two versions are never mixed. A whole file of the same version in
+answer to a range means the server, or a proxy in front of it, ignored the range: `get` says so and stops (exit 1). A
+part file that a `get` of the same file left behind is continued by the next one, or started again when the file
+changed meanwhile. `get` prints `path`, `size`, `sha256` (of the bytes written) and `checked` (`sha256` or `size`).
 
 **Safe writes.** The name is the server's, so it is checked before anything is written: it must pass the API's name
 rules, be one plain name with no separator, not be a device name on any system (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`,
-`CONOUT$`, and `COM` or `LPT` with one digit, in any case and with any extension), and leave room for `.part` within
-255 bytes. A refused name exits 2,
-fetches nothing and writes nothing; give the destination a name of its own. Every write stays inside the destination
-directory, and a symbolic link at the file's name or the part file's name is never followed or replaced (exit 2). An
-existing file is replaced only with `--overwrite`, and only once the new bytes are complete and checked; a file that
-appears at the name during the download is kept, and so is the part file.
+`CONOUT$`, and `COM` or `LPT` with one digit, in any case and with any extension), leave room for `.part` within 255
+bytes, and not start with a dot, so a download never makes a hidden file such as `.bash_profile` unasked. A refused name
+exits 2, fetches nothing and writes nothing; the error says to give the destination a name of its own
+(`get FILE DIR/NAME`), and a name the person gives may start with a dot. Every write stays inside the destination
+directory, and a symbolic link at the file's name or the part file's name is never followed or replaced (exit 2).
+
+The part file is made new, mode 0600 while the bytes arrive, and the finished file takes the mode a new file gets under
+the umask. An existing part file is continued only when this client began it for the same file, it belongs to this
+user, and it has no other name (a hard link); otherwise it is refused (exit 2) and the error says why, or with
+`--overwrite` it is removed and a new one made, so its other name keeps its bytes. A part file is never emptied in
+place. An existing file at the name is replaced only with `--overwrite`, and only once the new bytes are complete and
+checked; a file that appears at the name during the download is kept, and so is the part file. On a file system
+without hard links (such as FAT) the name is taken by a check and then a rename, so a file that appears in that moment
+is replaced.
 
 **Share links.** `get 'https://host/s#SECRET'` reads the file a share link names, with no profile and no sign-in: the
 link names its own server, so `--url`, `--profile`, `--token-file` and `--folder` are refused with it, and no key of a
