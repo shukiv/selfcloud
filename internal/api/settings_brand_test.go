@@ -657,10 +657,11 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "not a regular file", stored, nil},
-		// No path is ever made from a row the server did not write, so the file the first upload left stays.
+		// No path is ever made from a row the server did not write, so the file the first upload left stays, though the
+		// row would name it through "..".
 		{"a row the server does not write", func(t *testing.T, s *Server, path string) {
 			if err := s.store.Write(context.Background(), func(tx *store.Tx) error {
-				return tx.SetSetting(context.Background(), "ui.brand.logo", "image/svg+xml sha256:../../etc/passwd")
+				return tx.SetSetting(context.Background(), "ui.brand.logo", "image/svg+xml sha256:/../logo-"+sum)
 			}); err != nil {
 				t.Fatal(err)
 			}
