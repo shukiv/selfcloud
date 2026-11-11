@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../lib/query";
 import { session, type Session } from "../lib/session";
 import { setLang, translate } from "../lib/i18n";
@@ -169,6 +169,47 @@ describe("Starred", () => {
     expect(screen.getByRole("link", { name: "Budget.pdf" })).toBeTruthy();
   });
 
+  // An observer whose end of list is always in view fires as soon as it is watched. After a failed next page the page must not
+  // make a new one, or it would ask again with no delay; only Load more asks again.
+  it("after a failed next page, nothing is asked for until Load more is clicked", async () => {
+    class InViewObserver {
+      private live = true;
+      constructor(private readonly cb: (entries: { isIntersecting: boolean }[]) => void) {}
+      observe() {
+        queueMicrotask(() => {
+          if (this.live) this.cb([{ isIntersecting: true }]);
+        });
+      }
+      disconnect() {
+        this.live = false;
+      }
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", InViewObserver);
+    try {
+      const { calls } = stubFetch((c: Call) => {
+        if (c.url.includes("cursor=")) return fail(500, "internal");
+        if (c.url.startsWith(STARRED)) return { status: 200, body: { items: [starred("nod_s1", "Budget.pdf")], next_cursor: "c2" } };
+        return fail(404, "not_found");
+      });
+      const nextPages = () => calls.filter((c) => c.url.includes("cursor=")).length;
+      renderPage();
+      await screen.findByRole("alert");
+      expect(nextPages()).toBe(1);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(nextPages()).toBe(1);
+      fireEvent.click(screen.getByRole("button", { name: translate("en", "files.loadMore") }));
+      await waitFor(() => expect(nextPages()).toBe(2));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(nextPages()).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("a session change clears the last person's list before the next person's read is answered (guard: setItems on a new session)", async () => {
     let who = "ann";
     let release!: () => void;
@@ -207,7 +248,7 @@ describe("Starred", () => {
       await setLang("he");
     });
     await new Promise((r) => setTimeout(r, 50));
-    expect(screen.getByRole("link", { name: "Plan.txt" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "Plan.txt" })).toBeTruthy();
     expect(calls.filter((c) => c.url.startsWith(STARRED)).length).toBe(before);
   });
 });
