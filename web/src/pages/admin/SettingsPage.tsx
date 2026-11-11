@@ -261,6 +261,7 @@ function SettingsView() {
       {body}
       <Modal
         open={blocked !== null}
+        maskClosable={false}
         title={t("settings.leave.title")}
         okText={t("settings.leave.ok")}
         cancelText={t("settings.leave.stay")}

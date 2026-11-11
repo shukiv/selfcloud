@@ -164,6 +164,8 @@ fn	lib/notifications/api.ts:markRead	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:setEmailSwitch	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:unreadCount	-	cli11	planned, cli11
 fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
+fn	lib/settings/api.ts:changeSettings	-	se4	planned, se4 (settings set and settings reset)
+fn	lib/settings/api.ts:getSettings	-	se4	planned, se4 (settings get)
 fn	lib/sharing/api.ts:approveAccessRequest	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:createAccessRequest	-	-	a viewer asks for access in the browser
 fn	lib/sharing/api.ts:createDropLink	-	cli7	planned, cli7
