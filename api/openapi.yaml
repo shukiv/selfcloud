@@ -2032,7 +2032,11 @@ paths:
         - a body over 256 KiB: `413 too_large` with `details.limit_bytes`; a declared length over it is refused
           unread, and an undeclared one is read no further than the cap;
         - a PNG without the PNG signature, an SVG without `<svg`, or a PNG sent as SVG: `400 invalid_request`,
-          `details.reason` `invalid_picture`.
+          `details.reason` `invalid_picture`;
+        - a PNG whose header does not give its size, or gives more than 4096 pixels on a side or 4194304 pixels in
+          all, read before anything else of it: `400 invalid_request`, `details.reason` `invalid_picture`. Every page
+          that shows the logo has the browser decode it whole, so the cap keeps that small. The logo file is not
+          held to this cap; one over it gets a warning at start.
 
         The picture is stored under the data folder with a name the server makes from its hash, and recorded with
         its type and hash in one transaction with an `installation.settings` audit entry, whose details give

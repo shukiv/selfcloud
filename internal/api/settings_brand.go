@@ -120,6 +120,9 @@ func (s *Server) startPictures(cfg *config.Config, rows map[string]string) (*bra
 				if err != nil {
 					return nil, fmt.Errorf("api: %w", err)
 				}
+				if w := img.SizeWarning(); w != "" && k.stem == logoKind.stem {
+					s.log.Warn(w)
+				}
 				p = k.with(p, picture{img: img, from: pictureFile})
 			}
 			if stored {
