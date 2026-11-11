@@ -500,7 +500,14 @@ func TestUnsubscribeLinkOfAMail(t *testing.T) {
 	if on, _ := fx.s.store.NotifyEmailOn(context.Background(), fx.bob.ID); !on {
 		t.Fatal("the GET switched the email off")
 	}
-	forged := path[:len(path)-2] + "AA"
+	// The forgery changes one character of the nonce. The last characters of unpadded base64 carry bits the decoder ignores,
+	// so changing those could leave the sealed bytes as they were.
+	at := strings.Index(path, "?t="+notifyUnsubPrefix) + len("?t="+notifyUnsubPrefix) + 2
+	swap := "A"
+	if path[at] == 'A' {
+		swap = "B"
+	}
+	forged := path[:at] + swap + path[at+1:]
 	wantStatus(t, call(t, fx.s, "POST", forged, "", nil), 400)
 	wantStatus(t, call(t, fx.s, "POST", path, "", nil), 200)
 	if on, _ := fx.s.store.NotifyEmailOn(context.Background(), fx.bob.ID); on {
