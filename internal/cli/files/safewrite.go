@@ -126,6 +126,9 @@ func newPart(root *os.Root, name string) (*partFile, error) {
 	return &partFile{root: root, name: name, part: part, f: f, sum: sha256.New()}, nil
 }
 
+// beforePartOpen runs between the look at a part file and its opening. Tests use it to put a link in its place.
+var beforePartOpen = func(part string) {}
+
 // oldPart reopens the part file to continue it. It must be a regular file, and the file opened must be the one Lstat
 // saw, so a link put in its place meanwhile is not followed. With hashBytes, the bytes it holds are hashed, so the
 // check at the end covers the whole file.
@@ -138,6 +141,7 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, exitcode.Usagef("%s is not a regular file, so it is not used", part)
 	}
+	beforePartOpen(part)
 	f, err := root.OpenFile(part, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open the part file: %w", err)

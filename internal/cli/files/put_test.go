@@ -253,6 +253,22 @@ func wantExpired(t *testing.T, l *live, name string, before int, resumed result)
 	if n := countCalls(calls, "POST /api/v1/uploads"); n != 1 {
 		t.Errorf("%d creations: an expired upload must not be started again silently", n)
 	}
+	// The expiry is never retried: once the server answers 410, nothing more is asked of the upload.
+	expiredAt := -1
+	for i, c := range calls {
+		if c.status == http.StatusGone {
+			expiredAt = i
+			break
+		}
+	}
+	if expiredAt < 0 {
+		t.Fatal("the server never answered 410 Gone")
+	}
+	for _, c := range calls[expiredAt+1:] {
+		if strings.HasPrefix(c.path, "/api/v1/uploads") {
+			t.Errorf("%s %s was sent after the upload expired", c.method, c.path)
+		}
+	}
 	if r := records(t); len(r) != 0 {
 		t.Errorf("the expired upload is still recorded: %v", r)
 	}
@@ -277,6 +293,39 @@ func TestPutPastTheUploadsLifetimeExits6(t *testing.T) {
 }
 
 // TestPutIdleUploadExits6 is the same proof for upload.expiry, the idle limit: one second here.
+// TestPutExpiryDuringTheUploadExits6: an upload that expires while put is still sending it ends that run at once with
+// exit 6. The wait after a cut connection outlasts the server's upload.max_lifetime; the HEAD that follows answers 410,
+// and nothing more is sent. With the limit at its default, the same run finishes.
+func TestPutExpiryDuringTheUploadExits6(t *testing.T) {
+	run := func(t *testing.T, mutate func(*config.Config)) (*live, []byte, result) {
+		cut := newCutter(false, -1, 3*mib/2)
+		l := newLive(t, mutate, cut)
+		l.isolate()
+		old := transferWait
+		t.Cleanup(func() { transferWait = old })
+		transferWait = func(try int) time.Duration {
+			if try == 1 {
+				return 2500 * time.Millisecond
+			}
+			return 0
+		}
+		data := randomBytes(t, 3*mib)
+		local := writeLocal(t, "running.bin", data)
+		return l, data, l.run(Put, local, "--folder", l.folder, "--piece-size", "1MiB")
+	}
+	t.Run("expired", func(t *testing.T) {
+		l, _, res := run(t, func(c *config.Config) { c.Upload.MaxLifetime = config.Duration(2 * time.Second) })
+		wantExpired(t, l, "running.bin", len(patches(l.rec.all())), res)
+	})
+	t.Run("lifted", func(t *testing.T) {
+		l, data, res := run(t, nil)
+		l.wantCode(res, 0)
+		if got := l.content(valueOfLine(t, res.stdout, "id=")); sha(got) != sha(data) {
+			t.Fatal("the upload differs from the local file")
+		}
+	})
+}
+
 func TestPutIdleUploadExits6(t *testing.T) {
 	idle := func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Second) }
 	t.Run("expired", func(t *testing.T) {
@@ -380,23 +429,34 @@ func TestPutNameTakenDuringTheUploadWaitsForACommit(t *testing.T) {
 
 // TestPutResumeRefusesAChangedLocalFile: a resume sends nothing when the local file is not the one the upload began with.
 func TestPutResumeRefusesAChangedLocalFile(t *testing.T) {
-	cut := newCutter(false, 0, 3*mib/2)
-	l := newLive(t, nil, cut)
-	l.isolate()
-	noWait(t)
-	local := writeLocal(t, "changing.bin", randomBytes(t, 3*mib))
-	first := l.run(Put, local, "--folder", l.folder, "--piece-size", "1MiB")
-	l.wantCode(first, 1)
-	upl := uploadIDIn(t, first.stderr)
-	if err := os.WriteFile(local, randomBytes(t, 3*mib+1), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cut.setAfter(-1)
-	before := len(l.rec.all())
-	res := l.run(Put, "--resume", upl)
-	l.wantCode(res, 2)
-	if got := l.rec.all()[before:]; len(patches(got)) != 0 {
-		t.Errorf("pieces sent from a changed file: %d", len(patches(got)))
+	for _, tc := range []struct {
+		what string
+		size int64
+	}{{"another size", 3*mib + 1}, {"the same size, written again", 3 * mib}} {
+		t.Run(tc.what, func(t *testing.T) {
+			cut := newCutter(false, 0, 3*mib/2)
+			l := newLive(t, nil, cut)
+			l.isolate()
+			noWait(t)
+			local := writeLocal(t, "changing.bin", randomBytes(t, 3*mib))
+			first := l.run(Put, local, "--folder", l.folder, "--piece-size", "1MiB")
+			l.wantCode(first, 1)
+			upl := uploadIDIn(t, first.stderr)
+			if err := os.WriteFile(local, randomBytes(t, int(tc.size)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			later := time.Now().Add(time.Minute)
+			if err := os.Chtimes(local, later, later); err != nil {
+				t.Fatal(err)
+			}
+			cut.setAfter(-1)
+			before := len(l.rec.all())
+			res := l.run(Put, "--resume", upl)
+			l.wantCode(res, 2)
+			if got := l.rec.all()[before:]; len(patches(got)) != 0 {
+				t.Errorf("pieces sent from a changed file: %d", len(patches(got)))
+			}
+		})
 	}
 }
 
