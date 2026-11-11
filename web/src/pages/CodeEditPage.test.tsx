@@ -256,7 +256,7 @@ beforeEach(() => {
   // The text kept across a sign-in lives in this tab's sessionStorage, so one test's kept text must not reach the next.
   sessionStorage.clear();
   // Another tab's sign-out sets a flag in this module; it must not reach the next test.
-  noteSignedIn();
+  noteSignedIn("usr_reset");
   goMock.mockClear();
   // go moves the router, so Close and Back are subject to the same unsaved guard as a link (design 4.6).
   goMock.mockImplementation((url: string) => navigateTo?.(url));
@@ -1653,8 +1653,8 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
       await waitFor(() => expect(closeSpy).toHaveBeenCalled());
       expect(keptFor()).toEqual([]);
-      // The page's fallback back runs 150 ms after the close: it is waited for here, so it cannot navigate the next test's router.
-      await new Promise((r) => setTimeout(r, 250));
+      // The page's fallback back runs 150 ms after the close: it is waited for by its call to go, so it cannot navigate the next test's router.
+      await waitFor(() => expect(goMock).toHaveBeenCalled());
     } finally {
       closeSpy.mockRestore();
     }
@@ -1667,7 +1667,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(keptFor()).toEqual([]);
   });
 
-  it("another tab's sign-out, then its sign-in: this tab keeps the text again when its session ends (N1)", async () => {
+  it("another tab's sign-out, then its sign-in: this tab keeps the text again when its session ends", async () => {
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       server();
@@ -1676,7 +1676,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       type(0, "x");
       other.postMessage({ type: "signed-out" });
       await waitFor(() => expect(keepsHere()).toBe(false));
-      other.postMessage({ type: "signed-in" });
+      other.postMessage({ type: "signed-in", user: "usr_1" });
       await waitFor(() => expect(keepsHere()).toBe(true));
       act(() => clearSession());
       await waitFor(() => expect(keptFor()).toHaveLength(1));
@@ -1686,7 +1686,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     }
   });
 
-  it("a sign-in in this tab posts a sign-in message to the other tabs, with no text in it (N1)", async () => {
+  it("a sign-in in this tab posts a sign-in message to the other tabs that names the person and has no text in it", async () => {
     const heard: unknown[] = [];
     const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
     listener.onmessage = (e: MessageEvent) => heard.push(e.data);
@@ -1697,13 +1697,13 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       type(0, "x");
       setSignedIn({ user: { id: "usr_1", role: "user" }, csrf_token: "csrf_again" } as never);
       await waitFor(() => expect(heard).toHaveLength(1));
-      expect(heard[0]).toEqual({ type: "signed-in" });
+      expect(heard[0]).toEqual({ type: "signed-in", user: "usr_1" });
     } finally {
       listener.close();
     }
   });
 
-  it("a sign-in as a person through setMe lets this tab keep the text again after another tab's sign-out (N6)", async () => {
+  it("a sign-in as a person through setMe lets this tab keep the text again after another tab's sign-out", async () => {
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       server();

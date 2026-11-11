@@ -49,7 +49,7 @@ describe("another tab's explicit sign-out (decision 133)", () => {
       await until(() => !keeps());
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
       expect(readUnsaved("usr_1", NOD)).toBeNull();
-      noteSignedIn();
+      noteSignedIn("usr_1");
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
     } finally {
       stop();

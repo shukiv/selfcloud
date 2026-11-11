@@ -3,14 +3,14 @@
 // The unsaved text the editor keeps across a sign-in, for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133).
 // The text is kept in this browser tab only (sessionStorage), one entry per person and file, so it comes back when that person signs in
 // again and opens the file. Only the editor loads this module (the page's chunk); the purges and the sign-out channel are in unsaved.ts,
-// which the sign-in path loads (review round 2, N4). Every storage call is in try/catch: a store that throws or is full means the text is
+// which the sign-in path loads. Every storage call is in try/catch: a store that throws or is full means the text is
 // not kept, and nothing else changes.
 
 import { PREFIX, signedOutElsewhere } from "./unsaved";
 
 // Kept is one kept text: the editor's text (line breaks as LF, which is how the editor holds it), the ETag the edit was based on (the
 // If-Match of a save of this text), the file's byte order mark and line break (lib/code/edit.ts), its encoding (UTF-8 only, as the
-// editor reads it), and the time it was kept. The time is stored as the brief asks; nothing reads it, and no expiry is set.
+// editor reads it), and the time it was kept. The time is stored; nothing reads it, and no expiry is set.
 export interface Kept {
   text: string;
   etag: string;

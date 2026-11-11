@@ -2,7 +2,7 @@
 
 // The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133).
 // This module is the part the sign-in and sign-out paths need, and it is in the first load: the purges at every sign-in and sign-out,
-// and the sign-out channel. The text itself is kept and read in kept.ts, which only the editor loads (review round 2, N4). Nothing here
+// and the sign-out channel. The text itself is kept and read in kept.ts, which only the editor loads. Nothing here
 // reads the session: the session's own changes call the purges and the channel. The module imports nothing, so the entry chunk that
 // signs people in and out does not grow with the editor.
 
@@ -49,8 +49,8 @@ export function purgeAllUnsaved(): void {
 }
 
 // The sign-out channel (decision 133, rule 5): an explicit sign-out tells the other tabs of this browser, so that each drops the text
-// it kept. A sign-in tells them too, so that a tab which kept nothing after another tab's sign-out keeps text again (review round 2,
-// N1). Both messages carry no text. A browser without channels has no other tab to tell, and keeps today's behaviour.
+// it kept. A sign-in tells them too, with the signing-in person's id, so that a tab which kept nothing after another tab's sign-out keeps
+// text again, and drops the text of anyone else. Neither message carries text. A browser without channels has no other tab to tell.
 export const SIGNOUT_CHANNEL = "selfcloud-code-unsaved";
 const SIGNED_OUT = "signed-out";
 const SIGNED_IN = "signed-in";
@@ -97,9 +97,10 @@ export function watchSignOuts(): () => void {
   ch.onmessage = (e: MessageEvent) => {
     const msg = e.data as { type?: unknown } | null;
     if (msg?.type === SIGNED_IN) {
-      // A sign-in anywhere in this browser ends the keep-nothing window. It names no person and drops no text: the purge of other
-      // people's drafts is the signing-in tab's own, at its sign-in (session.ts).
+      // A sign-in anywhere in this browser ends the keep-nothing window, and drops the text of every other person kept here.
       endedElsewhere = false;
+      const who = (msg as { user?: unknown }).user;
+      if (typeof who === "string") purgeOtherUnsaved(who);
       return;
     }
     if (msg?.type !== SIGNED_OUT) return;
@@ -115,11 +116,12 @@ export function watchSignOuts(): () => void {
 }
 
 // noteSignedIn is called when this tab signs a person in (session.ts). It keeps text again in this tab, and tells the other tabs of
-// the browser, which keep text again too (review round 2, N1). The message carries no text.
-export function noteSignedIn(): void {
+// the browser, which keep text again too and drop the text of anyone else. The message names the person and carries no text.
+export function noteSignedIn(user: string): void {
   endedElsewhere = false;
+  purgeOtherUnsaved(user);
   try {
-    openChannel()?.postMessage({ type: SIGNED_IN });
+    openChannel()?.postMessage({ type: SIGNED_IN, user });
   } catch {
     // A channel that refuses the message: the other tabs keep their window, as they do in a browser without channels.
   }
