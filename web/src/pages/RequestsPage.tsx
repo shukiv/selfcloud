@@ -171,7 +171,7 @@ export default function RequestsPage() {
     },
     {
       key: "grant",
-      title: t("requests.colGrant"),
+      title: t("requests.grant"),
       width: 170,
       render: (row) => {
         const roles = capFor(row.node);

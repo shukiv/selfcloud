@@ -16,7 +16,7 @@ describe("the access requests catalogue", () => {
 
   it("names the column titles and the empty title", () => {
     expect(Object.keys(en).sort()).toEqual(
-      ["requests.colAsks", "requests.colGrant", "requests.colItem", "requests.colMessage", "requests.colWho", "requests.emptyTitle"].sort(),
+      ["requests.colAsks", "requests.colItem", "requests.colMessage", "requests.colWho", "requests.emptyTitle"].sort(),
     );
   });
 

@@ -3,6 +3,5 @@
   "requests.colItem": "Elemento",
   "requests.colAsks": "Solicita",
   "requests.colMessage": "Mensaje",
-  "requests.colGrant": "Conceder",
   "requests.emptyTitle": "Nada que decidir"
 }

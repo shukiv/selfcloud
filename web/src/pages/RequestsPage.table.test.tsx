@@ -90,7 +90,7 @@ afterEach(() => {
 });
 
 describe("access requests are one table (tl5, decision 138)", () => {
-  it("draws the requests as the rows of one table, under the columns Who, Item, Asks, Message and Grant", async () => {
+  it("draws the requests as the rows of one table, under the columns Who, Item, Asks, Message and Give", async () => {
     answer([zoe, ann]);
     renderPage();
     const region = await screen.findByRole("region", { name: "Access requests" });
@@ -98,7 +98,7 @@ describe("access requests are one table (tl5, decision 138)", () => {
     const heads = within(region)
       .getAllByRole("columnheader")
       .map((h) => h.textContent ?? "");
-    expect(heads).toEqual(expect.arrayContaining(["Who", "Item", "Asks", "Message", "Grant"]));
+    expect(heads).toEqual(expect.arrayContaining(["Who", "Item", "Asks", "Message", "Give"]));
     expect(document.querySelector(".requests tr.request[data-id='arq_1']")).toBeTruthy();
   });
 
