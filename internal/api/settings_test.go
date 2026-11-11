@@ -331,6 +331,13 @@ func TestSettingsPatchRefusesARepeatedKey(t *testing.T) {
 	for _, raw := range []string{`{"set":["trash.retention"]}`, `{"set":"trash.retention"}`} {
 		wantError(t, call(t, s, "PATCH", "/api/v1/settings", admin, json.RawMessage(raw)), 400, apierr.InvalidRequest)
 	}
+	// A long key named twice is refused for its length, so the answer does not repeat it.
+	long := strings.Repeat("k", 200)
+	e = wantError(t, call(t, s, "PATCH", "/api/v1/settings", admin,
+		json.RawMessage(`{"set":{"`+long+`":true,"`+long+`":true}}`)), 400, apierr.InvalidRequest)
+	if strings.Contains(e.Message, long) || e.Details["keys"] != nil {
+		t.Errorf("a long repeated key is repeated in the answer: %q %v", e.Message, e.Details)
+	}
 }
 
 // TestSettingsPatchBoundsItsShape: a change names at most 64 keys, each at most 128 bytes and named once, and a value

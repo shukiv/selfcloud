@@ -157,8 +157,8 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 }
 
 // settingValues reads the set object of a change token by token, so a key named twice is refused rather than the later
-// value silently winning. A missing or null set is an empty one. A key longer than maxSettingKey is refused before it is
-// compared, so no answer repeats a long key.
+// value silently winning. A missing or null set is an empty one. A key longer than maxSettingKey is refused where it
+// first appears, so no answer repeats a long key.
 func settingValues(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	out := map[string]json.RawMessage{}
 	if len(raw) == 0 || string(raw) == "null" {
