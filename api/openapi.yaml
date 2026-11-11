@@ -8126,19 +8126,24 @@ components:
     SettingsChange:
       type: object
       additionalProperties: false
-      description: At least one setting, at most 64; a key may not be both set and reset.
+      description: |
+        At least one setting, at most 64; a key is at most 128 bytes and is named once, so it may not be both set and
+        reset.
       properties:
         set:
           type: object
+          maxProperties: 64
           description: |
             New values by key. A `bool` takes `true` or `false`; an `int` a whole number; a `duration` a string such as
-            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes. A value must also lie
-            within the setting's floor and cap (decision 139) and pass the config file's rules on the whole configuration.
+            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes. A value is at most 64
+            bytes of JSON. A value must also lie within the setting's floor and cap (decision 139) and pass the config
+            file's rules on the whole configuration.
           additionalProperties: true
         reset:
           type: array
+          maxItems: 64
           description: Keys whose stored value is removed, so the default applies.
-          items: { type: string }
+          items: { type: string, maxLength: 128 }
 
     AccountUpdate:
       type: object
