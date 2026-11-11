@@ -635,10 +635,10 @@ func TestEditableSettingsAreReadThroughTheSnapshot(t *testing.T) {
 	t.Parallel()
 	var pats []*regexp.Regexp
 	for _, f := range snapshotFields {
-		pats = append(pats, regexp.MustCompile(`\bcfg\.`+regexp.QuoteMeta(f)+`\b`))
+		pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.`+regexp.QuoteMeta(f)+`\b`))
 	}
 	// A whole section passed on carries its editable fields with it. links is passed whole for its key files only.
-	pats = append(pats, regexp.MustCompile(`\bcfg\.(Upload|Storage|Sharing|Trash|Versions|Sessions|Users|Search|Office|Admin)\s*([,)]|$)`))
+	pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.(Upload|Storage|Sharing|Trash|Versions|Sessions|Users|Search|Office|Admin)\s*([,)]|$)`))
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
