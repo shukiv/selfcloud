@@ -1972,12 +1972,19 @@ paths:
         - a value of the wrong JSON type, one that does not parse, one outside the setting's floor and cap, or a
           combination the config file's rules refuse (such as a piece size above the largest file): `400
           invalid_request`, `details.reason` `invalid_setting`, `details.keys` (every invalid key) and
-          `details.errors` (each message, in the style of the config file's errors).
+          `details.errors` (each message, in the style of the config file's errors). Through this route the admin
+          pair can only shorten decision 84's values (`sessions.admin_idle_timeout` at most 12 hours,
+          `sessions.admin_max_age` at most 7 days), and `storage.min_free` is at least 256 MiB;
+        - a name repeated inside `set`, or a `set` that is not an object: `400 invalid_request`, naming the key in
+          `details.keys`, with no `details.reason`.
 
-        A change that alters a value or its source writes one `installation.settings` audit entry, whose details give
-        each changed key's `old` and `new` value and its new `source`. The answer is the settings after the change.
+        A change that alters a value or its source writes its rows and one `installation.settings` audit entry in one
+        transaction, whose details give each changed key's `old` and `new` value and its new `source`; if that write
+        fails, the answer is an error and nothing changes. The answer is the settings after the change.
         Lowering `sessions.idle_timeout`, `sessions.max_age` or their admin pair ends the sessions past the new limit
-        at their next request; turning `admin.tenant_access` off refuses the next sign-in-as and ends the running ones.
+        at their next use: the next request, an open editor's next call, Go back to an admin session, and the
+        "signed in as another user" prompt all hold a session to the limits in force. Turning `admin.tenant_access` off
+        refuses the next sign-in-as and ends the running ones.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -8127,8 +8134,8 @@ components:
       type: object
       additionalProperties: false
       description: |
-        At least one setting, at most 64; a key is at most 128 bytes and is named once, so it may not be both set and
-        reset.
+        At least one setting, at most 64; a key is at most 128 bytes and is named once across `set` and `reset`: it
+        may not be both set and reset, nor appear twice inside `set`.
       properties:
         set:
           type: object
@@ -8137,7 +8144,7 @@ components:
             New values by key. A `bool` takes `true` or `false`; an `int` a whole number; a `duration` a string such as
             `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes. A value is at most 64
             bytes of JSON. A value must also lie within the setting's floor and cap (decision 139) and pass the config
-            file's rules on the whole configuration.
+            file's rules on the whole configuration. A key repeated here is refused.
           additionalProperties: true
         reset:
           type: array
