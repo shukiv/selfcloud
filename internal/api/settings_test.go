@@ -48,6 +48,7 @@ type testPicture struct {
 	State  string `json:"state"`
 	Type   string `json:"type"`
 	SHA256 string `json:"sha256"`
+	Reason string `json:"reason"`
 	Locked bool   `json:"locked"`
 }
 

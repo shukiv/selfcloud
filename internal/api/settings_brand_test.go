@@ -703,6 +703,8 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 		label  string
 		spoil  func(t *testing.T, s *Server, path string)
 		reason string
+		// shown is what the settings answer says of the picture the start ignored.
+		shown string
 		// old is the audit's old value when DELETE clears the row; kept is what the brand folder holds after it.
 		old  string
 		kept []string
@@ -711,17 +713,17 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			if err := os.WriteFile(path, []byte(`<svg xmlns="http://www.w3.org/2000/svg"><title>other</title></svg>`), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "hash", stored, nil},
+		}, "hash", "does not have the hash", stored, nil},
 		{"no longer an SVG", func(t *testing.T, s *Server, path string) {
 			if err := os.WriteFile(path, []byte("plain text"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "not an SVG", stored, nil},
+		}, "not an SVG", "not an SVG", stored, nil},
 		{"missing", func(t *testing.T, s *Server, path string) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
-		}, "no such file", stored, nil},
+		}, "no such file", "file is missing", stored, nil},
 		{"a link to the same bytes", func(t *testing.T, s *Server, path string) {
 			elsewhere := filepath.Join(t.TempDir(), "same.svg")
 			if err := os.WriteFile(elsewhere, []byte(testLogoSVG), 0o600); err != nil {
@@ -733,7 +735,7 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			if err := os.Symlink(elsewhere, path); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a regular file", stored, nil},
+		}, "not a regular file", "not a regular file", stored, nil},
 		// No path is ever made from a row the server did not write, so the file the first upload left stays, though the
 		// row would name it through "..".
 		{"a row the server does not write", func(t *testing.T, s *Server, path string) {
@@ -742,7 +744,7 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a picture", "invalid", []string{"logo-" + sum + ".svg"}},
+		}, "not a picture", "not a picture the server wrote", "invalid", []string{"logo-" + sum + ".svg"}},
 	} {
 		dir := t.TempDir()
 		first := serverOn(t, configFrom(t, dir, "", nil), true)
@@ -756,18 +758,30 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			!strings.Contains(logs.String(), tc.reason) {
 			t.Errorf("%s: the log does not say why:\n%s", tc.label, logs.String())
 		}
+		if !strings.Contains(logs.String(), "DELETE /api/v1/settings/brand/logo or a new upload clears it") {
+			t.Errorf("%s: the log does not name the fix:\n%s", tc.label, logs.String())
+		}
 		if logo := serveRaw(t, second, http.MethodGet, "/brand/logo"); !strings.Contains(logo.Body.String(), `aria-label="SelfCloud"`) {
 			t.Errorf("%s: /brand/logo is not the artwork", tc.label)
 		}
 		admin2 := adminKey(t, second)
-		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.logo"); p.State != "none" {
-			t.Errorf("%s: logo = %+v", tc.label, p)
+		// The picture the start ignored is unusable, with the reason and no type or hash: the page can offer to remove it.
+		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.logo"); p.State != "unusable" || p.Type != "" || p.SHA256 != "" ||
+			!strings.Contains(p.Reason, tc.shown) || strings.Contains(p.Reason, dir) || p.Locked {
+			t.Errorf("%s: logo = %+v, want unusable with a reason containing %q and no path", tc.label, p, tc.shown)
+		}
+		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.icon"); p.State != "none" || p.Reason != "" {
+			t.Errorf("%s: icon = %+v, want none with no reason", tc.label, p)
 		}
 
 		// DELETE clears what the start ignored: the row, audited, and the file the row names when the server wrote it, so
 		// the warning stops and the picture cannot come back. A second DELETE changes nothing.
 		before := len(settingsAudit(t, second))
-		wantStatus(t, call(t, second, http.MethodDelete, logoRoute, admin2, nil), 200)
+		deleted := call(t, second, http.MethodDelete, logoRoute, admin2, nil)
+		wantStatus(t, deleted, 200)
+		if p := pictureIn(t, decode[testSettings](t, deleted), "ui.brand.logo"); p != (testPicture{Key: "ui.brand.logo", State: "none"}) {
+			t.Errorf("%s: logo after DELETE = %+v, want none", tc.label, p)
+		}
 		if rows, err := second.store.Settings(context.Background()); err != nil || rows["ui.brand.logo"] != "" {
 			t.Errorf("%s: rows after DELETE = %v, %v", tc.label, rows, err)
 		}
