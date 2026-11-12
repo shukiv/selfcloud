@@ -103,6 +103,13 @@ func (f *fake) on(method, path string, rs ...reply) {
 	f.replies[method+" "+path] = append(f.replies[method+" "+path], rs...)
 }
 
+// set replaces the answers queued for a method and a path.
+func (f *fake) set(method, path string, rs ...reply) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.replies[method+" "+path] = append([]reply(nil), rs...)
+}
+
 func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	call := r.Method + " " + r.URL.Path
