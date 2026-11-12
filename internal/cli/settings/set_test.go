@@ -34,7 +34,8 @@ func TestSetSendsTheValuesByType(t *testing.T) {
 }
 
 func TestSetRefusesAValueOfTheWrongShapeBeforeThePatch(t *testing.T) {
-	for _, arg := range []string{"flag.enabled=yes", "count.key=1.5", "count.key=", "count.key=99999999999999999999"} {
+	for _, arg := range []string{"flag.enabled=yes", "flag.enabled=TRUE", "flag.enabled=1", "flag.enabled=t", "count.key=1.5", "count.key=",
+		"count.key=99999999999999999999", "count.key=0x10", "count.key=1_000"} {
 		t.Run(arg, func(t *testing.T) {
 			isolate(t, adminKey)
 			f := newFake(t)
