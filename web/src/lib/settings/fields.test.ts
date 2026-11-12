@@ -8,14 +8,21 @@ import { fieldKeys, SECTIONS } from "./fields";
 
 const text = en as Record<string, string>;
 
+// BRAND starts the brand keys. They belong to the Branding card, which is not drawn yet (decision 143), so the page
+// lists none of them and these checks leave them out. The card takes them in, and this exception goes with it.
+const BRAND = "ui.brand.";
+
 describe("the settings page's fields", () => {
   const all = SECTIONS.flatMap((s) => fieldKeys(s));
 
   it("draws every setting the server lists, once, and no other", () => {
     const go = readFileSync(resolve(__dirname, "../../../../internal/config/settings.go"), "utf8");
     const block = go.slice(go.indexOf("var settingDefs"), go.indexOf("// factKeys"));
-    const served = [...block.matchAll(/\{key: "([a-z_.]+)"/g)].map((m) => m[1]).sort();
+    const listed = [...block.matchAll(/\{key: "([a-z_.]+)"/g)].map((m) => m[1]);
+    const served = listed.filter((k) => !k.startsWith(BRAND)).sort();
     expect(served.length).toBeGreaterThan(20);
+    expect(listed.length).toBeGreaterThan(served.length);
+    expect(all.filter((k) => k.startsWith(BRAND))).toEqual([]);
     expect([...all].sort()).toEqual(served);
     expect(new Set(all).size).toBe(all.length);
   });
@@ -33,6 +40,7 @@ describe("the settings page's fields", () => {
     let compared = 0;
     for (const m of block.matchAll(/\{key: "([a-z_.]+)", typ: Type(\w+)([^}\n]*)\}/g)) {
       const [, key, typ, rest] = m;
+      if (key.startsWith(BRAND)) continue;
       const min = /min: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const max = /max: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const zero = /zero: true/.test(rest);
