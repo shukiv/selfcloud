@@ -660,8 +660,36 @@ func TestPictureSurvivesARestart(t *testing.T) {
 	if p := pictureIn(t, got, "ui.brand.icon"); p.State != "uploaded" || p.SHA256 != sha256Hex(png) {
 		t.Errorf("icon after a restart = %+v", p)
 	}
-	if strings.Contains(logs.String(), "level=WARN") {
-		t.Errorf("the restart logged a warning:\n%s", logs.String())
+	if w := warnLinesBeyondTheMachine(logs.String()); w != "" {
+		t.Errorf("the restart logged a warning:\n%s", w)
+	}
+}
+
+// warnLinesBeyondTheMachine returns the WARN lines of a start's log that the machine does not explain. A kernel
+// without Landlock makes the server warn at every start; that says nothing about the data being started on.
+func warnLinesBeyondTheMachine(logs string) string {
+	var out []string
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "level=WARN") && !strings.Contains(line, "msg=\""+noLandlockNotice) {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// TestWarnLinesBeyondTheMachine: the notice of a kernel without Landlock passes; a warning about a picture does not.
+func TestWarnLinesBeyondTheMachine(t *testing.T) {
+	t.Parallel()
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, nil))
+	lg.Warn(noLandlockNotice + "; the decoder keeps the server's file and network access")
+	if w := warnLinesBeyondTheMachine(logs.String()); w != "" {
+		t.Errorf("the Landlock notice alone counted as a warning: %s", w)
+	}
+	lg.Warn("an uploaded picture is not used", "key", "ui.brand.logo")
+	w := warnLinesBeyondTheMachine(logs.String())
+	if !strings.Contains(w, "an uploaded picture is not used") || strings.Contains(w, "Landlock") {
+		t.Errorf("a picture warning beside the notice gave %q", w)
 	}
 }
 

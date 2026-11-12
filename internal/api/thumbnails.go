@@ -39,6 +39,9 @@ const thumbDispPrefix = "thumb_"
 // thumbBatch is how many nodes one has_thumbnail query names at most.
 const thumbBatch = 500
 
+// noLandlockNotice starts the warning the server logs at start on a kernel without Landlock.
+const noLandlockNotice = "thumbnail decoder: this kernel has no Landlock"
+
 // newDerivedPool builds the pool that makes derived files. Its files live under derived.dir, or
 // data_dir/derived. The server's own binary runs the decoder subcommand. minFree gives storage.min_free at each write,
 // from the settings.
@@ -53,7 +56,7 @@ func newDerivedPool(cfg *config.Config, minFree func() uint64, st *store.Store, 
 	}
 	// The decoder's sandbox is applied by each child itself; the server says once what the kernel gives it.
 	if abi := thumb.LandlockABI(); abi == 0 {
-		log.Warn("thumbnail decoder: this kernel has no Landlock; the decoder keeps the server's file and network " +
+		log.Warn(noLandlockNotice + "; the decoder keeps the server's file and network " +
 			"access, under no_new_privs and its limits only")
 	} else {
 		log.Info("thumbnail decoder sandbox", "landlock_abi", abi)
