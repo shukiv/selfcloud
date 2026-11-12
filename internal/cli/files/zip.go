@@ -2,7 +2,7 @@
 
 package files
 
-// The zip commands (design-cli.md section 8, slice cli12): zip create asks the server to zip nodes and, with --wait,
+// The zip commands (design-cli.md section 8): zip create asks the server to zip nodes and, with --wait,
 // follows the zip until it is ready; zip get downloads a ready zip with the code get uses (part file, ranges, resume,
 // checksum); zip rm removes one. A zip is made by a job on the server and belongs to the person who asked for it.
 
