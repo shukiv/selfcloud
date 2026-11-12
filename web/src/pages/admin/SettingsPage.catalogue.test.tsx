@@ -10,12 +10,25 @@ import { info, signedAs } from "../../test/adminFixtures";
 import { settingsAnswer } from "../../test/settingsFixtures";
 import SettingsPage from "./SettingsPage";
 
-// The admin catalogue cannot be loaded: its chunk is missing.
-vi.mock("../../i18n/admin/en.json", () => {
-  throw new Error("chunk missing");
+// The admin catalogue cannot be loaded once: its chunk is missing on the first read, and there on the retry.
+const fail = vi.hoisted(() => ({ first: true }));
+vi.mock("../../i18n/admin/en.json", async () => {
+  const real = await vi.importActual<{ default: Record<string, string> }>("../../i18n/admin/en.json");
+  return {
+    get default() {
+      if (fail.first) {
+        fail.first = false;
+        throw new Error("chunk missing");
+      }
+      return real.default;
+    },
+  };
 });
 
-beforeEach(() => session.set(signedAs("admin")));
+beforeEach(() => {
+  fail.first = true;
+  session.set(signedAs("admin"));
+});
 afterEach(() => session.set(null));
 
 describe("the page when its own strings do not load", () => {
@@ -31,6 +44,7 @@ describe("the page when its own strings do not load", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Uploads and storage" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
