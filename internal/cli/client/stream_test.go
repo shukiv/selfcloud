@@ -237,31 +237,73 @@ func stallAtTheEnd(t *testing.T, c *Client, exhausted *atomic.Bool) {
 
 // TestStreamStallCoversTheEndOfAnUploadPiece: when the link stalls after the last byte has been read from the file but
 // before it has been written out, the transfer ends within the longer of the stall limit and the header limit, and is
-// not left to TCP's own give-up time. It is not cut short either: the limit is the longer of the two.
+// not left to TCP's own give-up time. It is not cut short either: the limit is the longer of the two, whichever it is.
 func TestStreamStallCoversTheEndOfAnUploadPiece(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		stall, header time.Duration
+		want          time.Duration
+	}{
+		{"header longer than stall", 200 * time.Millisecond, 700 * time.Millisecond, 700 * time.Millisecond},
+		{"stall longer than header", 700 * time.Millisecond, 200 * time.Millisecond, 700 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+			c := newClient(t, srv.URL, func(o *Options) { o.HeaderTimeout = tc.header })
+			var exhausted atomic.Bool
+			stallAtTheEnd(t, c, &exhausted)
+			data := patterned(64 << 10)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			start := time.Now()
+			_, err := c.Stream(ctx, Request{Method: "PATCH", Path: "/api/v1/uploads/x",
+				Upload: &endMarkReader{r: bytes.NewReader(data), exhausted: &exhausted}, UploadLength: int64(len(data))}, tc.stall)
+			d := time.Since(start)
+			var te *TransportError
+			if !errors.As(err, &te) || te.Kind != KindTimeout || !strings.Contains(te.Message, "stalled") {
+				t.Fatalf("err = %v, want the transfer's own stall timeout", err)
+			}
+			if d < tc.want-100*time.Millisecond || d > 3*time.Second {
+				t.Errorf("the stalled tail ended after %v, want about %v", d, tc.want)
+			}
+		})
+	}
+}
+
+// TestStreamStallLimitReturnsWithTheAnswersHeaders: after an upload piece has been sent whole, the longer tail limit
+// runs until the answer's headers arrive; from then on a body that stops moving ends after the stall limit again.
+func TestStreamStallLimitReturnsWithTheAnswersHeaders(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
 	}))
 	defer srv.Close()
-	const stall, header = 200 * time.Millisecond, 700 * time.Millisecond
+	const stall, header = 200 * time.Millisecond, 3 * time.Second
 	c := newClient(t, srv.URL, func(o *Options) { o.HeaderTimeout = header })
-	var exhausted atomic.Bool
-	stallAtTheEnd(t, c, &exhausted)
 	data := patterned(64 << 10)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	start := time.Now()
-	_, err := c.Stream(ctx, Request{Method: "PATCH", Path: "/api/v1/uploads/x",
-		Upload: &endMarkReader{r: bytes.NewReader(data), exhausted: &exhausted}, UploadLength: int64(len(data))}, stall)
-	d := time.Since(start)
-	var te *TransportError
-	if !errors.As(err, &te) || te.Kind != KindTimeout || !strings.Contains(te.Message, "stalled") {
-		t.Fatalf("err = %v, want the transfer's own stall timeout", err)
+	resp, err := c.Stream(context.Background(), Request{Method: "PATCH", Path: "/api/v1/uploads/x",
+		Upload: bytes.NewReader(data), UploadLength: int64(len(data))}, stall)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if d < header-100*time.Millisecond || d > 3*time.Second {
-		t.Errorf("the stalled tail ended after %v, want about %v", d, header)
+	defer resp.Body.Close()
+	start := time.Now()
+	_, err = io.ReadAll(resp.Body)
+	var te *TransportError
+	if !errors.As(err, &te) || te.Kind != KindTimeout {
+		t.Fatalf("a body that stops after the headers: err = %v, want a timeout", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("the stalled body ended after %v, want about %v, not the longer %v", d, stall, header)
 	}
 }
 
