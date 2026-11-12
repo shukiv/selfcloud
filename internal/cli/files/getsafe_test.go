@@ -47,7 +47,7 @@ func TestGetNeverWritesThroughAHardLinkedPart(t *testing.T) {
 			isolate(t, testAccountKey)
 			f := newFileServer(t, "h.bin", []byte("server bytes"), sha([]byte("server bytes")))
 			victim := filepath.Join(t.TempDir(), "victim.txt")
-			if err := os.WriteFile(victim, []byte("precious data"), 0o600); err != nil {
+			if err := os.WriteFile(victim, []byte("keep"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			dest := t.TempDir()
@@ -63,7 +63,7 @@ func TestGetNeverWritesThroughAHardLinkedPart(t *testing.T) {
 			}
 			res := f.get(args...)
 			wantCode(t, res, tc.want)
-			if b, _ := os.ReadFile(victim); string(b) != "precious data" {
+			if b, _ := os.ReadFile(victim); string(b) != "keep" {
 				t.Errorf("the linked file now holds %q", b)
 			}
 			if tc.want == 2 && !strings.Contains(res.stderr, "h.bin.part") {
