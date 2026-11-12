@@ -44,7 +44,7 @@ type webhookCommand struct {
 
 func webhookCommands() []webhookCommand {
 	return []webhookCommand{
-		{"webhook add", WebhookAdd, []string{"--url", "https://hooks.example.test/in", "--event", "file.created"}},
+		{"webhook add", WebhookAdd, []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.created"}},
 		{"webhook ls", WebhookLs, nil},
 		{"webhook show", WebhookShow, []string{testHook}},
 		{"webhook update", WebhookUpdate, []string{testHook, "--state", "paused"}},
@@ -119,7 +119,7 @@ func TestTheAccountHintIsForADeviceTokenOnly(t *testing.T) {
 	isolate(t, testDeviceTok)
 	f = newFake(t)
 	f.set("POST", accHooks(), apiErrWith(403, "forbidden", "a terminal's sign-in does not make this; use the browser", "device_token"))
-	res = f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created")
+	res = f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
 	wantCode(t, res, 3)
 	if strings.Contains(res.stderr, "hint") || !strings.Contains(res.stderr, "device_token") && !strings.Contains(res.stderr, "forbidden") {
 		t.Fatalf("a device_token refusal: stderr %q", res.stderr)
@@ -132,7 +132,7 @@ func TestWebhookAddSendsTheEndpointAndShowsTheSecretOnce(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	f.on("POST", accHooks(), doc(201, hookDoc(map[string]any{"secret": testSecret})))
-	res := f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created", "--event", "file.deleted,upload.completed",
+	res := f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created", "--event", "file.deleted,upload.completed",
 		"--description", "orders")
 	wantCode(t, res, 0)
 	f.wantCalls("POST " + accHooks())
@@ -163,7 +163,7 @@ func TestWebhookAddJSONHoldsTheSecretOnce(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	f.on("POST", accHooks(), doc(201, hookDoc(map[string]any{"secret": testSecret})))
-	res := f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created", "--json")
+	res := f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created", "--json")
 	wantCode(t, res, 0)
 	var got map[string]any
 	if err := json.Unmarshal([]byte(res.stdout), &got); err != nil {
@@ -185,19 +185,19 @@ func TestWebhookAddRefusesBadInputBeforeAnyRequest(t *testing.T) {
 		args []string
 	}{
 		{"no url", []string{"--event", "file.created"}},
-		{"no event", []string{"--url", "https://hooks.example.test/in"}},
-		{"empty event", []string{"--url", "https://hooks.example.test/in", "--event", "file.created,"}},
-		{"unknown event", []string{"--url", "https://hooks.example.test/in", "--event", "file.exploded"}},
-		{"relative url", []string{"--url", "/hook", "--event", "file.created"}},
-		{"ftp", []string{"--url", "ftp://hooks.example.test/in", "--event", "file.created"}},
-		{"no host", []string{"--url", "https:///in", "--event", "file.created"}},
-		{"userinfo", []string{"--url", "https://alice:hunter2pass@hooks.example.test/in", "--event", "file.created"}},
-		{"user only", []string{"--url", "https://tokenvalue123@hooks.example.test/in", "--event", "file.created"}},
-		{"garbage", []string{"--url", "https://hooks.example.test/%zz?key=sekrit", "--event", "file.created"}},
-		{"space", []string{"--url", "https://hooks.example.test/a b?key=sekrit", "--event", "file.created"}},
-		{"too long", []string{"--url", "https://hooks.example.test/" + strings.Repeat("a", 2100), "--event", "file.created"}},
-		{"long description", []string{"--url", "https://hooks.example.test/in", "--event", "file.created", "--description", strings.Repeat("d", 201)}},
-		{"extra argument", []string{"--url", "https://hooks.example.test/in", "--event", "file.created", "extra"}},
+		{"no event", []string{"--endpoint", "https://hooks.example.test/in"}},
+		{"empty event", []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.created,"}},
+		{"unknown event", []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.exploded"}},
+		{"relative url", []string{"--endpoint", "/hook", "--event", "file.created"}},
+		{"ftp", []string{"--endpoint", "ftp://hooks.example.test/in", "--event", "file.created"}},
+		{"no host", []string{"--endpoint", "https:///in", "--event", "file.created"}},
+		{"userinfo", []string{"--endpoint", "https://alice:hunter2pass@hooks.example.test/in", "--event", "file.created"}},
+		{"user only", []string{"--endpoint", "https://tokenvalue123@hooks.example.test/in", "--event", "file.created"}},
+		{"garbage", []string{"--endpoint", "https://hooks.example.test/%zz?key=sekrit", "--event", "file.created"}},
+		{"space", []string{"--endpoint", "https://hooks.example.test/a b?key=sekrit", "--event", "file.created"}},
+		{"too long", []string{"--endpoint", "https://hooks.example.test/" + strings.Repeat("a", 2100), "--event", "file.created"}},
+		{"long description", []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.created", "--description", strings.Repeat("d", 201)}},
+		{"extra argument", []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.created", "extra"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestWebhookAddAcceptsPlainHTTPForTheServerToJudge(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	f.on("POST", accHooks(), apiErr(400, "invalid_request", "url cannot be used: its host is not allowed"))
-	res := f.runAcc(WebhookAdd, "--url", "http://127.0.0.1:9000/in", "--event", "file.created")
+	res := f.runAcc(WebhookAdd, "--endpoint", "http://127.0.0.1:9000/in", "--event", "file.created")
 	wantCode(t, res, 2)
 	f.wantCalls("POST " + accHooks())
 	if !strings.Contains(res.stderr, "url cannot be used: its host is not allowed") {
@@ -234,7 +234,7 @@ func TestWebhookAddWithoutDescriptionSendsNone(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	f.on("POST", accHooks(), doc(201, hookDoc(map[string]any{"secret": testSecret})))
-	wantCode(t, f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created"), 0)
+	wantCode(t, f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created"), 0)
 	if _, has := f.bodyOf(0)["description"]; has {
 		t.Fatalf("body %s has a description", f.rawBody(0))
 	}
@@ -322,7 +322,7 @@ func TestWebhookUpdateSendsOnlyWhatWasGiven(t *testing.T) {
 
 	f = newFake(t)
 	f.on("PATCH", accHook(testHook), doc(200, hookDoc(nil)))
-	wantCode(t, f.runAcc(WebhookUpdate, testHook, "--url", "https://other.example.test/in", "--event", "file.created,file.moved",
+	wantCode(t, f.runAcc(WebhookUpdate, testHook, "--endpoint", "https://other.example.test/in", "--event", "file.created,file.moved",
 		"--description", "new"), 0)
 	body := f.bodyOf(0)
 	if body["url"] != "https://other.example.test/in" || body["description"] != "new" || body["state"] != nil {
@@ -351,9 +351,9 @@ func TestWebhookUpdateRefusesBadInputBeforeAnyRequest(t *testing.T) {
 		"bad state":         {testHook, "--state", "disabled"},
 		"empty state":       {testHook, "--state", ""},
 		"bad event":         {testHook, "--event", "nope"},
-		"userinfo":          {testHook, "--url", "https://u:pw12345@hooks.example.test/in"},
-		"ftp":               {testHook, "--url", "ftp://hooks.example.test/in"},
-		"empty url":         {testHook, "--url", ""},
+		"userinfo":          {testHook, "--endpoint", "https://u:pw12345@hooks.example.test/in"},
+		"ftp":               {testHook, "--endpoint", "ftp://hooks.example.test/in"},
+		"empty url":         {testHook, "--endpoint", ""},
 		"no hook":           {"--state", "paused"},
 		"bad hook":          {"whk_x", "--state", "paused"},
 	}

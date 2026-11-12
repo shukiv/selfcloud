@@ -90,7 +90,7 @@ func TestTheSecretIsPrintedOnceByAddAndRotateAndByNothingElseAfter(t *testing.T)
 	f.on("GET", accHook(testHook), doc(200, hookDoc(leaky())))
 	f.on("GET", accHooks(), page("", hookDoc(leaky())))
 	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(map[string]any{"secret": testOldSecret})))
-	add := f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created")
+	add := f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
 	if strings.Count(add.stdout, testSecret) != 1 {
 		t.Fatalf("add: %q", add.stdout)
 	}
@@ -120,7 +120,7 @@ func TestNoErrorRepeatsAnAnswerBody(t *testing.T) {
 			f.on("POST", accHooks(), rep)
 			f.on("POST", accHook(testHook)+"/secret", rep)
 			f.on("GET", accHook(testHook), rep)
-			args := []string{"--url", "https://hooks.example.test/in", "--event", "file.created"}
+			args := []string{"--endpoint", "https://hooks.example.test/in", "--event", "file.created"}
 			rotate := []string{testHook, "--yes"}
 			show := []string{testHook}
 			if asJSON {
@@ -145,7 +145,7 @@ func TestWebhookAddFailsWhenTheAnswerHasNoSecret(t *testing.T) {
 	f := newFake(t)
 	f.on("POST", accHooks(), doc(201, hookDoc(nil)))
 	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(nil)))
-	wantCode(t, f.runAcc(WebhookAdd, "--url", "https://hooks.example.test/in", "--event", "file.created"), 1)
+	wantCode(t, f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created"), 1)
 	wantCode(t, f.runAcc(WebhookRotateSecret, testHook, "--yes"), 1)
 }
 

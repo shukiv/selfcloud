@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
@@ -129,13 +130,19 @@ func flagGiven(set *flag.FlagSet, name string) bool {
 	return given
 }
 
+// errNotA is the error of an answer that is not the document the command expects. It never repeats the answer, which may
+// hold a secret.
+func errNotA(what string) error { return errors.New("the server's answer is not " + what) }
+
 // decodeAs reads a document into v.
 func decodeAs(body []byte, v any, what string) error {
 	if err := json.Unmarshal(body, v); err != nil {
-		return errors.New("the server's answer is not " + what)
+		return errNotA(what)
 	}
 	return nil
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // printDone writes the result of a change that answers with no body.
 func printDone(c *command, target string) error {
