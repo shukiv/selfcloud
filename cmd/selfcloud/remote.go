@@ -9,6 +9,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/apispec"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/info"
+	"github.com/shukiv/selfcloud/internal/cli/manage"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
 	"github.com/shukiv/selfcloud/internal/cli/settings"
 	"github.com/shukiv/selfcloud/internal/cli/signin"
@@ -168,6 +169,74 @@ var remoteCommands = []remoteCommand{
 	{name: "upload cancel", route: "DELETE /api/v1/uploads/{upl}",
 		help: `  upload cancel UPLOAD           end an upload; the server drops the bytes it holds
 `, run: files.UploadCancel},
+	{name: "folder create", route: "POST /api/v1/accounts/{acc}/folders",
+		help: `  folder create [--account ACC] [--external-id ID] NAME
+                                 make a team space (ACC: an acc_ id, or SELFCLOUD_ACCOUNT)
+`, run: manage.FolderCreate},
+	// --mine lists the folders the credential reaches, which whoami's route owns.
+	{name: "folder ls", route: "GET /api/v1/accounts/{acc}/folders", reads: []string{"GET /api/v1/folders"},
+		help: `  folder ls [--account ACC [--external-id ID] | --mine [--hidden]] [--all]
+                                 an account's team spaces, or the folders this credential reaches
+`, run: manage.FolderLs},
+	{name: "folder show", route: "GET /api/v1/accounts/{acc}/folders/{fld}",
+		help: `  folder show [--account ACC] FOLDER
+                                 one team space: its id, name, settings and times
+`, run: manage.FolderShow},
+	{name: "folder rename", route: "PATCH /api/v1/accounts/{acc}/folders/{fld}",
+		help: `  folder rename [--account ACC] FOLDER NAME
+                                 give a team space a new name
+`, run: manage.FolderRename},
+	{name: "folder rm", route: "DELETE /api/v1/accounts/{acc}/folders/{fld}", reads: []string{"GET /api/v1/accounts/{acc}/folders/{fld}"},
+		help: `  folder rm [--account ACC] FOLDER [--yes]
+                                 remove a team space with its files and permissions (asks first)
+`, run: manage.FolderRm},
+	{name: "folder settings set", route: "PATCH /api/v1/folders/{fld}/settings",
+		help: `  folder settings set FOLDER [--members-only=B] [--sharing-managers-only=B] [--no-download-for-viewers=B]
+                                 [--allow-links=B]
+                                 change a team space's restrictions; a token is refused, so the web interface does it
+`, run: manage.FolderSettingsSet},
+	{name: "folder hide", route: "PUT /api/v1/folders/{fld}/hidden",
+		help: `  folder hide FOLDER             take a team space off this person's own list (access is unchanged)
+`, run: manage.FolderHide},
+	{name: "folder show-again", route: "DELETE /api/v1/folders/{fld}/hidden",
+		help: `  folder show-again FOLDER       put a hidden team space back on this person's list
+`, run: manage.FolderShowAgain},
+	{name: "group create", route: "POST /api/v1/accounts/{acc}/groups",
+		help: `  group create [--account ACC] [--external-id ID] NAME
+                                 make a group of people
+`, run: manage.GroupCreate},
+	{name: "group ls", route: "GET /api/v1/accounts/{acc}/groups",
+		help: `  group ls [--account ACC] [--all]
+                                 the account's groups
+`, run: manage.GroupLs},
+	{name: "group show", route: "GET /api/v1/accounts/{acc}/groups/{grp}",
+		help: `  group show [--account ACC] GROUP
+                                 one group
+`, run: manage.GroupShow},
+	{name: "group rename", route: "PATCH /api/v1/accounts/{acc}/groups/{grp}",
+		help: `  group rename [--account ACC] GROUP NAME
+                                 give a group a new name
+`, run: manage.GroupRename},
+	{name: "group rm", route: "DELETE /api/v1/accounts/{acc}/groups/{grp}", reads: []string{"GET /api/v1/accounts/{acc}/groups/{grp}"},
+		help: `  group rm [--account ACC] GROUP [--yes]
+                                 remove a group, its members and the permissions it holds (asks first)
+`, run: manage.GroupRm},
+	{name: "group members", route: "GET /api/v1/accounts/{acc}/groups/{grp}/members",
+		help: `  group members [--account ACC] GROUP [--all]
+                                 the people in a group
+`, run: manage.GroupMembers},
+	{name: "group add-member", route: "PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}",
+		help: `  group add-member [--account ACC] GROUP USER
+                                 put a person in a group
+`, run: manage.GroupAddMember},
+	{name: "group remove-member", route: "DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}",
+		help: `  group remove-member [--account ACC] GROUP USER
+                                 take a person out of a group
+`, run: manage.GroupRemoveMember},
+	{name: "user grants", route: "GET /api/v1/accounts/{acc}/users/{usr}/grants",
+		help: `  user grants [--account ACC] USER
+                                 the team spaces shared with a person, and at what level
+`, run: manage.UserGrants},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.

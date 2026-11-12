@@ -98,6 +98,10 @@ var probes = map[string][]string{
 	"api spec": {},
 }
 
+// probeExit is the exit code a probe expects when it is not 0: a command that the real server refuses to the credential
+// the probe holds (an account key), where the call and its route are still what the check is about.
+var probeExit = map[string]int{}
+
 // TestRemoteCommandsCallTheirRoute: each remote command runs against the real server through a recording handler. Every
 // call it makes is its own route, or a read it declares (remote.go, reads), and its route is among them (design
 // section 5.2). A command that calls anything else fails the build.
@@ -130,7 +134,7 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 		code, matched := remote(full, &out, &errOut)
 		restore()
 		restoreKey()
-		if !matched || code != 0 {
+		if !matched || code != probeExit[c.name] {
 			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, matched, errOut.String())
 			continue
 		}

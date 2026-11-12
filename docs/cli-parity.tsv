@@ -72,7 +72,7 @@ fn	lib/files/api.ts:listVersions	-	cli11	planned, cli11
 fn	lib/files/api.ts:mkdir	mkdir	cli5	built in cli5
 fn	lib/files/api.ts:mkdirIn	mkdir	cli5	built in cli5
 fn	lib/files/api.ts:moveNode	mv	cli5	built in cli5
-fn	lib/files/api.ts:myFolders	-	cli8	planned, cli8
+fn	lib/files/api.ts:myFolders	folder ls	cli8	built in cli8 (--mine)
 fn	lib/files/api.ts:purgeTrashed	trash rm	cli5	built in cli5
 fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:refreshNode	stat	cli5	built in cli5
@@ -119,36 +119,36 @@ fn	lib/labels/api.ts:listLabelFields	-	cli11	planned, cli11
 fn	lib/labels/api.ts:listNodeLabels	-	cli11	planned, cli11
 fn	lib/labels/api.ts:setNodeLabel	-	cli11	planned, cli11
 fn	lib/labels/api.ts:updateLabelField	-	cli9	planned, cli9
-fn	lib/manage/api.ts:addGroupMember	-	cli8	planned, cli8
+fn	lib/manage/api.ts:addGroupMember	group add-member	cli8	built in cli8
 fn	lib/manage/api.ts:auditLog	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createAdmin	-	cli9	planned, cli9
-fn	lib/manage/api.ts:createGroup	-	cli8	planned, cli8
+fn	lib/manage/api.ts:createGroup	group create	cli8	built in cli8
 fn	lib/manage/api.ts:createKey	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
-fn	lib/manage/api.ts:createSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
 fn	lib/manage/api.ts:deleteAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:deleteAdmin	-	cli9	planned, cli9
 fn	lib/manage/api.ts:deleteAllPublicLinks	-	cli7	planned, cli7
-fn	lib/manage/api.ts:deleteGroup	-	cli8	planned, cli8
-fn	lib/manage/api.ts:deleteSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:deleteGroup	group rm	cli8	built in cli8
+fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
 fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
 fn	lib/manage/api.ts:getJob	-	cli10	planned, cli10
 fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
-fn	lib/manage/api.ts:getSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	-	cli7	planned, cli7
 fn	lib/manage/api.ts:listAccounts	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
-fn	lib/manage/api.ts:listGroupMembers	-	cli8	planned, cli8
-fn	lib/manage/api.ts:listGroups	-	cli8	planned, cli8
+fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
+fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
 fn	lib/manage/api.ts:listKeys	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listPeople	-	cli9	planned, cli9
-fn	lib/manage/api.ts:listSpaces	-	cli8	planned, cli8
-fn	lib/manage/api.ts:removeGroupMember	-	cli8	planned, cli8
+fn	lib/manage/api.ts:listSpaces	folder ls	cli8	built in cli8
+fn	lib/manage/api.ts:removeGroupMember	group remove-member	cli8	built in cli8
 fn	lib/manage/api.ts:removePerson	-	cli9	planned, cli9
-fn	lib/manage/api.ts:renameGroup	-	cli8	planned, cli8
-fn	lib/manage/api.ts:renameSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:renameGroup	group rename	cli8	built in cli8
+fn	lib/manage/api.ts:renameSpace	folder rename	cli8	built in cli8
 fn	lib/manage/api.ts:resendVerification	-	cli9	planned, cli9
 fn	lib/manage/api.ts:resetUserPassword	-	cli9	planned, cli9
 fn	lib/manage/api.ts:revokeKey	-	cli9	planned, cli9
@@ -181,7 +181,7 @@ fn	lib/sharing/api.ts:removePermission	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:renewShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:resetShareLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
-fn	lib/sharing/api.ts:setHidden	-	cli8	planned, cli8
+fn	lib/sharing/api.ts:setHidden	folder hide	cli8	built in cli8 (folder show-again is the other direction)
 fn	lib/sharing/api.ts:setPermission	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:setSharingPolicy	-	cli9	planned, cli9
 fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
@@ -190,7 +190,7 @@ fn	lib/sharing/api.ts:transferOwnership	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateDropLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateShareLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:updateSpaceSettings	-	cli8	planned, cli8
+fn	lib/sharing/api.ts:updateSpaceSettings	folder settings set	cli8	built in cli8
 fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory; get <share-url> takes a link to a file (decision 142)
 fn	lib/sharing/api.ts:visitorInfo	-	-	a drop link's page; get refuses a drop link, which takes uploads only (decision 142)
 fn	lib/sharing/api.ts:visitorLink	-	cli7	planned, cli7
@@ -210,10 +210,10 @@ fn	lib/storage/api.ts:refreshMyStorage	-	-	browser session only; whoami reads GE
 fn	lib/storage/api.ts:setPersonLimit	-	cli9	planned, cli9
 fn	lib/storage/api.ts:setPolicyDefault	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}	-	cli9	planned, cli9
-route	DELETE /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
+route	DELETE /api/v1/accounts/{acc}/folders/{fld}	folder rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
-route	DELETE /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
-route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	-	cli8	planned, cli8
+route	DELETE /api/v1/accounts/{acc}/groups/{grp}	group rm	cli8	built in cli8
+route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group remove-member	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/keys/{key}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
@@ -222,7 +222,7 @@ route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
 route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
 route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
-route	DELETE /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
+route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
@@ -242,12 +242,12 @@ route	GET /api/v1/access-requests	-	cli7	planned, cli7
 route	GET /api/v1/accounts	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/audit	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/folders	-	cli8	planned, cli8
-route	GET /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/folders	folder ls	cli8	built in cli8
+route	GET /api/v1/accounts/{acc}/folders/{fld}	folder show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	-	cli7	planned, cli7
-route	GET /api/v1/accounts/{acc}/groups	-	cli8	planned, cli8
-route	GET /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
-route	GET /api/v1/accounts/{acc}/groups/{grp}/members	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/groups	group ls	cli8	built in cli8
+route	GET /api/v1/accounts/{acc}/groups/{grp}	group show	cli8	built in cli8
+route	GET /api/v1/accounts/{acc}/groups/{grp}/members	group members	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/share-links	-	cli7	planned, cli7
@@ -259,14 +259,14 @@ route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	GET /api/v1/accounts/{acc}/usage	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/users/{usr}/grants	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/users/{usr}/grants	user grants	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/webhooks	-	cli10	planned, cli10
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	-	cli10	planned, cli10
 route	GET /api/v1/admins	-	cli9	planned, cli9
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
 route	GET /api/v1/directory	-	cli11	planned, cli11
-route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); the folder commands come in cli8
+route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); folder ls --mine (cli8) lists the same route
 route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5
 route	GET /api/v1/imports/sources	-	cli10	planned, cli10
 route	GET /api/v1/imports/{imp}	-	cli10	planned, cli10
@@ -330,15 +330,15 @@ route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD, used inside
 route	HEAD /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
 route	PATCH /api/v1/accounts/{acc}	-	cli9	planned, cli9
-route	PATCH /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
-route	PATCH /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
+route	PATCH /api/v1/accounts/{acc}/folders/{fld}	folder rename	cli8	built in cli8
+route	PATCH /api/v1/accounts/{acc}/groups/{grp}	group rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
-route	PATCH /api/v1/folders/{fld}/settings	-	cli8	planned, cli8
+route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
 route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
@@ -350,8 +350,8 @@ route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7
 route	POST /api/v1/access-requests/{arq}/deny	-	cli7	planned, cli7
 route	POST /api/v1/accounts	-	cli9	planned, cli9
-route	POST /api/v1/accounts/{acc}/folders	-	cli8	planned, cli8
-route	POST /api/v1/accounts/{acc}/groups	-	cli8	planned, cli8
+route	POST /api/v1/accounts/{acc}/folders	folder create	cli8	built in cli8
+route	POST /api/v1/accounts/{acc}/groups	group create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/share-links/delete-public	-	cli7	planned, cli7
@@ -419,11 +419,11 @@ route	POST /api/v1/zips	-	cli12	planned, cli12
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
-route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	-	cli8	planned, cli8
+route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
 route	PUT /api/v1/accounts/{acc}/imports/archive	-	cli10	planned, cli10
 route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
 route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
-route	PUT /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
+route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
 route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
