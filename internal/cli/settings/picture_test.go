@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-var pngSignature = []byte("\x89PNG\r\n\x1a\n")
-
 const (
 	logoRoute = "/api/v1/settings/brand/logo"
 	iconRoute = "/api/v1/settings/brand/icon"
