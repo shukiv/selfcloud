@@ -289,16 +289,39 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 	if err != nil {
 		return gotFile{}, err
 	}
+	subj := subject{key: nodeID, route: nodeRoute(nodeID, "/content"), name: v.Name, ver: ver,
+		restat: func(ctx context.Context) (version, error) {
+			_, ver, err := fileVersion(ctx, src, nodeID)
+			return ver, err
+		}}
+	return downloadSubject(ctx, src, subj, dst, o, stderr)
+}
+
+// subject is what a download reads: the record's key (a node or a zip id), the route its ranges come from, the name
+// the server gives it, its version, and how to read the version again when the server sends another one.
+type subject struct {
+	key    string
+	route  string
+	name   string
+	ver    version
+	restat func(ctx context.Context) (version, error)
+}
+
+// downloadSubject is download for any subject that serves ranges with a strong ETag, a file or a zip.
+func downloadSubject(ctx context.Context, src source, subj subject, dst localDest, o dlOptions,
+	stderr io.Writer) (gotFile, error) {
+	var err error
+	ver := subj.ver
 	name := dst.name
 	if name == "" {
-		if name, err = serverName(v.Name); err != nil {
+		if name, err = serverName(subj.name); err != nil {
 			return gotFile{}, err
 		}
 		if err := checkFinal(dst.root, name, o.overwrite); err != nil {
 			return gotFile{}, err
 		}
 	}
-	d := &downloader{src: src, nodeID: nodeID, ver: ver, o: o, stderr: stderr,
+	d := &downloader{src: src, nodeID: subj.key, route: subj.route, restat: subj.restat, ver: ver, o: o, stderr: stderr,
 		partPath: filepath.Join(dst.dir, name+partSuffix)}
 	pf, err := d.startPart(dst.root, name)
 	if err != nil {
@@ -342,7 +365,9 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 // downloader is one download in progress.
 type downloader struct {
 	src      source
-	nodeID   string
+	nodeID   string // the record's key: a node id, or a zip id
+	route    string
+	restat   func(ctx context.Context) (version, error)
 	ver      version
 	o        dlOptions
 	stderr   io.Writer
@@ -433,7 +458,7 @@ func (d *downloader) fetch(ctx context.Context) error {
 		var err error
 		if restat {
 			var ver version
-			if _, ver, err = fileVersion(ctx, d.src, d.nodeID); err == nil {
+			if ver, err = d.restat(ctx); err == nil {
 				d.ver, restat = ver, false
 				if err = d.pf.reset(); err != nil {
 					return err
@@ -497,7 +522,7 @@ func (d *downloader) fetchRange(ctx context.Context) (changed bool, err error) {
 	h := http.Header{}
 	h.Set("Range", "bytes="+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10))
 	h.Set("If-Range", d.ver.etag)
-	resp, err := cl.Stream(ctx, client.Request{Method: http.MethodGet, Path: nodeRoute(d.nodeID, "/content"),
+	resp, err := cl.Stream(ctx, client.Request{Method: http.MethodGet, Path: d.route,
 		Header: h}, d.o.stall)
 	if err != nil {
 		return false, err
