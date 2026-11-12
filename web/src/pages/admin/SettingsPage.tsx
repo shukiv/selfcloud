@@ -2,7 +2,7 @@
 
 import { Alert, Button, Modal, Tabs } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useBlocker } from "react-router-dom";
 import { translate, useLang, useT } from "../../lib/i18n";
 import { brand } from "../../lib/brand";
@@ -54,13 +54,27 @@ export function layoutFor(width: number): Layout {
   return { tabs: width < TABS_BELOW, list, rowWide: width - (list ? LIST_WIDTH : 0) - CARD_PADDING >= ROW_FROM };
 }
 
-// useLayout measures the page's content. Until it is measured (a window with no layout, as in a test) the window's own width
-// stands in: 768 px and up is a roomy content, below it a phone's.
+// SCROLLBAR is the widest classic scrollbar: the drop that stacks the cards can bring one that takes this much, which must not
+// push the content back under the tabs boundary and flip it again. Each boundary is crossed this much further to change course.
+const SCROLLBAR = 24;
+
+// settle keeps the layout it has until the width crosses a boundary by more than SCROLLBAR: from tabs to stacked at TABS_BELOW
+// plus it, and back only under TABS_BELOW; the section list appears at LIST_FROM plus it and goes only under LIST_FROM.
+export function settle(prev: Layout, width: number): Layout {
+  const tabs = prev.tabs ? width < TABS_BELOW + SCROLLBAR : width < TABS_BELOW;
+  const list = prev.list ? width >= LIST_FROM - SCROLLBAR : width >= LIST_FROM + SCROLLBAR;
+  return { tabs, list, rowWide: width - (list ? LIST_WIDTH : 0) - CARD_PADDING >= ROW_FROM };
+}
+
+// useLayout measures the page's content, settling across each boundary so a scrollbar that appears when the cards stack cannot
+// flip it back. The first width is read before the first paint. Until it is measured (a window with no layout, as in a test)
+// the window's own width stands in: 768 px and up is a roomy content, below it a phone's.
 function useLayout(ref: RefObject<HTMLElement | null>): Layout {
   const query = "(min-width: 768px)";
   const viewport = () => (typeof window.matchMedia === "function" ? window.matchMedia(query).matches : true);
   const [wide, setWide] = useState(viewport);
-  const [measured, setMeasured] = useState<number | null>(null);
+  const [layout, setLayout] = useState<Layout>(() => layoutFor(wide ? 1200 : 375));
+  const read = (w: number) => setLayout((prev) => settle(prev, w));
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const m = window.matchMedia(query);
@@ -69,20 +83,20 @@ function useLayout(ref: RefObject<HTMLElement | null>): Layout {
     m.addEventListener?.("change", on);
     return () => m.removeEventListener?.("change", on);
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const read = (w: number) => setMeasured(w > 0 ? w : null);
-    read(el.getBoundingClientRect().width);
+    const w = el.getBoundingClientRect().width;
+    if (w > 0) read(w);
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width;
-      if (typeof w === "number") read(w);
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number" && width > 0) read(width);
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, [ref]);
-  return layoutFor(measured ?? (wide ? 1200 : 375));
+  return layout;
 }
 
 function SettingsView() {
