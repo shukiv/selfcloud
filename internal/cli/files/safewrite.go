@@ -188,12 +188,20 @@ func createPart(root *os.Root, part string) (*os.File, error) {
 // its owner can write to is hard to make on every machine.
 var removePart = (*os.Root).Remove
 
+// canRemove runs the removal error of a part file through the permission rules of the platform, and is nil when the
+// failure left nothing written, so it is the person's to mend.
+var canRemove = removeAllowed
+
 // replacePart removes a part file this download will not continue and makes a new one in its place, so the old one's
 // bytes, and any other name it has, are left as they were. In a shared directory with the sticky bit, the removal of
-// another user's file fails, and nothing is written.
+// another user's file fails, and nothing is written: that is a usage failure (exit 2), not a failed write.
 func replacePart(root *os.Root, name string) (*partFile, error) {
 	part := name + partSuffix
 	if err := removePart(root, part); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if canRemove(err) == nil {
+			return nil, &exitcode.Error{Exit: exitcode.Usage, Name: "usage", Message: "cannot remove " + part +
+				" to start again: " + err.Error() + "; nothing was changed"}
+		}
 		return nil, fmt.Errorf("cannot remove %s to start again: %w", part, err)
 	}
 	return newPart(root, name)

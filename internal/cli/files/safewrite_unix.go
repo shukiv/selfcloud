@@ -5,6 +5,7 @@
 package files
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"syscall"
@@ -26,4 +27,18 @@ func partProblem(fi fs.FileInfo) string {
 		return "has another name (a hard link), so writing it would change another file"
 	}
 	return ""
+}
+
+// removeAllowed reports whether a part file that could not be removed is one where the write changed nothing, so the
+// failure is the person's to mend: a permission the file system refuses, or a file another user owns in a directory with
+// the sticky bit. Any other removal error is not told apart from a write failure.
+func removeAllowed(err error) error {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		return nil
+	}
+	return err
 }
