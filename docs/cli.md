@@ -169,6 +169,48 @@ Writes the server's OpenAPI document to standard output, or to a new file. A fil
 file is never replaced without `--overwrite`, and a symbolic link at the name is refused, with or without it. The answer
 must be YAML; an HTML page is refused.
 
+### `settings get`, `settings set` and `settings reset`
+
+```sh
+selfcloud settings get                         # every setting, then the logo and the icon
+selfcloud settings get trash.retention --json
+selfcloud settings set trash.retention=48h upload.max_lifetime=24h
+selfcloud settings reset trash.retention
+```
+
+These commands read and change the server's live settings (`GET` and `PATCH /api/v1/settings`). They need an
+installation admin key (`sc_admin_...`, from `selfcloud admin create-key` on the server): an account key or a device
+token is refused with a 403, and the message says which key to use. `settings get` prints a table of `KEY`, `VALUE`,
+`SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the two pictures. With a key it prints
+that setting as `key=value` lines. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
+do not expect a value to come back as it was typed. `--json` prints the server's document.
+
+`settings set KEY=VALUE...` reads the settings first, to learn each key's type, and sends the value in that type's shape:
+`true` or `false` for a bool, a whole number for an integer, and the text as it is for a duration, a size or a string,
+which the server checks. Everything is judged before anything is sent, so a malformed argument, a key given twice, a
+value of the wrong shape, an unknown key or a picture key (use `settings logo set`) exits 2 with nothing changed. A value
+may hold `=`, since only the first one splits. The change is all or nothing. A key that the config file or an
+environment variable sets is locked: the server refuses it (exit 3) and the command prints `keys: ...`. A value the
+server finds invalid exits 2 and each problem is printed. `settings reset KEY...` removes the stored values so the
+defaults apply, and prints the same table.
+
+### `settings logo` and `settings icon`
+
+```sh
+selfcloud settings logo set logo.svg
+selfcloud settings icon set icon.png
+selfcloud settings logo remove
+```
+
+`settings logo set FILE` and `settings icon set FILE` upload a picture as the web interface's logo or icon
+(`PUT /api/v1/settings/brand/logo` and `/icon`); `remove` deletes the upload (`DELETE`). They need an installation admin
+key. The type comes from the content: a file that starts with the PNG signature is sent as `image/png`, and otherwise a
+name ending in `.svg` is sent as `image/svg+xml`. Any other file exits 2 before a request, so a text file named `x.png`
+is refused. A missing file exits 4; a directory, no file, two files, or a file over 4 MiB exits 2. The server's own limit
+is smaller (256 KiB), and its answer for a file between the two is printed (exit 2), as are its answers for a picture it
+finds invalid. A logo or icon that the config file sets is locked (exit 3, `keys: ui.brand.logo`). On success the command
+prints the picture as `key=value` lines (`key`, `state`, `type`, `sha256`, `locked`); after `remove` the state is `none`.
+
 ### `profile add|use|ls|rm`
 
 See Profiles above.
@@ -232,6 +274,10 @@ permissions (read and change); playlists; share links (manage); stars and recent
 change them; clearing or removing recent items needs the signed-in user).
 
 **403 `forbidden` on `POST /api/v1/auth/cli/revoke`** for any credential that is not a device token.
+
+**403 `forbidden` on the settings routes** (`/api/v1/settings` and `/api/v1/settings/brand/...`) for any credential that is
+not an installation admin key, a device token included: an installation admin holds no device, so these commands need an
+admin key (`selfcloud settings ...`).
 
 The approval step answers its own refusals to the person approving, not to a device: `account_suspended`,
 `user_disabled` and `user_not_verified` (403) when the account or person cannot sign in; `password_change_required`
