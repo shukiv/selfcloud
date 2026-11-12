@@ -9,6 +9,8 @@ export interface Call {
   url: string;
   auth: string | null;
   body: unknown;
+  // The content type the body was sent with, or null.
+  contentType: string | null;
   // The signal the request was sent with, if any: a cancelled dialog aborts it (fu4, decision 76).
   signal?: AbortSignal;
 }
@@ -28,8 +30,9 @@ export function stubFetch(answer: (c: Call) => Answer | Promise<Answer>) {
   const calls: Call[] = [];
   const fn = vi.fn(async (url: string, init: RequestInit = {}) => {
     const headers = (init.headers ?? {}) as Record<string, string>;
-    const body = typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : null;
-    const call: Call = { method: init.method ?? "GET", url, auth: headers.Authorization ?? null, body, signal: init.signal ?? undefined };
+    // A body that is not text (a picture's bytes) is kept as it was sent.
+    const body = typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : (init.body ?? null);
+    const call: Call = { method: init.method ?? "GET", url, auth: headers.Authorization ?? null, body, contentType: headers["Content-Type"] ?? null, signal: init.signal ?? undefined };
     calls.push(call);
     // An abort rejects the request, as the browser does, even when the answer never comes.
     const aborted = new Promise<never>((_resolve, reject) => {

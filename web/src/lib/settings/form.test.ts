@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../apiError";
-import { draftOf, isChanged, messagesFor, refusal, sectionChange, type Edits } from "./form";
+import { draftOf, isChanged, messagesFor, refusal, sectionChange, withoutSent, type Edits } from "./form";
 import type { Setting } from "./api";
 
 function setting(over: Partial<Setting> & { key: string; type: Setting["type"]; value: Setting["value"] }): Setting {
@@ -128,5 +128,42 @@ describe("a refused change", () => {
       "sessions.idle_timeout must be at most 30 days",
     ]);
     expect(messagesFor("sessions.max_age", ["sessions.max_age_extra is odd"])).toEqual([]);
+  });
+});
+
+describe("what a saved change leaves of the edits", () => {
+  const sent: Edits = { "trash.retention": { value: { value: 45, unit: "days" }, reset: false }, "versions.max_count": { value: 50, reset: false } };
+
+  it("drops the edits that are still the ones that were sent", () => {
+    expect(withoutSent({ ...sent }, sent, ["trash.retention", "versions.max_count"])).toEqual({});
+  });
+
+  it("keeps an edit typed while the save was out, and drops the others", () => {
+    const typed = { value: { value: 60, unit: "days" as const }, reset: false };
+    expect(withoutSent({ ...sent, "trash.retention": typed }, sent, ["trash.retention", "versions.max_count"])).toEqual({ "trash.retention": typed });
+  });
+
+  it("keeps an edit of a key the save did not name", () => {
+    const other = { value: true, reset: false };
+    expect(withoutSent({ ...sent, "search.enabled": other }, sent, ["trash.retention", "versions.max_count"])).toEqual({ "search.enabled": other });
+  });
+
+  it("keeps a field that was touched again, even when it was set back to the same text", () => {
+    const again = { value: 50, reset: false };
+    expect(withoutSent({ ...sent, "versions.max_count": again }, sent, ["versions.max_count"])).toEqual({ ...sent, "versions.max_count": again, "trash.retention": sent["trash.retention"] });
+  });
+});
+
+describe("colours", () => {
+  const accent = setting({ key: "ui.brand.accent", type: "string", value: "#053D8E", default: "#053D8E" });
+
+  it("is the same colour in either case", () => {
+    expect(isChanged(accent, { value: "#053d8e", reset: false })).toBe(false);
+    expect(isChanged(accent, { value: "#0F766E", reset: false })).toBe(true);
+  });
+
+  it("compares other texts exactly", () => {
+    const name = setting({ key: "ui.brand.name", type: "string", value: "Acme", default: "SelfCloud" });
+    expect(isChanged(name, { value: "acme", reset: false })).toBe(true);
   });
 });

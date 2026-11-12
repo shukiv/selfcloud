@@ -2,7 +2,7 @@
 
 // Fixtures for the Settings page tests: the answer of GET /api/v1/settings with every setting at its built-in default. Only the
 // tests import this file.
-import type { Fact, Setting, SettingsAnswer } from "../lib/settings/api";
+import type { Fact, Picture, Setting, SettingsAnswer } from "../lib/settings/api";
 
 type Row = [key: string, type: Setting["type"], value: Setting["value"], extra?: Partial<Setting>];
 
@@ -23,6 +23,27 @@ const ROWS: Row[] = [
   ["sharing.max_expiry", "duration", "8760h0m0s"],
   ["storage.min_free", "bytes", "1GiB"],
   ["trash.retention", "duration", "720h0m0s"],
+  ["ui.brand.accent", "string", "#053D8E"],
+  ["ui.brand.name", "string", "SelfCloud"],
+  ["ui.brand.palette.dark.accent", "string", ""],
+  ["ui.brand.palette.dark.accent_border", "string", ""],
+  ["ui.brand.palette.dark.accent_fill", "string", ""],
+  ["ui.brand.palette.dark.accent_fill_active", "string", ""],
+  ["ui.brand.palette.dark.accent_fill_hover", "string", ""],
+  ["ui.brand.palette.dark.accent_soft", "string", ""],
+  ["ui.brand.palette.dark.accent_text", "string", ""],
+  ["ui.brand.palette.light.accent", "string", ""],
+  ["ui.brand.palette.light.accent_border", "string", ""],
+  ["ui.brand.palette.light.accent_fill", "string", ""],
+  ["ui.brand.palette.light.accent_fill_active", "string", ""],
+  ["ui.brand.palette.light.accent_fill_hover", "string", ""],
+  ["ui.brand.palette.light.accent_soft", "string", ""],
+  ["ui.brand.palette.light.accent_text", "string", ""],
+  ["ui.brand.sidebar.active", "string", ""],
+  ["ui.brand.sidebar.bg", "string", ""],
+  ["ui.brand.sidebar.caption", "string", ""],
+  ["ui.brand.sidebar.on_active", "string", ""],
+  ["ui.brand.sidebar.text", "string", ""],
   ["upload.max_chunk_size", "bytes", "64MiB"],
   ["upload.max_file_size", "bytes", "100GiB"],
   ["upload.max_small_file_size", "bytes", "16MiB"],
@@ -43,8 +64,14 @@ export const FACTS: Fact[] = [
 
 // settingsAnswer is the answer with every setting at its default. over changes a setting by key: a stored value is
 // { value, source: "settings" }, and a key the file writes is { value, source: "file", locked: true }.
-export function settingsAnswer(over: Record<string, Partial<Setting>> = {}, facts: Fact[] = FACTS): SettingsAnswer {
+export const PICTURES: Picture[] = [
+  { key: "ui.brand.icon", state: "none", locked: false },
+  { key: "ui.brand.logo", state: "none", locked: false },
+];
+
+export function settingsAnswer(over: Record<string, Partial<Setting>> = {}, facts: Fact[] = FACTS, pictures: Picture[] = PICTURES): SettingsAnswer {
   return {
+    pictures,
     settings: ROWS.map(([key, type, value, extra]) => ({
       key,
       type,

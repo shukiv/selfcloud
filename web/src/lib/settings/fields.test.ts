@@ -8,23 +8,31 @@ import { fieldKeys, SECTIONS } from "./fields";
 
 const text = en as Record<string, string>;
 
-// BRAND starts the brand keys. They belong to the Branding card, which is not drawn yet (decision 143), so the page
-// lists none of them and these checks leave them out. The card takes them in, and this exception goes with it.
-const BRAND = "ui.brand.";
-
 describe("the settings page's fields", () => {
   const all = SECTIONS.flatMap((s) => fieldKeys(s));
 
-  it("draws every setting the server lists, once, and no other", () => {
+  it("draws every setting the server lists, the brand keys among them, once, and no other", () => {
     const go = readFileSync(resolve(__dirname, "../../../../internal/config/settings.go"), "utf8");
     const block = go.slice(go.indexOf("var settingDefs"), go.indexOf("// factKeys"));
-    const listed = [...block.matchAll(/\{key: "([a-z_.]+)"/g)].map((m) => m[1]);
-    const served = listed.filter((k) => !k.startsWith(BRAND)).sort();
-    expect(served.length).toBeGreaterThan(20);
-    expect(listed.length).toBeGreaterThan(served.length);
-    expect(all.filter((k) => k.startsWith(BRAND))).toEqual([]);
-    expect([...all].sort()).toEqual(served);
+    const listed = [...block.matchAll(/\{key: "([a-z_.]+)"/g)].map((m) => m[1]).sort();
+    expect(listed.length).toBeGreaterThan(40);
+    expect(listed.filter((k) => k.startsWith("ui.brand.")).length).toBe(21);
+    expect([...all].sort()).toEqual(listed);
     expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("puts Branding first, and every brand key in it", () => {
+    expect(SECTIONS[0].id).toBe("branding");
+    expect(SECTIONS.filter((s) => fieldKeys(s).some((k) => k.startsWith("ui.brand."))).map((s) => s.id)).toEqual(["branding"]);
+  });
+
+  it("draws the accent, the sidebar and the theme tokens as colours, and the name as a text of at most 64 characters", () => {
+    const specs = new Map(SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.fields)).map((f) => [f.key, f]));
+    const colours = [...specs.values()].filter((f) => f.colour === true).map((f) => f.key);
+    expect(colours.length).toBe(20);
+    expect(colours).toContain("ui.brand.accent");
+    expect(colours).not.toContain("ui.brand.name");
+    expect(specs.get("ui.brand.name")?.maxLength).toBe(64);
   });
 
   it("states each range as the server holds it: the same floor, cap and zero", () => {
@@ -40,7 +48,6 @@ describe("the settings page's fields", () => {
     let compared = 0;
     for (const m of block.matchAll(/\{key: "([a-z_.]+)", typ: Type(\w+)([^}\n]*)\}/g)) {
       const [, key, typ, rest] = m;
-      if (key.startsWith(BRAND)) continue;
       const min = /min: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const max = /max: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const zero = /zero: true/.test(rest);

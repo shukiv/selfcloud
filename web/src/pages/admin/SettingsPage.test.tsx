@@ -287,6 +287,43 @@ describe("editing and saving", () => {
     expect(within(region("Sharing, trash and versions")).getByText("Unsaved changes")).toBeTruthy();
   });
 
+  it("keeps a value typed into a field while its section is saving, and drops the ones that were sent", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let state = settingsAnswer();
+    const { calls } = stubFetch(async (c) => {
+      if (c.url === "/api/v1/info") return { status: 200, body: info };
+      if (c.url === "/api/v1/settings" && c.method === "GET") return { status: 200, body: state };
+      if (c.url === "/api/v1/settings" && c.method === "PATCH") {
+        await held;
+        const set = (c.body as { set: Record<string, unknown> }).set;
+        state = { ...state, settings: state.settings.map((s) => (s.key in set ? { ...s, value: set[s.key] as Setting["value"], source: "settings" as const } : s)) };
+        return { status: 200, body: state };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    fireEvent.change(numberBox("versions.max_count"), { target: { value: "50" } });
+    fireEvent.change(numberBox("trash.retention"), { target: { value: "20" } });
+    fireEvent.click(save("Sharing, trash and versions"));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    // The count is typed again while the change is on its way.
+    fireEvent.change(numberBox("versions.max_count"), { target: { value: "60" } });
+    release();
+    await waitFor(() => expect((save("Sharing, trash and versions") as HTMLButtonElement).disabled).toBe(false));
+    expect(numberBox("versions.max_count").value).toBe("60");
+    expect(within(row("versions.max_count")).getByRole("img", { name: "Changed" })).toBeTruthy();
+    // The retention was sent as it stands, so it is saved and no longer an edit.
+    expect(numberBox("trash.retention").value).toBe("20");
+    expect(within(row("trash.retention")).queryByRole("img", { name: "Changed" })).toBeNull();
+    fireEvent.click(save("Sharing, trash and versions"));
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    expect(writes(calls)[1].body).toEqual({ set: { "versions.max_count": 60 } });
+  });
+
   it("Discard puts the section back as the server has it", async () => {
     server();
     renderPage();
