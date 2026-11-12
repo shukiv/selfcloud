@@ -107,8 +107,8 @@ func ZipCreate(args []string, stdout, stderr io.Writer) int {
 		}
 		nodes = append(nodes, nodeID)
 	}
-	if dup := firstRepeat(nodes); dup != "" {
-		return fail(stderr, g, exitcode.Usagef("two of the paths name the same node; a node is zipped once"))
+	if firstRepeat(nodes) != "" {
+		return fail(stderr, g, exitcode.Usagef("two of the arguments name the same node; a node is zipped once"))
 	}
 	r, err := jsonRequest(http.MethodPost, zipsRoute, map[string]any{"nodes": nodes})
 	if err != nil {
@@ -175,7 +175,6 @@ func zipRoots(pos []string, folder string) ([]zipRef, error) {
 		return nil, exitcode.Usagef("zip create takes one or more nodes: node ids, or paths in --folder")
 	}
 	var refs []zipRef
-	var ids []string
 	paths := false
 	for _, arg := range pos {
 		if !strings.HasPrefix(arg, "/") {
@@ -184,7 +183,6 @@ func zipRoots(pos []string, folder string) ([]zipRef, error) {
 				return nil, err
 			}
 			refs = append(refs, zipRef{id: nodeID})
-			ids = append(ids, nodeID)
 			continue
 		}
 		paths = true
@@ -196,9 +194,6 @@ func zipRoots(pos []string, folder string) ([]zipRef, error) {
 			return nil, exitcode.Usagef("zip create takes nodes, and / is the folder's root")
 		}
 		refs = append(refs, zipRef{path: p})
-	}
-	if dup := firstRepeat(ids); dup != "" {
-		return nil, exitcode.Usagef("a node is named twice; a node is zipped once")
 	}
 	if !paths {
 		if folder != "" {

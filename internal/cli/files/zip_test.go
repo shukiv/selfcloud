@@ -228,6 +228,25 @@ func TestZipCreateRefusesBadInputBeforeAnyCall(t *testing.T) {
 	}
 }
 
+// TestZipCreateRefusesAPathAndAnIdForTheSameNode: the names are resolved first, and a node that two arguments name is
+// refused before the zip is asked for.
+func TestZipCreateRefusesAPathAndAnIdForTheSameNode(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == "GET" {
+			writeDoc(w, 200, map[string]any{"items": []map[string]any{node(testNode, "Reports", "dir")}})
+			return
+		}
+		writeDoc(w, http.StatusAccepted, jobDoc(testZip))
+	})
+	wantCode(t, f.run(ZipCreate, "/reports", testNode, "--folder", testFolder), 2)
+	for _, c := range f.calls() {
+		if strings.HasPrefix(c, "POST") {
+			t.Errorf("calls %v", f.calls())
+		}
+	}
+}
+
 // TestZipCreateErrors: the server's refusals keep their exit codes and say what the server said.
 func TestZipCreateErrors(t *testing.T) {
 	for _, tc := range []struct {
@@ -417,7 +436,7 @@ func TestZipPollWaitGrowsAndStops(t *testing.T) {
 	prev := time.Duration(0)
 	for try := 1; try <= 20; try++ {
 		d := zipPollWait(try)
-		if d < prev || d <= 0 || d > 10*time.Second {
+		if d < prev || d <= 0 || d > 10*time.Second || (try <= 4 && d == prev) {
 			t.Fatalf("try %d waits %v after %v", try, d, prev)
 		}
 		prev = d
