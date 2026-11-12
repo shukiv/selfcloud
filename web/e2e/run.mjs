@@ -260,6 +260,11 @@ const EXPECTED = [
     name: 'dropped connection',
     matches: (e) => e.source === 'network' && /ERR_INTERNET_DISCONNECTED/.test(e.text ?? ''),
   },
+  // The Branding card's check sends a file that is not a picture, and the server refuses it with 400 (se3Checks, decision 148).
+  {
+    name: 'picture refused',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/settings\/brand\/logo$/.test(e.url ?? '') && /status of 400\b/.test(e.text ?? ''),
+  },
   // The conversions the s4b checks refuse on purpose: a refused preview or export, and a file type the converter does not
   // take. Only a 415 on a node s4b refused is expected; any other 415 on a preview or an export fails the run.
   {

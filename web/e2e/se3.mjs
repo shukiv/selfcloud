@@ -11,7 +11,13 @@
 //  6. The label column is readable at 768, 992, 1000, 1150 and 1280 px (the layout follows the content's width).
 //  7. Signed out, the old address goes to sign-in and back to Settings; so does /login?next= the old address, and the address
 //     with a trailing slash lands on Settings.
+//  8. Branding (decision 148): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
+//     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is uploaded, drawn in the preview and the sidebar, and removed; a file that is not a
+//     picture is refused in the server's words; no page error or policy violation.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setLanguage, setTheme, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
@@ -36,6 +42,92 @@ async function stored(h, base, adminKey, key) {
   return got.settings.find((s) => s.key === key);
 }
 
+// unexpectedErrors are the browser errors since from, but for the 400 of the file the Branding check sends on purpose.
+const unexpectedErrors = (page, from) => page.errors.slice(from).filter((e) => !/status of 400\b.*\/api\/v1\/settings\/brand\/logo\b/.test(e));
+
+const brandRow =(key) => `[data-setting=${q(key)}]`;
+
+// pictureState reads what the server says of a picture.
+async function pictureState(h, base, adminKey, kind) {
+  const got = await h.api(base, 'GET', '/api/v1/settings', adminKey);
+  return got.pictures.find((p) => p.key === `ui.brand.${kind}`);
+}
+
+// brandingChecks drives the Branding card as the signed-in admin and leaves the brand as it found it.
+async function brandingChecks(h, { page, base, adminKey }) {
+  const { check } = h;
+  const errorsBefore = page.errors.length;
+  await page.waitFor(`!!document.getElementById('settings-branding') && !!document.querySelector('${brandRow('ui.brand.accent')} input[type="color"]')`, 15000);
+  check(await page.evaluate(`!!document.querySelector('[role="group"][aria-label="Preview of unsaved branding"]')`), 'the Branding card draws the preview');
+  // The e2e config file writes the name and the accent, so they are read-only and marked.
+  const locked = await page.evaluate(`(() => {
+    const name = document.querySelector('${brandRow('ui.brand.name')}');
+    const accent = document.querySelector('${brandRow('ui.brand.accent')}');
+    return { nameOff: name.querySelector('input').disabled, nameText: name.textContent, accentOff: accent.querySelector('input[type="color"]').disabled, nameValue: name.querySelector('input').value };
+  })()`);
+  check(
+    locked.nameOff && locked.accentOff && locked.nameText.includes("Set in the server's config file") && locked.nameValue === 'E2E Drive',
+    `the name and the accent, which the config file writes, are read-only and marked (${locked.nameValue})`,
+  );
+
+  // The sidebar colour is not in the file: the preview follows what is picked, and the page's own sidebar does not until Save.
+  const sideBg = () => `(() => {
+    let el = document.querySelector('[data-testid="sidebar-brand"]');
+    let bg = 'rgba(0, 0, 0, 0)';
+    while (el && bg === 'rgba(0, 0, 0, 0)') { bg = getComputedStyle(el).backgroundColor; el = el.parentElement; }
+    return bg;
+  })()`;
+  const before = await page.evaluate(sideBg());
+  await page.evaluate(`[...document.querySelectorAll('#settings-branding .ant-collapse-header')].find((x) => x.textContent.includes('Advanced')).click()`);
+  await page.waitFor(`!!document.querySelector('${brandRow('ui.brand.sidebar.bg')} input[type="color"]')`, 10000);
+  await page.setInput(`${brandRow('ui.brand.sidebar.bg')} input[type="color"]`, '#112233');
+  await page.waitFor(`document.querySelector('[data-preview="sidebar"]')?.style.background === 'rgb(17, 34, 51)'`, 10000);
+  check(before !== 'rgb(17, 34, 51)' && (await page.evaluate(sideBg())) === before, `the preview draws the picked sidebar colour while the page's own sidebar keeps ${before}`);
+  await h.clickOn(page, '#settings-branding .ant-btn-primary');
+  await page.waitFor(`!!document.querySelector('#settings-branding [role="status"]')`, 15000);
+  const got = await h.api(base, 'GET', '/api/v1/settings', adminKey);
+  const bgSetting = got.settings.find((s) => s.key === 'ui.brand.sidebar.bg');
+  check(bgSetting.value.toUpperCase() === '#112233' && bgSetting.source === 'settings', `the server holds the sidebar colour (${bgSetting.value}, ${bgSetting.source})`);
+  await page.waitFor(`${sideBg()} === 'rgb(17, 34, 51)'`, 10000);
+  check(true, "the page's own sidebar follows the saved colour at once");
+
+  // Read again after a reload, the sidebar has the colour.
+  await page.send('Page.reload');
+  await page.waitFor(`!!document.getElementById('settings-branding') && !!document.querySelector('[data-testid="sidebar-brand"] img')`, 20000);
+  const after = await page.evaluate(sideBg());
+  check(after === 'rgb(17, 34, 51)', `after a reload the sidebar shows the saved colour (${after})`);
+
+  // The logo: upload, see it, remove it.
+  const dir = mkdtempSync(join(tmpdir(), 'se3-logo-'));
+  const logo = join(dir, 'logo.svg');
+  writeFileSync(logo, '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30" viewBox="0 0 120 30"><rect width="120" height="30" fill="#c00000"/></svg>');
+  await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [logo]);
+  await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
+  const held = await pictureState(h, base, adminKey, 'logo');
+  check(held.state === 'uploaded' && held.type === 'image/svg+xml', `the server holds the uploaded logo (${held.state}, ${held.type})`);
+  await page.waitFor(`document.querySelector('[data-preview="sidebar"] img')?.src.includes('/brand/logo?v=')`, 10000);
+  const shown = await page.evaluate(`(async () => {
+    const img = document.querySelector('[data-preview="sidebar"] img');
+    await img.decode().catch(() => undefined);
+    return { src: img.getAttribute('src'), w: img.naturalWidth, side: document.querySelector('[data-testid="sidebar-brand"] img')?.getAttribute('src') };
+  })()`);
+  check(shown.w > 0 && shown.src.includes('/brand/logo?v='), `the preview draws the uploaded logo (${shown.src}, ${shown.w} px wide)`);
+  check(/^\/brand\/logo\?v=/.test(shown.side ?? ''), `the page's own sidebar draws the uploaded logo at once (${shown.side})`);
+  await h.clickOn(page, '[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]');
+  await page.waitFor(`!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
+  check((await pictureState(h, base, adminKey, 'logo')).state === 'none', 'Remove puts the logo back to none');
+
+  // A file the server refuses is shown with the server's own words.
+  const bad = join(dir, 'bad.svg');
+  writeFileSync(bad, 'plain text, not a picture');
+  await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [bad]);
+  await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]')`, 15000);
+  const refused = await page.evaluate(`document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]').textContent`);
+  check(refused.length > 10 && (await pictureState(h, base, adminKey, 'logo')).state === 'none', `a file that is not a picture is refused with the server's words (${refused})`);
+  const unexpected = unexpectedErrors(page, errorsBefore);
+  check(unexpected.length === 0, `the Branding checks log no page error or policy violation (${unexpected.join(' | ') || 'none'})`);
+}
+
 export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
   const { check, navigateTo } = h;
   const errorsBefore = page.errors.length;
@@ -57,8 +149,8 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     check(true, 'the old Installation address lands on /admin/settings');
     const sections = await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Sections"] button')].map((b) => b.textContent.trim())`);
     check(
-      sections.join('|') === 'Uploads and storage|Sharing, trash and versions|Sign-in, search, office and administration|About',
-      `the section list names the four sections (${sections.join(' | ')})`,
+      sections.join('|') === 'Branding|Uploads and storage|Sharing, trash and versions|Sign-in, search, office and administration|About',
+      `the section list names the five sections, Branding first (${sections.join(' | ')})`,
     );
 
     // 2. Change the trash retention, save, reload, reset.
@@ -107,6 +199,9 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await page.waitFor(`document.querySelector(${q(box('versions.max_count'))}).value === '100'`, 5000);
     check(true, 'Discard puts the section back as the server has it');
 
+    // 4a. Branding: the sidebar colour is changed, saved and read again; a logo is uploaded, seen and removed.
+    await brandingChecks(h, { page, base, adminKey });
+
     // 4b. The label column keeps a readable width at every window width, with the sidebar docked from 992 px: either at least
     //     200 px, or the row is one stacked column.
     for (const width of [768, 992, 1000, 1150, 1280]) {
@@ -125,8 +220,10 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await setWidth(page, 375);
     await page.waitFor(`!!document.querySelector('[role="tablist"]') && !document.querySelector('nav[aria-label="Sections"]')`, 10000);
     const tabs = await page.evaluate(`[...document.querySelectorAll('[role="tablist"] [role="tab"]')].map((t) => t.textContent.trim())`);
-    check(tabs.length === 4 && tabs[3] === 'About', `at 375 px the sections are tabs (${tabs.join(' | ')})`);
+    check(tabs.length === 5 && tabs[0] === 'Branding' && tabs[4] === 'About', `at 375 px the sections are tabs (${tabs.join(' | ')})`);
     check(!(await sideways(page)), 'at 375 px the Settings page has no sideways scroll');
+    await page.waitFor(`!!document.getElementById('settings-branding') && document.getElementById('settings-branding').getBoundingClientRect().width > 0`, 10000);
+    check(!(await sideways(page)), 'at 375 px the Branding tab, with its preview, has no sideways scroll');
     await page.evaluate(`[...document.querySelectorAll('[role="tablist"] [role="tab"]')].find((t) => t.textContent.trim() === 'About').click()`);
     await page.waitFor(`!!document.querySelector('#settings-about') && document.querySelector('#settings-about').getBoundingClientRect().width > 0`, 10000);
     check(!(await sideways(page)), 'at 375 px the About tab has no sideways scroll');
@@ -137,7 +234,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await page.waitFor(`!!document.querySelector('nav') && !!document.getElementById('settings-uploads')`, 10000);
     const sides = await page.evaluate(`(() => {
       // The section list is the nav beside the cards: its next sibling holds the first card.
-      const nav = [...document.querySelectorAll('nav')].find((n) => n.querySelectorAll('button').length === 4 && n.nextElementSibling?.querySelector('#settings-uploads'));
+      const nav = [...document.querySelectorAll('nav')].find((n) => n.querySelectorAll('button').length === 5 && n.nextElementSibling?.querySelector('#settings-uploads'));
       const card = document.getElementById('settings-uploads');
       return { nav: nav.getBoundingClientRect().left, card: card.getBoundingClientRect().left };
     })()`);
@@ -156,7 +253,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     check(dark === 'rgb(7, 21, 49)', `in the dark theme the page has the dark background (${dark})`);
     await setTheme(page, 'Light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
-    check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
+    check(unexpectedErrors(page, errorsBefore).length === 0, `the Settings checks log no page error (${unexpectedErrors(page, errorsBefore).join(' | ') || 'none'})`);
 
     // 6. A window whose content straddles the tabs boundary does not flip: 635 px less a classic scrollbar is inside the 24 px
     //    band the layout settles across, so the cards stay stacked and the tablist never appears, over two seconds.
@@ -194,10 +291,11 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await page.goto(`${base}/login?next=%2Fadmin%2Finstallation`);
     await h.signInHere(page, ADMIN);
     await onSettings('signing in through /login?next= the old address lands on Settings');
-    check(page.errors.length === errorsBefore, `the old-address checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
+    check(unexpectedErrors(page, errorsBefore).length === 0, `the old-address checks log no page error (${unexpectedErrors(page, errorsBefore).join(' | ') || 'none'})`);
   } finally {
     // The window comes back whatever happened, and a retention left set is cleared.
     await setWidth(page, 1280).catch(() => undefined);
-    await h.api(base, 'PATCH', '/api/v1/settings', adminKey, { reset: ['trash.retention'] }).catch(() => undefined);
+    await h.api(base, 'PATCH', '/api/v1/settings', adminKey, { reset: ['trash.retention', 'ui.brand.sidebar.bg'] }).catch(() => undefined);
+    await h.api(base, 'DELETE', '/api/v1/settings/brand/logo', adminKey).catch(() => undefined);
   }
 }
