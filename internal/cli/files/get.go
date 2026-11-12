@@ -27,6 +27,11 @@ import (
 // maxRestarts is how many times one download starts again because the file changed on the server, before it gives up.
 const maxRestarts = 3
 
+// errRangeIgnored is a server, or a proxy in front of it, that answered a range with the whole file of the same version.
+// Running get again meets the same answer, so it is not told to.
+var errRangeIgnored = errors.New("the server, or a proxy in front of it, sent the whole file instead of a range; get " +
+	"needs the Range and If-Range headers to reach the server")
+
 // Get is `selfcloud get FILE [DEST]`: a resumable download in ranges (design-cli 3.9). FILE is a node id, a path in
 // --folder, or a share link, which needs no sign-in (3.5). DEST is a directory, where the file takes the server's name,
 // or a new file's path; the default is the current directory.
@@ -275,6 +280,9 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 			return gotFile{}, err
 		}
 		pf.close()
+		if errors.Is(err, errRangeIgnored) {
+			return gotFile{}, err
+		}
 		return gotFile{}, withHint(err, fmt.Sprintf("the part file %s is kept: run selfcloud get again to go on",
 			d.partPath))
 	}
@@ -469,8 +477,7 @@ func (d *downloader) fetchRange(ctx context.Context) (changed bool, err error) {
 		// The whole file of the version asked for is a range that was ignored, not a change, and starting again would
 		// meet the same answer.
 		if resp.Header.Get("ETag") == d.ver.etag {
-			return false, errors.New("the server, or a proxy in front of it, sent the whole file instead of a range; " +
-				"get needs the Range and If-Range headers to reach the server")
+			return false, errRangeIgnored
 		}
 		return true, nil
 	default:
