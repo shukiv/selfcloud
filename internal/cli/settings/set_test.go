@@ -229,3 +229,25 @@ func TestA403UnderJSONHasNoHintLine(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
+
+// The problems and the keys are the server's text, so a terminal escape in them never reaches standard error.
+func TestTheDetailLinesAreCleanedOfTerminalEscapes(t *testing.T) {
+	isolate(t, adminKey)
+	f := newFake(t)
+	f.on("GET", settingsPath, reply{200, listing})
+	f.on("PATCH", settingsPath,
+		reply{400, `{"error":{"code":"validation_failed","message":"a setting is not valid",
+		 "details":{"reason":"invalid_setting","keys":["dur.key"],"errors":["dur.key \u001b[31mred"]}}}`},
+		reply{409, `{"error":{"code":"conflict","message":"a setting is locked",
+		 "details":{"reason":"setting_locked","keys":["a\u001b[2Jb"]}}}`})
+	invalid := f.run(Set, "dur.key=1h")
+	locked := f.run(Set, "dur.key=1h")
+	for name, r := range map[string]result{"errors": invalid, "keys": locked} {
+		if strings.ContainsRune(r.stderr, '\x1b') {
+			t.Errorf("%s: an escape reached stderr: %q", name, r.stderr)
+		}
+	}
+	if !strings.Contains(invalid.stderr, "dur.key  [31mred") || !strings.Contains(locked.stderr, "keys: a [2Jb") {
+		t.Errorf("the text is not kept with the escape as a space:\n%q\n%q", invalid.stderr, locked.stderr)
+	}
+}
