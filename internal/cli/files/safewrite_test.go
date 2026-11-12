@@ -131,8 +131,8 @@ func TestFinishNeverReplacesANameThatAppeared(t *testing.T) {
 	}
 }
 
-// TestFinishNeverRenamesAReplacedPartFile: on a file system without hard links the name is taken by a check and then a
-// rename; a part file replaced after the check is not renamed over the name, and the other file is kept.
+// TestFinishNeverRenamesAReplacedPartFile: on a file system without hard links, the part file is looked at again before
+// it is given the name; one that was replaced since is not given the name, and the other file is kept.
 func TestFinishNeverRenamesAReplacedPartFile(t *testing.T) {
 	dir := t.TempDir()
 	root := openRoot(t, dir)

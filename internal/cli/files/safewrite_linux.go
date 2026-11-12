@@ -58,7 +58,8 @@ func (pf *partFile) takeNameWithoutLinks() error {
 	case errors.Is(err, syscall.EINVAL), errors.Is(err, syscall.ENOSYS), errors.Is(err, syscall.ENOTSUP):
 		return exitcode.Usagef("this file system has no hard links and no rename that leaves an existing file alone, so "+
 			"%s cannot be given its name without a risk of replacing a file that appears there; the download is kept "+
-			"as %s; --overwrite replaces whatever is at the name, or write to another file system", pf.name, pf.part)
+			"as %s; run the same get again with --overwrite to give it its name (it replaces a regular file there, and the kept "+
+			"download is finished without fetching it again while the file is unchanged), or write to another file system", pf.name, pf.part)
 	}
 	return fmt.Errorf("cannot give the download its name: %w", err)
 }
