@@ -289,7 +289,7 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 	if err != nil {
 		return gotFile{}, err
 	}
-	subj := subject{key: nodeID, route: nodeRoute(nodeID, "/content"), name: v.Name, ver: ver,
+	subj := subject{key: nodeID, route: nodeRoute(nodeID, "/content"), name: v.Name, verb: "get", ver: ver,
 		restat: func(ctx context.Context) (version, error) {
 			_, ver, err := fileVersion(ctx, src, nodeID)
 			return ver, err
@@ -302,6 +302,7 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 type subject struct {
 	key    string
 	route  string
+	verb   string // the command that runs the download again: get, or zip get
 	name   string
 	ver    version
 	restat func(ctx context.Context) (version, error)
@@ -338,8 +339,8 @@ func downloadSubject(ctx context.Context, src source, subj subject, dst localDes
 		if errors.Is(err, errRangeIgnored) {
 			return gotFile{}, err
 		}
-		return gotFile{}, withHint(err, fmt.Sprintf("the part file %s is kept: run selfcloud get again to go on",
-			d.partPath))
+		return gotFile{}, withHint(err, fmt.Sprintf("the part file %s is kept: run selfcloud %s again to go on",
+			d.partPath, subj.verb))
 	}
 	sum := hex.EncodeToString(pf.sum.Sum(nil))
 	checked := "size"
@@ -349,7 +350,7 @@ func downloadSubject(ctx context.Context, src source, subj subject, dst localDes
 			_ = forgetDownload(d.partPath)
 			return gotFile{}, &exitcode.Error{Exit: exitcode.CheckFailed, Name: "checksum_mismatch", Message: "the " +
 				"downloaded bytes do not match the server's SHA-256 of the file, so nothing was kept; run selfcloud " +
-				"get again"}
+				subj.verb + " again"}
 		}
 		checked = "sha256"
 	} else {

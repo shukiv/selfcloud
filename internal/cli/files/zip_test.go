@@ -116,7 +116,11 @@ func serveZipFile(w http.ResponseWriter, r *http.Request, data []byte, name stri
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("X-Selfcloud-Skipped", itoa(skipped))
-	if name != "" {
+	switch {
+	case strings.Contains(name, "/"):
+		// A name that cannot be written as an extended value is sent as a plain one, as a hostile server would.
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	case name != "":
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"; filename*=UTF-8''`+name)
 	}
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
