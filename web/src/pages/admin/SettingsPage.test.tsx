@@ -547,6 +547,56 @@ describe("the layout follows the content's width", () => {
     expect(await screen.findByRole("tablist")).toBeTruthy();
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
   });
+
+  // A scrollbar that appears when the cards stack takes 24 px: the content is 610 px of window less it. Reporting again after
+  // each render, as a real scrollbar does, the layout must settle instead of flipping between tabs and stacked cards.
+  it("settles when a scrollbar takes the width that stacks the cards", async () => {
+    const observers: (() => void)[] = [];
+    // Each render reports again, as a real scrollbar does, but only so many times: an unsettled layout would loop for ever.
+    let budget = 50;
+    let stopped = false;
+    globalThis.ResizeObserver = class {
+      private cb: ResizeObserverCallback;
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb;
+      }
+      observe() {
+        observers.push(() => {
+          if (stopped || budget-- <= 0) return;
+          this.cb([{ contentRect: { width: screen.queryByRole("tablist") ? 610 : 595 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        });
+      }
+      unobserve() {}
+      disconnect() {
+        observers.length = 0;
+      }
+    } as unknown as typeof ResizeObserver;
+    const report = () => {
+      for (const fn of [...observers]) fn();
+    };
+    const mo = new MutationObserver(report);
+    mo.observe(document.body, { childList: true, subtree: true });
+    const seen = { tablist: false, changes: 0 };
+    const watch = new MutationObserver(() => {
+      const now = !!document.querySelector('[role="tablist"]');
+      if (now !== seen.tablist) {
+        seen.tablist = now;
+        seen.changes += 1;
+      }
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 200));
+    });
+    const settled = seen.changes;
+    stopped = true;
+    watch.disconnect();
+    mo.disconnect();
+    expect(settled).toBeLessThanOrEqual(2);
+  });
 });
 
 describe("the layout", () => {
