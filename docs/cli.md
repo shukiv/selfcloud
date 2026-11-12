@@ -760,16 +760,17 @@ use the same credential and naming as the file commands.
 | `zip rm ZIP... [--yes]` | removes zips now, rather than at their expiry; asks first |
 
 `zip create` prints the zip's id at once. With `--wait` it follows the zip until it is ready, and prints `zip`, `state`,
-`size` and `skipped`, the number of items the server left out. It asks for the zip's first byte, after half a second and then
-at most every five seconds. `--wait-timeout` (default `30m`) ends the wait with exit 1 and `timeout`; the server goes on
+`size` and `skipped`, the number of items the server left out. It asks for the zip's first byte at once, then again after half a
+second, and then at growing waits of at most five seconds. The body is never read, so a proxy that drops the `Range` header costs
+only the headers, and a whole answer is taken as ready. `--wait-timeout` (default `30m`) ends the wait with exit 1 and `timeout`; the server goes on
 making the zip, so `zip get` works later. `--timeout` stays the limit of one request. A zip that failed, or was removed or
 expired, is answered by the server as a zip that does not exist, so the wait reports `zip_failed` (exit 1) and cannot say which.
 `--json` prints the API's document, with `state`, `size` and `skipped` added under `--wait`.
 
 `zip get` resumes after a cut like `get`: ranges with `If-Range`, `NAME.zip.part` with a record, the SHA-256 checked (the zip's
 ETag is its SHA-256), and no overwrite without `--overwrite`. The name is the server's: the node's name and `.zip` for one
-node, `download.zip` for several. A zip still being made is refused (exit 1, `zip_not_ready`), and a note says how many items
-were left out. A shortcut is not zipped (exit 2), a node whose download is turned off for the person is refused (exit 3), and
+node, `download.zip` for several. A zip still being made is refused (exit 1, `zip_not_ready`). After a download, a note says how many items
+were left out. A server that answers the range with the whole zip is named, and `zip get` stops (exit 1). A shortcut is not zipped (exit 2), a node whose download is turned off for the person is refused (exit 3), and
 so is a person with too many unfinished zips (exit 3). `zip rm` of a zip still being made is refused (exit 3).
 
 A playlist cannot be managed from the command line: the server refuses every key and token for it, so it stays in the browser.
