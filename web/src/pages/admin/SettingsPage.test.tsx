@@ -158,6 +158,7 @@ describe("what a row shows", () => {
     expect((within(r).getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
     expect(within(r).getByRole("switch").getAttribute("aria-checked")).toBe("true");
     expect(within(r).getByText("Applies at the next start")).toBeTruthy();
+    expect(within(r).getByText("Set in the server's config file")).toBeTruthy();
     expect(within(r).queryByRole("button", { name: /Back to the default/ })).toBeNull();
   });
 
