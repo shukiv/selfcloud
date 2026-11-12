@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	importsRoute = "/api/v1/imports"
 	userHintText = "imports belong to a signed-in person; an account key or an admin key cannot use them"
 )
 
