@@ -169,6 +169,9 @@ func TestResetRefusesNoKeyAndADuplicateWithNoRequest(t *testing.T) {
 		if r.code != 2 {
 			t.Errorf("%v: exit %d, stderr %q", args, r.code, r.stderr)
 		}
+		if len(args) == 2 && !strings.Contains(r.stderr, `"a.key"`) {
+			t.Errorf("the duplicate key is not named: %q", r.stderr)
+		}
 		f.wantCalls()
 	}
 }

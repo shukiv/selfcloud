@@ -137,8 +137,11 @@ func Reset(args []string, stdout, stderr io.Writer) int {
 	}
 	seen := map[string]bool{}
 	for _, k := range pos {
-		if k == "" || seen[k] {
-			return output.Fail(stderr, g.JSON, usage("a key must be named once, and not be empty"))
+		switch {
+		case k == "":
+			return output.Fail(stderr, g.JSON, usage("a key is empty"))
+		case seen[k]:
+			return output.Fail(stderr, g.JSON, usage("the key %q is given twice", k))
 		}
 		seen[k] = true
 	}

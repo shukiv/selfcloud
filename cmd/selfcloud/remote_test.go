@@ -91,8 +91,8 @@ func undeclaredCalls(c remoteCommand, routes []string) []string {
 
 // probes is how the recording check calls each remote command that reaches a route and needs no fixture. The file
 // commands need one, and are in fileProbes, and the settings commands, which need an admin key, in settingsProbes
-// (files_probe_test.go). A new remote command with a route needs its probe in
-// one of the two; the check fails until it has one.
+// (files_probe_test.go). A new remote command with a route needs its probe in one of the three maps; the check fails
+// until it has one.
 var probes = map[string][]string{
 	"info":     {},
 	"api spec": {},
