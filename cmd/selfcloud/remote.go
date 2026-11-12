@@ -10,6 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/info"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
+	"github.com/shukiv/selfcloud/internal/cli/settings"
 	"github.com/shukiv/selfcloud/internal/cli/signin"
 )
 
@@ -136,6 +137,32 @@ var remoteCommands = []remoteCommand{
 		help: `  get NODE | --folder FOLDER PATH | SHARE-LINK [DEST] [--overwrite] [--password-stdin] [--piece-size SIZE]
                                  read a file in ranges into DEST.part, resume after a cut, check it, then name it
 `, run: files.Get},
+	{name: "settings get", route: "GET /api/v1/settings",
+		help: `  settings get [KEY] [--json]    the server's live settings and pictures, or one of them (needs an admin key)
+`, run: settings.Get},
+	// set reads each key's type first, so it can send the value in the shape the server expects.
+	{name: "settings set", route: "PATCH /api/v1/settings", reads: []string{"GET /api/v1/settings"},
+		help: `  settings set KEY=VALUE... [--json]
+                                 change settings; a key the config file or the environment sets is locked
+`, run: settings.Set},
+	{name: "settings reset", route: "PATCH /api/v1/settings",
+		help: `  settings reset KEY... [--json]
+                                 remove stored values, so the defaults apply
+`, run: settings.Reset},
+	{name: "settings logo set", route: "PUT /api/v1/settings/brand/logo",
+		help: `  settings logo set FILE [--json]
+                                 upload a PNG or SVG as the web interface's logo (the icon: settings icon set)
+`, run: settings.LogoSet},
+	{name: "settings logo remove", route: "DELETE /api/v1/settings/brand/logo",
+		help: `  settings logo remove [--json]  remove the uploaded logo (the icon: settings icon remove)
+`, run: settings.LogoRemove},
+	{name: "settings icon set", route: "PUT /api/v1/settings/brand/icon",
+		help: `  settings icon set FILE [--json]
+                                 upload a PNG (square, 512 to 2048 pixels) or SVG as the icon
+`, run: settings.IconSet},
+	{name: "settings icon remove", route: "DELETE /api/v1/settings/brand/icon",
+		help: `  settings icon remove [--json]  remove the uploaded icon
+`, run: settings.IconRemove},
 	{name: "upload ls", help: `  upload ls [--json]             the uploads this client began and can resume
 `, run: files.UploadLs},
 	{name: "upload cancel", route: "DELETE /api/v1/uploads/{upl}",

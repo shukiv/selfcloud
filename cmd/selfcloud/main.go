@@ -40,6 +40,7 @@ Commands:
 Remote client (a server's address and a key, from flags, the environment or a profile):
   info          the server's description (GET /api/v1/info)
   api spec      the server's OpenAPI document
+  settings      get, set and reset the server's settings; set or remove the logo and the icon
   profile       add, use, ls and rm the local profiles
 
 Configuration comes from defaults, then the YAML file named by -config or
@@ -67,7 +68,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "fsck":
 		return fsckCommand(args[1:], stdout, stderr)
 	case "info", "api", "profile", "login", "logout", "whoami",
-		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "upload":
+		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "upload", "settings":
 		if code, ok := remote(args, stdout, stderr); ok {
 			return code
 		}

@@ -232,8 +232,8 @@ route	DELETE /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	planned, cli12
 route	DELETE /api/v1/recent	-	cli11	planned, cli11
 route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
-route	DELETE /api/v1/settings/brand/icon	-	se4	planned, se4 (settings icon remove)
-route	DELETE /api/v1/settings/brand/logo	-	se4	planned, se4 (settings logo remove)
+route	DELETE /api/v1/settings/brand/icon	settings icon remove	se4	built in se4
+route	DELETE /api/v1/settings/brand/logo	settings logo remove	se4	built in se4
 route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
 route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	upload cancel	cli6	built in cli6
@@ -307,7 +307,7 @@ route	GET /api/v1/playlists	-	cli12	planned, cli12
 route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	GET /api/v1/recent	-	cli11	planned, cli11
 route	GET /api/v1/search	-	cli11	planned, cli11
-route	GET /api/v1/settings	-	se4	planned, se4 (settings get)
+route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	-	cli7	planned, cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
@@ -344,7 +344,7 @@ route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
-route	PATCH /api/v1/settings	-	se4	planned, se4 (settings set and settings reset)
+route	PATCH /api/v1/settings	settings set,settings reset	se4	built in se4
 route	PATCH /api/v1/share-links/{shl}	-	cli7	planned, cli7
 route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7
@@ -431,5 +431,5 @@ route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player featu
 route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
 route	PUT /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
 route	PUT /api/v1/playlists/{pls}/order	-	cli12	planned, cli12
-route	PUT /api/v1/settings/brand/icon	-	se4	planned, se4 (settings icon set)
-route	PUT /api/v1/settings/brand/logo	-	se4	planned, se4 (settings logo set)
+route	PUT /api/v1/settings/brand/icon	settings icon set	se4	built in se4
+route	PUT /api/v1/settings/brand/logo	settings logo set	se4	built in se4
