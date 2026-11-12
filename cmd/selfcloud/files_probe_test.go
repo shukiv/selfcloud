@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/api"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -33,6 +35,8 @@ type fileProbe struct {
 	recURL string
 	rec    *recorder
 	st     *store.Store
+	srv    *api.Server
+	jobs   bool
 	folder string
 	acc    string
 	// answer is what a person at a terminal types at the confirmation of the command under test, if it asks.
@@ -78,8 +82,37 @@ func newFileProbe(t *testing.T) *fileProbe {
 	recorded := httptest.NewServer(rec)
 	t.Cleanup(recorded.Close)
 	t.Setenv("SELFCLOUD_TOKEN", key)
-	return &fileProbe{t: t, url: srv.URL, recURL: recorded.URL, rec: rec, st: st, folder: f.ID, acc: accountID,
+	return &fileProbe{t: t, url: srv.URL, recURL: recorded.URL, rec: rec, st: st, srv: s, folder: f.ID, acc: accountID,
 		admin: strings.TrimSpace(adminOut)}
+}
+
+// startJobs runs the server's job runner for the rest of the test, so a zip is made. The handlers alone never run jobs.
+func (p *fileProbe) startJobs() {
+	p.t.Helper()
+	if p.jobs {
+		return
+	}
+	p.jobs = true
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = p.srv.Serve(ctx, ln, nil)
+	}()
+	p.t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
+// zip makes a zip of a new file and waits until it is ready, outside the recording, and returns the zip's id.
+func (p *fileProbe) zip(path string) string {
+	p.startJobs()
+	return valueOf(p.t, p.do("zip", "create", p.touch(path), "--wait", "--wait-timeout", "2m"), "zip=")
 }
 
 // lock holds node nodeID for an editor the way an office session does, so the node is locked until the break.
@@ -198,6 +231,19 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 		return []string{nodeID, p.t.TempDir()}
 	},
 	"upload cancel": func(p *fileProbe) []string { return []string{p.openUpload("cancel.bin", 10)} },
+	// zip create waits for its zip, which the job runner makes, so the probe also reaches the poll route it declares as a read.
+	"zip create": func(p *fileProbe) []string {
+		p.startJobs()
+		return []string{p.touch("/zip-create.txt"), "--wait", "--wait-timeout", "2m"}
+	},
+	// zip get waits for a real zip, then downloads it into a directory of its own.
+	"zip get": func(p *fileProbe) []string { return []string{p.zip("/zip-get.txt"), p.t.TempDir()} },
+	// zip rm asks for the zip's id, as a person at a terminal types it.
+	"zip rm": func(p *fileProbe) []string {
+		zipID := p.zip("/zip-rm.txt")
+		p.answer = zipID + "\n"
+		return []string{zipID}
+	},
 }
 
 // settingsProbes gives, for each settings command, the arguments that make it call its route on the real server. They run

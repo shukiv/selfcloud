@@ -58,7 +58,7 @@ fn	lib/files/api.ts:commitUpload	put	cli6	built in cli6
 fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5
 fn	lib/files/api.ts:createDocument	-	cli11	planned, cli11
 fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
-fn	lib/files/api.ts:createZipJob	-	cli12	planned, cli12
+fn	lib/files/api.ts:createZipJob	zip create	cli12	built in cli12
 fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
 fn	lib/files/api.ts:deleteVersion	-	cli11	planned, cli11
 fn	lib/files/api.ts:emptyTrashStep	trash empty	cli5	built in cli5
@@ -109,7 +109,7 @@ fn	lib/files/tus.ts:createUpload	put	cli6	built in cli6
 fn	lib/files/tus.ts:deleteUpload	upload cancel	cli6	built in cli6
 fn	lib/files/tus.ts:headOffset	put	cli6	built in cli6
 fn	lib/files/tus.ts:sendChunk	put	cli6	built in cli6
-fn	lib/files/zips.ts:zipStatus	-	cli12	planned, cli12
+fn	lib/files/zips.ts:zipStatus	zip get	cli12	built in cli12; the first byte of the zip (GET with a range, as the web does), which zip get reads for the version and zip create --wait polls
 fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
 fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 fn	lib/labels/api.ts:clearNodeLabel	-	cli11	planned, cli11
@@ -237,7 +237,7 @@ route	DELETE /api/v1/settings/brand/logo	settings logo remove	se4	built in se4
 route	DELETE /api/v1/share-links/{shl}	link rm	cli7	built in cli7
 route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	upload cancel	cli6	built in cli6
-route	DELETE /api/v1/zips/{zip}	-	cli12	planned, cli12
+route	DELETE /api/v1/zips/{zip}	zip rm	cli12	built in cli12
 route	GET /api/v1/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/accounts	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}	-	cli9	planned, cli9
@@ -314,7 +314,7 @@ route	GET /api/v1/starred	-	cli11	planned, cli11
 route	GET /api/v1/templates	-	cli11	planned, cli11
 route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
 route	GET /api/v1/trash	trash ls	cli5	built in cli5
-route	GET /api/v1/zips/{zip}	-	cli12	planned, cli12
+route	GET /api/v1/zips/{zip}	zip get	cli12	built in cli12
 route	GET /brand/logo	-	-	static image for the web interface
 route	GET /healthz	-	-	platform health probe, not a user action
 route	GET /metrics	-	-	Prometheus scrape target, not a user action
@@ -415,7 +415,7 @@ route	POST /api/v1/share/renew	get	cli6	built in cli6
 route	POST /api/v1/trash/empty	trash empty	cli5	built in cli5
 route	POST /api/v1/uploads	put	cli6	built in cli6
 route	POST /api/v1/uploads/{upl}/commit	put	cli6	built in cli6
-route	POST /api/v1/zips	-	cli12	planned, cli12
+route	POST /api/v1/zips	zip create	cli12	built in cli12
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7

@@ -166,6 +166,20 @@ var remoteCommands = []remoteCommand{
 	{name: "settings icon remove", route: "DELETE /api/v1/settings/brand/icon",
 		help: `  settings icon remove [--json]  remove the uploaded icon
 `, run: settings.IconRemove},
+	// zip create reads the zip's first byte to follow it with --wait, and a path's directory to find its node; both
+	// reads belong to the commands that own those routes.
+	{name: "zip create", route: "POST /api/v1/zips",
+		reads: []string{"GET /api/v1/zips/{zip}", "GET /api/v1/folders/{fld}/children"},
+		help: `  zip create NODE... | --folder FOLDER PATH... [--wait] [--wait-timeout DURATION]
+                                 zip nodes (ids, or paths in FOLDER) and print the zip's id; --wait follows it until it is ready
+`, run: files.ZipCreate},
+	{name: "zip get", route: "GET /api/v1/zips/{zip}",
+		help: `  zip get ZIP [DEST] [--overwrite] [--piece-size SIZE]
+                                 read a ready zip in ranges into DEST.part, resume after a cut, check it, then name it
+`, run: files.ZipGet},
+	{name: "zip rm", route: "DELETE /api/v1/zips/{zip}",
+		help: `  zip rm ZIP... [--yes]          remove zips from the server now, rather than at their expiry
+`, run: files.ZipRm},
 	{name: "upload ls", help: `  upload ls [--json]             the uploads this client began and can resume
 `, run: files.UploadLs},
 	{name: "upload cancel", route: "DELETE /api/v1/uploads/{upl}",
