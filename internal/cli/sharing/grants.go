@@ -240,24 +240,36 @@ func (r *run) grantFolder(folderID, accountID, user, role, level, expires, expir
 }
 
 // nodeLabel reads a node's name for a question, as `name (nod_...)`.
-func nodeLabel(c *conn.Conn, nodeID string) (name string, err error) {
+func nodeLabel(c *conn.Conn, nodeID string) (name string, safe bool, err error) {
 	resp, err := files.Send(c, "GET", nodePath(nodeID, ""), url.Values{}, nil)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	var n struct {
 		Name string `json:"name"`
 	}
-	if json.Unmarshal(resp.Body, &n) != nil || n.Name == "" {
-		return "", fmt.Errorf("the server's answer is not a node")
+	if json.Unmarshal(resp.Body, &n) != nil {
+		return "", false, fmt.Errorf("the server's answer is not a node")
 	}
-	// A name with a control or a format character (a bidi override, a zero-width space) would reach the terminal in the
-	// question, and could reorder what the person must type.
-	if _, _, err := names.Clean(n.Name); err != nil {
-		return "", exitcode.Usagef("the node's name cannot be shown safely to confirm with; nothing was changed; " +
-			"give --yes to go on")
+	// A folder's root has the empty name. A name with a control or a format character (a bidi override, a zero-width space)
+	// would reach the terminal in the question, and could reorder what the person must type, so it is not shown.
+	if n.Name == "" {
+		return "", true, nil
 	}
-	return n.Name, nil
+	_, _, err = names.Clean(n.Name)
+	return n.Name, err == nil, nil
+}
+
+// nodeWords names a node in a question: its name and id, or only its id when it has no name (a folder's root) or a name that
+// cannot be shown safely.
+func nodeWords(name string, safe bool, nodeID string) string {
+	switch {
+	case name == "":
+		return nodeID + " (a folder's root)"
+	case !safe:
+		return nodeID + " (its name cannot be shown safely)"
+	}
+	return fmt.Sprintf("%q (%s)", name, nodeID)
 }
 
 // ShareRevoke is `selfcloud share revoke`: takes a role or a grant away. It asks first.
@@ -296,11 +308,12 @@ func ShareRevoke(args []string, stdout, stderr io.Writer) int {
 		if folderID != "" {
 			return phraseFor(subjects), fmt.Sprintf("remove the grant of %s on the team folder %s", who, folderID), nil
 		}
-		name, err := nodeLabel(c, nodeID)
+		name, safe, err := nodeLabel(c, nodeID)
 		if err != nil {
 			return "", "", err
 		}
-		return phraseFor(subjects), fmt.Sprintf("remove the access of %s on %q (%s)", who, name, nodeID), nil
+		// The phrase is the subject's id, so a name that cannot be shown is no reason to refuse.
+		return phraseFor(subjects), fmt.Sprintf("remove the access of %s on %s", who, nodeWords(name, safe, nodeID)), nil
 	})
 	if err != nil {
 		return r.fail(err)
@@ -346,11 +359,18 @@ func TransferOwnership(args []string, stdout, stderr io.Writer) int {
 		return r.fail(err)
 	}
 	err = r.ask(yes, "give the item to another owner", func() (string, string, error) {
-		name, err := nodeLabel(c, nodeID)
+		name, safe, err := nodeLabel(c, nodeID)
 		if err != nil {
 			return "", "", err
 		}
-		return name, fmt.Sprintf("give %q (%s) to %s, who becomes its owner", name, nodeID, to), nil
+		switch {
+		case name == "": // a folder's root: the API refuses it, and the id is the phrase
+			return nodeID, fmt.Sprintf("give %s to %s, who becomes its owner", nodeWords(name, safe, nodeID), to), nil
+		case !safe:
+			return "", "", exitcode.Usagef("the node's name cannot be shown safely to confirm with; nothing was changed; " +
+				"give --yes to go on")
+		}
+		return name, fmt.Sprintf("give %s to %s, who becomes its owner", nodeWords(name, safe, nodeID), to), nil
 	})
 	if err != nil {
 		return r.fail(err)

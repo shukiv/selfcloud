@@ -25,7 +25,10 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -191,6 +194,10 @@ func readPassword(source string) (string, error) {
 	case line == "":
 		return "", exitcode.Usagef("the password is empty")
 	}
+	// The server's own limits (auth.MinPasswordLen, auth.MaxPasswordLen), in characters; a refusal here costs no request.
+	if n := utf8.RuneCountInString(line); n < auth.MinPasswordLen || n > auth.MaxPasswordLen {
+		return "", exitcode.Usagef("the password must be %d to %d characters", auth.MinPasswordLen, auth.MaxPasswordLen)
+	}
 	return line, nil
 }
 
@@ -204,13 +211,28 @@ var (
 
 // scrubText removes the given secrets, and anything shaped like a share link's secret or a signed address, from s.
 func scrubText(s string, secrets ...string) string {
+	s = scrubSecrets(s, secrets)
+	// A match keeps the character that ends it, which may be the slash that starts the next address, so go on until the
+	// text stops changing.
+	for range 8 {
+		before := s
+		s = fragmentSecret.ReplaceAllString(s, "/s#"+hidden+"${1}")
+		s = signedSecret.ReplaceAllString(s, "/api/v1/links/"+hidden+"${1}")
+		if s == before {
+			break
+		}
+	}
+	return s
+}
+
+// scrubSecrets removes the given secrets, and nothing else, from s.
+func scrubSecrets(s string, secrets []string) string {
 	for _, v := range secrets {
 		if v != "" {
 			s = strings.ReplaceAll(s, v, hidden)
 		}
 	}
-	s = fragmentSecret.ReplaceAllString(s, "/s#"+hidden+"${1}")
-	return signedSecret.ReplaceAllString(s, "/api/v1/links/"+hidden+"${1}")
+	return s
 }
 
 // unsafeRune reports whether the output layer rewrites r: a control or format character, or a line or paragraph separator.
@@ -236,8 +258,11 @@ func secretForms(s string) []string {
 	}, s)
 	for _, v := range []string{s, cleaned} {
 		add(v)
+		// the JSON string forms, with and without the HTML escapes, and each with its unsafe runes as \uXXXX
 		if b, err := json.Marshal(v); err == nil {
-			add(string(b[1 : len(b)-1]))
+			html := string(b[1 : len(b)-1])
+			add(html)
+			add(escapeUnsafeRunes(html))
 		}
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
@@ -246,31 +271,50 @@ func secretForms(s string) []string {
 			plain := strings.TrimSuffix(buf.String(), "\n")
 			plain = plain[1 : len(plain)-1]
 			add(plain)
-			var esc strings.Builder
-			for _, r := range plain {
-				if r >= 0x7f && unsafeRune(r) && r <= 0xffff {
-					fmt.Fprintf(&esc, `\u%04x`, r)
-				} else {
-					esc.WriteRune(r)
-				}
-			}
-			add(esc.String())
+			add(escapeUnsafeRunes(plain))
 		}
 	}
 	slices.SortStableFunc(forms, func(a, b string) int { return len(b) - len(a) })
 	return forms
 }
 
-// scrubber is a writer that scrubs each write before it passes it on.
+// escapeUnsafeRunes writes each unsafe rune of s from U+007F up as \uXXXX, or as a surrogate pair above U+FFFF, as the output
+// layer does to a JSON document.
+func escapeUnsafeRunes(s string) string {
+	var esc strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 0x7f && unsafeRune(r) && r > 0xffff:
+			hi, lo := utf16.EncodeRune(r)
+			fmt.Fprintf(&esc, `\u%04x\u%04x`, hi, lo)
+		case r >= 0x7f && unsafeRune(r):
+			fmt.Fprintf(&esc, `\u%04x`, r)
+		default:
+			esc.WriteRune(r)
+		}
+	}
+	return esc.String()
+}
+
+// scrubber is a writer that scrubs each write before it passes it on. It works on each write alone: a secret split across two
+// writes is not found, so a caller must write each value in a single Write (a bufio.Writer or io.Copy in front of it breaks
+// that). With shapes false it removes the registered secrets only, and leaves a link's address alone.
 type scrubber struct {
 	w       io.Writer
 	secrets []string
+	shapes  bool
 }
 
 func (s *scrubber) add(secret string) { s.secrets = append(s.secrets, secret) }
 
 func (s *scrubber) Write(p []byte) (int, error) {
-	if _, err := io.WriteString(s.w, scrubText(string(p), s.secrets...)); err != nil {
+	text := string(p)
+	if s.shapes {
+		text = scrubText(text, s.secrets...)
+	} else {
+		text = scrubSecrets(text, s.secrets)
+	}
+	if _, err := io.WriteString(s.w, text); err != nil {
 		return 0, err
 	}
 	return len(p), nil
@@ -328,15 +372,18 @@ type run struct {
 	raw  io.Writer // standard output as it is: only the one line of a new secret goes here
 	outS *scrubber
 	errS *scrubber
+	rawS *scrubber
 }
 
 // begin makes the flag set of a command, lets setup add its flags, and parses args. ok is false when the command must
 // return code at once: after -h, or after a usage error that is already reported.
 func begin(name string, args []string, stdout, stderr io.Writer, setup func(*flag.FlagSet)) (r *run, code int, ok bool) {
-	r = &run{raw: stdout}
-	r.outS = &scrubber{w: stdout}
-	r.errS = &scrubber{w: stderr}
-	r.out, r.err = r.outS, r.errS
+	r = &run{}
+	r.outS = &scrubber{w: stdout, shapes: true}
+	r.errS = &scrubber{w: stderr, shapes: true}
+	// The stream of a new secret hides the password and leaves the address alone.
+	r.rawS = &scrubber{w: stdout}
+	r.out, r.err, r.raw = r.outS, r.errS, r.rawS
 	set := conn.NewFlagSet(name)
 	r.g.Register(set)
 	if setup != nil {
@@ -351,10 +398,16 @@ func begin(name string, args []string, stdout, stderr io.Writer, setup func(*fla
 }
 
 // hide makes both streams remove secret, and each form the output layer can give it, from now on.
+// A secret shorter than the server's shortest password is not registered: such a text would be replaced inside the CLI's own
+// words, and the marks would show what it is.
 func (r *run) hide(secret string) {
+	if utf8.RuneCountInString(secret) < auth.MinPasswordLen {
+		return
+	}
 	for _, f := range secretForms(secret) {
 		r.outS.add(f)
 		r.errS.add(f)
+		r.rawS.add(f)
 	}
 }
 
@@ -411,11 +464,6 @@ func failedOutcome(target string, err error) outcome {
 func (r *run) report(outs []outcome) int {
 	if len(outs) == 1 && outs[0].err != nil {
 		return r.fail(outs[0].err)
-	}
-	for i := range outs {
-		if outs[i].Error != nil {
-			outs[i].Error.Message = scrubText(outs[i].Error.Message, r.outS.secrets...)
-		}
 	}
 	var err error
 	if r.g.JSON {
