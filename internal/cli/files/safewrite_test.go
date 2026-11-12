@@ -159,7 +159,7 @@ func TestFinishNeverRenamesAReplacedPartFile(t *testing.T) {
 	if code, _, _ := exitcode.Of(err); code != exitcode.Failed {
 		t.Fatalf("finish with a replaced part file: %v, want exit %d", err, exitcode.Failed)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "f.bin")); err == nil {
+	if b, rerr := os.ReadFile(filepath.Join(dir, "f.bin")); rerr == nil {
 		t.Errorf("the name holds %q, want nothing", b)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "f.bin.part")); string(b) != "someone else's" {
