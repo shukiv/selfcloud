@@ -158,7 +158,25 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
     check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
 
-    // 6. The old address when signed out, with a trailing slash, and through the sign-in's ?next=.
+    // 6. A window whose content straddles the tabs boundary does not flip: 635 px less a classic scrollbar is inside the 24 px
+    //    band the layout settles across, so the cards stay stacked and the tablist never appears, over two seconds.
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 635, height: 2400, deviceScaleFactor: 1, mobile: false });
+    await page.waitFor(`!!document.getElementById('settings-about')`, 10000);
+    const changes = await page.evaluate(`new Promise((resolve) => {
+      const root = document.querySelector('h1').parentElement;
+      let last = !!document.querySelector('[role="tablist"]');
+      let count = 0;
+      const mo = new MutationObserver(() => {
+        const now = !!document.querySelector('[role="tablist"]');
+        if (now !== last) { last = now; count += 1; }
+      });
+      mo.observe(root, { childList: true, subtree: true });
+      setTimeout(() => { mo.disconnect(); resolve(count); }, 2000);
+    })`);
+    check(changes === 0, `at 635 px the layout settles with no tablist change over two seconds (${changes})`);
+    await setWidth(page, 1280);
+
+    // 7. The old address when signed out, with a trailing slash, and through the sign-in's ?next=.
     const onSettings = async (what) => {
       await page.waitFor(`location.pathname === '/admin/settings' && document.querySelector('h1')?.textContent === 'Settings' && !!document.getElementById('settings-uploads')`, 20000);
       check(true, what);
