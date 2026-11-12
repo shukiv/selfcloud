@@ -539,6 +539,88 @@ selfcloud folder settings set fld_... --members-only=true --allow-links=false
 selfcloud folder rm fld_... --yes
 ```
 
+## Sharing
+
+These commands give other people access to files, make share links, and answer requests for access. **They take an account
+key.** The API's sharing routes refuse any token that acts for a user, which includes the device token that `login` saves, so
+a person signed in at a terminal can run only `shared` (and sees the API's refusal for the rest, exit 3). A route that
+needs an account (`/accounts/{acc}/...`) answers that token "no such account" (exit 4). The commands add no rule of their
+own: what a role may share, the account's switch for links that anyone can open, and a team space's settings are the
+server's, and its message comes back as it is.
+
+A person is named by a `usr_` id, a group by a `grp_` id, a link by a `shl_` id, an access request by an `arq_` id, a node
+by a `nod_` id and a team folder by a `fld_` id. The commands that act on an account (`--folder`, `link ls --account`,
+`link rm --public`) take `--account acc_...`, or `SELFCLOUD_ACCOUNT`; no command returns the account's id, so keep it from
+`admin create-account` or `admin accounts`. An id that does not have the right shape is refused before any request (exit 2).
+
+| Command | What it does |
+|---|---|
+| `share ls NODE` | who holds a role on a node and on the folders above it: subject, kind, role, where it sits, its end, a name |
+| `share ls --folder F [--account A]` | the grants of a team folder: user, level, when |
+| `share grant NODE SUBJECT --role R [--expires T \| --expires-in D] [--message M] [--no-notify]` | gives a user or a group a role: `viewer`, `commenter`, `contributor`, `editor` or `manager` |
+| `share grant --folder F [--account A] USER --level read\|write` | gives a user a level on a team folder (read is viewer, write is editor; members only) |
+| `share revoke NODE SUBJECT... [--yes]` | takes roles away (asks first) |
+| `share revoke --folder F [--account A] USER... [--yes]` | takes a team folder's grants away (asks first) |
+| `share transfer-ownership NODE --to USER [--yes]` | gives a file or folder to another active user (asks first) |
+| `link ls NODE` | the share links on a node and above it; no secret is shown |
+| `link ls --account A [--audience organisation\|anyone] [--kind access\|drop] [--all]` | every live link of an account, with the item's path |
+| `link create NODE [--audience organisation\|anyone] [--role R] [--expires T \| --expires-in D] [--password-file FILE\|-]` | a share link; its address is shown once |
+| `link create NODE --drop [--title T] [--message M] [--ask-name] [--notify]` | a drop link: anyone with it can send files into the directory |
+| `link create NODE --signed [--ttl D] [--inline]` | a short-lived download address of a file, with no sign-in needed to use it; shown once |
+| `link update LINK [--audience A] [--role R] [--expires T \| --expires-in D \| --no-expiry] [--password-file FILE\|- \| --no-password] [--title T] [--message M] [--ask-name[=false]] [--notify[=false]]` | changes a link; a field not given keeps its value |
+| `link reset LINK` | a new secret; the old address stops working; the new one is shown once |
+| `link rm LINK... [--yes]` | removes links (asks first) |
+| `link rm --public [--account A] [--yes]` | removes every link of the account that anyone can open (asks first, and says how many) |
+| `access ls NODE` / `access ls --pending [--all]` | the access requests on a node, or the pending ones the caller may decide |
+| `access approve REQUEST... [--role R]` | gives the role the person asked for, or `viewer`, `commenter` or `editor` |
+| `access deny REQUEST...` | refuses |
+| `shared [--recent] [--all]` | what other people shared with the signed-in person: id, kind, role, name, when, place |
+
+A time is RFC 3339 (`2026-12-31T00:00:00Z`); a duration is a Go duration or whole days (`36h`, `30d`). Several targets (revoke,
+`link rm`, `access approve` and `deny`) print one row each and exit 7 when only some were done, as the file commands do.
+The output of `--json` is the API's own document (a list for a list), except that a link listing keeps only the fields
+named in the API's link documents.
+
+**Links.** A link's audience is `organisation` (members of the account who sign in) unless `--audience anyone` is given. A
+link that anyone can open gives the viewer role, needs the node's manager, an end date (30 days by default, 365 at most)
+and the account's switch on; the server refuses otherwise. A link never gives manager. A node has one access link and one
+drop link: a second is a conflict (exit 3). A drop link takes no role and must end.
+
+**Link secrets and passwords.**
+
+- The address of a share link holds its secret after the `#`. `link create` and `link reset` print it once, as the `url=`
+  line (or in the API's `{link, url}` document under `--json`), and say on standard error that it cannot be read again.
+  The same holds for the address `link create --signed` makes. No other command prints a secret: `link ls` keeps only the
+  fields it knows, so even a secret, an address or a hash that a server added is left out.
+- A link's password is never taken from the command line, where it would be kept in the shell's history and shown by `ps`.
+  `--password-file FILE` reads its first line from a file; `--password-file -` reads it from standard input, which must be a
+  pipe or a file, not a terminal. A password longer than 4096 bytes or empty is refused. `link update --no-password` removes
+  the password. There is no flag named `--password`.
+- Everything a command writes is scrubbed: the password it read, and anything shaped like a link's secret, is replaced by
+  `[hidden]` in what the server answered, so an error that repeats them does not show them. Nothing is logged.
+
+```sh
+printf '%s\n' "$LINK_PASSWORD" | selfcloud link create nod_… --audience anyone --expires-in 14d --password-file -
+selfcloud link ls --account acc_… --audience anyone
+selfcloud link rm --public --account acc_… --yes
+selfcloud share grant nod_… usr_… --role editor --expires-in 30d --no-notify
+selfcloud share grant --folder fld_… --account acc_… usr_… --level read
+selfcloud access ls --pending
+selfcloud access approve arq_… --role viewer
+```
+
+**Destructive commands** (`share revoke`, `share transfer-ownership`, `link rm`, `link rm --public`) ask first. At a terminal
+the question names what will happen (the node and the person, the links, or how many links the account has that anyone can
+open) and the person types the phrase it shows: the subject's id, the node's name, the link's id, or `yes`. Without a
+terminal the command refuses with exit 2 unless `--yes` is given; nothing is sent before the answer.
+
+**Exit codes.** 0 done; 2 a usage error, or the server's 400; 3 a refusal by role, policy, a device token (reason
+`device_token`: use the browser to make or change a link) or a conflict; 4 not found (a link, a node, a person, an account);
+7 some of several targets done.
+
+**Not here.** The no-download flag belongs to a node and to a team folder's settings, not to a link or a grant, so no flag of
+these commands sets it.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
