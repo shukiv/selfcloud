@@ -30,12 +30,22 @@ func TestGroupCreateSendsTheNameAndPrintsTheGroup(t *testing.T) {
 	}
 }
 
-// TestGroupCreateAgainIsAnAnswerNotAnError: the API answers 200 for a group that exists with the same name.
-func TestGroupCreateAgainIsAnAnswerNotAnError(t *testing.T) {
+// TestGroupCreateRepeat: the API answers the group that exists with 200 only when the external id matches (exit 0). A name
+// that is taken without it is a conflict (exit 3).
+func TestGroupCreateRepeat(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	f.on("POST", accGroups(), doc(http.StatusOK, group(testGroup, "Sales team")))
-	wantCode(t, f.runAcc(GroupCreate, "Sales team"), 0)
+	wantCode(t, f.runAcc(GroupCreate, "Sales team", "--external-id", "crm-3"), 0)
+	if got := f.bodyOf(0)["external_id"]; got != "crm-3" {
+		t.Fatalf("external_id %v", got)
+	}
+	f.set("POST", accGroups(), apiErr(http.StatusConflict, "conflict", "a group with this name already exists in the account"))
+	res := f.runAcc(GroupCreate, "Sales team")
+	wantCode(t, res, 3)
+	if !strings.Contains(res.stderr, "already exists") {
+		t.Fatalf("stderr %q", res.stderr)
+	}
 }
 
 func TestGroupCreateExternalIDAndJSON(t *testing.T) {

@@ -553,3 +553,77 @@ func TestFolderCommandsRejectUnknownFlagsWithoutEchoingThem(t *testing.T) {
 	}
 	f.wantNoCalls()
 }
+
+// TestSettingsHintNeedsAPlainForbidden: a device token refused for another reason, such as a password that must change,
+// is not told the web interface changes settings.
+func TestSettingsHintNeedsAPlainForbidden(t *testing.T) {
+	isolate(t, testDeviceTok)
+	f := newFake(t)
+	f.on("PATCH", settingsPath(), apiErrWith(http.StatusForbidden, "forbidden", "change your password first", "password_change_required"))
+	res := f.run(FolderSettingsSet, testFolder, "--allow-links=true")
+	wantCode(t, res, 3)
+	if strings.Contains(res.stderr, "hint") || !strings.Contains(res.stderr, "change your password first") {
+		t.Fatalf("stderr %q", res.stderr)
+	}
+}
+
+// TestABareSettingFlagMeansTrue: --members-only alone is true, and a value after a space is not its value.
+func TestABareSettingFlagMeansTrue(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("PATCH", settingsPath(), doc(http.StatusOK, folder(testFolder, "x")))
+	wantCode(t, f.run(FolderSettingsSet, testFolder, "--members-only"), 0)
+	if body := f.bodyOf(0); len(body) != 1 || body["members_only"] != true {
+		t.Fatalf("body %v, want members_only true", body)
+	}
+	n := len(f.requests())
+	wantCode(t, f.run(FolderSettingsSet, testFolder, "--members-only", "false"), 2)
+	if len(f.requests()) != n {
+		t.Fatalf("a stray argument sent a request: %v", f.requests())
+	}
+}
+
+func TestFolderShowPrintsItsCounts(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	d := folder(testFolder, "Team A")
+	d["files"], d["bytes"] = 12, 3400
+	f.on("GET", accFolder(testFolder), doc(http.StatusOK, d))
+	res := f.runAcc(FolderShow, testFolder)
+	wantCode(t, res, 0)
+	if !hasLine(res.stdout, "files=12") || !hasLine(res.stdout, "bytes=3400") {
+		t.Fatalf("stdout %q", res.stdout)
+	}
+	f.set("GET", accFolder(testFolder), doc(http.StatusOK, folder(testFolder, "Team A")))
+	res = f.runAcc(FolderShow, testFolder)
+	if strings.Contains(res.stdout, "files=") {
+		t.Fatalf("a document with no counts printed them: %q", res.stdout)
+	}
+}
+
+// TestRemovalRefusesANameItCannotShowSafely: a name with a control character would reach the terminal in the question, and
+// could not be typed back, so the person is told to use --yes and nothing is sent.
+func TestRemovalRefusesANameItCannotShowSafely(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("GET", accFolder(testFolder), doc(http.StatusOK, folder(testFolder, "evil\x1b[31m")))
+	f.on("GET", accGroup(testGroup), doc(http.StatusOK, group(testGroup, "bell\x07")))
+	f.on("DELETE", accFolder(testFolder), done(http.StatusNoContent))
+	f.on("DELETE", accGroup(testGroup), done(http.StatusNoContent))
+	for _, run := range []func() result{
+		func() result { return f.runAcc(FolderRm, testFolder) },
+		func() result { return f.runAcc(GroupRm, testGroup) },
+	} {
+		typeAtTerminal("\n")
+		res := run()
+		wantCode(t, res, 2)
+		if !strings.Contains(res.stderr, "--yes") || strings.ContainsAny(res.stderr, "\x1b\x07") {
+			t.Fatalf("stderr %q: want the --yes advice and no control character", res.stderr)
+		}
+	}
+	for _, c := range f.requests() {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Fatalf("calls %v: nothing may be deleted", f.requests())
+		}
+	}
+}
