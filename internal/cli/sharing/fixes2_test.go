@@ -168,7 +168,7 @@ func TestScrubTextHidesAdjacentSecrets(t *testing.T) {
 func TestSecretFormsHoldTheSurrogatePairOfAnAstralFormatRune(t *testing.T) {
 	forms := secretForms("tag\U000e0001-long-enough")
 	for _, f := range forms {
-		if f == `tag󠀁-long-enough` {
+		if f == "tag\\udb40\\udc01-long-enough" {
 			return
 		}
 	}
