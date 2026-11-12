@@ -37,11 +37,15 @@ async function pickBlank(page, kind) {
   // A first ArrowRight can land before the title takes it (probe, 2026-11-09: the submenu was not open 10 s later, and was open
   // after the next key). So the key is sent again, up to three times, until the title reports it is expanded.
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.evaluate(`${title}.focus()`);
+    // The dropdown may have re-rendered or closed after a retry, so the title is waited for again before each key. A title that
+    // never returns leaves this attempt without a focus, and the Blank wait after the loop reports the real failure.
+    await page.waitFor(`!!${title}`, 5000).catch(() => undefined);
+    await page.evaluate(`${title}?.focus()`);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
     await new Promise((r) => setTimeout(r, 800));
-    if (await page.evaluate(`${title}.getAttribute('aria-expanded') === 'true'`)) break;
+    // A missing title ends this attempt; the next one waits for it again.
+    if (await page.evaluate(`${title}?.getAttribute('aria-expanded') === 'true'`)) break;
   }
   await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
   await pickMenuItem(page, 'Blank');
