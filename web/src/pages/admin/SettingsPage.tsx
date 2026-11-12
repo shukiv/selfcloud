@@ -72,18 +72,9 @@ export function settle(prev: Layout, width: number): Layout {
 function useLayout(ref: RefObject<HTMLElement | null>): Layout {
   const query = "(min-width: 768px)";
   const viewport = () => (typeof window.matchMedia === "function" ? window.matchMedia(query).matches : true);
-  const [wide, setWide] = useState(viewport);
-  const [layout, setLayout] = useState<Layout>(() => layoutFor(wide ? 1200 : 375));
-  const read = (w: number) => setLayout((prev) => settle(prev, w));
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const m = window.matchMedia(query);
-    const on = () => setWide(m.matches);
-    on();
-    m.addEventListener?.("change", on);
-    return () => m.removeEventListener?.("change", on);
-  }, []);
+  const [layout, setLayout] = useState<Layout>(() => layoutFor(viewport() ? 1200 : 375));
   useLayoutEffect(() => {
+    const read = (w: number) => setLayout((prev) => settle(prev, w));
     const el = ref.current;
     if (!el) return;
     const w = el.getBoundingClientRect().width;
