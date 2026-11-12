@@ -269,10 +269,14 @@ Pausing an import stays open to a device, since a pause only stops work.
 **403 `forbidden` with a message and no reason.** A route that refuses any token acting for a user. The message names
 the route's rule, such as "a delegated token cannot list access requests", "a delegated token cannot change permissions"
 or "a delegated token has no part in a playlist". The routes are: access requests (list and decide); comments and
-activity of people; the directory search; email change (an account key or an installation admin only); folder settings;
-hidden folders (listing them, hiding a folder, showing it); lock break; media resume; notifications; ownership transfer;
+activity of people; the directory search; email change (an account key or an installation admin only); folder settings
+(`folder settings set`); lock break; media resume; notifications; ownership transfer;
 permissions (read and change); playlists; share links (manage); stars and recent items (a read-only token cannot
 change them; clearing or removing recent items needs the signed-in user).
+
+Hiding a team space (`folder hide`) and showing it again (`folder show-again`) are not refused to a device token. The list
+of hidden spaces (`folder ls --mine --hidden`) is empty for a key or a token: the API answers it only to a person's own
+browser session.
 
 **403 `forbidden` on `POST /api/v1/auth/cli/revoke`** for any credential that is not a device token.
 
@@ -291,7 +295,7 @@ These commands work on the files the signed-in person can reach, with the creden
 folder walk the server does for a path.
 
 **Naming.** A node is named by its id, `nod_` and 26 characters; `stat` and `ls --json` print it. A folder is named by
-its id, `fld_` and 26 characters; a node document's `folder_id` holds it, and no command lists folders yet (`folder ls` arrives in cli8). A path starts with `/` and is walked by the
+its id, `fld_` and 26 characters; a node document's `folder_id` holds it, and `folder ls` lists them (see Folders and groups). A path starts with `/` and is walked by the
 server from the folder given with `--folder`. Each name in a path is checked before the first request: it may not be
 empty, `.` or `..`, hold a `/` or a `\`, a control or an invisible character, start or end with a space, or be longer
 than 255 bytes. A refused name costs no request and changes nothing. A name is a name even when it looks like an id or
@@ -447,6 +451,76 @@ selfcloud upload ls
 selfcloud get nod_… ~/Downloads/
 selfcloud get --folder fld_… /archive/backup.tar ./restore.tar
 printf '%s\n' "$LINK_PASSWORD" | selfcloud get 'https://drive.example/s#…' --password-stdin
+```
+
+## Folders and groups
+
+A team space is a folder that people share; a group is a set of people that a space can be shared with. These commands
+make and change both. They call the routes that `docs/cli-parity.tsv` names for them, and a removal reads the thing's
+name once, from the route of `folder show` or `group show`, to ask for it.
+
+**The account.** The commands that manage an account's spaces and groups take `--account acc_...`, or the
+`SELFCLOUD_ACCOUNT` variable when the flag is absent. The flag wins. Anything that is not an account id (`acc_` and 26
+characters) is refused before a request (exit 2). The account's id is printed by `selfcloud admin create-account`, and
+`selfcloud admin accounts`, run on the server, lists every account's id. `folder ls --mine`, `folder settings set`, `folder hide` and `folder show-again` name no account: the
+credential's own is used.
+
+**Naming.** A folder is named by its `fld_` id, a group by its `grp_` id and a person by their `usr_` id, as the commands
+print them. A name given to `create` or `rename` is checked with the API's name rules before the request: it may not be
+empty, `.` or `..`, hold a `/` or a `\`, a control or an invisible character, start or end with a space, or be longer
+than 255 bytes. Spaces, Unicode and names that look like ids are names. A name that starts with `-` is given after
+`--`, as in `selfcloud folder create --account acc_... -- -draft`.
+
+| Command | What it does |
+|---|---|
+| `folder create [--account ACC] [--external-id ID] NAME` | makes a team space; prints it |
+| `folder ls [--account ACC [--external-id ID]] [--all]` | the account's team spaces: `ID`, `NAME`, `KIND` |
+| `folder ls --mine [--hidden] [--all]` | the folders the credential reaches: `ID`, `NAME`, `KIND`, `ROLE`, `HIDDEN`; `--hidden` lists only the hidden ones |
+| `folder show [--account ACC] FOLDER` | one space: id, external id, name, kind, root node, its four settings, times |
+| `folder rename [--account ACC] FOLDER NAME` | a new name |
+| `folder rm [--account ACC] FOLDER [--yes]` | removes the space with its files and permissions for good |
+| `folder settings set FOLDER [--members-only=B] [--sharing-managers-only=B] [--no-download-for-viewers=B] [--allow-links=B]` | changes the settings given and no other; at least one is required; `B` is `true` or `false`, and a bare flag means `true` |
+| `folder hide FOLDER` / `folder show-again FOLDER` | takes a team space off the person's own list, or puts it back; access does not change |
+| `group create [--account ACC] [--external-id ID] NAME` | makes a group; a group that exists under the same name is answered, not refused |
+| `group ls [--account ACC] [--all]` | the account's groups: `ID`, `NAME` |
+| `group show [--account ACC] GROUP` | one group |
+| `group rename [--account ACC] GROUP NAME` | a new name |
+| `group rm [--account ACC] GROUP [--yes]` | removes the group, its members and the permissions it holds |
+| `group members [--account ACC] GROUP [--all]` | the people in a group: `USER_ID`, `ADDED` |
+| `group add-member [--account ACC] GROUP USER` | puts a person in a group; one already there is done |
+| `group remove-member [--account ACC] GROUP USER` | takes a person out |
+| `user grants [--account ACC] USER` | the team spaces shared with a person: `FOLDER_ID`, `LEVEL`, `GRANTED` |
+
+Plain output is a table for a list and `key=value` lines for one thing. `--json` prints the API's own document, or for a
+list the array of its items. A change that answers with no body prints `target=ID` and `status=done` (`group add-member`
+and `group remove-member` print `group=`, `user=` and `status=done`). `--all` follows the cursor; without it a note on
+standard error says when more exist. Errors go to standard error, as `{"error":{"code":"...","message":"..."}}` with
+`--json`.
+
+**Removals ask first.** `folder rm` and `group rm` read the name, and at a terminal ask for it to be typed back and
+refuse a different one. With no terminal and no `--yes` they refuse (exit 2) before anything is read or sent. `--yes`
+skips the question and never skips the checks of the arguments.
+
+**Exit codes.** 0 done; 2 an argument, a name or an account id that is refused locally, or a request the API calls
+invalid (a setting on a personal folder, an installation admin as a group member); 3 refused by the server (`forbidden`,
+`conflict`, `unauthenticated`); 4 not found (a folder, a group or a user the account does not have). `group add-member`
+with an unknown person is exit 4 and the server's message.
+
+**What a token may do.** `folder hide` and `folder show-again` work with a device token. `folder settings set` is refused
+to every token, a device token included, with a plain 403 and the message "a delegated token cannot change a space's
+settings". The command reports the server's message and exits 3; for a device token it adds the line "selfcloud: hint:
+the web interface changes a space's settings" on standard error, which `--json` leaves out. An account key may change
+settings, and may not hide a space: only a person's own list can hide one (403, exit 3).
+
+```
+export SELFCLOUD_ACCOUNT=acc_...
+selfcloud folder create "Q4 plans"
+selfcloud folder ls --all
+selfcloud group create Finance
+selfcloud group add-member grp_... usr_...
+selfcloud user grants usr_...
+selfcloud folder settings set fld_... --members-only=true --allow-links=false
+selfcloud folder rm fld_... --yes
 ```
 
 ## Docker
