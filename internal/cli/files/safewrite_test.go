@@ -131,6 +131,42 @@ func TestFinishNeverReplacesANameThatAppeared(t *testing.T) {
 	}
 }
 
+// TestFinishNeverRenamesAReplacedPartFile: on a file system without hard links the name is taken by a check and then a
+// rename; a part file replaced after the check is not renamed over the name, and the other file is kept.
+func TestFinishNeverRenamesAReplacedPartFile(t *testing.T) {
+	dir := t.TempDir()
+	root := openRoot(t, dir)
+	pf, err := newPart(root, "f.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pf.copyRange(strings.NewReader("new bytes"), 9); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	if err := os.WriteFile(other, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := linkPart
+	t.Cleanup(func() { linkPart = old })
+	linkPart = func(*os.Root, string, string) error {
+		if err := os.Rename(other, filepath.Join(dir, "f.bin.part")); err != nil {
+			return err
+		}
+		return fs.ErrInvalid
+	}
+	err = pf.finish(false)
+	if code, _, _ := exitcode.Of(err); code != exitcode.Failed {
+		t.Fatalf("finish with a replaced part file: %v, want exit %d", err, exitcode.Failed)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "f.bin")); err == nil {
+		t.Errorf("the name holds %q, want nothing", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "f.bin.part")); string(b) != "someone else's" {
+		t.Errorf("the file at the part file's name holds %q", b)
+	}
+}
+
 // TestNewFileModeWithoutAUmask: when the umask cannot be read, the finished file is no more open than the part file
 // was: it keeps the part file's mode, 0600, rather than a mode wider than the umask might allow.
 func TestNewFileModeWithoutAUmask(t *testing.T) {

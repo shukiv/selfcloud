@@ -292,3 +292,56 @@ func TestGetRefusesAPartFileReplacedDuringTheDownload(t *testing.T) {
 		t.Errorf("the part file was removed: %v", err)
 	}
 }
+
+// TestGetDoesNotResetAReplacedPartFile: when the file changes during the download get starts again, but a part file
+// another file was renamed over in the meantime is not removed and remade. get stops (exit 1), keeps that file with its
+// bytes, and names no file.
+func TestGetDoesNotResetAReplacedPartFile(t *testing.T) {
+	isolate(t, testAccountKey)
+	nodeID := id.Derive("nod", "cli6-reset-swapped")
+	data := bytes.Repeat([]byte("R"), 3*mib/2)
+	dest := t.TempDir()
+	other := filepath.Join(t.TempDir(), "other")
+	if err := os.WriteFile(other, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var swapErr error
+	contents := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v1/nodes/" + nodeID:
+			writeNode(w, nodeID, "reswapped.bin", data, fakeETag)
+		case "/api/v1/nodes/" + nodeID + "/content":
+			if contents++; contents == 1 {
+				w.Header().Set("ETag", `"changed"`)
+				http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+				swapErr = os.Rename(other, filepath.Join(dest, "reswapped.bin.part"))
+				return
+			}
+			w.Header().Set("ETag", fakeETag)
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := getAt(srv.URL, nodeID, dest, "--piece-size", "1MiB")
+	mu.Lock()
+	defer mu.Unlock()
+	if swapErr != nil {
+		t.Fatal(swapErr)
+	}
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "replaced during the download") {
+		t.Errorf("stderr %q does not say the part file was replaced", res.stderr)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "reswapped.bin")); err == nil {
+		t.Error("the file was named")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "reswapped.bin.part")); string(b) != "someone else's" {
+		t.Errorf("the file at the part file's name holds %q", b)
+	}
+}
