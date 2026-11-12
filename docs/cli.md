@@ -624,6 +624,99 @@ terminal the command refuses with exit 2 unless `--yes` is given; nothing is sen
 
 **Not here.** The no-download flag belongs to a node and to a team folder's settings, not to a link or a grant, so no flag of
 these commands sets it.
+## Webhooks, imports and jobs
+
+**Which credential reaches what.** The webhook routes are under `/api/v1/accounts/{acc}`, so an account key reaches them
+and a device token does not: the server answers it "no such account", exit 4, and in plain output the command adds the
+line `hint: this needs an account key; a signed-in device cannot manage an account`. The import routes belong to a
+signed-in person, so they are the other way round: an account key or an admin key is refused with 403 ("imports are for a
+signed-in user"), exit 3, and plain output adds `hint: imports belong to a signed-in person; an account key or an admin
+key cannot use them`. No hint is printed under `--json`.
+
+| Command | Credential | Refused to |
+|---|---|---|
+| `webhook ls`, `show`, `deliveries` | an account key (an owner's browser session reads them too) | a device token (404); an admin key |
+| `webhook add`, `update`, `rm`, `rotate-secret`, `test`, `retry` | an account key | everything else (403 `forbidden`, "only the account key manages webhooks"); a device token gets the 404 above |
+| `import sources`, `show`, `items`, `pause` | a device token (the person who started the import) | an account key and an admin key (403) |
+| `import start`, `resume`, `cancel` | a signed-in person's browser session, or a token minted for a user | a device token (403, reason `device_token`, decision 125); an account key and an admin key (403) |
+| `import archive set` | an account key, or an admin key | a device token (404) |
+| `job show` | an account key or an admin key for the job's account; a device token for a job its own sign-in queued | a job of another account (404) |
+
+`import start`, `resume` and `cancel` are in the command table because the routes are, but no credential this client
+keeps reaches them: the client's profiles hold admin keys, account keys and device tokens, and the first and second are
+not a person, the third is refused. The browser starts, resumes and cancels imports.
+
+All of these take `--json`, the global flags of every remote command, and, for an account route, `--account acc_...`
+(or `SELFCLOUD_ACCOUNT`), which is checked before any request.
+
+### Webhooks
+
+```sh
+selfcloud webhook add --account acc_… --endpoint https://hooks.example.test/in --event file.created,file.deleted
+selfcloud webhook ls --account acc_…
+selfcloud webhook show --account acc_… whk_…
+selfcloud webhook update --account acc_… whk_… --state paused
+selfcloud webhook rotate-secret --account acc_… whk_…
+selfcloud webhook test --account acc_… whk_…
+selfcloud webhook deliveries --account acc_… whk_… --all
+selfcloud webhook retry --account acc_… whk_… dlv_…
+selfcloud webhook rm --account acc_… whk_…
+```
+
+- `--endpoint` is the address events are sent to. (`--url` is the server's address, as in every remote command.) The client
+  checks the form only: an absolute `http` or `https` address, ASCII with no spaces, at most 2048 characters, with a
+  host and no user name or password. An address with `user:password@` is refused before any request, and the refusal never
+  repeats the address. Which hosts a webhook may reach (no loopback or private address unless the operator allows it, and
+  `https` unless the operator allows `http`) is the server's decision, and its refusal is shown as it comes (exit 2).
+- `--event` names an event type; repeat it or separate types with commas. The types are `comment.created`,
+  `comment.deleted`, `comment.reopened`, `comment.resolved`, `comment.updated`, `file.created`, `file.deleted`,
+  `file.moved`, `file.restored`, `file.updated`, `import.cancelled`, `import.completed`, `import.failed`,
+  `import.started`, `quota.exceeded`, `quota.warning`, `upload.completed`, `user.created`, `user.verified` and
+  `webhook.test`. A type that is not in the list is refused before any request.
+- `update` sends only the flags that are given: `--endpoint`, `--event` (replaces the list), `--description` (an empty one
+  clears it) and `--state active|paused`. A webhook the server disabled leaves that state only with a new `--endpoint`
+  or after its secret is rotated (409, exit 3).
+- `rm` and `rotate-secret` ask first. At a terminal the person types the webhook's id; with `--yes` the question is skipped;
+  with no terminal and no `--yes` the command refuses before any request (exit 2). A webhook has no name, so the id is the
+  phrase. Removing a webhook removes its delivery log. After a rotation the secret it replaces keeps signing for a grace
+  period, which `previous_secret_until` shows, so a receiver can switch without a gap; only one old secret is kept.
+- `test` queues a `webhook.test` event for an active webhook and prints its `event_id`. `deliveries` lists the log, newest
+  first (`--all` follows every page). `retry` queues one failed delivery again; a delivery that is not failed, a disabled
+  webhook and a full queue are conflicts (exit 3).
+
+**Webhook secrets.** The signing secret is shown once: by `add` and by `rotate-secret`, as `secret=whsec_…` (and as a
+`secret` field under `--json`), with a note on standard error that it cannot be read again. No other command prints a
+secret. `ls`, `show`, `update`, `test`, `deliveries` and `retry` print only the fields of their own view, so a secret, a
+signature, a header or an event body that a server sent beyond those fields is not shown, plain or `--json`. The delivery
+log holds the event's id and type, the attempts, the last status code and a fixed error word, and no signature or body. No
+error repeats the text of an answer or an address. A receiver checks a delivery with the `Selfcloud-Signature` header:
+`t=<unix seconds>,v1=<hex>`, an HMAC-SHA-256 under the secret of `<t>.<body>`, with one `v1` for each secret that is
+signing. Keep the secret in the receiver's own configuration, and never in an address or an argument list.
+
+### Imports
+
+```sh
+selfcloud import sources
+selfcloud import show imp_…
+selfcloud import items imp_… --all
+selfcloud import pause imp_…
+selfcloud import archive set --account acc_… on
+```
+
+`import start --folder fld_… --upload upl_… [--parent nod_…] [--on-conflict fail|rename|replace]` starts an import of a
+finished archive upload, and `import resume imp_…` and `import cancel imp_… [--yes]` act on one (see the table above for
+who may). `cancel` asks first, by the import's id. The archive itself is an upload made with the kind `import`, which `put`
+does not make. `import items` pages by sequence number: `--after SEQ` starts after an item, `--limit N` (1 to 500) sizes a
+page, and `--all` follows the pages. `import archive set on|off` turns the archive source on or off for an account.
+
+### Jobs
+
+`selfcloud job show job_…` prints a job's kind, target, status (`queued`, `running`, `succeeded` or `failed`), the error
+fields of a failed job, and its times. `--wait` polls until the job has succeeded or failed, waiting half a second at
+first and doubling to at most five seconds between polls, and prints the last state; a job that failed exits 1 with the
+error name `job_failed`, and `--wait-timeout DURATION` (default 30m; only with `--wait`) ends a wait that does not finish
+with the error name `timeout`, which names the job: it goes on running. Without `--wait`, a failed job is data, and the
+exit code is 0.
 
 ## Docker
 

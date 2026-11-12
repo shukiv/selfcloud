@@ -26,7 +26,7 @@ import (
 // route and reports the refusal.
 
 // publicHook is an address the server's network policy accepts without a lookup: a public IP literal. Nothing connects to it
-// in the probes that use the server without its delivery worker.
+// in the probes that use the server without its delivery loop.
 const publicHook = "https://93.184.216.34/hook"
 
 func init() {
@@ -256,7 +256,7 @@ func signedWith(t *testing.T, d delivered, shown string) bool {
 	return strings.Contains(header, v1)
 }
 
-// serveWithWorker serves the real API on loopback with its delivery worker running. The test configuration lets webhooks
+// serveWithWorker serves the real API on loopback with its delivery loop running. The test configuration lets webhooks
 // reach plain http and loopback; the server's policy in code is unchanged.
 func serveWithWorker(t *testing.T) (url, key, acc string) {
 	t.Helper()
