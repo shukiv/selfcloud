@@ -47,6 +47,25 @@ const settled = (page, selector) =>
 // has applied (a transition of 0.3 s, and a busy machine may be slower), up to 4 s; the last reading is the one checked. The
 // element under the pointer and whether it is in the viewport are reported with the reading, so a failure says what was in the way.
 async function hoverStyle(page, selector) {
+  // After a full run the sidebar is long and scrolls inside itself, and the shell keeps the current place in view (Shell.tsx,
+  // follow) and redraws the sidebar when a page's chunk loads, so an item scrolled into view can be moved away again before the
+  // pointer reaches it. The window is made tall enough to hold the whole sidebar instead: nothing in it scrolls, and the width,
+  // so the layout, stays the same. The section puts its window back at the end.
+  // The sidebar's scroll area settles its height after a resize, a little later, so each try waits a moment and then asks for
+  // what the move needs: the item whole in the window and nothing over its middle (the rail toggle at the sider's foot can be).
+  for (let grow = 0; grow < 6; grow += 1) {
+    await sleep(250);
+    const state = await page.evaluate(`(() => {
+      const r = document.querySelector('.shell-sider .shell-scroll');
+      const el = document.querySelector(${q(selector)});
+      if (!r || !el) return { over: 0, clear: true, h: innerHeight, w: innerWidth };
+      const b = el.getBoundingClientRect();
+      const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { over: Math.max(0, r.scrollHeight - r.clientHeight), clear: b.top >= 0 && b.bottom <= innerHeight && !!top && (el === top || el.contains(top)), h: innerHeight, w: innerWidth };
+    })()`);
+    if (state.over <= 0 && state.clear) break;
+    await page.send('Emulation.setDeviceMetricsOverride', { width: state.w, height: state.h + (state.over > 0 ? state.over + 40 : 200), deviceScaleFactor: 1, mobile: false });
+  }
   await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (el) el.scrollIntoView({ block: 'center' }); return true; })()`);
   // The sidebar has its own scroll container, so block: 'center' alone may leave the element out of the viewport: the nearest
   // scrollable ancestor is adjusted too, then the page is asked again below.
