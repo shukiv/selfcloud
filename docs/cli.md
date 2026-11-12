@@ -278,6 +278,9 @@ Hiding a team space (`folder hide`) and showing it again (`folder show-again`) a
 of hidden spaces (`folder ls --mine --hidden`) is empty for a key or a token: the API answers it only to a person's own
 browser session.
 
+**404 `not_found` "no such account" on every route under `/api/v1/accounts/{acc}`** that manages an account: a token never
+manages an account, even for an owner. The CLI adds a hint that an account key is needed (see "Folders and groups").
+
 **403 `forbidden` on `POST /api/v1/auth/cli/revoke`** for any credential that is not a device token.
 
 **403 `forbidden` on the settings routes** (`/api/v1/settings` and `/api/v1/settings/brand/...`) for any credential that is
@@ -465,23 +468,32 @@ characters) is refused before a request (exit 2). The account's id is printed by
 `selfcloud admin accounts`, run on the server, lists every account's id. `folder ls --mine`, `folder settings set`, `folder hide` and `folder show-again` name no account: the
 credential's own is used.
 
+**Which credential.** The commands that name an account (`folder create`, `folder ls --account`, `folder show`,
+`folder rename`, `folder rm`, every `group` command and `user grants`) need an account key for that account, or an
+installation admin key, which manages every account. A device sign-in (`selfcloud login`) cannot manage an account, an
+owner's included: the server answers a device token `404 not_found "no such account"` (exit 4) on all of them, and the
+command adds the line "this needs an account key; a signed-in device cannot manage an account". Spaces and groups are
+managed with a key from a script, or in the web interface by a person. A device sign-in works for `folder ls --mine`,
+`folder hide` and `folder show-again`.
+
 **Naming.** A folder is named by its `fld_` id, a group by its `grp_` id and a person by their `usr_` id, as the commands
 print them. A name given to `create` or `rename` is checked with the API's name rules before the request: it may not be
 empty, `.` or `..`, hold a `/` or a `\`, a control or an invisible character, start or end with a space, or be longer
 than 255 bytes. Spaces, Unicode and names that look like ids are names. A name that starts with `-` is given after
-`--`, as in `selfcloud folder create --account acc_... -- -draft`.
+`--`, placed right before the name, as in `selfcloud folder create --account acc_... -- -draft` or
+`selfcloud group rename --account acc_... grp_... -- -draft`.
 
 | Command | What it does |
 |---|---|
-| `folder create [--account ACC] [--external-id ID] NAME` | makes a team space; prints it |
+| `folder create [--account ACC] [--external-id ID] NAME` | makes a team space; prints it. With `--external-id`, a repeat with the same name and id answers the existing space (exit 0); a name that is taken is a conflict (exit 3) |
 | `folder ls [--account ACC [--external-id ID]] [--all]` | the account's team spaces: `ID`, `NAME`, `KIND` |
-| `folder ls --mine [--hidden] [--all]` | the folders the credential reaches: `ID`, `NAME`, `KIND`, `ROLE`, `HIDDEN`; `--hidden` lists only the hidden ones |
-| `folder show [--account ACC] FOLDER` | one space: id, external id, name, kind, root node, its four settings, times |
+| `folder ls --mine [--hidden] [--all]` | the folders the credential reaches: `ID`, `NAME`, `KIND`, `ROLE`, `HIDDEN`; `--hidden` asks for only the hidden ones, which the API answers only to a person's own browser session, so it is empty for every key and device token, and `HIDDEN` never prints `true` |
+| `folder show [--account ACC] FOLDER` | one space: id, external id, name, kind, root node, its four settings, its file and byte counts, times |
 | `folder rename [--account ACC] FOLDER NAME` | a new name |
 | `folder rm [--account ACC] FOLDER [--yes]` | removes the space with its files and permissions for good |
 | `folder settings set FOLDER [--members-only=B] [--sharing-managers-only=B] [--no-download-for-viewers=B] [--allow-links=B]` | changes the settings given and no other; at least one is required; `B` is `true` or `false`, and a bare flag means `true` |
-| `folder hide FOLDER` / `folder show-again FOLDER` | takes a team space off the person's own list, or puts it back; access does not change |
-| `group create [--account ACC] [--external-id ID] NAME` | makes a group; a group that exists under the same name is answered, not refused |
+| `folder hide FOLDER` / `folder show-again FOLDER` | takes a team space off the person's own list, or puts it back; access does not change. Keep the id: `folder ls --mine` no longer shows a hidden space, and the list of hidden ones cannot be read from the command line |
+| `group create [--account ACC] [--external-id ID] NAME` | makes a group. With `--external-id`, a repeat with the same name and id answers the existing group (exit 0); a name that is taken is a conflict (exit 3) |
 | `group ls [--account ACC] [--all]` | the account's groups: `ID`, `NAME` |
 | `group show [--account ACC] GROUP` | one group |
 | `group rename [--account ACC] GROUP NAME` | a new name |
@@ -498,19 +510,23 @@ standard error says when more exist. Errors go to standard error, as `{"error":{
 `--json`.
 
 **Removals ask first.** `folder rm` and `group rm` read the name, and at a terminal ask for it to be typed back and
-refuse a different one. With no terminal and no `--yes` they refuse (exit 2) before anything is read or sent. `--yes`
-skips the question and never skips the checks of the arguments.
+refuse a different one. With no terminal and no `--yes` they refuse (exit 2) before anything is read or sent. A name
+that holds a control character cannot be shown or typed safely, so the command refuses (exit 2) and says to give
+`--yes`, which removes by the id. `--yes` skips the question and never skips the checks of the arguments.
 
 **Exit codes.** 0 done; 2 an argument, a name or an account id that is refused locally, or a request the API calls
 invalid (a setting on a personal folder, an installation admin as a group member); 3 refused by the server (`forbidden`,
 `conflict`, `unauthenticated`); 4 not found (a folder, a group or a user the account does not have). `group add-member`
 with an unknown person is exit 4 and the server's message.
 
-**What a token may do.** `folder hide` and `folder show-again` work with a device token. `folder settings set` is refused
-to every token, a device token included, with a plain 403 and the message "a delegated token cannot change a space's
-settings". The command reports the server's message and exits 3; for a device token it adds the line "selfcloud: hint:
-the web interface changes a space's settings" on standard error, which `--json` leaves out. An account key may change
-settings, and may not hide a space: only a person's own list can hide one (403, exit 3).
+**What a device token may do.** `folder hide`, `folder show-again` and `folder ls --mine` work with it. Every command
+that names an account is answered "no such account" (404, exit 4), with the hint described under "Which credential"; the
+hint is left out under `--json` and is never shown to a key. `folder settings set` is refused to every token, a device
+token included, with a plain 403 and the message "a delegated token cannot change a space's settings". The command
+reports the server's message and exits 3; for a device token and a 403 that has no `details.reason` (so not a password
+that must change) it adds the line "selfcloud: hint: the web interface changes a space's settings" on standard error,
+which `--json` leaves out. An account key may change settings, and may not hide a space: only a person's own list can
+hide one (403, exit 3).
 
 ```
 export SELFCLOUD_ACCOUNT=acc_...
