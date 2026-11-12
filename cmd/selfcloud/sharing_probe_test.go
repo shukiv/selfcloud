@@ -19,8 +19,8 @@ import (
 // The sharing commands are proved against the real API with the account key, which holds manager everywhere. A token that
 // acts for a user is refused by the sharing routes, so no other credential reaches them.
 
-// member makes a user of the account who is a member, and returns its id.
-func (p *fileProbe) member(name string) string {
+// memberNamed makes a user of the account who is a member, and returns its id.
+func (p *fileProbe) memberNamed(name string) string {
 	p.t.Helper()
 	ctx := context.Background()
 	now := time.Now()
@@ -68,7 +68,7 @@ func (p *fileProbe) accessRequest(nodeID string) string {
 	p.t.Helper()
 	ctx := context.Background()
 	askers++
-	ar := &store.AccessRequest{ID: id.New("arq"), AccountID: p.acc, NodeID: nodeID, UserID: p.member("asker-" + strconv.Itoa(askers)),
+	ar := &store.AccessRequest{ID: id.New("arq"), AccountID: p.acc, NodeID: nodeID, UserID: p.memberNamed("asker-" + strconv.Itoa(askers)),
 		Role: "viewer", Message: "please", Status: store.RequestPending, CreatedAt: time.Now()}
 	if err := p.st.Write(ctx, func(tx *store.Tx) error {
 		_, err := tx.InsertAccessRequest(ctx, ar)
@@ -90,17 +90,17 @@ func (p *fileProbe) link(path string) (nodeID, linkID string) {
 func init() {
 	fileProbes["share ls"] = func(p *fileProbe) []string { return []string{p.touch("/share-ls.txt")} }
 	fileProbes["share grant"] = func(p *fileProbe) []string {
-		return []string{p.touch("/share-grant.txt"), p.member("grantee"), "--role", "viewer"}
+		return []string{p.touch("/share-grant.txt"), p.memberNamed("grantee"), "--role", "viewer"}
 	}
 	fileProbes["share revoke"] = func(p *fileProbe) []string {
-		node, user := p.touch("/share-revoke.txt"), p.member("revokee")
+		node, user := p.touch("/share-revoke.txt"), p.memberNamed("revokee")
 		p.do("share", "grant", node, user, "--role", "viewer")
 		p.answer = user + "\n"
 		return []string{node, user}
 	}
 	fileProbes["share transfer-ownership"] = func(p *fileProbe) []string {
 		p.answer = "transfer.txt\n"
-		return []string{p.touch("/transfer.txt"), "--to", p.member("heir")}
+		return []string{p.touch("/transfer.txt"), "--to", p.memberNamed("heir")}
 	}
 	fileProbes["link ls"] = func(p *fileProbe) []string {
 		node, _ := p.link("/link-ls.txt")
@@ -159,7 +159,7 @@ func TestEveryRoleIsGrantedThroughTheRealAPI(t *testing.T) {
 	p := newFileProbe(t)
 	node := p.touch("/roles.txt")
 	for _, role := range []string{"viewer", "commenter", "contributor", "editor", "manager"} {
-		user := p.member("r-" + role)
+		user := p.memberNamed("r-" + role)
 		code, out, errOut := p.sharingRun("share", "grant", node, user, "--role", role, "--no-notify")
 		if code != 0 {
 			t.Fatalf("grant %s: exit %d, stderr %q", role, code, errOut)
@@ -173,7 +173,7 @@ func TestEveryRoleIsGrantedThroughTheRealAPI(t *testing.T) {
 		}
 	}
 	// the API's own refusals come back with its exit codes
-	if code, _, errOut := p.sharingRun("share", "grant", node, p.member("late"), "--role", "viewer", "--expires", "2020-01-01T00:00:00Z"); code != 2 {
+	if code, _, errOut := p.sharingRun("share", "grant", node, p.memberNamed("late"), "--role", "viewer", "--expires", "2020-01-01T00:00:00Z"); code != 2 {
 		t.Errorf("an end in the past: exit %d, stderr %q, want 2", code, errOut)
 	}
 	if code, _, _ := p.sharingRun("share", "grant", node, id.New("usr"), "--role", "viewer"); code != 4 {
@@ -291,7 +291,7 @@ func TestSignedLinkThroughTheRealAPI(t *testing.T) {
 func TestFolderGrantsThroughTheRealAPI(t *testing.T) {
 	isolateRemote(t)
 	p := newFileProbe(t)
-	user := p.member("folk")
+	user := p.memberNamed("folk")
 	for _, level := range []string{"read", "write"} {
 		code, out, errOut := p.sharingRun("share", "grant", "--folder", p.folder, "--account", p.acc, user, "--level", level)
 		if code != 0 || !strings.Contains(out, "level="+level+"\n") {
@@ -355,7 +355,7 @@ func TestAccessRequestsThroughTheRealAPI(t *testing.T) {
 func TestOwnershipThroughTheRealAPI(t *testing.T) {
 	isolateRemote(t)
 	p := newFileProbe(t)
-	user := p.member("heir")
+	user := p.memberNamed("heir")
 	node := p.touch("/gift.txt")
 	code, out, errOut := p.sharingRun("share", "transfer-ownership", node, "--to", user, "--yes")
 	if code != 0 || !strings.Contains(out, "owner_id="+user+"\n") {
