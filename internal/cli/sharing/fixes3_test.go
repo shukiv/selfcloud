@@ -80,3 +80,52 @@ func TestAnAnswerWithNoNameButAParentIsNotAFolderRoot(t *testing.T) {
 		}
 	}
 }
+
+// A known key that holds an object, an array or a number equal to a numeric password is not printed.
+func TestAKnownKeyWithNonScalarValueHoldingThePasswordIsNotPrinted(t *testing.T) {
+	const pw = "12345678"
+	for _, asJSON := range []bool{false, true} {
+		isolate(t, testKey)
+		f := newFake(t)
+		link := linkDoc(testLink, "anyone", "viewer")
+		link["title"] = map[string]any{"x": pw}
+		link["message"] = []any{pw}
+		link["expires_at"] = 12345678
+		f.on("PATCH", "/api/v1/share-links/"+testLink, ok(link))
+		args := []string{testLink, "--password-file", passwordFileWith(t, pw)}
+		if asJSON {
+			args = append(args, "--json")
+		}
+		res := f.run(LinkUpdate, args...)
+		wantCode(t, res, 0)
+		if strings.Contains(res.stdout, pw) || strings.Contains(res.stderr, pw) {
+			t.Fatalf("json=%v: the password was printed: %q", asJSON, res.stdout)
+		}
+		if !strings.Contains(res.stdout, "password_set") {
+			t.Fatalf("json=%v: keys lost: %q", asJSON, res.stdout)
+		}
+	}
+}
+
+// A string that equals the password only after the output layer cleans it is hidden.
+func TestAStringThatEqualsThePasswordOnlyAfterCleaningIsHidden(t *testing.T) {
+	const pw = "aaaa bbbb cccc"
+	for _, echo := range []string{"aaaa\tbbbb\tcccc", "aaaa bbbb\u200bcccc"} {
+		for _, asJSON := range []bool{false, true} {
+			isolate(t, testKey)
+			f := newFake(t)
+			link := linkDoc(testLink, "anyone", "viewer")
+			link["title"] = echo
+			f.on("PATCH", "/api/v1/share-links/"+testLink, ok(link))
+			args := []string{testLink, "--password-file", passwordFileWith(t, pw)}
+			if asJSON {
+				args = append(args, "--json")
+			}
+			res := f.run(LinkUpdate, args...)
+			wantCode(t, res, 0)
+			if strings.Contains(res.stdout, "aaaa") {
+				t.Fatalf("echo %q json=%v: the password got through: %q", echo, asJSON, res.stdout)
+			}
+		}
+	}
+}

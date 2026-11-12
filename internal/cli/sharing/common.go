@@ -343,20 +343,46 @@ func linkFields(raw []byte) map[string]json.RawMessage {
 	return out
 }
 
-// valueFields keeps the known fields of a link document and hides the password, in each form, in their string values. A key
-// and a value that is not a string are left as they are, so a password that is a word of the output cannot change them.
+// valueFields keeps the known fields of a link document, every one a scalar, and keeps the password out of their values. A
+// key is left as it is, so a password that is a word of the output cannot change it. A field that holds an array or an
+// object is dropped. A number, a bool or a null is dropped when its text holds a registered secret in any form. A string
+// has the secret removed; then, as the output layer will turn each unsafe rune into a space, the cleaned text is checked
+// too, and a value that still holds a secret form is replaced whole by the marks.
 func (r *run) valueFields(link []byte) map[string]json.RawMessage {
 	fields := linkFields(link)
+	secrets := r.outS.secrets
+	holds := func(s string) bool {
+		for _, v := range secrets {
+			if v != "" && strings.Contains(s, v) {
+				return true
+			}
+		}
+		return false
+	}
 	for k, raw := range fields {
-		if len(raw) == 0 || raw[0] != '"' {
+		if len(raw) == 0 || raw[0] == '[' || raw[0] == '{' {
+			delete(fields, k)
+			continue
+		}
+		if raw[0] != '"' {
+			if holds(string(raw)) {
+				delete(fields, k)
+			}
 			continue
 		}
 		var s string
 		if json.Unmarshal(raw, &s) != nil {
+			delete(fields, k)
 			continue
 		}
-		if b, err := json.Marshal(scrubSecrets(s, r.outS.secrets)); err == nil {
+		s = scrubSecrets(s, secrets)
+		if holds(output.Clean(s)) || holds(s) {
+			s = hidden
+		}
+		if b, err := json.Marshal(s); err == nil {
 			fields[k] = b
+		} else {
+			delete(fields, k)
 		}
 	}
 	return fields

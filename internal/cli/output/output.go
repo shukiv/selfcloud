@@ -37,6 +37,9 @@ func clean(s string) string {
 	}, s)
 }
 
+// Clean returns s as a plain cell shows it: each unsafe rune a space, as clean does.
+func Clean(s string) string { return clean(s) }
+
 // unsafeRune reports whether a terminal could act on r, or whether r could make the output show other than its bytes.
 func unsafeRune(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == ' ' || r == ' '
