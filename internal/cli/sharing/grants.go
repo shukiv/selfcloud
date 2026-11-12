@@ -15,6 +15,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
+	"github.com/shukiv/selfcloud/internal/names"
 )
 
 // maxMessageRunes is the longest note a grant may carry; the API refuses more.
@@ -249,6 +250,12 @@ func nodeLabel(c *conn.Conn, nodeID string) (name string, err error) {
 	}
 	if json.Unmarshal(resp.Body, &n) != nil || n.Name == "" {
 		return "", fmt.Errorf("the server's answer is not a node")
+	}
+	// A name with a control or a format character (a bidi override, a zero-width space) would reach the terminal in the
+	// question, and could reorder what the person must type.
+	if _, _, err := names.Clean(n.Name); err != nil {
+		return "", exitcode.Usagef("the node's name cannot be shown safely to confirm with; nothing was changed; " +
+			"give --yes to go on")
 	}
 	return n.Name, nil
 }

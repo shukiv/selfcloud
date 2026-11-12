@@ -515,7 +515,7 @@ func TestLinkRmPublicCountsFirstAndAsks(t *testing.T) {
 	typeAtTerminal("no\n")
 	res := f.run(LinkRm, "--public", "--account", testAccount)
 	wantCode(t, res, 2)
-	if !strings.Contains(res.stderr, "2 links") {
+	if !strings.Contains(res.stderr, "2 live links") {
 		t.Fatalf("the question %q does not say how many links", res.stderr)
 	}
 	for _, c := range f.requests() {

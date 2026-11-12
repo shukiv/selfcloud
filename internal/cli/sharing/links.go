@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -35,12 +36,12 @@ func accountLinksPath(accountID, suffix string) string {
 var linkKeys = []string{"id", "node_id", "audience", "role", "expires_at", "password_set", "upload_only"}
 
 // printLink writes a link's fields from the server's link document, known fields only. When secretURL is not empty it is
-// the one place a secret is written: the last line, on the unscrubbed stream, under the name url. Under --json the whole of
-// the server's answer is written as it is when it is a new link's (raw is then not nil); otherwise the known fields only.
-func (r *run) printLink(link []byte, secretURL string, raw []byte) error {
+// the one place a secret is written: the last line, on the unscrubbed stream, under the name url. Under --json the document
+// is {link, url} with the known fields of the link, or the known fields alone when there is no address.
+func (r *run) printLink(link []byte, secretURL string) error {
 	if r.g.JSON {
-		if raw != nil {
-			return output.Indented(r.raw, raw)
+		if secretURL != "" {
+			return output.JSON(r.raw, map[string]any{"link": linkFields(link), "url": secretURL})
 		}
 		return output.JSON(r.out, linkFields(link))
 	}
@@ -72,7 +73,7 @@ func (r *run) printNewLink(body []byte) int {
 	if err := json.Unmarshal(body, &doc); err != nil || doc.URL == "" {
 		return r.fail(fmt.Errorf("the server's answer holds no link"))
 	}
-	if err := r.printLink(doc.Link, doc.URL, body); err != nil {
+	if err := r.printLink(doc.Link, doc.URL); err != nil {
 		return r.fail(err)
 	}
 	_, _ = fmt.Fprintln(r.err, secretNotice)
@@ -226,23 +227,24 @@ func (r *run) createSigned(nodeID, ttl string, inline, others bool) int {
 	if err := json.Unmarshal(resp.Body, &doc); err != nil || doc.URL == "" {
 		return r.fail(fmt.Errorf("the server's answer holds no address"))
 	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(resp.Body, &fields)
+	known := map[string]string{"url": doc.URL}
+	var kv []output.KV
+	for _, k := range []string{"disposition", "expires_at"} {
+		if v := flagText(fields, k); v != "" {
+			known[k] = v
+			kv = append(kv, output.KV{Key: k, Value: v})
+		}
+	}
+	kv = append(kv, output.KV{Key: "url", Value: doc.URL})
 	if r.g.JSON {
-		if err := output.Indented(r.raw, resp.Body); err != nil {
-			return r.fail(err)
-		}
+		err = output.JSON(r.raw, known)
 	} else {
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(resp.Body, &fields)
-		var kv []output.KV
-		for _, k := range []string{"disposition", "expires_at"} {
-			if v := flagText(fields, k); v != "" {
-				kv = append(kv, output.KV{Key: k, Value: v})
-			}
-		}
-		kv = append(kv, output.KV{Key: "url", Value: doc.URL})
-		if err := output.KeyValues(r.raw, kv); err != nil {
-			return r.fail(err)
-		}
+		err = output.KeyValues(r.raw, kv)
+	}
+	if err != nil {
+		return r.fail(err)
 	}
 	_, _ = fmt.Fprintln(r.err, "selfcloud: this address works for anyone who has it until it ends; it cannot be read again")
 	return exitcode.OK
@@ -331,9 +333,10 @@ func LinkLs(args []string, stdout, stderr io.Writer) int {
 
 // LinkUpdate is `selfcloud link update`: changes a link. A field not given keeps its value.
 func LinkUpdate(args []string, stdout, stderr io.Writer) int {
-	var audience, role, expires, expiresIn, passwordFile, title, message string
+	var audience, role, expires, expiresIn, passwordFile string
 	var noExpiry, noPassword bool
 	var askName, notify optBool
+	var title, message optString
 	r, code, ok := begin("link update", args, stdout, stderr, func(set *flag.FlagSet) {
 		set.StringVar(&audience, "audience", "", "who can open it: organisation or anyone")
 		set.StringVar(&role, "role", "", "the role it gives: viewer, commenter, contributor or editor")
@@ -343,8 +346,8 @@ func LinkUpdate(args []string, stdout, stderr io.Writer) int {
 		set.StringVar(&passwordFile, "password-file", "", "set the password from `file`, or from standard input with -; "+
 			"never from the command line")
 		set.BoolVar(&noPassword, "no-password", false, "remove the password")
-		set.StringVar(&title, "title", "", "a drop link's title")
-		set.StringVar(&message, "message", "", "a drop link's message")
+		set.Var(&title, "title", "a drop link's title (--title= clears it)")
+		set.Var(&message, "message", "a drop link's message (--message= clears it)")
 		set.Var(&askName, "ask-name", "a drop link asks the sender's name (--ask-name=false to stop)")
 		set.Var(&notify, "notify", "a drop link mails its owner on an upload (--notify=false to stop)")
 	})
@@ -393,13 +396,13 @@ func LinkUpdate(args []string, stdout, stderr io.Writer) int {
 			body["password"] = pw
 		}
 	}
-	if err == nil && title != "" {
-		err = textLimit("title", title, dropTitleMax)
-		body["title"] = title
+	if err == nil && title.set {
+		err = textLimit("title", title.val, dropTitleMax)
+		body["title"] = title.val
 	}
-	if err == nil && message != "" {
-		err = textLimit("message", message, dropMessageMax)
-		body["message"] = message
+	if err == nil && message.set {
+		err = textLimit("message", message.val, dropMessageMax)
+		body["message"] = message.val
 	}
 	if askName.set {
 		body["ask_name"] = askName.val
@@ -421,7 +424,7 @@ func LinkUpdate(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return r.fail(err)
 	}
-	if err := r.printLink(resp.Body, "", nil); err != nil {
+	if err := r.printLink(resp.Body, ""); err != nil {
 		return r.fail(err)
 	}
 	return exitcode.OK
@@ -486,7 +489,11 @@ func LinkRm(args []string, stdout, stderr io.Writer) int {
 		return r.fail(err)
 	}
 	err = r.ask(yes, "remove the link or links, whose addresses stop working", func() (string, string, error) {
-		return phraseFor(r.pos), fmt.Sprintf("remove %v, whose address stops working", r.pos), nil
+		stops := "whose address stops working"
+		if len(r.pos) > 1 {
+			stops = "whose addresses stop working"
+		}
+		return phraseFor(r.pos), fmt.Sprintf("remove %s, %s", strings.Join(r.pos, ", "), stops), nil
 	})
 	if err != nil {
 		return r.fail(err)
@@ -519,7 +526,7 @@ func (r *run) removePublic(account string, yes bool) int {
 		if err != nil {
 			return "", "", err
 		}
-		return "yes", fmt.Sprintf("remove all %d links that anyone can open in the account %s; their addresses stop working",
+		return "yes", fmt.Sprintf("remove all %d live links that anyone can open in the account %s, and any expired ones; their addresses stop working",
 			len(items), accountID), nil
 	})
 	if err != nil {

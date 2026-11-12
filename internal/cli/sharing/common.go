@@ -12,6 +12,7 @@ package sharing
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,9 +20,11 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -133,6 +136,24 @@ func (b *optBool) Set(s string) error {
 
 func (b *optBool) IsBoolFlag() bool { return true }
 
+// optString is a string flag that tells "not given" from "given empty", so a person can clear a field.
+type optString struct {
+	set bool
+	val string
+}
+
+func (s *optString) String() string {
+	if s == nil {
+		return ""
+	}
+	return s.val
+}
+
+func (s *optString) Set(v string) error {
+	s.set, s.val = true, v
+	return nil
+}
+
 // readPassword reads a link password from a file, or from standard input when source is "-". It is the first line, without
 // its line ending. A terminal is refused for "-", since what is typed there is shown. An error never repeats the file's
 // name or any of the text.
@@ -173,20 +194,71 @@ func readPassword(source string) (string, error) {
 	return line, nil
 }
 
+// The shapes of what the server makes. A share link's secret is 43 characters of unpadded base64url (32 random bytes). A
+// signed address ends in a token, base64url(payload), a dot and a 43-character MAC. Only these are matched, so a path such
+// as /repo/api/v1/links/handler.go is left alone.
 var (
-	fragmentSecret = regexp.MustCompile(`/s#[A-Za-z0-9_-]{16,}`)
-	signedSecret   = regexp.MustCompile(`/api/v1/links/[A-Za-z0-9_.-]+`)
+	fragmentSecret = regexp.MustCompile(`/s#[A-Za-z0-9_-]{43}([^A-Za-z0-9_-]|$)`)
+	signedSecret   = regexp.MustCompile(`/api/v1/links/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}([^A-Za-z0-9_-]|$)`)
 )
 
-// scrubText removes the given secrets, and anything shaped like a share link's secret or a signed link, from s.
+// scrubText removes the given secrets, and anything shaped like a share link's secret or a signed address, from s.
 func scrubText(s string, secrets ...string) string {
 	for _, v := range secrets {
 		if v != "" {
 			s = strings.ReplaceAll(s, v, hidden)
 		}
 	}
-	s = fragmentSecret.ReplaceAllString(s, "/s#"+hidden)
-	return signedSecret.ReplaceAllString(s, "/api/v1/links/"+hidden)
+	s = fragmentSecret.ReplaceAllString(s, "/s#"+hidden+"${1}")
+	return signedSecret.ReplaceAllString(s, "/api/v1/links/"+hidden+"${1}")
+}
+
+// unsafeRune reports whether the output layer rewrites r: a control or format character, or a line or paragraph separator.
+func unsafeRune(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == ' ' || r == ' '
+}
+
+// secretForms returns the secret as typed and each form the output layer can give it: the JSON string forms with and
+// without the HTML escapes, the form with its unsafe characters as \uXXXX escapes, and the form that a plain cell gives it,
+// where each unsafe character is a space. Longest first, so a form that holds another is replaced whole.
+func secretForms(s string) []string {
+	var forms []string
+	add := func(f string) {
+		if strings.TrimSpace(f) != "" && !slices.Contains(forms, f) {
+			forms = append(forms, f)
+		}
+	}
+	cleaned := strings.Map(func(r rune) rune {
+		if unsafeRune(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	for _, v := range []string{s, cleaned} {
+		add(v)
+		if b, err := json.Marshal(v); err == nil {
+			add(string(b[1 : len(b)-1]))
+		}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(v) == nil {
+			plain := strings.TrimSuffix(buf.String(), "\n")
+			plain = plain[1 : len(plain)-1]
+			add(plain)
+			var esc strings.Builder
+			for _, r := range plain {
+				if r >= 0x7f && unsafeRune(r) && r <= 0xffff {
+					fmt.Fprintf(&esc, `\u%04x`, r)
+				} else {
+					esc.WriteRune(r)
+				}
+			}
+			add(esc.String())
+		}
+	}
+	slices.SortStableFunc(forms, func(a, b string) int { return len(b) - len(a) })
+	return forms
 }
 
 // scrubber is a writer that scrubs each write before it passes it on.
@@ -278,13 +350,23 @@ func begin(name string, args []string, stdout, stderr io.Writer, setup func(*fla
 	return r, exitcode.OK, true
 }
 
-// hide makes both streams remove secret from now on.
+// hide makes both streams remove secret, and each form the output layer can give it, from now on.
 func (r *run) hide(secret string) {
-	r.outS.add(secret)
-	r.errS.add(secret)
+	for _, f := range secretForms(secret) {
+		r.outS.add(f)
+		r.errS.add(f)
+	}
 }
 
-func (r *run) fail(err error) int { return output.Fail(r.err, r.g.JSON, err) }
+// fail reports err and returns its exit code. The message is scrubbed first, while it is still the text the server wrote:
+// the output layer cleans and encodes it, and would change a secret's characters before the scrubber of the stream saw them.
+func (r *run) fail(err error) int {
+	if err != nil {
+		code, name, msg := exitcode.Of(err)
+		err = &exitcode.Error{Exit: code, Name: scrubText(name, r.outS.secrets...), Message: scrubText(msg, r.outS.secrets...)}
+	}
+	return output.Fail(r.err, r.g.JSON, err)
+}
 
 func (r *run) connect() (*conn.Conn, error) { return conn.Connect(r.g, r.err, true) }
 
@@ -329,6 +411,11 @@ func failedOutcome(target string, err error) outcome {
 func (r *run) report(outs []outcome) int {
 	if len(outs) == 1 && outs[0].err != nil {
 		return r.fail(outs[0].err)
+	}
+	for i := range outs {
+		if outs[i].Error != nil {
+			outs[i].Error.Message = scrubText(outs[i].Error.Message, r.outS.secrets...)
+		}
 	}
 	var err error
 	if r.g.JSON {
