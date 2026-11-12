@@ -302,7 +302,7 @@ export function Gate() {
   }
   // The Installation page is Settings now (decision 143): its old address goes there, with a replace so Back leaves it.
   if (/^\/admin\/installation\/?$/.test(path)) {
-    return <Navigate key="installation-alias" to={"/admin/settings" + search} replace />;
+    return <Navigate to={"/admin/settings" + search + loc.hash} replace />;
   }
   // The office editor is a page of its own: full window, outside the shell, with its own slim bar (decision 102). The
   // installation admin's refusal is the one the drive pages give (DRIVE_VIEWS).

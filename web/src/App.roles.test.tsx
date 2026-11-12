@@ -121,10 +121,11 @@ describe("an installation admin reaches the admin pages and no drive page", () =
     },
   );
 
-  it("the old address with a trailing slash opens Settings too, keeping a query", async () => {
-    const got = await reach("admin", "/admin/installation/?x=1");
+  it("the old address with a trailing slash opens Settings too, keeping a query and a hash", async () => {
+    const got = await reach("admin", "/admin/installation/?x=1#about");
     expect(got.address).toBe("/admin/settings");
     expect(window.location.search).toBe("?x=1");
+    expect(window.location.hash).toBe("#about");
     expect(got.text).toBe("stub admin settings");
   });
 
@@ -142,7 +143,7 @@ describe("an installation admin reaches the admin pages and no drive page", () =
     view.unmount();
   });
 
-  it("signing in on a page that asked for the old address draws Settings, not a blank page", async () => {
+  it("a sign-in in the same Gate slot redirects from the old address", async () => {
     session.set(null);
     window.history.replaceState(null, "", "/admin/installation");
     const router = createAppRouter([{ path: "*", element: <Gate /> }]);
