@@ -379,9 +379,10 @@ connection from where it stopped. They use the same credential and naming as the
 size such as `32MiB` or `100MB`, at least 1 MiB, 64 MiB by default, which fits under a proxy that caps a request at
 100 MB. A size above the server's limit (`upload.max_chunk_size`, which `info` prints as `max_chunk_size`) is refused
 (exit 2); the default is lowered to it. `--stall-timeout` (default `1m`) ends a piece or a range when no byte has moved
-for that long. Once the last byte of a piece has been read from the file, the server still works on it (it checks and
-syncs it) before it answers, so from then until the answer begins the limit is the longer of `--stall-timeout` and
-`--header-timeout`; a link that stalls while the end of a piece is still being sent ends the piece within that time.
+for that long. While the end of a piece is still being sent, a link that stalls ends the piece after the longer of
+`--stall-timeout` and `--header-timeout`, counted from the last byte read from the file. Once the piece has been sent
+whole, the server (which checks and syncs it) has `--header-timeout` to begin its answer, so for a slow disk raise
+`--header-timeout`, not `--stall-timeout`; the answer's first header puts the stall limit back.
 `--timeout` does not apply to them, since a large piece on a slow link may take longer than any fixed
 limit; it applies to the other requests.
 
@@ -445,8 +446,10 @@ download exits 1 with `part_replaced`, and the file at the name is kept. On a fi
 FAT, exFAT or some network mounts) Linux gives the name with a rename that the kernel refuses when the name is taken
 (`renameat2` with `RENAME_NOREPLACE`), so a file that appears at any moment is kept, as it is with a hard link. If that
 file system has no such rename either, `get` exits 2, says so, and keeps the part file; it never checks and then renames.
-`--overwrite` replaces whatever is at the name, or the download can go to another file system. Other platforms take the
-name by a check and then a rename on such a file system, so a file that appears in that moment is replaced.
+Running the same `get` again with `--overwrite` finishes the kept part file and replaces a regular file at the name,
+without fetching the file again while it is unchanged on the server; or the download can go to another file system.
+Other platforms take the name by a check and then a rename on such a file system, so a file that appears in that moment
+is replaced.
 
 **Share links.** `get 'https://host/s#SECRET'` reads the file a share link names, with no profile and no sign-in: the
 link names its own server, so `--url`, `--profile`, `--token-file` and `--folder` are refused with it, and no key of a
@@ -454,15 +457,17 @@ profile or of `SELFCLOUD_TOKEN` is sent to that server. Quote the link in a shel
 process list, which other users of the machine can read, and in the shell's history, so to keep the secret out of both,
 read the link from standard input with `selfcloud get - [DEST]`, or from a regular file with
 `selfcloud get --link-file FILE [DEST]`, where the one argument is then only the destination. The link is the first line
-of the input, with the spaces and the line ending around it trimmed, and at most 4096 bytes. Standard input must be a pipe
-or a file, not a terminal, and it cannot also carry the password, so `get -` and `--password-stdin` are refused together
-(use `--link-file` with the password on standard input). A refusal never repeats the link or the file's name. The link must be `https` (plain `http`
-only for a loopback address, or with `--insecure-http`), end in `/s` and carry its secret after `#`; anything else is
-refused without a request. A link with a password takes it from standard input with `--password-stdin`, never from a
-terminal, where it would be shown as it is typed; without it, the command exits 3 and says how to give it. The link's
-credential lasts 15 minutes and is renewed before it ends, so a long download goes on. A link to a directory, and a
-link that only takes uploads, are refused (exit 2). The link's secret, the password and the credential are never
-printed, logged or written to a record.
+of the input, with the spaces and the line ending around it trimmed, and at most 4096 bytes counted with those spaces (a
+longer line is refused, never cut). Standard input must be a pipe or a file, not a terminal, and it cannot also carry
+the password, so `get -` and `--password-stdin` are refused together (use `--link-file` with the password on standard
+input). `--link-file -` is refused: it takes a file, and `get -` reads standard input. A refusal never repeats the link
+or the file's name. The link must be `https` (plain `http` only for a loopback address, or with `--insecure-http`), end
+in `/s` and carry its secret after `#`; anything else is refused without a request. A link with a password takes it from
+standard input with `--password-stdin`, never from a terminal, where it would be shown as it is typed; without it, the
+command exits 3 and says how to give it (after `get -`, the hint names `--link-file`, since standard input holds the
+link). The link's credential lasts 15 minutes and is renewed before it ends, so a long download goes on. A link to a
+directory, and a link that only takes uploads, are refused (exit 2). The link's secret, the password and the credential
+are never printed, logged or written to a record.
 
 ```
 selfcloud put ./backup.tar --folder fld_… /archive --piece-size 32MiB
