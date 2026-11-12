@@ -174,7 +174,7 @@ must be YAML; an HTML page is refused.
 ```sh
 selfcloud settings get                         # every setting, then the logo and the icon
 selfcloud settings get trash.retention --json
-selfcloud settings set trash.retention=48h upload.max_lifetime=24h
+selfcloud settings set trash.retention=48h versions.max_count=20
 selfcloud settings reset trash.retention
 ```
 
