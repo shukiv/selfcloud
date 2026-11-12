@@ -267,6 +267,15 @@ describe("Listing focus: a press released off its row (decision 128)", () => {
     expect(row5.getAttribute("tabindex")).toBe("0");
   });
 
+  it("a key during a press with no focus in the row moves no focus", () => {
+    const onFocusItem = vi.fn();
+    const { container } = render(<Listing {...props(new Set())} onFocusItem={onFocusItem} />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onFocusItem).not.toHaveBeenCalled();
+  });
+
   it("a press that the browser cancels does not move the focus when no focus is in the row", async () => {
     const onFocusItem = vi.fn();
     const { container } = render(<Listing {...props(new Set())} onFocusItem={onFocusItem} />);
@@ -424,6 +433,15 @@ describe("Listing tiles: a page render and a selection change draw only the tile
     const drawn = items.filter((n) => (renders[n.name] ?? 0) > 0).map((n) => n.id);
     expect(drawn).toEqual(["n3"]);
   });
+
+  it("a tile's tab stop follows the focus between two selected tiles", () => {
+    const { container, rerender } = render(<Listing {...grid(new Set(["n3", "n4"]), "n3")} />);
+    const ti = (id: string) => (container.querySelector(`[data-id="${id}"]`) as HTMLElement).getAttribute("tabindex");
+    expect(ti("n3")).toBe("0");
+    rerender(<Listing {...grid(new Set(["n3", "n4"]), "n4")} />);
+    expect(ti("n3")).toBe("-1");
+    expect(ti("n4")).toBe("0");
+  });
 });
 
 describe("Listing focus: a key during a press, and a window that loses its focus (decision 128)", () => {
@@ -444,6 +462,47 @@ describe("Listing focus: a key during a press, and a window that loses its focus
     fireEvent.pointerDown(row5, { pointerType: "mouse" });
     fireEvent.blur(window);
     act(() => row5.focus());
+    expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it.each([
+    ["Control", { ctrlKey: true }],
+    ["Shift", { shiftKey: true }],
+  ])("a held %s that repeats its key during a press leaves the press and its click one page render", (key, mods) => {
+    const { container } = render(<Page />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    pageRenders.n = 0;
+    fireEvent.pointerDown(row5, { pointerType: "mouse", ...mods });
+    act(() => row5.focus());
+    fireEvent.keyDown(document.body, { key, repeat: true, ...mods });
+    fireEvent.pointerUp(row5, { pointerType: "mouse", ...mods });
+    fireEvent.click(row5, mods);
+    expect(pageRenders.n).toBe(1);
+    expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a held Ctrl during a press released on another row keeps the focus on the pressed row", () => {
+    const { container } = render(<Page />);
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    const row9 = container.querySelector('[data-id="n9"]') as HTMLElement;
+    fireEvent.pointerDown(row5, { pointerType: "mouse", ctrlKey: true });
+    act(() => row5.focus());
+    fireEvent.keyDown(document.body, { key: "Control", repeat: true, ctrlKey: true });
+    fireEvent.pointerUp(row9, { pointerType: "mouse", ctrlKey: true });
+    expect(row5.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a press on a row while another row has the focus is one page render", () => {
+    const { container } = render(<Page />);
+    const row3 = container.querySelector('[data-id="n3"]') as HTMLElement;
+    const row5 = container.querySelector('[data-id="n5"]') as HTMLElement;
+    act(() => row3.focus());
+    pageRenders.n = 0;
+    fireEvent.pointerDown(row5, { pointerType: "mouse" });
+    act(() => row5.focus());
+    fireEvent.pointerUp(row5, { pointerType: "mouse" });
+    fireEvent.click(row5);
+    expect(pageRenders.n).toBe(1);
     expect(row5.getAttribute("tabindex")).toBe("0");
   });
 });
