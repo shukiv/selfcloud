@@ -288,7 +288,7 @@ func TestTrashRmNameOnALaterPage(t *testing.T) {
 
 // unsafeNames are server names that must never reach the terminal in a question: a control character, an escape
 // sequence, a line separator, an invisible character, a path separator, a space at an end, and no name at all.
-var unsafeNames = []string{"a\x1b[31mred", "two\nlines", "tab\there", "line sep", "zero​width", "a/b", " lead", "trail ", ""}
+var unsafeNames = []string{"a\x1b[31mred", "two\nlines", "tab\there", "line\u2028sep", "zero\u200bwidth", "a/b", " lead", "trail ", ""}
 
 // TestRmRefusesAnUnsafeNameInTheQuestion: a name that names.Clean refuses is not shown. The command stops with exit 2,
 // says to give --yes, and sends no delete.
@@ -335,7 +335,7 @@ func wantUnsafeRefusal(t *testing.T, res result, name string) {
 	if !strings.Contains(res.stderr, "--yes") {
 		t.Fatalf("name %q: stderr %q does not say to give --yes", name, res.stderr)
 	}
-	if strings.Contains(res.stderr, "Type ") || strings.ContainsAny(res.stderr, "\x1b ​") {
+	if strings.Contains(res.stderr, "Type ") || strings.ContainsAny(res.stderr, "\x1b\u2028\u200b") {
 		t.Fatalf("name %q: stderr %q shows the question or the name", name, res.stderr)
 	}
 	if name != "" && strings.Contains(res.stderr, name) {
