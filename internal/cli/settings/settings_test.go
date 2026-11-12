@@ -297,13 +297,21 @@ func TestGetTwoKeysIsAUsageErrorWithNoRequest(t *testing.T) {
 	f.wantCalls()
 }
 
-func TestGetPrintsALargeIntegerExactly(t *testing.T) {
+// 9007199254740993 is 2^53+1, which a float64 cannot hold: read through a float, it prints as ...992. A null default prints
+// as an empty field.
+func TestGetPrintsALargeIntegerExactlyAndANullAsNothing(t *testing.T) {
 	isolate(t, adminKey)
 	f := newFake(t)
-	f.on("GET", settingsPath, reply{200, listing})
-	r := f.run(Get, "big.key")
-	if r.code != 0 || !strings.Contains(r.stdout, "value=17592186044416\n") {
+	f.on("GET", settingsPath, reply{200, `{"settings":[
+	 {"key":"huge.key","type":"int","value":9007199254740993,"default":null,"source":"settings","locked":false,"restart":false}],
+	 "facts":[],"pictures":[]}`})
+	r := f.run(Get, "huge.key")
+	if r.code != 0 || !strings.Contains(r.stdout, "value=9007199254740993\n") || !strings.Contains(r.stdout, "default=\n") {
 		t.Errorf("exit %d, stdout %q", r.code, r.stdout)
+	}
+	r = f.run(Get)
+	if !strings.Contains(r.stdout, "9007199254740993") {
+		t.Errorf("table: %q", r.stdout)
 	}
 }
 
