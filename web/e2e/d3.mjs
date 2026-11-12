@@ -47,7 +47,30 @@ const settled = (page, selector) =>
 // has applied (a transition of 0.3 s, and a busy machine may be slower), up to 4 s; the last reading is the one checked. The
 // element under the pointer and whether it is in the viewport are reported with the reading, so a failure says what was in the way.
 async function hoverStyle(page, selector) {
-  await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (el) el.scrollIntoView({ block: 'nearest' }); return true; })()`);
+  await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (el) el.scrollIntoView({ block: 'center' }); return true; })()`);
+  // The sidebar has its own scroll container, so block: 'center' alone may leave the element out of the viewport: the nearest
+  // scrollable ancestor is adjusted too, then the page is asked again below.
+  await page.evaluate(`(() => {
+    const el = document.querySelector(${q(selector)});
+    if (!el) return true;
+    const r = el.getBoundingClientRect();
+    if (r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth) return true;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (/(auto|scroll)/.test(s.overflowY) && p.scrollHeight > p.clientHeight) {
+        const pr = p.getBoundingClientRect();
+        p.scrollTop += r.top - pr.top - (pr.height - r.height) / 2;
+        break;
+      }
+    }
+    return true;
+  })()`);
+  // The move is only made once the element is fully inside the viewport, so the pointer never goes off the page.
+  const inside = await page.waitFor(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return false; const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })()`, 2000).catch(() => false);
+  if (!inside) {
+    const rect = await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), innerHeight, innerWidth }; })()`);
+    throw new Error(`${selector} is not fully in the viewport after scrolling: ${JSON.stringify(rect)}`);
+  }
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1400, y: 880, button: 'none', buttons: 0 });
   await sleep(150);
   const at = await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
@@ -124,6 +147,9 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
   const MENU = (text) => `.shell-sider .shell-menu .ant-menu-item[data-menu-text="${text}"]`;
   try {
     await size(1440, 900);
+    // A size override that did not apply would fail as a hover later; here it fails where it is set, with the sizes it got.
+    const sized = await page.waitFor(`innerWidth === 1440 && innerHeight === 900 ? { w: innerWidth, h: innerHeight } : false`, 5000).catch(() => null);
+    if (!sized) throw new Error(`the viewport did not become 1440x900: ${JSON.stringify(await page.evaluate(`[innerWidth, innerHeight]`))}`);
     if ((await page.evaluate(`document.documentElement.lang`)) !== 'en') await setLanguage(page, 'English');
     await setTheme(page, 'Light');
     await setPhone(page, false);
