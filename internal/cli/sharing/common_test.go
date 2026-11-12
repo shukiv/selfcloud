@@ -148,7 +148,7 @@ func TestReadPasswordErrorsNameNoPassword(t *testing.T) {
 }
 
 func TestScrubTextHidesSecrets(t *testing.T) {
-	in := "bad password " + testPassword + " for https://h.example/s#" + testSecret + " and /api/v1/links/" + testSecret + ".x.y done"
+	in := "bad password " + testPassword + " for https://h.example/s#" + testSecret + " and /api/v1/links/" + signedToken + " done"
 	got := scrubText(in, testPassword)
 	for _, s := range []string{testPassword, testSecret} {
 		if strings.Contains(got, s) {
