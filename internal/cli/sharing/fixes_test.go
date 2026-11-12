@@ -332,14 +332,17 @@ func TestTransferWithANameThatCannotBeShownSafelyAsksForYes(t *testing.T) {
 	}
 }
 
-func TestRevokeWithANameThatCannotBeShownSafelyAsksForYes(t *testing.T) {
+// TestRevokeWithAnUnsafeNameShowsTheIdAndStillAsks: revoke types the subject's id, so a name that cannot be shown is not a
+// reason to refuse; the question names the node by its id.
+func TestRevokeWithAnUnsafeNameShowsTheIdAndStillAsks(t *testing.T) {
 	isolate(t, testKey)
 	f := newFake(t)
 	f.on("GET", nodeRoute(testNode, ""), ok(map[string]any{"id": testNode, "name": "flip‮name.txt", "kind": "file"}))
+	f.on("DELETE", nodeRoute(testNode, "/permissions/"+testUser), done(204))
 	typeAtTerminal(testUser + "\n")
 	res := f.run(ShareRevoke, testNode, testUser)
-	wantCode(t, res, 2)
-	if strings.Contains(res.stderr, "‮") || !strings.Contains(res.stderr, "--yes") {
+	wantCode(t, res, 0)
+	if strings.Contains(res.stderr, "‮") || !strings.Contains(res.stderr, testNode) {
 		t.Fatalf("stderr %q", res.stderr)
 	}
 }
