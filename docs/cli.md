@@ -183,7 +183,7 @@ installation admin key (`sc_admin_...`, from `selfcloud admin create-key` on the
 token is refused with a 403, and a line after the error names the admin key to use. That line, and the lines that list the
 keys or the problems of a refused change, are not printed with `--json`, where stderr stays one JSON line. `settings get` prints a table of `KEY`, `VALUE`,
 `SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the two pictures. With a key it prints
-that setting as `key=value` lines. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
+that setting or picture as `key=value` lines (a picture shows `key`, `state`, `type`, `sha256` and `locked`). Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
 do not expect a value to come back as it was typed. `--json` prints the server's document.
 
 `settings set KEY=VALUE...` reads the settings first, to learn each key's type, and sends the value in that type's shape:
