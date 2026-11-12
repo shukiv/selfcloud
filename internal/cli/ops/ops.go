@@ -72,8 +72,9 @@ func (c *command) connect() (*conn.Conn, error) {
 }
 
 // fail reports err and returns its exit code. Two refusals are explained in plain output, and not under --json:
-//   - a device token that gets "not found" from a route of an account: the server never lets a token manage an account,
-//     and answers as if the account were not there;
+//   - a device token that gets "not found" from a route of an account, or 403 with the reason device_token from one that
+//     changes a credential: the server never lets a token manage an account, and answers as if the account were not
+//     there or as if the browser could do it (it cannot: the account key manages webhooks);
 //   - an account key or an admin key that is refused by an import route: the routes are a signed-in person's.
 func (c *command) fail(err error) int {
 	code := output.Fail(c.stderr, c.g.JSON, err)
@@ -85,7 +86,8 @@ func (c *command) fail(err error) int {
 		return code
 	}
 	switch {
-	case c.accountUsed && c.kind == profile.KindDevice && ae.Status == http.StatusNotFound:
+	case c.accountUsed && c.kind == profile.KindDevice && (ae.Status == http.StatusNotFound ||
+		ae.Status == http.StatusForbidden && ae.Reason == "device_token"):
 		_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+accountHint+"\n")
 	case c.userRoutes && ae.Status == http.StatusForbidden && (c.kind == profile.KindAccount || c.kind == profile.KindAdmin):
 		_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+userHint+"\n")
