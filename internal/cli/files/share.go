@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ const (
 	sharePage = "/s"
 	// maxPassword is the longest password line read from standard input, in bytes.
 	maxPassword = 4096
+	// maxLink is the longest share link read from standard input or a file, in bytes.
+	maxLink = 4096
 	// maxVisitorToken bounds the credential a server may hand back, so it fits in a header.
 	maxVisitorToken = 4096
 )
@@ -143,6 +146,46 @@ func readPasswordLine() (string, error) {
 		return "", exitcode.Usagef("the password on standard input is longer than %d bytes", maxPassword)
 	case line == "":
 		return "", exitcode.Usagef("standard input holds no password")
+	}
+	return line, nil
+}
+
+// readLink reads a share link from standard input, when source is "-", or from a regular file, so the link's secret is not
+// in argv, where `ps` and /proc show it to other users and a shell keeps it in its history. It is the first line, with
+// the spaces and the line ending around it trimmed. A terminal is refused for "-", since what is typed there is shown.
+// An error never repeats the link or the file's name.
+func readLink(source string) (string, error) {
+	var r io.Reader
+	if source == "-" {
+		if IsTerminal(Stdin) {
+			return "", exitcode.Usagef("get - reads the link from a pipe or a file, not a terminal, where it would be shown " +
+				"as it is typed")
+		}
+		r = Stdin
+	} else {
+		f, err := os.Open(source)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", exitcode.Usagef("the link file does not exist")
+			}
+			return "", exitcode.Usagef("the link file could not be opened")
+		}
+		defer f.Close()
+		if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+			return "", exitcode.Usagef("the link file is not a regular file")
+		}
+		r = f
+	}
+	line, err := bufio.NewReaderSize(io.LimitReader(r, maxLink+2), maxLink+2).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", exitcode.Usagef("the link could not be read")
+	}
+	line = strings.TrimSpace(line)
+	switch {
+	case len(line) > maxLink:
+		return "", exitcode.Usagef("the link is longer than %d bytes", maxLink)
+	case line == "":
+		return "", exitcode.Usagef("the input holds no link on its first line")
 	}
 	return line, nil
 }

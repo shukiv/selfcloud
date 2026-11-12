@@ -41,8 +41,10 @@ func Get(args []string, stdout, stderr io.Writer) int {
 	g.Register(set)
 	var tf transferFlags
 	tf.register(set)
-	var folder string
+	var folder, linkFile string
 	var overwrite, passwordStdin bool
+	set.StringVar(&linkFile, "link-file", "", "read a share link from this regular `file` instead of the command line, "+
+		"where its secret would show in the process list; the argument is then only the destination")
 	set.StringVar(&folder, "folder", "", "the `id` (fld_...) of the folder a path is walked from")
 	set.BoolVar(&overwrite, "overwrite", false, "replace a regular file at the destination, once the download is "+
 		"complete and checked; a part file this download cannot continue is replaced by a new one")
@@ -52,7 +54,11 @@ func Get(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	if len(pos) < 1 || len(pos) > 2 {
+	if linkFile != "" {
+		if len(pos) > 1 {
+			return fail(stderr, g, exitcode.Usagef("with --link-file, get takes only a destination: the link is in the file"))
+		}
+	} else if len(pos) < 1 || len(pos) > 2 {
 		return fail(stderr, g, exitcode.Usagef("get takes a file (its node id, a path in --folder, or a share link) "+
 			"and a destination"))
 	}
@@ -60,11 +66,31 @@ func Get(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, g, err)
 	}
+	opts := dlOptions{piece: piece, stall: tf.stall, overwrite: overwrite}
+	if linkFile != "" || pos[0] == "-" {
+		// The link is read from a file, or from standard input, so its secret is never in argv.
+		source, rest := linkFile, pos
+		if linkFile == "" {
+			if passwordStdin {
+				return fail(stderr, g, exitcode.Usagef("get - and --password-stdin both read standard input; give the "+
+					"link with --link-file instead"))
+			}
+			source, rest = "-", pos[1:]
+		}
+		link, err := readLink(source)
+		if err != nil {
+			return fail(stderr, g, err)
+		}
+		dest := ""
+		if len(rest) == 1 {
+			dest = rest[0]
+		}
+		return getShared(g, link, dest, folder, passwordStdin, opts, stdout, stderr)
+	}
 	dest := ""
 	if len(pos) == 2 {
 		dest = pos[1]
 	}
-	opts := dlOptions{piece: piece, stall: tf.stall, overwrite: overwrite}
 	if strings.Contains(pos[0], "://") {
 		return getShared(g, pos[0], dest, folder, passwordStdin, opts, stdout, stderr)
 	}

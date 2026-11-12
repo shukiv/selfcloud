@@ -137,7 +137,7 @@ var remoteCommands = []remoteCommand{
 	{name: "get", route: "GET /api/v1/nodes/{nod}/content",
 		more:  []string{"POST /api/v1/share/open", "POST /api/v1/share/renew"},
 		reads: []string{"GET /api/v1/nodes/{nod}", "GET /api/v1/folders/{fld}/children"},
-		help: `  get NODE | --folder FOLDER PATH | SHARE-LINK [DEST] [--overwrite] [--password-stdin] [--piece-size SIZE]
+		help: `  get NODE | --folder FOLDER PATH | SHARE-LINK | - | --link-file FILE [DEST] [--overwrite] [--password-stdin] [--piece-size SIZE]
                                  read a file in ranges into DEST.part, resume after a cut, check it, then name it
 `, run: files.Get},
 	{name: "settings get", route: "GET /api/v1/settings",
