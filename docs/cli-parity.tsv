@@ -89,14 +89,14 @@ fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the bro
 fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
 fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview uses; its request is GET /api/v1/nodes/{nod}/preview, browser only
 fn	lib/files/ops.ts:startDownloadURL	get	cli6	built in cli6
-fn	lib/files/playlists.ts:createPlaylist	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:deletePlaylist	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:getPlaylist	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:listPlaylists	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:removeEntry	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:renamePlaylist	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:reorderEntries	-	cli12	planned, cli12
-fn	lib/files/playlists.ts:replaceEntries	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:createPlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:deletePlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:getPlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:listPlaylists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:removeEntry	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:renamePlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:reorderEntries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:replaceEntries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/tags.ts:getMediaTags	-	cli11	planned, cli11
 fn	lib/files/tags.ts:getNodeTags	-	cli11	planned, cli11
 fn	lib/files/templates.ts:createFromTemplate	-	cli11	planned, cli11
@@ -228,8 +228,8 @@ route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
-route	DELETE /api/v1/playlists/{pls}	-	cli12	planned, cli12
-route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	planned, cli12
+route	DELETE /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	DELETE /api/v1/recent	-	cli11	planned, cli11
 route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
 route	DELETE /api/v1/settings/brand/icon	settings icon remove	se4	built in se4
@@ -303,8 +303,8 @@ route	GET /api/v1/notifications/settings	-	cli11	planned, cli11
 route	GET /api/v1/notifications/unread	-	cli11	planned, cli11
 route	GET /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	GET /api/v1/openapi.yaml	api spec	cli3	public route; api spec writes it
-route	GET /api/v1/playlists	-	cli12	planned, cli12
-route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	GET /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	GET /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	GET /api/v1/recent	-	cli11	planned, cli11
 route	GET /api/v1/search	-	cli11	planned, cli11
 route	GET /api/v1/settings	settings get	se4	built in se4
@@ -343,7 +343,7 @@ route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web i
 route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
-route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	PATCH /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PATCH /api/v1/settings	settings set,settings reset	se4	built in se4
 route	PATCH /api/v1/share-links/{shl}	link update	cli7	built in cli7
 route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
@@ -407,8 +407,8 @@ route	POST /api/v1/nodes/{nod}/unlock	unlock	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
-route	POST /api/v1/playlists	-	cli12	planned, cli12
-route	POST /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
+route	POST /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	POST /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	POST /api/v1/share-links/{shl}/reset	link reset	cli7	built in cli7
 route	POST /api/v1/share/open	get	cli6	built in cli6
 route	POST /api/v1/share/renew	get	cli6	built in cli6
@@ -429,7 +429,7 @@ route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	share grant	cli7	built in cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
 route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
-route	PUT /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
-route	PUT /api/v1/playlists/{pls}/order	-	cli12	planned, cli12
+route	PUT /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	PUT /api/v1/playlists/{pls}/order	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PUT /api/v1/settings/brand/icon	settings icon set	se4	built in se4
 route	PUT /api/v1/settings/brand/logo	settings logo set	se4	built in se4
