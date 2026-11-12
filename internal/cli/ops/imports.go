@@ -3,9 +3,9 @@
 package ops
 
 // The import commands. An import belongs to a signed-in person: every import route answers an account key or an admin key
-// with 403 "imports are for a signed-in user", so these commands work with a device token, and a device token is refused
-// starting, resuming or cancelling one (decision 125; the browser does those). Only the archive switch is an account's, and
-// it needs an account key.
+// with 403 "imports are for a signed-in user", so these commands work with a device token. Starting, resuming and
+// cancelling an import are refused to a device token (decision 125), so the browser does those. Only the archive switch is
+// an account's, and it needs an account key.
 
 import (
 	"errors"
@@ -144,61 +144,6 @@ func ImportSources(args []string, stdout, stderr io.Writer) int {
 	return exitcode.OK
 }
 
-// ImportStart is `selfcloud import start --folder FOLDER --upload UPLOAD [--parent DIR] [--on-conflict fail|rename|replace]`.
-func ImportStart(args []string, stdout, stderr io.Writer) int {
-	c := userCommand("import start", false, stdout, stderr)
-	var fld, upl, parent, onConflict, source string
-	c.set.StringVar(&fld, "folder", "", "the `id` (fld_...) of the folder the archive is unpacked into")
-	c.set.StringVar(&upl, "upload", "", "the `id` (upl_...) of the finished upload that holds the archive")
-	c.set.StringVar(&parent, "parent", "", "the `id` (nod_...) of the directory to unpack into (default: the folder's root)")
-	c.set.StringVar(&onConflict, "on-conflict", "", "what to do with a name in use: fail, rename or replace (default: the server's, rename)")
-	c.set.StringVar(&source, "source", "", "the import source (default: the server's, archive)")
-	pos, code, ok := c.parse(args)
-	if !ok {
-		return code
-	}
-	if err := noArgs("import start", pos); err != nil {
-		return c.fail(err)
-	}
-	body := map[string]string{}
-	var err error
-	if body["folder"], err = idArg("fld", "folder", fld); err != nil {
-		return c.fail(exitcode.Usagef("import start needs --folder, a folder's fld_ id"))
-	}
-	if body["upload"], err = idArg("upl", "upload", upl); err != nil {
-		return c.fail(exitcode.Usagef("import start needs --upload, an upload's upl_ id"))
-	}
-	if flagGiven(c.set, "parent") {
-		if body["parent"], err = idArg("nod", "directory", parent); err != nil {
-			return c.fail(err)
-		}
-	}
-	if flagGiven(c.set, "on-conflict") {
-		if onConflict != "fail" && onConflict != "rename" && onConflict != "replace" {
-			return c.fail(exitcode.Usagef("--on-conflict is fail, rename or replace"))
-		}
-		body["on_conflict"] = onConflict
-	}
-	if flagGiven(c.set, "source") {
-		if source == "" {
-			return c.fail(exitcode.Usagef("--source names no source; the server's default is archive"))
-		}
-		body["source"] = source
-	}
-	cn, err := c.connect()
-	if err != nil {
-		return c.fail(err)
-	}
-	resp, err := files.Send(cn, http.MethodPost, importsRoute, nil, body)
-	if err == nil {
-		err = c.printImport(resp.Body)
-	}
-	if err != nil {
-		return c.fail(err)
-	}
-	return exitcode.OK
-}
-
 // oneImport parses a command that takes one import id.
 func oneImport(c *command, name string, args []string) (imp string, code int, ok bool) {
 	pos, code, ok := c.parse(args)
@@ -309,14 +254,11 @@ func printItems(c *command, items []itemView, next *int64) error {
 		})
 }
 
-// changeImport is pause, resume and cancel: a POST to the import's route for the action, which answers the import.
-func changeImport(name, action string, ask string, args []string, stdout, stderr io.Writer) int {
-	c := userCommand(name, false, stdout, stderr)
-	var yes bool
-	if ask != "" {
-		c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	}
-	imp, code, ok := oneImport(c, name, args)
+// ImportPause is `selfcloud import pause IMPORT`: stops a queued or running import at its next checkpoint. A device token
+// may do it, since a pause only stops work. Starting, resuming and cancelling an import are the browser's.
+func ImportPause(args []string, stdout, stderr io.Writer) int {
+	c := userCommand("import pause", false, stdout, stderr)
+	imp, code, ok := oneImport(c, "import pause", args)
 	if !ok {
 		return code
 	}
@@ -324,12 +266,7 @@ func changeImport(name, action string, ask string, args []string, stdout, stderr
 	if err != nil {
 		return c.fail(err)
 	}
-	if ask != "" {
-		if err := confirmByID(yes, imp, ask, stderr); err != nil {
-			return c.fail(err)
-		}
-	}
-	resp, err := files.Send(cn, http.MethodPost, importsRoute+"/"+imp+"/"+action, nil, nil)
+	resp, err := files.Send(cn, http.MethodPost, importsRoute+"/"+imp+"/pause", nil, nil)
 	if err == nil {
 		err = c.printImport(resp.Body)
 	}
@@ -337,24 +274,6 @@ func changeImport(name, action string, ask string, args []string, stdout, stderr
 		return c.fail(err)
 	}
 	return exitcode.OK
-}
-
-// ImportPause is `selfcloud import pause IMPORT`: stops a queued or running import at its next checkpoint. A device token
-// may do it.
-func ImportPause(args []string, stdout, stderr io.Writer) int {
-	return changeImport("import pause", "pause", "", args, stdout, stderr)
-}
-
-// ImportResume is `selfcloud import resume IMPORT`: queues a paused import again. A device token is refused.
-func ImportResume(args []string, stdout, stderr io.Writer) int {
-	return changeImport("import resume", "resume", "", args, stdout, stderr)
-}
-
-// ImportCancel is `selfcloud import cancel IMPORT [--yes]`: ends an import that has not finished, and removes what it
-// staged. Asks first, by the import's id. A device token is refused.
-func ImportCancel(args []string, stdout, stderr io.Writer) int {
-	return changeImport("import cancel", "cancel", "cancel the import; what it has staged is removed, and it cannot be resumed",
-		args, stdout, stderr)
 }
 
 // ImportArchiveSet is `selfcloud import archive set --account ACC on|off`: turns the archive source on or off for an

@@ -343,10 +343,6 @@ var remoteCommands = []remoteCommand{
 	{name: "import sources", route: "GET /api/v1/imports/sources",
 		help: `  import sources                 the import sources, and whether the account has each on
 `, run: ops.ImportSources},
-	{name: "import start", route: "POST /api/v1/imports",
-		help: `  import start --folder FOLDER --upload UPLOAD [--parent DIR] [--on-conflict fail|rename|replace]
-                                 unpack a finished archive upload into a folder
-`, run: ops.ImportStart},
 	{name: "import show", route: "GET /api/v1/imports/{imp}",
 		help: `  import show IMPORT             an import's state and counts
 `, run: ops.ImportShow},
@@ -357,12 +353,6 @@ var remoteCommands = []remoteCommand{
 	{name: "import pause", route: "POST /api/v1/imports/{imp}/pause",
 		help: `  import pause IMPORT            stop a queued or running import at its next checkpoint
 `, run: ops.ImportPause},
-	{name: "import resume", route: "POST /api/v1/imports/{imp}/resume",
-		help: `  import resume IMPORT           queue a paused import again
-`, run: ops.ImportResume},
-	{name: "import cancel", route: "POST /api/v1/imports/{imp}/cancel",
-		help: `  import cancel IMPORT [--yes]   end an import and remove what it staged (asks first)
-`, run: ops.ImportCancel},
 	{name: "import archive set", route: "PUT /api/v1/accounts/{acc}/imports/archive",
 		help: `  import archive set --account ACC on|off
                                  turn the archive import source on or off for an account

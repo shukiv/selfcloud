@@ -47,12 +47,9 @@ type importCommand struct {
 func importCommands() []importCommand {
 	return []importCommand{
 		{"import sources", ImportSources, nil},
-		{"import start", ImportStart, []string{"--folder", testFolder, "--upload", testUpload}},
 		{"import show", ImportShow, []string{testImport}},
 		{"import items", ImportItems, []string{testImport}},
 		{"import pause", ImportPause, []string{testImport}},
-		{"import resume", ImportResume, []string{testImport}},
-		{"import cancel", ImportCancel, []string{testImport, "--yes"}},
 	}
 }
 
@@ -109,57 +106,7 @@ func TestImportSourcesListsTheSources(t *testing.T) {
 	wantCode(t, f.run(ImportSources, "extra"), 2)
 }
 
-// TestImportStartSendsTheArchiveAndTheTarget: the body holds what was given, the defaults are the server's, and the
-// answer is printed as an import.
-func TestImportStartSendsTheArchiveAndTheTarget(t *testing.T) {
-	isolate(t, testDeviceTok)
-	f := newFake(t)
-	f.on("POST", importsRoute, doc(202, importDoc(map[string]any{"state": "queued"})))
-	res := f.run(ImportStart, "--folder", testFolder, "--upload", testUpload)
-	wantCode(t, res, 0)
-	f.wantCalls("POST " + importsRoute)
-	if got := f.rawBody(0); got != `{"folder":"`+testFolder+`","upload":"`+testUpload+`"}` {
-		t.Fatalf("body %s", got)
-	}
-	for _, want := range []string{"id=" + testImport + "\n", "state=queued\n", "folder=" + testFolder + "\n", "entries=12\n", "declared_bytes=4096\n"} {
-		if !strings.Contains(res.stdout, want) {
-			t.Errorf("stdout lacks %q: %q", want, res.stdout)
-		}
-	}
-
-	f = newFake(t)
-	f.on("POST", importsRoute, doc(202, importDoc(nil)))
-	wantCode(t, f.run(ImportStart, "--folder", testFolder, "--upload", testUpload, "--parent", testNode, "--on-conflict", "replace",
-		"--source", "archive"), 0)
-	body := f.bodyOf(0)
-	if body["parent"] != testNode || body["on_conflict"] != "replace" || body["source"] != "archive" {
-		t.Fatalf("body %v", body)
-	}
-}
-
-// TestImportStartRefusesBadInputBeforeAnyRequest.
-func TestImportStartRefusesBadInputBeforeAnyRequest(t *testing.T) {
-	cases := map[string][]string{
-		"no folder":        {"--upload", testUpload},
-		"no upload":        {"--folder", testFolder},
-		"folder is a node": {"--folder", testNode, "--upload", testUpload},
-		"upload is a job":  {"--folder", testFolder, "--upload", testJob},
-		"bad parent":       {"--folder", testFolder, "--upload", testUpload, "--parent", testFolder},
-		"bad conflict":     {"--folder", testFolder, "--upload", testUpload, "--on-conflict", "overwrite"},
-		"empty source":     {"--folder", testFolder, "--upload", testUpload, "--source", ""},
-		"extra argument":   {"--folder", testFolder, "--upload", testUpload, "more"},
-	}
-	for name, args := range cases {
-		t.Run(name, func(t *testing.T) {
-			isolate(t, testDeviceTok)
-			f := newFake(t)
-			wantCode(t, f.run(ImportStart, args...), 2)
-			f.wantNoCalls()
-		})
-	}
-}
-
-// TestImportShowAndTheStateChangesPrintTheImport: show, pause and resume print the import, and refuse a bad id first.
+// TestImportShowAndTheStateChangesPrintTheImport: show and pause print the import, and refuse a bad id first.
 func TestImportShowAndTheStateChangesPrintTheImport(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -170,7 +117,6 @@ func TestImportShowAndTheStateChangesPrintTheImport(t *testing.T) {
 	}{
 		{"show", ImportShow, "GET", impRoute(testImport, ""), 200},
 		{"pause", ImportPause, "POST", impRoute(testImport, "/pause"), 200},
-		{"resume", ImportResume, "POST", impRoute(testImport, "/resume"), 200},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -287,52 +233,6 @@ func TestImportItemsRefusesBadFlagsBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// TestImportCancelAsksFirst: at a terminal the person types the import's id; --yes skips; no terminal and no --yes refuses.
-func TestImportCancelAsksFirst(t *testing.T) {
-	isolate(t, testDeviceTok)
-	f := newFake(t)
-	f.on("POST", impRoute(testImport, "/cancel"), doc(200, importDoc(map[string]any{"state": "cancelled"})))
-	wantCode(t, f.run(ImportCancel, testImport), 2)
-	f.wantNoCalls()
-	typeAtTerminal("no\n")
-	res := f.run(ImportCancel, testImport)
-	wantCode(t, res, 2)
-	f.wantNoCalls()
-	if !strings.Contains(res.stderr, "Type "+testImport) {
-		t.Fatalf("stderr %q", res.stderr)
-	}
-	typeAtTerminal(testImport + "\n")
-	res = f.run(ImportCancel, testImport)
-	wantCode(t, res, 0)
-	f.wantCalls("POST " + impRoute(testImport, "/cancel"))
-	if !strings.Contains(res.stdout, "state=cancelled\n") {
-		t.Fatalf("stdout %q", res.stdout)
-	}
-	wantCode(t, f.run(ImportCancel, "imp_short", "--yes"), 2)
-}
-
-// TestTheDeviceRefusalIsShownAsTheServerSaysIt: starting, resuming and cancelling are the browser's for a device token; the
-// refusal is exit 3 and its words are the server's.
-func TestTheDeviceRefusalIsShownAsTheServerSaysIt(t *testing.T) {
-	for _, c := range importCommands() {
-		if c.name != "import start" && c.name != "import resume" && c.name != "import cancel" {
-			continue
-		}
-		t.Run(c.name, func(t *testing.T) {
-			isolate(t, testDeviceTok)
-			f := newFake(t)
-			for _, r := range []string{importsRoute, impRoute(testImport, "/resume"), impRoute(testImport, "/cancel")} {
-				f.set("POST", r, apiErrWith(403, "forbidden", "a terminal's sign-in does not make this; use the browser", "device_token"))
-			}
-			res := f.run(c.run, c.args...)
-			wantCode(t, res, 3)
-			if !strings.Contains(res.stderr, "use the browser") || strings.Contains(res.stderr, "hint") {
-				t.Fatalf("stderr %q", res.stderr)
-			}
-		})
-	}
-}
-
 // TestAKeyIsToldImportsAreForASignedInPerson: the import routes refuse an account key and an admin key with a 403; plain
 // output says why. Not under --json, not for a device token, not for another status.
 func TestAKeyIsToldImportsAreForASignedInPerson(t *testing.T) {
@@ -344,9 +244,7 @@ func TestAKeyIsToldImportsAreForASignedInPerson(t *testing.T) {
 				for _, r := range []string{importsRoute + "/sources", impRoute(testImport, ""), impRoute(testImport, "/items")} {
 					f.set("GET", r, apiErr(403, "forbidden", "imports are for a signed-in user"))
 				}
-				for _, r := range []string{importsRoute, impRoute(testImport, "/pause"), impRoute(testImport, "/resume"), impRoute(testImport, "/cancel")} {
-					f.set("POST", r, apiErr(403, "forbidden", "imports are for a signed-in user"))
-				}
+				f.set("POST", impRoute(testImport, "/pause"), apiErr(403, "forbidden", "imports are for a signed-in user"))
 				res := f.run(c.run, c.args...)
 				wantCode(t, res, 3)
 				if !strings.Contains(res.stderr, userHintText) {

@@ -30,7 +30,7 @@ import (
 const publicHook = "https://93.184.216.34/hook"
 
 func init() {
-	for _, name := range []string{"import sources", "import start", "import show", "import items", "import pause", "import resume", "import cancel"} {
+	for _, name := range []string{"import sources", "import show", "import items", "import pause"} {
 		probeExit[name] = 3
 	}
 	for name, fn := range opsProbes {
@@ -110,14 +110,9 @@ var opsProbes = map[string]func(p *fileProbe) []string{
 		return []string{"--account", p.acc, h, p.failedDelivery(h)}
 	},
 	"import sources": func(p *fileProbe) []string { return nil },
-	"import start": func(p *fileProbe) []string {
-		return []string{"--folder", p.folder, "--upload", id.New("upl")}
-	},
-	"import show":   func(p *fileProbe) []string { return []string{id.New("imp")} },
-	"import items":  func(p *fileProbe) []string { return []string{id.New("imp")} },
-	"import pause":  func(p *fileProbe) []string { return []string{id.New("imp")} },
-	"import resume": func(p *fileProbe) []string { return []string{id.New("imp")} },
-	"import cancel": func(p *fileProbe) []string { return []string{id.New("imp"), "--yes"} },
+	"import show":    func(p *fileProbe) []string { return []string{id.New("imp")} },
+	"import items":   func(p *fileProbe) []string { return []string{id.New("imp")} },
+	"import pause":   func(p *fileProbe) []string { return []string{id.New("imp")} },
 	"import archive set": func(p *fileProbe) []string {
 		return []string{"--account", p.acc, "off"}
 	},

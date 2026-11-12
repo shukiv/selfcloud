@@ -386,10 +386,10 @@ route	POST /api/v1/auth/verify	-	-	browser sign-in flow; the CLI signs in with c
 route	POST /api/v1/comments/{cmt}/resolve	-	cli11	planned, cli11
 route	POST /api/v1/folders/{fld}/directories	mkdir	cli5	built in cli5
 route	POST /api/v1/folders/{fld}/files	touch	cli5	built in cli5
-route	POST /api/v1/imports	import start	cli10	built in cli10
-route	POST /api/v1/imports/{imp}/cancel	import cancel	cli10	built in cli10
+route	POST /api/v1/imports	-	cli10	browser session only: a device token is refused (decision 125) and imports refuse keys
+route	POST /api/v1/imports/{imp}/cancel	-	cli10	browser session only: a device token is refused (decision 125) and imports refuse keys
 route	POST /api/v1/imports/{imp}/pause	import pause	cli10	built in cli10
-route	POST /api/v1/imports/{imp}/resume	import resume	cli10	built in cli10
+route	POST /api/v1/imports/{imp}/resume	-	cli10	browser session only: a device token is refused (decision 125) and imports refuse keys
 route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
 route	POST /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
