@@ -251,3 +251,16 @@ func TestTheDetailLinesAreCleanedOfTerminalEscapes(t *testing.T) {
 		t.Errorf("the text is not kept with the escape as a space:\n%q\n%q", invalid.stderr, locked.stderr)
 	}
 }
+
+// The admin-key hint answers a 403 only: another refusal with a key of another kind does not get it.
+func TestTheHintIsOnlyForA403(t *testing.T) {
+	for _, status := range []int{404, 409, 500} {
+		isolate(t, accountKey)
+		f := newFake(t)
+		f.on("GET", settingsPath, reply{status, `{"error":{"code":"refused","message":"no"}}`})
+		r := f.run(Get)
+		if r.code == 0 || strings.Contains(r.stderr, hint) {
+			t.Errorf("%d: exit %d, stderr %q", status, r.code, r.stderr)
+		}
+	}
+}
