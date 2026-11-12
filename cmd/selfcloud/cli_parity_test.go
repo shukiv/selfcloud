@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -42,8 +43,10 @@ func parityTableRoot(t *testing.T) string {
 // TestCLIParityCommands keeps the command tables and docs/cli-parity.tsv in step (design section 5.2). Every row whose
 // command is not "-" names a registered command. Each admin command has a cmd row. Each remote command that reaches a
 // route has a route row that names it and that route; each remote command that reaches no route has a cmd row. A route
-// row names a remote command only when that command calls the row's route. The recording check that a command makes
-// exactly that call is TestRemoteCommandsCallTheirRoute.
+// row names a remote command only when that command calls the row's route. The command column of a route row may list
+// several commands, separated by commas with no spaces, for a route that two commands call (settings set and settings
+// reset both call PATCH /api/v1/settings); each one named must call the route. A cmd row names one command. The recording
+// check that a command makes exactly that call is TestRemoteCommandsCallTheirRoute.
 func TestCLIParityCommands(t *testing.T) {
 	t.Parallel()
 	f, err := os.Open(filepath.Join(parityTableRoot(t), "docs", "cli-parity.tsv"))
@@ -76,11 +79,17 @@ func TestCLIParityCommands(t *testing.T) {
 		return ok || adminNamed(name)
 	}
 	cmdRows := map[string]bool{}
-	routeRows := map[string]string{} // route key -> the command the row names
+	routeRows := map[string][]string{} // route key -> the commands the row names
 	for _, rec := range recs[1:] {
-		kind, key, command := rec[0], rec[1], rec[2]
-		if command != "-" && !registered(command) {
-			t.Errorf("docs/cli-parity.tsv: %s %q names the command %q, which no command registers", kind, key, command)
+		kind, key, column := rec[0], rec[1], rec[2]
+		names := []string{column}
+		if kind == "route" {
+			names = strings.Split(column, ",")
+		}
+		for _, command := range names {
+			if command != "-" && !registered(command) {
+				t.Errorf("docs/cli-parity.tsv: %s %q names the command %q, which no command registers", kind, key, command)
+			}
 		}
 		switch kind {
 		case "cmd":
@@ -89,12 +98,17 @@ func TestCLIParityCommands(t *testing.T) {
 				t.Errorf("docs/cli-parity.tsv: the cmd row %q is not a registered command", key)
 			}
 		case "route":
-			routeRows[key] = command
-			if command == "-" {
-				continue
-			}
-			if rc, ok := remoteNamed(command); !ok || !slices.Contains(rc.routes(), key) {
-				t.Errorf("docs/cli-parity.tsv: the route row %q names %q, which does not call that route", key, command)
+			routeRows[key] = names
+			for _, command := range names {
+				if command == "-" {
+					if len(names) > 1 {
+						t.Errorf("docs/cli-parity.tsv: the route row %q lists \"-\" with other commands", key)
+					}
+					continue
+				}
+				if rc, ok := remoteNamed(command); !ok || !slices.Contains(rc.routes(), key) {
+					t.Errorf("docs/cli-parity.tsv: the route row %q names %q, which does not call that route", key, command)
+				}
 			}
 		}
 	}
@@ -108,14 +122,14 @@ func TestCLIParityCommands(t *testing.T) {
 	// command's own routes, which the rows above already cover.
 	for _, c := range remoteCommands {
 		for _, read := range c.reads {
-			owner, ok := routeRows[read]
+			owners, ok := routeRows[read]
 			switch {
 			case !ok:
 				t.Errorf("remote command %q declares the read %s, which has no route row in docs/cli-parity.tsv", c.name, read)
-			case owner == c.name:
-				t.Errorf("remote command %q declares the read %s, which is its own route; a read must belong to another command", c.name, read)
-			case !callsRoute(owner, read):
-				t.Errorf("remote command %q declares the read %s, but its row names %q, which does not call that route", c.name, read, owner)
+			case slices.Contains(owners, c.name):
+				t.Errorf("remote command %q declares the read %s, whose row names it; a read must belong to another command", c.name, read)
+			case !slices.ContainsFunc(owners, func(owner string) bool { return callsRoute(owner, read) }):
+				t.Errorf("remote command %q declares the read %s, but its row names %q, and none of them calls that route", c.name, read, owners)
 			}
 			if slices.Contains(c.routes(), read) {
 				t.Errorf("remote command %q declares the read %s, which is already one of its routes", c.name, read)
@@ -130,7 +144,7 @@ func TestCLIParityCommands(t *testing.T) {
 			continue
 		}
 		for _, route := range c.routes() {
-			if got, ok := routeRows[route]; !ok || got != c.name {
+			if got, ok := routeRows[route]; !ok || !slices.Contains(got, c.name) {
 				t.Errorf("remote command %q calls %s, but docs/cli-parity.tsv has no route row naming it (row names %q)",
 					c.name, route, got)
 			}
