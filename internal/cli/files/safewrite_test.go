@@ -129,3 +129,30 @@ func TestFinishNeverReplacesANameThatAppeared(t *testing.T) {
 		t.Errorf("the part file holds %q", b)
 	}
 }
+
+// TestNewFileModeWithoutAUmask: when the umask cannot be read, the finished file is no more open than the part file
+// was: it keeps the part file's mode, 0600, rather than a mode wider than the umask might allow.
+func TestNewFileModeWithoutAUmask(t *testing.T) {
+	old := umaskStatusPath
+	t.Cleanup(func() { umaskStatusPath = old })
+	for _, tc := range []struct {
+		what    string
+		content string
+	}{
+		{"a missing file", ""},
+		{"a file with no Umask line", "Name:\tselfcloud\nState:\tR (running)\n"},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "status")
+			if tc.what == "a file with no Umask line" {
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			umaskStatusPath = path
+			if got := newFileMode(); got != partMode {
+				t.Errorf("the mode is %04o, want %04o", got, partMode)
+			}
+		})
+	}
+}
