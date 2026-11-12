@@ -638,13 +638,8 @@ key cannot use them`. No hint is printed under `--json`.
 | `webhook ls`, `show`, `deliveries` | an account key (an owner's browser session reads them too) | a device token (404); an admin key |
 | `webhook add`, `update`, `rm`, `rotate-secret`, `test`, `retry` | an account key | everything else (403 `forbidden`, "only the account key manages webhooks"); a device token gets the 404 above |
 | `import sources`, `show`, `items`, `pause` | a device token (the person who started the import) | an account key and an admin key (403) |
-| `import start`, `resume`, `cancel` | a signed-in person's browser session, or a token minted for a user | a device token (403, reason `device_token`, decision 125); an account key and an admin key (403) |
 | `import archive set` | an account key, or an admin key | a device token (404) |
 | `job show` | an account key or an admin key for the job's account; a device token for a job its own sign-in queued | a job of another account (404) |
-
-`import start`, `resume` and `cancel` are in the command table because the routes are, but no credential this client
-keeps reaches them: the client's profiles hold admin keys, account keys and device tokens, and the first and second are
-not a person, the third is refused. The browser starts, resumes and cancels imports.
 
 All of these take `--json`, the global flags of every remote command, and, for an account route, `--account acc_...`
 (or `SELFCLOUD_ACCOUNT`), which is checked before any request.
@@ -703,11 +698,10 @@ selfcloud import pause imp_…
 selfcloud import archive set --account acc_… on
 ```
 
-`import start --folder fld_… --upload upl_… [--parent nod_…] [--on-conflict fail|rename|replace]` starts an import of a
-finished archive upload, and `import resume imp_…` and `import cancel imp_… [--yes]` act on one (see the table above for
-who may). `cancel` asks first, by the import's id. The archive itself is an upload made with the kind `import`, which `put`
-does not make. `import items` pages by sequence number: `--after SEQ` starts after an item, `--limit N` (1 to 500) sizes a
-page, and `--all` follows the pages. `import archive set on|off` turns the archive source on or off for an account.
+Starting, resuming and cancelling an import happen in the browser: a device token is refused all three (decision 125) and
+the import routes refuse keys. `import items` pages by sequence number: `--after SEQ` starts after an item, `--limit N`
+(1 to 500) sizes a page, and `--all` follows the pages. `import archive set on|off` turns the archive source on or off for
+an account.
 
 ### Jobs
 
