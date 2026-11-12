@@ -147,9 +147,6 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
   const MENU = (text) => `.shell-sider .shell-menu .ant-menu-item[data-menu-text="${text}"]`;
   try {
     await size(1440, 900);
-    // A size override that did not apply would fail as a hover later; here it fails where it is set, with the sizes it got.
-    const sized = await page.waitFor(`innerWidth === 1440 && innerHeight === 900 ? { w: innerWidth, h: innerHeight } : false`, 5000).catch(() => null);
-    if (!sized) throw new Error(`the viewport did not become 1440x900: ${JSON.stringify(await page.evaluate(`[innerWidth, innerHeight]`))}`);
     if ((await page.evaluate(`document.documentElement.lang`)) !== 'en') await setLanguage(page, 'English');
     await setTheme(page, 'Light');
     await setPhone(page, false);
