@@ -38,7 +38,11 @@ func Rm(args []string, stdout, stderr io.Writer) int {
 		if len(ids) != 1 {
 			return phraseFor(ids), nil
 		}
-		return nodeName(c, ids[0])
+		name, err := nodeName(c, ids[0])
+		if err != nil {
+			return "", err
+		}
+		return nameToType(name)
 	}
 	if err := confirmWith(yes, phrase, "move the node or nodes to the Trash", stderr); err != nil {
 		return fail(stderr, g, err)
@@ -258,7 +262,11 @@ func TrashRm(args []string, stdout, stderr io.Writer) int {
 		if len(ids) != 1 {
 			return phraseFor(ids), nil
 		}
-		return trashedName(c, ids[0])
+		name, err := trashedName(c, ids[0])
+		if err != nil {
+			return "", err
+		}
+		return nameToType(name)
 	}
 	if err := confirmWith(yes, phrase, "purge the node or nodes for good; they cannot be restored", stderr); err != nil {
 		return fail(stderr, g, err)

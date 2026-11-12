@@ -286,6 +286,63 @@ func TestTrashRmNameOnALaterPage(t *testing.T) {
 	}
 }
 
+// unsafeNames are server names that must never reach the terminal in a question: a control character, an escape
+// sequence, a line separator, an invisible character, a path separator, a space at an end, and no name at all.
+var unsafeNames = []string{"a\x1b[31mred", "two\nlines", "tab\there", "line sep", "zero​width", "a/b", " lead", "trail ", ""}
+
+// TestRmRefusesAnUnsafeNameInTheQuestion: a name that names.Clean refuses is not shown. The command stops with exit 2,
+// says to give --yes, and sends no delete.
+func TestRmRefusesAnUnsafeNameInTheQuestion(t *testing.T) {
+	for _, name := range unsafeNames {
+		isolate(t, testAccountKey)
+		f := newFake(t)
+		f.on("GET", nodePath(testNode, ""), ok(node(testNode, name, "file")))
+		f.on("DELETE", nodePath(testNode, ""), done(http.StatusNoContent))
+		typeAtTerminal(name + "\n")
+		res := f.run(Rm, testNode)
+		wantCode(t, res, 2)
+		wantUnsafeRefusal(t, res, name)
+		for _, c := range f.requests() {
+			if strings.HasPrefix(c, "DELETE") {
+				t.Fatalf("name %q: calls %v: nothing may be deleted", name, f.requests())
+			}
+		}
+	}
+}
+
+// TestTrashRmRefusesAnUnsafeNameInTheQuestion is TestRmRefusesAnUnsafeNameInTheQuestion for a trashed node.
+func TestTrashRmRefusesAnUnsafeNameInTheQuestion(t *testing.T) {
+	for _, name := range unsafeNames {
+		isolate(t, testAccountKey)
+		f := newFake(t)
+		f.on("GET", "/api/v1/trash", page("", trashedNode(testNode, name)))
+		f.on("DELETE", "/api/v1/trash/"+testNode, done(http.StatusNoContent))
+		typeAtTerminal(name + "\n")
+		res := f.run(TrashRm, testNode)
+		wantCode(t, res, 2)
+		wantUnsafeRefusal(t, res, name)
+		for _, c := range f.requests() {
+			if strings.HasPrefix(c, "DELETE") {
+				t.Fatalf("name %q: calls %v: nothing may be purged", name, f.requests())
+			}
+		}
+	}
+}
+
+// wantUnsafeRefusal checks the refusal names --yes, shows no question, and does not repeat the name.
+func wantUnsafeRefusal(t *testing.T, res result, name string) {
+	t.Helper()
+	if !strings.Contains(res.stderr, "--yes") {
+		t.Fatalf("name %q: stderr %q does not say to give --yes", name, res.stderr)
+	}
+	if strings.Contains(res.stderr, "Type ") || strings.ContainsAny(res.stderr, "\x1b ​") {
+		t.Fatalf("name %q: stderr %q shows the question or the name", name, res.stderr)
+	}
+	if name != "" && strings.Contains(res.stderr, name) {
+		t.Fatalf("name %q: stderr %q repeats the name", name, res.stderr)
+	}
+}
+
 func TestShortcutAddMakesAShortcutInADirectory(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
