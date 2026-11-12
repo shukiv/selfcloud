@@ -131,7 +131,7 @@ func TestFolderCreateErrorJSON(t *testing.T) {
 	f.on("POST", accFolders(), apiErr(http.StatusConflict, "conflict", "taken"))
 	res := f.runAcc(FolderCreate, "x", "--json")
 	wantCode(t, res, 3)
-	if want := `{"error":{"code":"conflict","message":"taken"}}`; strings.TrimSpace(res.stderr) != want {
+	if want := `{"error":{"code":"conflict","message":"taken (HTTP 409)"}}`; strings.TrimSpace(res.stderr) != want {
 		t.Fatalf("stderr %q, want %q", res.stderr, want)
 	}
 }
@@ -191,7 +191,8 @@ func TestFolderLsJSONIsTheListOfItems(t *testing.T) {
 func TestFolderLsPagesAndAll(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
-	f.on("GET", accFolders(), page("c2", folder(testFolder, "Team A")), page("", folder(id.Derive("fld", "b"), "Team B")))
+	f.on("GET", accFolders(), page("c2", folder(testFolder, "Team A")), page("c2", folder(testFolder, "Team A")),
+		page("", folder(id.Derive("fld", "b"), "Team B")))
 	res := f.runAcc(FolderLs)
 	wantCode(t, res, 0)
 	f.wantCalls("GET " + accFolders())
@@ -200,7 +201,7 @@ func TestFolderLsPagesAndAll(t *testing.T) {
 	}
 	res = f.runAcc(FolderLs, "--all")
 	wantCode(t, res, 0)
-	f.wantCalls("GET "+accFolders(), "GET "+accFolders()+"?cursor=c2")
+	f.wantCalls("GET "+accFolders(), "GET "+accFolders(), "GET "+accFolders()+"?cursor=c2")
 	if !strings.Contains(res.stdout, "Team B") {
 		t.Fatalf("--all lacks the second page: %q", res.stdout)
 	}
@@ -462,7 +463,7 @@ func TestFolderSettingsSetTokenRefusalSaysTheWebDoesIt(t *testing.T) {
 	// Under --json stderr is one JSON line, with no hint.
 	res = f.run(FolderSettingsSet, testFolder, "--allow-links=true", "--json")
 	wantCode(t, res, 3)
-	if want := `{"error":{"code":"forbidden","message":"` + msg + `"}}`; strings.TrimSpace(res.stderr) != want {
+	if want := `{"error":{"code":"forbidden","message":"` + msg + ` (HTTP 403)"}}`; strings.TrimSpace(res.stderr) != want {
 		t.Fatalf("stderr %q, want %q", res.stderr, want)
 	}
 }
