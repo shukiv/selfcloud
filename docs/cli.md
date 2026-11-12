@@ -374,7 +374,7 @@ exits 2, fetches nothing and writes nothing; the error says to give the destinat
 directory, and a symbolic link at the file's name or the part file's name is never followed or replaced (exit 2).
 
 The part file is made new, mode 0600 while the bytes arrive, and the finished file takes the mode a new file gets under
-the umask. An existing part file is continued only when this client began it for the same file, it belongs to this
+the umask, or stays 0600 when the umask cannot be read. An existing part file is continued only when this client began it for the same file, it belongs to this
 user, and it has no other name (a hard link); otherwise it is refused (exit 2) and the error says why, or with
 `--overwrite` it is removed and a new one made, so its other name keeps its bytes. A part file is never emptied in
 place. An existing file at the name is replaced only with `--overwrite`, and only once the new bytes are complete and

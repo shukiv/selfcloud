@@ -42,6 +42,9 @@ const (
 // currentUID is the user a part file must belong to. Tests make it another, since they cannot chown.
 var currentUID = os.Geteuid
 
+// umaskStatusPath is where the process's umask is read, as /proc gives it. Tests point it elsewhere.
+var umaskStatusPath = "/proc/self/status"
+
 // partProblem says why an existing part file must not be written: another user owns it, or it has another name (a hard
 // link), so writing it would change another file. "" when neither.
 func partProblem(fi fs.FileInfo) string {
@@ -58,11 +61,12 @@ func partProblem(fi fs.FileInfo) string {
 }
 
 // newFileMode is the mode a new file gets: 0666 less the umask, read from /proc so the umask is not changed to learn it,
-// or 0644 when it cannot be read.
+// or the part file's mode, 0600, when the umask cannot be read, so the finished file is never more open than the umask
+// allows.
 func newFileMode() os.FileMode {
-	b, err := os.ReadFile("/proc/self/status")
+	b, err := os.ReadFile(umaskStatusPath)
 	if err != nil {
-		return 0o644
+		return partMode
 	}
 	for _, line := range strings.Split(string(b), "\n") {
 		if v, ok := strings.CutPrefix(line, "Umask:"); ok {
@@ -71,7 +75,7 @@ func newFileMode() os.FileMode {
 			}
 		}
 	}
-	return 0o644
+	return partMode
 }
 
 // reservedNames are names that some systems open as a device in any directory, whatever their extension. They are
