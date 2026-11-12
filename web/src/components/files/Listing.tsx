@@ -247,8 +247,8 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
 // too), or the checkbox's selection, which sets the focus itself (consume). If none does, the click did not come: the focus is
 // applied a turn later. A release anywhere else, or a cancel, has no click on the row: the focus is applied there if it is in the
 // row, which is what the browser did on the press, and otherwise left alone. A finger's focus comes after its release (the
-// browser's mouse events for a tap), so a touch holds nothing. Any key, or a window that loses its focus, ends a press that was
-// never released (the focus is applied if it is in the row), so a keyboard focus is never held.
+// browser's mouse events for a tap), so a touch holds nothing. Any key but a modifier, or a window that loses its focus, ends a
+// press that was never released (the focus is applied if it is in the row), so a keyboard focus is never held.
 function usePressFocus(apply: (id: string) => void) {
   const applyRef = useRef(apply);
   applyRef.current = apply;
@@ -280,9 +280,11 @@ function usePressFocus(apply: (id: string) => void) {
       const focusedRow = document.activeElement instanceof Element ? document.activeElement.closest("[data-id]") : null;
       if (focusedRow?.getAttribute("data-id") === id) applyRef.current(id);
     };
-    // end is a key, or a window that loses its focus, during a press: the press is over, and the focus it holds is applied if it is
-    // still in the row, as a cancel does.
-    const end = () => {
+    // end is a key but a modifier, or a window that loses its focus, during a press: the press is over, and the focus it holds is
+    // applied if it is still in the row, as a cancel does.
+    const end = (e: Event) => {
+      // A modifier moves no focus, and a held one repeats its key on some systems, so it does not end a press.
+      if (e instanceof KeyboardEvent && (e.key === "Control" || e.key === "Shift" || e.key === "Alt" || e.key === "Meta")) return;
       const id = pressing.current;
       pressing.current = null;
       pendingClick.current = null;
