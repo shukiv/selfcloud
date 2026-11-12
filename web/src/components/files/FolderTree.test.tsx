@@ -451,7 +451,8 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     expect(latest.expanded).toHaveLength(way.length);
     // One change per folder opened: a loop would send more changes than the way has folders.
     expect(changes).toBeLessThanOrEqual(way.length + 2);
-  });
+    // The test's own limit is above the wait's, so a slow machine meets the wait instead of the default 20 s test limit.
+  }, 45_000);
 
   // Decision 88 (review L1): the saved cap forgets by last use. The place passes through Team A, which moves it to the end of the list,
   // so when the list is full and another folder is opened by hand, the folder opened longest ago that the place did not pass through
