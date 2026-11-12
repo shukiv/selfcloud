@@ -62,7 +62,7 @@ const SCROLLBAR = 24;
 // plus it, and back only under TABS_BELOW; the section list appears at LIST_FROM plus it and goes only under LIST_FROM.
 export function settle(prev: Layout, width: number): Layout {
   const tabs = prev.tabs ? width < TABS_BELOW + SCROLLBAR : width < TABS_BELOW;
-  const list = prev.list ? width >= LIST_FROM - SCROLLBAR : width >= LIST_FROM + SCROLLBAR;
+  const list = prev.list ? width >= LIST_FROM : width >= LIST_FROM + SCROLLBAR;
   return { tabs, list, rowWide: width - (list ? LIST_WIDTH : 0) - CARD_PADDING >= ROW_FROM };
 }
 
