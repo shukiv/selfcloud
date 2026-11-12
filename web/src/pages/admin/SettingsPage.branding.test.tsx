@@ -85,22 +85,10 @@ async function ready() {
   await screen.findByRole("region", { name: "Branding" });
 }
 
-// pick sets a colour through the picker's own hex box: the trigger opens the picker, and the box takes the six digits.
+// pick sets a colour through the field's colour input, which takes the six digits.
 async function pick(key: string, hex: string) {
-  const trigger = await waitFor(() => {
-    const el = row(key).querySelector(".ant-color-picker-trigger");
-    if (!el) throw new Error("the picker is not drawn yet");
-    return el as HTMLElement;
-  });
-  fireEvent.click(trigger);
-  const box = await waitFor(() => {
-    // A picker that was closed stays in the page: the newest one is the one just opened.
-    const el = [...document.querySelectorAll(".ant-color-picker-hex-input input")].pop();
-    if (!el) throw new Error("the picker is not open");
-    return el as HTMLInputElement;
-  });
-  fireEvent.change(box, { target: { value: hex } });
-  fireEvent.click(trigger);
+  const box = row(key).querySelector("input[type='color']") as HTMLInputElement;
+  fireEvent.change(box, { target: { value: `#${hex}` } });
 }
 
 async function openAdvanced() {
@@ -118,7 +106,6 @@ beforeEach(() => {
 afterEach(() => {
   undo();
   session.set(null);
-  document.querySelectorAll(".ant-color-picker-inner").forEach((el) => el.remove());
 });
 
 describe("the Branding card", () => {
@@ -168,7 +155,7 @@ describe("the Branding card", () => {
     expect(within(row("ui.brand.sidebar.bg")).getByRole("button", { name: "Back to the default (from the accent)" })).toBeTruthy();
   });
 
-  it("reads a key the config file writes as read-only and marked, with no Reset and a picker that does not open", async () => {
+  it("reads a key the config file writes as read-only and marked, with no Reset and a colour input that is off", async () => {
     server({ over: { "ui.brand.name": { value: "Acme", source: "file", locked: true }, "ui.brand.accent": { value: "#0F766E", source: "file", locked: true } } });
     renderPage();
     await ready();
@@ -176,13 +163,7 @@ describe("the Branding card", () => {
     expect(within(row("ui.brand.name")).getByText("Set in the server's config file")).toBeTruthy();
     expect(within(row("ui.brand.accent")).getByText("Set in the server's config file")).toBeTruthy();
     expect(within(row("ui.brand.accent")).queryByRole("button", { name: /Back to the default/ })).toBeNull();
-    const trigger = await waitFor(() => {
-      const el = row("ui.brand.accent").querySelector(".ant-color-picker-trigger");
-      if (!el) throw new Error("not drawn");
-      return el as HTMLElement;
-    });
-    fireEvent.click(trigger);
-    expect(document.querySelector(".ant-color-picker-hex-input")).toBeNull();
+    expect((row("ui.brand.accent").querySelector("input[type='color']") as HTMLInputElement).disabled).toBe(true);
   });
 });
 

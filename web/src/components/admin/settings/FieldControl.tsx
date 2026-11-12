@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Input, InputNumber, Select, Space, Switch } from "antd";
-import { lazy, Suspense } from "react";
+import ColourInput from "./ColourInput";
 import { useT } from "../../../lib/i18n";
 import type { Setting } from "../../../lib/settings/api";
 import type { FieldSpec } from "../../../lib/settings/fields";
@@ -11,7 +11,6 @@ import type { Amount, DurationUnit, SizeUnit } from "../../../lib/settings/units
 const SIZE_UNITS: SizeUnit[] = ["MB", "GB"];
 const DURATION_UNITS: DurationUnit[] = ["minutes", "hours", "days"];
 
-const ColourInput = lazy(() => import("./ColourInput"));
 
 interface Props {
   setting: Setting;
@@ -35,11 +34,7 @@ export default function FieldControl({ setting, label, value, readOnly, onChange
     case "string": {
       const text = typeof value === "string" ? value : "";
       if (spec?.colour) {
-        return (
-          <Suspense fallback={<Input value={text || fallback} disabled aria-label={label} style={{ width: 120 }} />}>
-            <ColourInput value={text} fallback={fallback} label={label} disabled={readOnly} onChange={onChange} />
-          </Suspense>
-        );
+        return <ColourInput value={text} fallback={fallback} label={label} disabled={readOnly} onChange={onChange} />;
       }
       return <Input value={text} disabled={readOnly} maxLength={spec?.maxLength} onChange={(e) => onChange(e.target.value)} aria-label={label} style={{ maxWidth: "100%" }} />;
     }
