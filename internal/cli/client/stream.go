@@ -41,7 +41,7 @@ func (c *Client) Stream(ctx context.Context, r Request, stall time.Duration) (*S
 	var body io.Reader
 	switch {
 	case r.Upload != nil && r.UploadLength > 0:
-		body = &watchedUpload{r: r.Upload, w: w, left: r.UploadLength}
+		body = &watchedUpload{r: r.Upload, w: w, left: r.UploadLength, tail: max(stall, c.headerTimeout)}
 	case r.Body != nil:
 		body = bytes.NewReader(r.Body)
 	}
@@ -81,13 +81,14 @@ func (c *Client) Stream(ctx context.Context, r Request, stall time.Duration) (*S
 // byte read or sent restarts it.
 type watch struct {
 	mu    sync.Mutex
-	limit time.Duration
+	stall time.Duration // the limit after a byte has moved
+	limit time.Duration // the limit now running, which is longer than stall at the end of an upload piece
 	timer *time.Timer
 	fired bool
 }
 
 func newWatch(limit time.Duration, cancel context.CancelFunc) *watch {
-	w := &watch{limit: limit}
+	w := &watch{stall: limit, limit: limit}
 	w.timer = time.AfterFunc(limit, func() {
 		w.mu.Lock()
 		w.fired = true
@@ -102,32 +103,45 @@ func (w *watch) kick() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !w.fired {
-		w.timer.Reset(w.limit)
+		w.limit = w.stall
+		w.timer.Reset(w.stall)
 	}
 }
 
-// pause stops the timer while the server works on a piece that has been sent whole: the response-header timeout bounds
-// that wait.
-func (w *watch) pause() { w.timer.Stop() }
+// endOfBody restarts the timer with the longer limit tail once the last byte of a piece has been read from its source. The
+// transport still has to write the end of it, and the server then works on the piece (hashing, a sync) before it
+// answers, which its response-header timeout bounds. The timer is not stopped, so a link that stalls in that moment ends
+// the transfer after tail, and not after TCP's own give-up time. Until the answer's headers arrive, kick restarts it with
+// the stall limit again.
+func (w *watch) endOfBody(tail time.Duration) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.fired {
+		w.limit = tail
+		w.timer.Reset(tail)
+	}
+}
 
 func (w *watch) stop() { w.timer.Stop() }
 
 // classify names a stall as one, and any other failure as classify does.
 func (w *watch) classify(err error) error {
 	w.mu.Lock()
-	fired := w.fired
+	fired, limit := w.fired, w.limit
 	w.mu.Unlock()
 	if fired {
-		return &TransportError{Kind: KindTimeout, Message: fmt.Sprintf("the transfer stalled: no byte moved for %s", w.limit)}
+		return &TransportError{Kind: KindTimeout, Message: fmt.Sprintf("the transfer stalled: no byte moved for %s", limit)}
 	}
 	return classify(err)
 }
 
-// watchedUpload is a request body that restarts the watch as it is read, and pauses it once its declared length is out.
+// watchedUpload is a request body that restarts the watch as it is read, and gives it the longer tail limit once its
+// declared length is out.
 type watchedUpload struct {
 	r    io.Reader
 	w    *watch
 	left int64
+	tail time.Duration
 }
 
 func (u *watchedUpload) Read(p []byte) (int, error) {
@@ -137,7 +151,7 @@ func (u *watchedUpload) Read(p []byte) (int, error) {
 		u.left -= int64(n)
 	}
 	if u.left <= 0 || err == io.EOF {
-		u.w.pause()
+		u.w.endOfBody(u.tail)
 	}
 	return n, err
 }

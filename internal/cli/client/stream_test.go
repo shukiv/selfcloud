@@ -8,10 +8,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -180,6 +183,106 @@ func TestStreamStallEndsTheTransfer(t *testing.T) {
 		t.Errorf("the stall took %v to end", d)
 	}
 	mustNotContainSecret(t, "the stall error", err.Error())
+}
+
+// tailStallConn is a connection whose writes block, once the upload's last byte has been read from its source, until the
+// connection is closed: a link that stalls while the transport still holds the end of the piece.
+type tailStallConn struct {
+	net.Conn
+	exhausted *atomic.Bool
+	closed    chan struct{}
+	once      sync.Once
+}
+
+func (c *tailStallConn) Write(p []byte) (int, error) {
+	if c.exhausted.Load() {
+		<-c.closed
+		return 0, net.ErrClosed
+	}
+	return c.Conn.Write(p)
+}
+
+func (c *tailStallConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
+// endMarkReader reads from data and sets exhausted when the last byte has been handed out.
+type endMarkReader struct {
+	r         *bytes.Reader
+	exhausted *atomic.Bool
+}
+
+func (e *endMarkReader) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if e.r.Len() == 0 {
+		e.exhausted.Store(true)
+	}
+	return n, err
+}
+
+// stallAtTheEnd makes the client's connections stall once exhausted is set.
+func stallAtTheEnd(t *testing.T, c *Client, exhausted *atomic.Bool) {
+	t.Helper()
+	tr := c.stream.Transport.(*http.Transport)
+	dial := tr.DialContext
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &tailStallConn{Conn: conn, exhausted: exhausted, closed: make(chan struct{})}, nil
+	}
+}
+
+// TestStreamStallCoversTheEndOfAnUploadPiece: when the link stalls after the last byte has been read from the file but
+// before it has been written out, the transfer ends within the longer of the stall limit and the header limit, and is
+// not left to TCP's own give-up time. It is not cut short either: the limit is the longer of the two.
+func TestStreamStallCoversTheEndOfAnUploadPiece(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	const stall, header = 200 * time.Millisecond, 700 * time.Millisecond
+	c := newClient(t, srv.URL, func(o *Options) { o.HeaderTimeout = header })
+	var exhausted atomic.Bool
+	stallAtTheEnd(t, c, &exhausted)
+	data := patterned(64 << 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := c.Stream(ctx, Request{Method: "PATCH", Path: "/api/v1/uploads/x",
+		Upload: &endMarkReader{r: bytes.NewReader(data), exhausted: &exhausted}, UploadLength: int64(len(data))}, stall)
+	d := time.Since(start)
+	var te *TransportError
+	if !errors.As(err, &te) || te.Kind != KindTimeout || !strings.Contains(te.Message, "stalled") {
+		t.Fatalf("err = %v, want the transfer's own stall timeout", err)
+	}
+	if d < header-100*time.Millisecond || d > 3*time.Second {
+		t.Errorf("the stalled tail ended after %v, want about %v", d, header)
+	}
+}
+
+// TestStreamServerWorkAfterTheLastByteIsNotCutShort: a server that takes longer than the stall limit, but not longer than
+// the header limit, to answer a piece it has read whole (hashing, a sync) still gets its answer.
+func TestStreamServerWorkAfterTheLastByteIsNotCutShort(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := newClient(t, srv.URL, func(o *Options) { o.HeaderTimeout = 3 * time.Second })
+	data := patterned(64 << 10)
+	resp, err := c.Stream(context.Background(), Request{Method: "PATCH", Path: "/api/v1/uploads/x",
+		Upload: bytes.NewReader(data), UploadLength: int64(len(data))}, 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("a slow answer after the whole piece: %v", err)
+	}
+	resp.Body.Close()
 }
 
 // TestStreamErrorIsDecoded: an answer that is not 2xx is the API's error, its body read and closed.

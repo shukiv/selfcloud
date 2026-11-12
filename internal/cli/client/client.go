@@ -81,6 +81,8 @@ type Client struct {
 	now           func() time.Time
 	sleep         func(context.Context, time.Duration) error
 	maxRetryAfter time.Duration
+	// headerTimeout is the transport's response-header limit, which also bounds the server's work on an upload piece.
+	headerTimeout time.Duration
 }
 
 // Request is one call. Path is an absolute path on the server, with no query, no fragment and no ".." segment.
@@ -240,6 +242,7 @@ func New(o Options) (*Client, error) {
 		now:           o.Now,
 		sleep:         o.Sleep,
 		maxRetryAfter: o.MaxRetryAfter,
+		headerTimeout: o.HeaderTimeout,
 	}, nil
 }
 
