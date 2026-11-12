@@ -3,6 +3,7 @@
 package files
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,5 +184,29 @@ func TestOldPartRefusesALinkMadeInTheWindow(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "other")); string(b) != "held" {
 		t.Errorf("the other name holds %q", b)
+	}
+}
+
+// TestReplacePartOfAnUnremovablePartFile: a part file --overwrite cannot remove leaves everything as it was, so the
+// refusal is a usage failure (exit 2) that says nothing was changed, and the part file keeps its bytes.
+func TestReplacePartOfAnUnremovablePartFile(t *testing.T) {
+	dir := t.TempDir()
+	part := filepath.Join(dir, "f.bin.part")
+	if err := os.WriteFile(part, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := removePart
+	t.Cleanup(func() { removePart = old })
+	removePart = func(*os.Root, string) error { return fs.ErrPermission }
+	pf, err := replacePart(openRoot(t, dir), "f.bin")
+	if err == nil {
+		pf.close()
+		t.Fatal("an unremovable part file was replaced")
+	}
+	if code, _, msg := exitcode.Of(err); code != exitcode.Usage || !strings.Contains(msg, "nothing was changed") {
+		t.Errorf("exit %d, message %q, want a usage refusal saying nothing was changed", code, msg)
+	}
+	if b, _ := os.ReadFile(part); string(b) != "theirs" {
+		t.Errorf("the part file holds %q", b)
 	}
 }

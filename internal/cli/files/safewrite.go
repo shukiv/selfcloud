@@ -184,12 +184,16 @@ func createPart(root *os.Root, part string) (*os.File, error) {
 	return f, nil
 }
 
+// removePart removes a part file from a root. Tests make it fail, since a file system that refuses the removal of a file
+// its owner can write to is hard to make on every machine.
+var removePart = (*os.Root).Remove
+
 // replacePart removes a part file this download will not continue and makes a new one in its place, so the old one's
 // bytes, and any other name it has, are left as they were. In a shared directory with the sticky bit, the removal of
 // another user's file fails, and nothing is written.
 func replacePart(root *os.Root, name string) (*partFile, error) {
 	part := name + partSuffix
-	if err := root.Remove(part); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := removePart(root, part); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("cannot remove %s to start again: %w", part, err)
 	}
 	return newPart(root, name)
