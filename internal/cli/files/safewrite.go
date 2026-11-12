@@ -192,6 +192,10 @@ var removePart = (*os.Root).Remove
 // failure left nothing written, so it is the person's to mend.
 var canRemove = removeAllowed
 
+// linkPart gives a part file a second name. Tests make it fail like a file system without hard links, since one is hard
+// to make on every machine.
+var linkPart = (*os.Root).Link
+
 // replacePart removes a part file this download will not continue and makes a new one in its place, so the old one's
 // bytes, and any other name it has, are left as they were. In a shared directory with the sticky bit, the removal of
 // another user's file fails, and nothing is written: that is a usage failure (exit 2), not a failed write.
@@ -253,6 +257,9 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 // whatever took its name meanwhile is refused rather than written.
 func (pf *partFile) reset() error {
 	_ = pf.f.Close()
+	if !pf.stillAtName() {
+		return pf.replacedError()
+	}
 	if err := pf.root.Remove(pf.part); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return &localWriteError{err}
 	}
@@ -352,7 +359,7 @@ func (pf *partFile) finish(overwrite bool) error {
 		}
 		return pf.root.Rename(pf.part, pf.name)
 	}
-	err := pf.root.Link(pf.part, pf.name)
+	err := linkPart(pf.root, pf.part, pf.name)
 	if err == nil {
 		if pf.stillAtName() {
 			_ = pf.root.Remove(pf.part)
@@ -365,6 +372,9 @@ func (pf *partFile) finish(overwrite bool) error {
 	}
 	if err := checkFinal(pf.root, pf.name, false); err != nil {
 		return err
+	}
+	if !pf.stillAtName() {
+		return pf.replacedError()
 	}
 	return pf.root.Rename(pf.part, pf.name)
 }
