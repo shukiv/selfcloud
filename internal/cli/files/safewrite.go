@@ -144,12 +144,14 @@ func checkFinal(root *os.Root, name string, overwrite bool) error {
 	return nil
 }
 
-// partFile is a download's part file in its directory's root. sum is the SHA-256 of the bytes it holds.
+// partFile is a download's part file in its directory's root. fi is the file that was opened, so a name given the file
+// while the bytes arrive is not acted on. sum is the SHA-256 of the bytes it holds.
 type partFile struct {
 	root *os.Root
 	name string
 	part string
 	f    *os.File
+	fi   fs.FileInfo
 	size int64
 	sum  hash.Hash
 }
@@ -162,7 +164,12 @@ func newPart(root *os.Root, name string) (*partFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &partFile{root: root, name: name, part: part, f: f, sum: sha256.New()}, nil
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("cannot read the part file: %w", err)
+	}
+	return &partFile{root: root, name: name, part: part, f: f, fi: fi, sum: sha256.New()}, nil
 }
 
 // createPart creates the part file with O_EXCL and mode 0600.
@@ -220,7 +227,7 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 		_ = f.Close()
 		return nil, exitcode.Usagef("%s %s, so it is not used", part, p)
 	}
-	pf := &partFile{root: root, name: name, part: part, f: f, size: st.Size(), sum: sha256.New()}
+	pf := &partFile{root: root, name: name, part: part, f: f, fi: st, size: st.Size(), sum: sha256.New()}
 	if hashBytes && pf.size > 0 {
 		if _, err := io.Copy(pf.sum, io.NewSectionReader(f, 0, pf.size)); err != nil {
 			_ = f.Close()
@@ -241,7 +248,12 @@ func (pf *partFile) reset() error {
 	if err != nil {
 		return err
 	}
-	pf.f, pf.size = f, 0
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return &localWriteError{err}
+	}
+	pf.f, pf.fi, pf.size = f, fi, 0
 	pf.sum.Reset()
 	return nil
 }
@@ -284,10 +296,26 @@ func (pf *partFile) copyRange(r io.Reader, want int64) (int64, error) {
 // close closes the part file and keeps it, for a later get.
 func (pf *partFile) close() { _ = pf.f.Close() }
 
-// discard closes and removes the part file.
+// discard closes and removes the part file, unless another file has taken its name: that file is kept.
 func (pf *partFile) discard() {
 	_ = pf.f.Close()
-	_ = pf.root.Remove(pf.part)
+	if pf.stillAtName() {
+		_ = pf.root.Remove(pf.part)
+	}
+}
+
+// stillAtName reports whether the file at the part file's name is still the one this download opened. It is checked
+// before every Link, Rename and Remove, so none acts on a file that took the name meanwhile.
+func (pf *partFile) stillAtName() bool {
+	fi, err := pf.root.Lstat(pf.part)
+	return err == nil && os.SameFile(pf.fi, fi)
+}
+
+// replacedError refuses a file at the part file's name that this download did not write. It is a failure (exit 1), as
+// the bytes it was to write are gone.
+func (pf *partFile) replacedError() error {
+	return &exitcode.Error{Exit: exitcode.Failed, Name: "part_replaced", Message: fmt.Sprintf("the part file was "+
+		"replaced during the download, so the file at %s is not the one this get checked; it is kept", pf.part)}
 }
 
 // finish gives the part file the mode a new file gets, syncs it and gives it its name. Without overwrite the name is
@@ -303,6 +331,9 @@ func (pf *partFile) finish(overwrite bool) error {
 	if err := pf.f.Close(); err != nil {
 		return &localWriteError{err}
 	}
+	if !pf.stillAtName() {
+		return pf.replacedError()
+	}
 	if overwrite {
 		if err := checkFinal(pf.root, pf.name, true); err != nil {
 			return err
@@ -311,7 +342,9 @@ func (pf *partFile) finish(overwrite bool) error {
 	}
 	err := pf.root.Link(pf.part, pf.name)
 	if err == nil {
-		_ = pf.root.Remove(pf.part)
+		if pf.stillAtName() {
+			_ = pf.root.Remove(pf.part)
+		}
 		return nil
 	}
 	if errors.Is(err, fs.ErrExist) {
