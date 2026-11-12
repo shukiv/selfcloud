@@ -300,7 +300,7 @@ var remoteCommands = []remoteCommand{
 		help: `  access deny REQUEST...         refuse the requests
 `, run: sharing.AccessDeny},
 	{name: "shared", route: "GET /api/v1/shared",
-		notProbed: "an account key has no shared items (the API refuses it); internal/cli/sharing records its calls",
+		notProbed: "needs a device token (an account key has no shared items); internal/cli/sharing records its calls",
 		help: `  shared [--recent] [--all]      what other people shared with the signed-in person
 `, run: sharing.Shared},
 }

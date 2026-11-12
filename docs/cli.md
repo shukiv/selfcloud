@@ -542,8 +542,9 @@ selfcloud folder rm fld_... --yes
 ## Sharing
 
 These commands give other people access to files, make share links, and answer requests for access. **They take an account
-key.** The API's sharing routes refuse any token that acts for a user, which includes the device token that `login` saves, so
-a person signed in at a terminal can run only `shared` (and sees the API's refusal for the rest, exit 3). A route that
+key** (the account routes also take an admin key). The API's sharing routes refuse any token that acts for a user, which
+includes the device token that `login` saves, so a person signed in at a terminal can run only `shared` (and sees the API's
+refusal for the rest, exit 3; for making, changing and resetting a link it is the reason `device_token`). A route that
 needs an account (`/accounts/{acc}/...`) answers that token "no such account" (exit 4). The commands add no rule of their
 own: what a role may share, the account's switch for links that anyone can open, and a team space's settings are the
 server's, and its message comes back as it is.
@@ -568,9 +569,9 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | `link create NODE --drop [--title T] [--message M] [--ask-name] [--notify]` | a drop link: anyone with it can send files into the directory |
 | `link create NODE --signed [--ttl D] [--inline]` | a short-lived download address of a file, with no sign-in needed to use it; shown once |
 | `link update LINK [--audience A] [--role R] [--expires T \| --expires-in D \| --no-expiry] [--password-file FILE\|- \| --no-password] [--title T] [--message M] [--ask-name[=false]] [--notify[=false]]` | changes a link; a field not given keeps its value |
-| `link reset LINK` | a new secret; the old address stops working; the new one is shown once |
+| `link reset LINK` | a new secret; the old address stops working at once for everyone who holds it, and a drop link's unfinished uploads are released; the new address is shown once. It does not ask first |
 | `link rm LINK... [--yes]` | removes links (asks first) |
-| `link rm --public [--account A] [--yes]` | removes every link of the account that anyone can open (asks first, and says how many) |
+| `link rm --public [--account A] [--yes]` | removes every link of the account that anyone can open (asks first, and says how many live ones; expired ones go too) |
 | `access ls NODE` / `access ls --pending [--all]` | the access requests on a node, or the pending ones the caller may decide |
 | `access approve REQUEST... [--role R]` | gives the role the person asked for, or `viewer`, `commenter` or `editor` |
 | `access deny REQUEST...` | refuses |
@@ -578,8 +579,8 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 
 A time is RFC 3339 (`2026-12-31T00:00:00Z`); a duration is a Go duration or whole days (`36h`, `30d`). Several targets (revoke,
 `link rm`, `access approve` and `deny`) print one row each and exit 7 when only some were done, as the file commands do.
-The output of `--json` is the API's own document (a list for a list), except that a link listing keeps only the fields
-named in the API's link documents.
+The output of `--json` is the API's own document (a list for a list), except that a link document (`link ls`, `update`, and
+the link in `create` and `reset`) keeps only the fields the API names for a link, and create and reset print `{link, url}`.
 
 **Links.** A link's audience is `organisation` (members of the account who sign in) unless `--audience anyone` is given. A
 link that anyone can open gives the viewer role, needs the node's manager, an end date (30 days by default, 365 at most)
@@ -589,15 +590,18 @@ drop link: a second is a conflict (exit 3). A drop link takes no role and must e
 **Link secrets and passwords.**
 
 - The address of a share link holds its secret after the `#`. `link create` and `link reset` print it once, as the `url=`
-  line (or in the API's `{link, url}` document under `--json`), and say on standard error that it cannot be read again.
+  line (or as `{link, url}` under `--json`), and say on standard error that it cannot be read again.
   The same holds for the address `link create --signed` makes. No other command prints a secret: `link ls` keeps only the
   fields it knows, so even a secret, an address or a hash that a server added is left out.
 - A link's password is never taken from the command line, where it would be kept in the shell's history and shown by `ps`.
   `--password-file FILE` reads its first line from a file; `--password-file -` reads it from standard input, which must be a
-  pipe or a file, not a terminal. A password longer than 4096 bytes or empty is refused. `link update --no-password` removes
-  the password. There is no flag named `--password`.
-- Everything a command writes is scrubbed: the password it read, and anything shaped like a link's secret, is replaced by
-  `[hidden]` in what the server answered, so an error that repeats them does not show them. Nothing is logged.
+  pipe or a file, not a terminal. Only one carriage return before the line feed is dropped, and spaces are kept, as in
+  `get --password-stdin`, so a password set here opens the link there. The CLI refuses an empty password or one longer than
+  4096 bytes; the server takes 8 to 256 characters. `link update --no-password` removes the password. There is no flag named `--password`.
+- An error's message and every stream are scrubbed: the password it read, in each form the output can give it (JSON
+  escapes, a space for a tab), and anything shaped like a link's secret (the 43 characters after `/s#`, a signed address's
+  token), is replaced by `[hidden]` in what the server answered. A path that only looks like one is left alone. Nothing is
+  logged.
 
 ```sh
 printf '%s\n' "$LINK_PASSWORD" | selfcloud link create nod_… --audience anyone --expires-in 14d --password-file -

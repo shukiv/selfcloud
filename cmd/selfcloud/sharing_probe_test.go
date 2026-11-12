@@ -140,7 +140,7 @@ func (p *fileProbe) sharingRun(args ...string) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
-// TestSharingProbesNeedNoUserCredential: the sharing commands' own probes are in fileProbes; the commands that cannot be
+// TestSharingCommandsHaveProbes: the sharing commands' own probes are in fileProbes; the commands that cannot be
 // probed with an account key name why in remote.go.
 func TestSharingCommandsHaveProbes(t *testing.T) {
 	for _, c := range remoteCommands {
