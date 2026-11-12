@@ -599,7 +599,7 @@ drop link: a second is a conflict (exit 3). A drop link takes no role and must e
   `get --password-stdin`, so a password set here opens the link there. The CLI refuses a password outside the
   server's 8 to 256 characters before it sends anything (exit 2). `link update --no-password` removes the password. There is no flag named `--password`.
 - An error's message and every stream are scrubbed: the password it read, in each form the output can give it (JSON
-  escapes, a space for a tab), and anything shaped like a link's secret (the 43 characters after `/s#`, a signed address's
+  escapes, a space for a tab), in the link's own values and in errors (never in the address line or in a key), and anything shaped like a link's secret (the 43 characters after `/s#`, a signed address's
   token), is replaced by `[hidden]` in what the server answered. A path that only looks like one is left alone. Nothing is
   logged.
 

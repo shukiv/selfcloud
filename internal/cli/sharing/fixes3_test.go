@@ -15,7 +15,7 @@ func TestAPasswordThatIsAWordOfTheOutputChangesNeitherTheAddressNorTheKeys(t *te
 			isolate(t, testKey)
 			f := newFake(t)
 			link := linkDoc(testLink, "anyone", "viewer")
-			link["message"] = "the password is " + pw
+			link["message"] = "the secret is " + pw
 			f.on("POST", sharePath(testNode), created(map[string]any{"link": link, "url": shareURL}))
 			args := []string{testNode, "--audience", "anyone", "--password-file", passwordFileWith(t, pw)}
 			if asJSON {
@@ -26,11 +26,11 @@ func TestAPasswordThatIsAWordOfTheOutputChangesNeitherTheAddressNorTheKeys(t *te
 			if !strings.Contains(res.stdout, shareURL) {
 				t.Fatalf("pw %q json=%v: the address was changed: %q", pw, asJSON, res.stdout)
 			}
-			if strings.Contains(res.stdout, "[hidden]_set") || strings.Contains(res.stdout, `"[hidden]`) {
+			if strings.Contains(res.stdout, "[hidden]_set") || strings.Contains(res.stdout, `[hidden]":`) {
 				t.Fatalf("pw %q json=%v: a key was changed: %q", pw, asJSON, res.stdout)
 			}
 			if asJSON {
-				if !strings.Contains(res.stdout, `"password_set": true`) || !strings.Contains(res.stdout, `"message": "the password is [hidden]"`) {
+				if !strings.Contains(res.stdout, `"password_set": true`) || !strings.Contains(res.stdout, `"message": "the secret is [hidden]"`) {
 					t.Fatalf("pw %q: stdout %q", pw, res.stdout)
 				}
 			} else if !strings.Contains(res.stdout, "password_set=true\n") {
@@ -53,7 +53,7 @@ func TestUpdateKeepsKeysWhenThePasswordIsAWordOfTheOutput(t *testing.T) {
 		}
 		res := f.run(LinkUpdate, args...)
 		wantCode(t, res, 0)
-		if strings.Contains(res.stdout, "[hidden]_set") || strings.Contains(res.stdout, `"[hidden]`) {
+		if strings.Contains(res.stdout, "[hidden]_set") || strings.Contains(res.stdout, `[hidden]":`) {
 			t.Fatalf("json=%v: a key was changed: %q", asJSON, res.stdout)
 		}
 		if !strings.Contains(res.stdout, "password_set") {

@@ -39,20 +39,20 @@ var linkKeys = []string{"id", "node_id", "audience", "role", "expires_at", "pass
 // the one place a secret is written: the last line, on the unscrubbed stream, under the name url. Under --json the document
 // is {link, url} with the known fields of the link, or the known fields alone when there is no address.
 func (r *run) printLink(link []byte, secretURL string) error {
+	fields := r.valueFields(link)
 	if r.g.JSON {
 		if secretURL != "" {
-			return output.JSON(r.raw, map[string]any{"link": linkFields(link), "url": secretURL})
+			return output.JSON(r.raw, map[string]any{"link": fields, "url": secretURL})
 		}
-		return output.JSON(r.out, linkFields(link))
+		return output.JSON(r.val, fields)
 	}
-	fields := linkFields(link)
 	var kv []output.KV
 	for _, k := range linkKeys {
 		if v := flagText(fields, k); v != "" && v != "false" {
 			kv = append(kv, output.KV{Key: k, Value: v})
 		}
 	}
-	if err := output.KeyValues(r.out, kv); err != nil {
+	if err := output.KeyValues(r.val, kv); err != nil {
 		return err
 	}
 	if secretURL != "" {

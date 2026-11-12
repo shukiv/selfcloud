@@ -343,6 +343,25 @@ func linkFields(raw []byte) map[string]json.RawMessage {
 	return out
 }
 
+// valueFields keeps the known fields of a link document and hides the password, in each form, in their string values. A key
+// and a value that is not a string are left as they are, so a password that is a word of the output cannot change them.
+func (r *run) valueFields(link []byte) map[string]json.RawMessage {
+	fields := linkFields(link)
+	for k, raw := range fields {
+		if len(raw) == 0 || raw[0] != '"' {
+			continue
+		}
+		var s string
+		if json.Unmarshal(raw, &s) != nil {
+			continue
+		}
+		if b, err := json.Marshal(scrubSecrets(s, r.outS.secrets)); err == nil {
+			fields[k] = b
+		}
+	}
+	return fields
+}
+
 // text reads a string field of a decoded document; a field that is absent or not a string is "".
 func text(m map[string]json.RawMessage, key string) string {
 	var s string
@@ -372,7 +391,7 @@ type run struct {
 	raw  io.Writer // standard output as it is: only the one line of a new secret goes here
 	outS *scrubber
 	errS *scrubber
-	rawS *scrubber
+	val  io.Writer // standard output for a link's lines and documents (link shapes hidden, the password not)
 }
 
 // begin makes the flag set of a command, lets setup add its flags, and parses args. ok is false when the command must
@@ -382,8 +401,10 @@ func begin(name string, args []string, stdout, stderr io.Writer, setup func(*fla
 	r.outS = &scrubber{w: stdout, shapes: true}
 	r.errS = &scrubber{w: stderr, shapes: true}
 	// The stream of a new secret hides the password and leaves the address alone.
-	r.rawS = &scrubber{w: stdout}
-	r.out, r.err, r.raw = r.outS, r.errS, r.rawS
+	// The link's own lines and documents go to val, which hides link-shaped text but never the password: the password is
+	// hidden in the link's values (valueFields), not in the address or in a key. raw is standard output as it is.
+	r.val = &scrubber{w: stdout, shapes: true}
+	r.out, r.err, r.raw = r.outS, r.errS, stdout
 	set := conn.NewFlagSet(name)
 	r.g.Register(set)
 	if setup != nil {
@@ -407,7 +428,6 @@ func (r *run) hide(secret string) {
 	for _, f := range secretForms(secret) {
 		r.outS.add(f)
 		r.errS.add(f)
-		r.rawS.add(f)
 	}
 }
 

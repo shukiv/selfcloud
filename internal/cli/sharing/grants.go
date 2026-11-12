@@ -246,9 +246,14 @@ func nodeLabel(c *conn.Conn, nodeID string) (name string, safe bool, err error) 
 		return "", false, err
 	}
 	var n struct {
-		Name string `json:"name"`
+		Name     string  `json:"name"`
+		ParentID *string `json:"parent_id"`
 	}
 	if json.Unmarshal(resp.Body, &n) != nil {
+		return "", false, fmt.Errorf("the server's answer is not a node")
+	}
+	// A folder's root has the empty name and no parent; a nameless node with a parent is not an answer to trust.
+	if n.Name == "" && n.ParentID != nil && *n.ParentID != "" {
 		return "", false, fmt.Errorf("the server's answer is not a node")
 	}
 	// A folder's root has the empty name. A name with a control or a format character (a bidi override, a zero-width space)
