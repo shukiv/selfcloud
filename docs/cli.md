@@ -333,8 +333,11 @@ destination with no `--folder` is walked in the source node's folder.
 **Confirmation.** `rm`, `trash rm`, `trash empty` and `mv` or `cp` with `--replace` ask first. At a terminal the command
 shows a phrase and waits for it, then Enter: for one target of `rm` or `trash rm`, the node's name; for several targets,
 `yes`; `empty` for `trash empty`; `replace` for `--replace`. The name is read before the question: `rm` reads the node,
-and `trash rm` reads the Trash listing, because the node read does not serve a trashed node. Without a terminal the
-command refuses (exit 2) unless `--yes` is given, and reads nothing.
+and `trash rm` reads the Trash listing, because the node read does not serve a trashed node. A name that the API's name
+rules refuse (a control or escape character, an invisible or line-separating character, a path separator, a space at
+either end, or no name) is never shown: the command exits 2, says to give `--yes`, and sends nothing, since such a
+name would reach the terminal inside the question and could not be typed back. The server refuses to store such names, so
+this is a second guard. Without a terminal the command refuses (exit 2) unless `--yes` is given, and reads nothing.
 
 **Several targets.** `rm`, `trash restore`, `trash rm` and `unlock` act on each target in turn, and every target is
 checked before the first request. Each result has its own line, or an object in `--json` with `target`, `status` and,
@@ -368,6 +371,7 @@ connection from where it stopped. They use the same credential and naming as the
 | `put --resume UPLOAD [--name N] [--replace \| --rename]` | goes on with an upload this client began |
 | `get NODE [DEST]`, `get --folder F PATH [DEST]` | reads a file into DEST: a directory, where it takes the server's name, or a new file's path; default the current directory |
 | `get SHARE-LINK [DEST] [--password-stdin]` | reads the file a share link names, with no sign-in |
+| `get - [DEST]`, `get --link-file FILE [DEST]` | the same, with the link read from standard input or from a file, so its secret is not in the command line |
 | `upload ls` | the uploads this client began and has not finished: their size, the bytes the server had taken when last asked, when they expire, and the local file |
 | `upload cancel UPLOAD` | ends an upload; the server drops what it holds |
 
@@ -375,7 +379,10 @@ connection from where it stopped. They use the same credential and naming as the
 size such as `32MiB` or `100MB`, at least 1 MiB, 64 MiB by default, which fits under a proxy that caps a request at
 100 MB. A size above the server's limit (`upload.max_chunk_size`, which `info` prints as `max_chunk_size`) is refused
 (exit 2); the default is lowered to it. `--stall-timeout` (default `1m`) ends a piece or a range when no byte has moved
-for that long. `--timeout` does not apply to them, since a large piece on a slow link may take longer than any fixed
+for that long. Once the last byte of a piece has been read from the file, the server still works on it (it checks and
+syncs it) before it answers, so from then until the answer begins the limit is the longer of `--stall-timeout` and
+`--header-timeout`; a link that stalls while the end of a piece is still being sent ends the piece within that time.
+`--timeout` does not apply to them, since a large piece on a slow link may take longer than any fixed
 limit; it applies to the other requests.
 
 **Repeats.** A piece or a range that fails with a cut connection, a stall, a server error (5xx), a `429`, or a file
@@ -435,11 +442,21 @@ part file the file system will not remove exits 2 and nothing is changed. A part
 existing file at the name is replaced only with `--overwrite`, and only once the new bytes are complete and checked; a
 file that appears at the name during the download is kept, and so is the part file. A part file replaced during the
 download exits 1 with `part_replaced`, and the file at the name is kept. On a file system without hard links (such as
-FAT) the name is taken by a check and then a rename, so a file that appears in that moment is replaced.
+FAT, exFAT or some network mounts) Linux gives the name with a rename that the kernel refuses when the name is taken
+(`renameat2` with `RENAME_NOREPLACE`), so a file that appears at any moment is kept, as it is with a hard link. If that
+file system has no such rename either, `get` exits 2, says so, and keeps the part file; it never checks and then renames.
+`--overwrite` replaces whatever is at the name, or the download can go to another file system. Other platforms take the
+name by a check and then a rename on such a file system, so a file that appears in that moment is replaced.
 
 **Share links.** `get 'https://host/s#SECRET'` reads the file a share link names, with no profile and no sign-in: the
 link names its own server, so `--url`, `--profile`, `--token-file` and `--folder` are refused with it, and no key of a
-profile or of `SELFCLOUD_TOKEN` is sent to that server. Quote the link in a shell. The link must be `https` (plain `http`
+profile or of `SELFCLOUD_TOKEN` is sent to that server. Quote the link in a shell. A link on the command line is in the
+process list, which other users of the machine can read, and in the shell's history, so to keep the secret out of both,
+read the link from standard input with `selfcloud get - [DEST]`, or from a regular file with
+`selfcloud get --link-file FILE [DEST]`, where the one argument is then only the destination. The link is the first line
+of the input, with the spaces and the line ending around it trimmed, and at most 4096 bytes. Standard input must be a pipe
+or a file, not a terminal, and it cannot also carry the password, so `get -` and `--password-stdin` are refused together
+(use `--link-file` with the password on standard input). A refusal never repeats the link or the file's name. The link must be `https` (plain `http`
 only for a loopback address, or with `--insecure-http`), end in `/s` and carry its secret after `#`; anything else is
 refused without a request. A link with a password takes it from standard input with `--password-stdin`, never from a
 terminal, where it would be shown as it is typed; without it, the command exits 3 and says how to give it. The link's
@@ -454,6 +471,8 @@ selfcloud upload ls
 selfcloud get nod_… ~/Downloads/
 selfcloud get --folder fld_… /archive/backup.tar ./restore.tar
 printf '%s\n' "$LINK_PASSWORD" | selfcloud get 'https://drive.example/s#…' --password-stdin
+printf '%s\n' "$LINK" | selfcloud get - ~/Downloads/
+printf '%s\n' "$LINK_PASSWORD" | selfcloud get --link-file ./link.txt ~/Downloads/ --password-stdin
 ```
 
 ## Folders and groups
