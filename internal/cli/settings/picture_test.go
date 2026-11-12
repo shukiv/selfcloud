@@ -116,14 +116,29 @@ func TestAMissingFileOrADirectoryOrTheWrongCountIsRefusedBeforeAnyRequest(t *tes
 	f.wantCalls()
 }
 
-func TestAFileOverFourMiBIsRefusedWithoutReadingIt(t *testing.T) {
-	isolate(t, adminKey)
-	f := newFake(t)
+// sparsePNG makes a file that starts with the PNG signature and is size bytes long, without writing the rest.
+func sparsePNG(t *testing.T, size int64) string {
+	t.Helper()
 	p := filepath.Join(t.TempDir(), "big.png")
 	if err := os.WriteFile(p, pngSignature, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(p, 4<<20+1); err != nil {
+	if err := os.Truncate(p, size); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// The size is decided from Stat, before the file is opened: the file here cannot be read at all, so only the Stat decision
+// can refuse it with the size message.
+func TestAFileOverFourMiBIsRefusedFromItsSizeAlone(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root reads a file of mode 0, so only the size could not refuse it")
+	}
+	isolate(t, adminKey)
+	f := newFake(t)
+	p := sparsePNG(t, 4<<20+1)
+	if err := os.Chmod(p, 0); err != nil {
 		t.Fatal(err)
 	}
 	r := f.run(LogoSet, p)
@@ -131,6 +146,21 @@ func TestAFileOverFourMiBIsRefusedWithoutReadingIt(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	f.wantCalls()
+}
+
+// A file of exactly 4 MiB is sent. The server's own cap is smaller, and its 413 is the answer for such a file.
+func TestAFileOfExactlyFourMiBIsSent(t *testing.T) {
+	isolate(t, adminKey)
+	f := newFake(t)
+	f.on(http.MethodPut, logoRoute, reply{413, `{"error":{"code":"too_large","message":"the picture is over 256 KiB"}}`})
+	r := f.run(LogoSet, sparsePNG(t, 4<<20))
+	if r.code != 2 || !strings.Contains(r.stderr, "the picture is over 256 KiB") {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	f.wantCalls("PUT " + logoRoute)
+	if n := len(f.body(0)); n != 4<<20 {
+		t.Errorf("sent %d bytes, want %d", n, 4<<20)
+	}
 }
 
 func TestThePictureRoutesRefusalsKeepTheServersMessage(t *testing.T) {
