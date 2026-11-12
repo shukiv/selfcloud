@@ -188,10 +188,6 @@ func createPart(root *os.Root, part string) (*os.File, error) {
 // its owner can write to is hard to make on every machine.
 var removePart = (*os.Root).Remove
 
-// canRemove runs the removal error of a part file through the permission rules of the platform, and is nil when the
-// failure left nothing written, so it is the person's to mend.
-var canRemove = removeAllowed
-
 // linkPart gives a part file a second name. Tests make it fail like a file system without hard links, since one is hard
 // to make on every machine.
 var linkPart = (*os.Root).Link
@@ -202,7 +198,7 @@ var linkPart = (*os.Root).Link
 func replacePart(root *os.Root, name string) (*partFile, error) {
 	part := name + partSuffix
 	if err := removePart(root, part); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		if canRemove(err) == nil {
+		if removeAllowed(err) == nil {
 			return nil, &exitcode.Error{Exit: exitcode.Usage, Name: "usage", Message: "cannot remove " + part +
 				" to start again: " + err.Error() + "; nothing was changed"}
 		}
