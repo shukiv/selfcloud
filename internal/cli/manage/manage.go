@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
+	"github.com/shukiv/selfcloud/internal/cli/profile"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/names"
 )
@@ -27,6 +29,9 @@ type command struct {
 	set            *flag.FlagSet
 	account        string
 	stdout, stderr io.Writer
+	// kind is the credential's kind once connected, and accountUsed says that the command named an account.
+	kind        string
+	accountUsed bool
 }
 
 // begin starts a command with the global flags. withAccount adds --account, which the command then needs.
@@ -45,8 +50,26 @@ func (c *command) parse(args []string) (pos []string, code int, ok bool) {
 	return files.Parse(c.set, &c.g, args, c.stdout, c.stderr)
 }
 
-// fail reports err and returns its exit code.
-func (c *command) fail(err error) int { return output.Fail(c.stderr, c.g.JSON, err) }
+// connect resolves the address and the credential, and remembers the credential's kind for the hints.
+func (c *command) connect() (*conn.Conn, error) {
+	cn, err := conn.Connect(c.g, c.stderr, true)
+	if err != nil {
+		return nil, err
+	}
+	c.kind = cn.Kind
+	return cn, nil
+}
+
+// fail reports err and returns its exit code. A device token that gets "not found" from a route of an account is told why,
+// in plain output only: the server never lets a token manage an account, and answers as if the account were not there.
+func (c *command) fail(err error) int {
+	code := output.Fail(c.stderr, c.g.JSON, err)
+	var ae *client.APIError
+	if !c.g.JSON && c.accountUsed && c.kind == profile.KindDevice && errors.As(err, &ae) && ae.Status == http.StatusNotFound {
+		_, _ = io.WriteString(c.stderr, "selfcloud: hint: this needs an account key; a signed-in device cannot manage an account\n")
+	}
+	return code
+}
 
 // accountID returns the account of an account-scoped command: --account, else the environment. It must have the shape
 // of an account id, so nothing else reaches a request path.
@@ -58,6 +81,7 @@ func (c *command) accountID() (string, error) {
 	if !id.Valid("acc", v) {
 		return "", exitcode.Usagef("an account is named by its acc_ id: pass --account acc_..., or set %s", envAccount)
 	}
+	c.accountUsed = true
 	return v, nil
 }
 
@@ -94,6 +118,11 @@ func confirmByName(cn *conn.Conn, route string, yes bool, what string, stderr io
 		}
 		if v.Name == "" {
 			return errors.New("the server's answer has no name to confirm with; nothing was changed")
+		}
+		// A name with a control character would reach the terminal in the question and cannot be typed back.
+		if _, _, err := names.Clean(v.Name); err != nil {
+			return exitcode.Usagef("the name cannot be shown safely to confirm with; nothing was changed; " +
+				"give --yes to remove it by its id")
 		}
 		phrase = v.Name
 	}

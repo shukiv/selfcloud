@@ -20,7 +20,6 @@ import (
 	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
-	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -34,6 +33,8 @@ type folderView struct {
 	Name                 string  `json:"name"`
 	Kind                 string  `json:"kind"`
 	RootNodeID           string  `json:"root_node_id"`
+	Files                *int64  `json:"files"`
+	Bytes                *int64  `json:"bytes"`
 	CreatedAt            string  `json:"created_at"`
 	UpdatedAt            string  `json:"updated_at"`
 	MembersOnly          bool    `json:"members_only"`
@@ -53,7 +54,7 @@ func folderPairs(body []byte) ([]output.KV, error) {
 	if v.ExternalID != nil {
 		ext = *v.ExternalID
 	}
-	return []output.KV{
+	kv := []output.KV{
 		{Key: "id", Value: v.ID},
 		{Key: "external_id", Value: ext},
 		{Key: "name", Value: v.Name},
@@ -63,9 +64,15 @@ func folderPairs(body []byte) ([]output.KV, error) {
 		{Key: "sharing_managers_only", Value: strconv.FormatBool(v.SharingManagersOnly)},
 		{Key: "no_download_for_viewers", Value: strconv.FormatBool(v.NoDownloadForViewers)},
 		{Key: "allow_links", Value: strconv.FormatBool(v.AllowLinks)},
-		{Key: "created_at", Value: v.CreatedAt},
-		{Key: "updated_at", Value: v.UpdatedAt},
-	}, nil
+	}
+	// The answer for one folder carries its counts; the others do not.
+	if v.Files != nil {
+		kv = append(kv, output.KV{Key: "files", Value: strconv.FormatInt(*v.Files, 10)})
+	}
+	if v.Bytes != nil {
+		kv = append(kv, output.KV{Key: "bytes", Value: strconv.FormatInt(*v.Bytes, 10)})
+	}
+	return append(kv, output.KV{Key: "created_at", Value: v.CreatedAt}, output.KV{Key: "updated_at", Value: v.UpdatedAt}), nil
 }
 
 func accountFoldersRoute(acc string) string { return "/api/v1/accounts/" + acc + "/folders" }
@@ -113,7 +120,7 @@ func FolderCreate(args []string, stdout, stderr io.Writer) int {
 	if ext != "" {
 		body["external_id"] = ext
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -171,7 +178,7 @@ func FolderLs(args []string, stdout, stderr io.Writer) int {
 			q.Set("external_id", ext)
 		}
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -207,7 +214,7 @@ func FolderShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -243,7 +250,7 @@ func FolderRename(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -266,7 +273,7 @@ func FolderRm(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -349,7 +356,7 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 	if len(body) == 0 {
 		return c.fail(exitcode.Usagef("give at least one setting, such as --allow-links=false"))
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -358,7 +365,8 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 		code := c.fail(err)
 		// Every token is refused a space's settings. The refusal is the server's; the hint says where it is done.
 		var ae *client.APIError
-		if !c.g.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) && ae.Status == http.StatusForbidden {
+		if !c.g.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) &&
+			ae.Status == http.StatusForbidden && ae.Reason == "" {
 			_, _ = io.WriteString(stderr, "selfcloud: hint: the web interface changes a space's settings\n")
 		}
 		return code
@@ -383,7 +391,7 @@ func hide(name, method string, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}

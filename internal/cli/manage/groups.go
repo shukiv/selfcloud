@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -66,7 +65,7 @@ func GroupCreate(args []string, stdout, stderr io.Writer) int {
 	if ext != "" {
 		body["external_id"] = ext
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -96,7 +95,7 @@ func GroupLs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -143,7 +142,7 @@ func GroupShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -179,7 +178,7 @@ func GroupRename(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -203,7 +202,7 @@ func GroupRm(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -229,7 +228,7 @@ func GroupMembers(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -275,7 +274,7 @@ func member(name, method string, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -323,7 +322,7 @@ func UserGrants(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := conn.Connect(c.g, stderr, true)
+	cn, err := c.connect()
 	if err != nil {
 		return c.fail(err)
 	}

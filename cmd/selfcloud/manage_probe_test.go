@@ -93,9 +93,16 @@ var manageProbes = map[string]func(p *fileProbe) []string{
 func TestFolderLsMineOnTheRealServer(t *testing.T) {
 	isolateRemote(t)
 	p := newFileProbe(t)
-	out := p.do("folder", "ls", "--mine", "--json")
-	if !strings.Contains(out, p.folder) {
-		t.Fatalf("--mine does not list the probe folder: %q", out)
+	p.reset()
+	var out, errOut bytes.Buffer
+	if code := run([]string{"folder", "ls", "--mine", "--json", "--url", p.recURL}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), p.folder) {
+		t.Fatalf("--mine does not list the probe folder: %q", out.String())
+	}
+	if got := p.recorded(); !slices.Equal(got, []string{"GET /api/v1/folders"}) {
+		t.Fatalf("--mine called %v, want only GET /api/v1/folders", got)
 	}
 }
 
