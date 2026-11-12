@@ -10,7 +10,7 @@ import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { info, signedAs } from "../../test/adminFixtures";
 import { desktopViewport, phoneViewport } from "../../test/viewport";
 import { settingsAnswer } from "../../test/settingsFixtures";
-import SettingsPage from "./SettingsPage";
+import SettingsPage, { layoutFor, settle } from "./SettingsPage";
 
 // The server the page talks to: GET /settings and /info answer from state, and PATCH applies the change the way the API
 // does for the cases a test needs (a stored value, or a reset), unless the test gives its own answer.
@@ -597,6 +597,19 @@ describe("the layout follows the content's width", () => {
     watch.disconnect();
     mo.disconnect();
     expect(settled).toBeLessThanOrEqual(2);
+  });
+
+  it("settles exactly at each boundary: stacked below 600, tabs from 624, list from 924 and gone under 900", () => {
+    expect(settle(layoutFor(700), 600).tabs).toBe(false);
+    expect(settle(layoutFor(700), 599).tabs).toBe(true);
+    expect(settle(layoutFor(500), 623).tabs).toBe(true);
+    expect(settle(layoutFor(500), 624).tabs).toBe(false);
+    expect(settle(layoutFor(700), 923).list).toBe(false);
+    expect(settle(layoutFor(700), 924).list).toBe(true);
+    expect(settle(layoutFor(1200), 900).list).toBe(true);
+    expect(settle(layoutFor(1200), 899).list).toBe(false);
+    expect(settle(layoutFor(700), 647).rowWide).toBe(false);
+    expect(settle(layoutFor(700), 648).rowWide).toBe(true);
   });
 });
 
