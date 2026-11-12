@@ -514,6 +514,9 @@ func TestGetSaysWhenRangesAreIgnored(t *testing.T) {
 	if !strings.Contains(res.stderr, "instead of a range") || strings.Contains(res.stderr, "changed") {
 		t.Errorf("stderr %q does not say that the range was ignored", res.stderr)
 	}
+	if strings.Contains(res.stderr, "get again") {
+		t.Errorf("stderr %q says to run get again, which meets the same answer", res.stderr)
+	}
 	if n := f.contentCalls(); n != 1 {
 		t.Errorf("%d content requests, want 1", n)
 	}
