@@ -242,3 +242,53 @@ func TestGetRefusesARangeItDidNotAskFor(t *testing.T) {
 		t.Error("the file was named")
 	}
 }
+
+// TestGetRefusesAPartFileReplacedDuringTheDownload: when another file is renamed over the part file while the bytes
+// arrive, the download's bytes are gone and the file at the name is not the one it checked. get stops (exit 1), keeps
+// the part file, and names no file.
+func TestGetRefusesAPartFileReplacedDuringTheDownload(t *testing.T) {
+	isolate(t, testAccountKey)
+	nodeID := id.Derive("nod", "cli6-swapped-part")
+	data := bytes.Repeat([]byte("D"), 3*mib/2)
+	dest := t.TempDir()
+	other := filepath.Join(t.TempDir(), "other")
+	if err := os.WriteFile(other, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var swapErr error
+	contents := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v1/nodes/" + nodeID:
+			writeNode(w, nodeID, "swapped.bin", data, fakeETag)
+		case "/api/v1/nodes/" + nodeID + "/content":
+			if contents++; contents == 2 {
+				swapErr = os.Rename(other, filepath.Join(dest, "swapped.bin.part"))
+			}
+			w.Header().Set("ETag", fakeETag)
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := getAt(srv.URL, nodeID, dest, "--piece-size", "1MiB")
+	mu.Lock()
+	defer mu.Unlock()
+	if swapErr != nil {
+		t.Fatal(swapErr)
+	}
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "replaced during the download") {
+		t.Errorf("stderr %q does not say the part file was replaced", res.stderr)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "swapped.bin")); err == nil {
+		t.Error("the file was named")
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "swapped.bin.part")); err != nil {
+		t.Errorf("the part file was removed: %v", err)
+	}
+}
