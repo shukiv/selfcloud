@@ -299,7 +299,8 @@ func loadDownloadRecord(part string) (downloadRecord, error) {
 		return r, errNoRecord
 	}
 	err = readRecord(filepath.Join(dir, downloadKey(part)), &r)
-	if err != nil || r.Version != recordVersion || r.Part != part || !(id.Valid("nod", r.Node) || id.Valid("zip", r.Node)) || !validETag(r.ETag) {
+	named := id.Valid("nod", r.Node) || id.Valid("zip", r.Node)
+	if err != nil || r.Version != recordVersion || r.Part != part || !named || !validETag(r.ETag) {
 		return r, errNoRecord
 	}
 	return r, nil

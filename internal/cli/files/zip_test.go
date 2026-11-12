@@ -112,7 +112,12 @@ func jobDoc(zip string) map[string]any {
 
 // serveZipFile answers as a ready zip does: a strong ETag that is the SHA-256, a name, the left-out count, and ranges.
 func serveZipFile(w http.ResponseWriter, r *http.Request, data []byte, name string, skipped int) {
-	w.Header().Set("ETag", `"`+sha(data)+`"`)
+	serveZipTagged(w, r, data, name, skipped, `"`+sha(data)+`"`)
+}
+
+// serveZipTagged is serveZipFile with the ETag the test chooses.
+func serveZipTagged(w http.ResponseWriter, r *http.Request, data []byte, name string, skipped int, etag string) {
+	w.Header().Set("ETag", etag)
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("X-Selfcloud-Skipped", itoa(skipped))
@@ -136,9 +141,10 @@ func pending(w http.ResponseWriter) {
 // noZipWait makes the polling repeat at once, for the length of the test.
 func noZipWait(t *testing.T) {
 	t.Helper()
-	old := zipPollWait
-	t.Cleanup(func() { zipPollWait = old })
+	old, oldCap := zipPollWait, zipPollCap
+	t.Cleanup(func() { zipPollWait, zipPollCap = old, oldCap })
 	zipPollWait = func(int) time.Duration { return 0 }
+	zipPollCap = 0
 }
 
 // ---- zip create ----
@@ -292,7 +298,7 @@ func TestZipCreateRefusesAnAnswerWithoutAZip(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			isolate(t, testAccountKey)
 			f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) { writeDoc(w, 202, jobDoc(target)) })
-			res := f.run(ZipCreate, testNode, "--wait")
+			res := f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "2s")
 			wantCode(t, res, 1)
 			if res.stdout != "" || len(f.calls()) != 1 {
 				t.Errorf("stdout %q calls %v", res.stdout, f.calls())
@@ -374,7 +380,8 @@ func TestZipCreateWaitReportsAZipThatIsGone(t *testing.T) {
 	})
 	res := f.run(ZipCreate, testNode, "--wait")
 	wantCode(t, res, 1)
-	if res.stdout != "" || !strings.Contains(res.stderr, "failed") || !strings.Contains(res.stderr, "zip_failed") {
+	if res.stdout != "" || !strings.Contains(res.stderr, "failed") || !strings.Contains(res.stderr, "zip_failed") ||
+		!strings.Contains(res.stderr, testZip) || !strings.Contains(res.stderr, "the server says not_found") {
 		t.Errorf("stdout %q stderr %q", res.stdout, res.stderr)
 	}
 	jres := f.run(ZipCreate, testNode, "--wait", "--json")
@@ -408,6 +415,10 @@ func TestZipCreateWaitTimesOut(t *testing.T) {
 	if res.stdout != "" || !strings.Contains(res.stderr, testZip) || !strings.Contains(res.stderr, "timeout") {
 		t.Errorf("stdout %q stderr %q", res.stdout, res.stderr)
 	}
+	// 100 ms at a poll every 5 ms or more is at most about 20 polls, and some more than the first.
+	if got := pollCount(f); got < 2 || got > 40 {
+		t.Errorf("%d polls in the limit", got)
+	}
 }
 
 // TestZipCreateWaitStopsOnARefusal: a refusal while polling ends the wait with that refusal's exit code.
@@ -428,6 +439,95 @@ func TestZipCreateWaitStopsOnARefusal(t *testing.T) {
 	wantCode(t, res, 3)
 	if !strings.Contains(res.stderr, "download_restricted") {
 		t.Errorf("stderr %q", res.stderr)
+	}
+	if got := pollCount(f); got != 2 {
+		t.Errorf("%d polls, want 2: the pending one and the one the refusal ended", got)
+	}
+}
+
+// pollCount is the number of requests for a zip's state the fake saw.
+func pollCount(f *zipFake) int {
+	n := 0
+	for _, c := range f.calls() {
+		if c == "GET /api/v1/zips/"+testZip {
+			n++
+		}
+	}
+	return n
+}
+
+// dropConnection closes the connection without an answer, as a network that fails does.
+func dropConnection(w http.ResponseWriter) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err == nil {
+		_ = conn.Close()
+	}
+}
+
+// TestZipCreateWaitRetriesAFailedPoll: a poll the server fails (503) is made again, and the zip is then found ready.
+func TestZipCreateWaitRetriesAFailedPoll(t *testing.T) {
+	isolate(t, testAccountKey)
+	noZipWait(t)
+	data := []byte("a zip")
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		switch {
+		case r.Method == "POST":
+			writeDoc(w, 202, jobDoc(testZip))
+		case n == 1:
+			pending(w)
+		case n <= 3:
+			writeErr(w, 503, "unavailable", "")
+		default:
+			serveZipFile(w, r, data, "x.zip", 0)
+		}
+	})
+	res := f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "30s")
+	wantCode(t, res, 0)
+	if got := pollCount(f); got != 4 {
+		t.Errorf("%d polls, want 4", got)
+	}
+}
+
+// TestZipCreateWaitRetriesADroppedConnection: the same when the connection itself fails. The transport may repeat a
+// request on its own, so the count is a floor.
+func TestZipCreateWaitRetriesADroppedConnection(t *testing.T) {
+	isolate(t, testAccountKey)
+	noZipWait(t)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		switch {
+		case r.Method == "POST":
+			writeDoc(w, 202, jobDoc(testZip))
+		case n <= 2:
+			dropConnection(w)
+		default:
+			serveZipFile(w, r, []byte("a zip"), "x.zip", 0)
+		}
+	})
+	wantCode(t, f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "30s"), 0)
+	if got := pollCount(f); got < 3 {
+		t.Errorf("%d polls, want at least 3", got)
+	}
+}
+
+// TestZipCreateWaitGivesUpAfterFiveFailedPolls: failures in a row end the wait with the failure itself, after exactly
+// maxTries polls, and not with the timeout.
+func TestZipCreateWaitGivesUpAfterFiveFailedPolls(t *testing.T) {
+	isolate(t, testAccountKey)
+	noZipWait(t)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == "POST" {
+			writeDoc(w, 202, jobDoc(testZip))
+			return
+		}
+		writeErr(w, 503, "unavailable", "")
+	})
+	res := f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "30s")
+	wantCode(t, res, 1)
+	if got := pollCount(f); got != maxTries {
+		t.Errorf("%d polls, want %d", got, maxTries)
+	}
+	if strings.Contains(res.stderr, "timeout") || res.stdout != "" {
+		t.Errorf("stdout %q stderr %q", res.stdout, res.stderr)
 	}
 }
 
@@ -465,6 +565,24 @@ func TestZipRmAsksFirst(t *testing.T) {
 	}
 	if !hasRow(res.stdout, testZip, "done") {
 		t.Errorf("stdout %q", res.stdout)
+	}
+}
+
+// TestZipRmSeveralAsksForYes: for several zips the person types yes, not an id; nothing is sent before it.
+func TestZipRmSeveralAsksForYes(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) { w.WriteHeader(http.StatusNoContent) })
+	typeAtTerminal(testZip + "\n")
+	wantCode(t, f.run(ZipRm, testZip, testZipB), 2)
+	if c := f.calls(); len(c) != 0 {
+		t.Fatalf("calls after the first id was typed: %v", c)
+	}
+	typeAtTerminal("yes\n")
+	res := f.run(ZipRm, testZip, testZipB)
+	wantCode(t, res, 0)
+	want := []string{"DELETE /api/v1/zips/" + testZip, "DELETE /api/v1/zips/" + testZipB}
+	if c := f.calls(); strings.Join(c, ",") != strings.Join(want, ",") {
+		t.Errorf("calls %v", c)
 	}
 }
 
@@ -728,7 +846,7 @@ func TestZipGetKeepsThePartFileAndGoesOnFromIt(t *testing.T) {
 	if names := dirEntries(t, dir); len(names) != 1 || names[0] != "big.zip.part" {
 		t.Fatalf("the destination holds %v, want the part file alone", names)
 	}
-	if !strings.Contains(res.stderr, "part file") {
+	if !strings.Contains(res.stderr, "part file") || !strings.Contains(res.stderr, "run selfcloud zip get again") {
 		t.Errorf("stderr %q does not name the part file", res.stderr)
 	}
 	if r := downloadRecords(t); len(r) != 1 {
@@ -757,8 +875,57 @@ func TestZipGetKeepsThePartFileAndGoesOnFromIt(t *testing.T) {
 	}
 }
 
-// TestZipGetStartsAgainOnAPartFileOfAnotherZip: a part file begun for another zip of the same name is not continued.
-func TestZipGetStartsAgainOnAPartFileOfAnotherZip(t *testing.T) {
+// TestZipGetContinuesOnlyThePartFileOfItsOwnZip: a part file whose record names another zip, or a node, is refused with
+// exit 2 and left as it was, even when the record holds the very ETag of the zip asked for, so only the subject differs.
+// The record of the same zip is continued from the part file's size.
+func TestZipGetContinuesOnlyThePartFileOfItsOwnZip(t *testing.T) {
+	data := randomBytes(t, 3000)
+	for _, tc := range []struct {
+		what    string
+		subject string
+		want    int
+	}{
+		{"another zip", testZipB, 2},
+		{"a node", testNode, 2},
+		{"the same zip", testZip, 0},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			isolate(t, testAccountKey)
+			f := zipServer(t, data, "a.zip", 0)
+			dir := t.TempDir()
+			part := filepath.Join(dir, "a.zip.part")
+			if err := os.WriteFile(part, data[:1000], 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := saveDownloadRecord(downloadRecord{Part: part, Server: f.srv.URL, Node: tc.subject,
+				ETag: `"` + sha(data) + `"`, Size: int64(len(data)), StartedAt: time.Now()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := f.run(ZipGet, testZip, dir)
+			wantCode(t, res, tc.want)
+			if tc.want != 0 {
+				if b, _ := os.ReadFile(part); !bytes.Equal(b, data[:1000]) {
+					t.Errorf("the part file was changed: %d bytes", len(b))
+				}
+				if !strings.Contains(res.stderr, "no download of this file by this client began it") {
+					t.Errorf("stderr %q", res.stderr)
+				}
+				return
+			}
+			if b, _ := os.ReadFile(filepath.Join(dir, "a.zip")); !bytes.Equal(b, data) {
+				t.Errorf("the zip differs: %d bytes", len(b))
+			}
+			if !strings.Contains(res.stderr, "going on from byte 1000") {
+				t.Errorf("stderr %q", res.stderr)
+			}
+		})
+	}
+}
+
+// TestZipGetRefusesAStrayPartFile: a part file with no record of this client is refused and left as it was; --overwrite
+// replaces it.
+func TestZipGetRefusesAStrayPartFile(t *testing.T) {
 	isolate(t, testAccountKey)
 	data := []byte("the real zip")
 	f := zipServer(t, data, "a.zip", 0)
@@ -793,5 +960,180 @@ func TestZipGetIgnoredRangeIsReported(t *testing.T) {
 	wantCode(t, res, 1)
 	if !strings.Contains(res.stderr, "instead of a range") {
 		t.Errorf("stderr %q", res.stderr)
+	}
+}
+
+// firstByte answers a probe of a zip the way a server does, with the headers a test chooses, and the zip's bytes after
+// it. An empty value leaves its header out.
+func firstByte(etag, contentRange string, data []byte) func(w http.ResponseWriter, r *http.Request, n int) {
+	return func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Header.Get("Range") == "bytes=0-0" {
+			if etag != "" {
+				w.Header().Set("ETag", etag)
+			}
+			if contentRange != "" {
+				w.Header().Set("Content-Range", contentRange)
+			}
+			w.Header().Set("Content-Disposition", `attachment; filename="a.zip"`)
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(data[:1])
+			return
+		}
+		serveZipTagged(w, r, data, "a.zip", 0, etag)
+	}
+}
+
+// TestZipGetRefusesAZipWithoutAStrongVersion: a missing or weak ETag is refused with exit 1 before any range is read,
+// since If-Range would then guard nothing. A strong tag that is not a SHA-256 is a version all the same: the zip is
+// downloaded, checked by its size alone, and the note says so.
+func TestZipGetRefusesAZipWithoutAStrongVersion(t *testing.T) {
+	data := randomBytes(t, 2000)
+	size := "bytes 0-0/" + itoa(len(data))
+	for name, etag := range map[string]string{"missing": "", "weak": `W/"` + sha(data) + `"`} {
+		t.Run(name, func(t *testing.T) {
+			isolate(t, testAccountKey)
+			f := newZipFake(t, firstByte(etag, size, data))
+			dir := t.TempDir()
+			res := f.run(ZipGet, testZip, dir)
+			wantCode(t, res, 1)
+			if !strings.Contains(res.stderr, "no valid version") || len(f.calls()) != 1 || len(dirEntries(t, dir)) != 0 {
+				t.Errorf("stderr %q calls %v files %v", res.stderr, f.calls(), dirEntries(t, dir))
+			}
+		})
+	}
+	t.Run("strong but not a SHA-256", func(t *testing.T) {
+		isolate(t, testAccountKey)
+		f := newZipFake(t, firstByte(`"version-7"`, size, data))
+		dir := t.TempDir()
+		res := f.run(ZipGet, testZip, dir)
+		wantCode(t, res, 0)
+		if !strings.Contains(res.stdout, "checked=size") || !strings.Contains(res.stderr, "only its size was checked") {
+			t.Errorf("stdout %q stderr %q", res.stdout, res.stderr)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, "a.zip")); !bytes.Equal(b, data) {
+			t.Errorf("the zip differs")
+		}
+	})
+}
+
+// TestZipCreateWaitRefusesAZipWithoutAStrongVersion: the same refusal while following a zip.
+func TestZipCreateWaitRefusesAZipWithoutAStrongVersion(t *testing.T) {
+	isolate(t, testAccountKey)
+	noZipWait(t)
+	data := randomBytes(t, 100)
+	post := firstByte("", "bytes 0-0/100", data)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == "POST" {
+			writeDoc(w, 202, jobDoc(testZip))
+			return
+		}
+		post(w, r, n)
+	})
+	res := f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "30s")
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "no valid version") {
+		t.Errorf("stderr %q", res.stderr)
+	}
+}
+
+// TestZipGetRefusesAZipWithoutAValidSize: a missing, non-numeric or zero size in Content-Range is refused with exit 1,
+// after the one request that read it.
+func TestZipGetRefusesAZipWithoutAValidSize(t *testing.T) {
+	data := randomBytes(t, 2000)
+	for name, cr := range map[string]string{"missing": "", "not a number": "bytes 0-0/abc", "zero": "bytes 0-0/0",
+		"another range": "bytes 5-9/2000", "negative": "bytes 0-0/-4"} {
+		t.Run(name, func(t *testing.T) {
+			isolate(t, testAccountKey)
+			f := newZipFake(t, firstByte(`"`+sha(data)+`"`, cr, data))
+			dir := t.TempDir()
+			res := f.run(ZipGet, testZip, dir)
+			wantCode(t, res, 1)
+			if !strings.Contains(res.stderr, "no valid size") || len(f.calls()) != 1 || len(dirEntries(t, dir)) != 0 {
+				t.Errorf("stderr %q calls %v", res.stderr, f.calls())
+			}
+		})
+	}
+}
+
+// ignoresRange is a server or a proxy that drops the Range header: it answers every request with the whole zip.
+func ignoresRange(data []byte) func(w http.ResponseWriter, r *http.Request, n int) {
+	return func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == "POST" {
+			writeDoc(w, 202, jobDoc(testZip))
+			return
+		}
+		w.Header().Set("ETag", `"`+sha(data)+`"`)
+		w.Header().Set("Content-Length", itoa(len(data)))
+		_, _ = w.Write(data)
+	}
+}
+
+// TestZipCreateWaitTakesAWholeAnswerAsReady: a proxy that drops Range answers 200 with the whole zip. The wait takes it
+// as ready, as the web does, with the size from Content-Length, and does not read the body: the zip here is larger than
+// the client reads of any answer, so reading it would fail.
+func TestZipCreateWaitTakesAWholeAnswerAsReady(t *testing.T) {
+	isolate(t, testAccountKey)
+	noZipWait(t)
+	data := randomBytes(t, 17*mib)
+	f := newZipFake(t, ignoresRange(data))
+	res := f.run(ZipCreate, testNode, "--wait", "--wait-timeout", "30s")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stdout, "state=ready") || !strings.Contains(res.stdout, "size="+itoa(len(data))) {
+		t.Errorf("stdout %q", res.stdout)
+	}
+	if got := pollCount(f); got != 1 {
+		t.Errorf("%d polls, want 1", got)
+	}
+}
+
+// TestZipGetNamesAServerThatDropsRange: zip get cannot download through it, says so as get does, and sends one request.
+func TestZipGetNamesAServerThatDropsRange(t *testing.T) {
+	isolate(t, testAccountKey)
+	data := randomBytes(t, 17*mib)
+	f := newZipFake(t, ignoresRange(data))
+	dir := t.TempDir()
+	res := f.run(ZipGet, testZip, dir)
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "instead of a range") || len(f.calls()) != 1 || len(dirEntries(t, dir)) != 0 {
+		t.Errorf("stderr %q calls %v", res.stderr, f.calls())
+	}
+}
+
+// TestZipGetStartsAgainWhenTheZipChangesDuringTheDownload: the first range is answered with another version, whole. The
+// download reads the version again, from the zip and not from a node, and comes out as the new zip, never mixed.
+func TestZipGetStartsAgainWhenTheZipChangesDuringTheDownload(t *testing.T) {
+	isolate(t, testAccountKey)
+	v1, v2 := randomBytes(t, 3000), randomBytes(t, 4000)
+	var mu sync.Mutex
+	current := v1
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Path != "/api/v1/zips/"+testZip {
+			writeErr(w, 404, "not_found", "")
+			return
+		}
+		if r.Header.Get("Range") != "bytes=0-0" && n > 1 && n < 4 {
+			current = v2
+		}
+		serveZipFile(w, r, current, "a.zip", 0)
+	})
+	dir := t.TempDir()
+	res := f.run(ZipGet, testZip, dir, "--piece-size", "1MiB")
+	wantCode(t, res, 0)
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.zip")); !bytes.Equal(b, v2) {
+		t.Errorf("the result is not the new zip: %d bytes", len(b))
+	}
+	probes := 0
+	for _, r := range f.seen() {
+		if r.rng == "bytes=0-0" {
+			probes++
+		}
+		if strings.Contains(r.path, "/nodes/") {
+			t.Errorf("a request for a node: %s", r.path)
+		}
+	}
+	if probes != 2 || !strings.Contains(res.stderr, "changed") {
+		t.Errorf("%d probes, stderr %q", probes, res.stderr)
 	}
 }

@@ -120,7 +120,8 @@ func TestZipLiveCreateByPath(t *testing.T) {
 // TestZipLiveGetResumesAfterThreeCuts: the zip route serves ranges with a strong ETag, so a download cut three times
 // comes back identical to one that was not cut, and a range after a cut starts where the part file ended.
 func TestZipLiveGetResumesAfterThreeCuts(t *testing.T) {
-	cut := newCutter(true, -1, 3*mib/2, 5*mib/4, 13*mib/10)
+	// The first connection carries the probe of the zip's first byte and is not cut; the next three are.
+	cut := newCutter(true, -1, -1, 3*mib/2, 5*mib/4, 13*mib/10)
 	l := newLive(t, nil, cut)
 	l.isolate()
 	l.startJobs()

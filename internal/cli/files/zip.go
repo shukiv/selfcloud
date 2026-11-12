@@ -31,9 +31,12 @@ const (
 	zipsRoute = "/api/v1/zips"
 	// defaultWaitTimeout is how long --wait follows a zip before it gives up. The zip goes on being made on the server.
 	defaultWaitTimeout = 30 * time.Minute
-	// maxZipPollWait is the longest wait between two polls.
-	maxZipPollWait = 5 * time.Second
+	// probeStall ends a probe whose answer has stopped moving for this long.
+	probeStall = 30 * time.Second
 )
+
+// zipPollCap is the longest wait between two polls. Tests make it zero.
+var zipPollCap = 5 * time.Second
 
 // zipRoute is the route of one zip.
 func zipRoute(zip string) string { return zipsRoute + "/" + zip }
@@ -45,9 +48,9 @@ var zipPollWait = func(try int) time.Duration {
 		try = 1
 	}
 	if try > 5 {
-		return maxZipPollWait
+		return zipPollCap
 	}
-	return min(500*time.Millisecond<<(try-1), maxZipPollWait)
+	return min(500*time.Millisecond<<(try-1), zipPollCap)
 }
 
 // zipIDs checks that every argument is a zip id. It is one check for all of them, before anything is sent.
@@ -227,6 +230,8 @@ func firstRepeat(list []string) string {
 // out, and the name it gives the file.
 type zipInfo struct {
 	pending bool
+	// ranged is false when the server answered the range with the whole zip, as a proxy that drops Range does.
+	ranged  bool
 	etag    string
 	sha     string
 	size    int64
@@ -239,18 +244,23 @@ type zipInfo struct {
 func probeZip(ctx context.Context, cl *client.Client, zip string) (zipInfo, error) {
 	h := http.Header{}
 	h.Set("Range", "bytes=0-0")
-	resp, err := cl.Do(ctx, client.Request{Method: http.MethodGet, Path: zipRoute(zip), Header: h})
+	// The answer is read as a stream and its body is never read, so a proxy that drops the Range header, and answers with
+	// the whole zip, costs no more than the headers.
+	resp, err := cl.Stream(ctx, client.Request{Method: http.MethodGet, Path: zipRoute(zip), Header: h}, probeStall)
 	if err != nil {
 		return zipInfo{}, err
 	}
+	defer resp.Body.Close()
+	var info zipInfo
 	switch resp.Status {
 	case http.StatusAccepted:
 		return zipInfo{pending: true}, nil
 	case http.StatusPartialContent:
+		info.ranged = true
+	case http.StatusOK:
 	default:
 		return zipInfo{}, fmt.Errorf("the server answered %d to a range of the zip", resp.Status)
 	}
-	var info zipInfo
 	info.etag = resp.Header.Get("ETag")
 	if !validETag(info.etag) {
 		return zipInfo{}, errors.New("the server gives the zip no valid version (etag)")
@@ -258,8 +268,15 @@ func probeZip(ctx context.Context, cl *client.Client, zip string) (zipInfo, erro
 	if b, err := hex.DecodeString(strings.Trim(info.etag, `"`)); err == nil && len(b) == 32 {
 		info.sha = hex.EncodeToString(b)
 	}
-	total, ok := strings.CutPrefix(resp.Header.Get("Content-Range"), "bytes 0-0/")
-	if info.size, err = strconv.ParseInt(total, 10, 64); !ok || err != nil || info.size < 1 {
+	// A ranged answer gives the size after the slash; a whole one, which the web also takes as ready, gives its length.
+	sizeText := resp.Header.Get("Content-Length")
+	if info.ranged {
+		var ok bool
+		if sizeText, ok = strings.CutPrefix(resp.Header.Get("Content-Range"), "bytes 0-0/"); !ok {
+			sizeText = ""
+		}
+	}
+	if info.size, err = strconv.ParseInt(sizeText, 10, 64); err != nil || info.size < 1 {
 		return zipInfo{}, errors.New("the server gives the zip no valid size")
 	}
 	if v := resp.Header.Get("X-Selfcloud-Skipped"); v != "" {
@@ -289,8 +306,7 @@ func waitForZip(ctx context.Context, cl *client.Client, zip string, limit time.D
 			pending++
 			failures = 0
 		case apiStatus(err) == http.StatusNotFound:
-			return zipInfo{}, &exitcode.Error{Exit: exitcode.Failed, Name: "zip_failed", Message: "the zip " + zip +
-				" failed, or it was removed or expired: the server answers all three as a zip that does not exist"}
+			return zipInfo{}, zipGone(zip, err)
 		case !repeatable(err):
 			return zipInfo{}, err
 		default:
@@ -299,6 +315,8 @@ func waitForZip(ctx context.Context, cl *client.Client, zip string, limit time.D
 			}
 			pending++
 		}
+		// The Retry-After of a pending zip is not read: the server gives the same five seconds for every zip, and a small
+		// one is ready long before. A refusal's Retry-After is not read either, since the stream does not carry it.
 		t := time.NewTimer(zipPollWait(pending))
 		select {
 		case <-ctx.Done():
@@ -307,6 +325,20 @@ func waitForZip(ctx context.Context, cl *client.Client, zip string, limit time.D
 		case <-t.C:
 		}
 	}
+}
+
+// zipGone is the error of a zip that answers as one that does not exist after the server accepted it. The server answers
+// a failed zip, an expired one, a removed one and one whose items can no longer be read alike, so the message says so and
+// keeps the server's own words.
+func zipGone(zip string, err error) error {
+	msg := ""
+	var ae *client.APIError
+	if errors.As(err, &ae) && ae.Message != "" {
+		msg = ": the server said " + strconv.Quote(ae.Message)
+	}
+	return &exitcode.Error{Exit: exitcode.Failed, Name: "zip_failed", Message: "the zip " + zip + " failed, or it was " +
+		"removed or expired, or one of its items can no longer be read; the server answers all of these as a zip that " +
+		"does not exist" + msg}
 }
 
 // zipTimeout is the error of a wait that ran out. It names the zip, which the server goes on making.
@@ -403,6 +435,9 @@ func readyZip(ctx context.Context, cl *client.Client, zip string) (zipInfo, erro
 	if info.pending {
 		return zipInfo{}, &exitcode.Error{Exit: exitcode.Failed, Name: "zip_not_ready", Message: "the zip is not ready " +
 			"yet; run selfcloud zip create --wait, or try again later"}
+	}
+	if !info.ranged {
+		return zipInfo{}, errRangeIgnored
 	}
 	return info, nil
 }
