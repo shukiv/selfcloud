@@ -156,3 +156,32 @@ func TestNewFileModeWithoutAUmask(t *testing.T) {
 		})
 	}
 }
+
+// TestOldPartRefusesALinkMadeInTheWindow: a hard link added to the part file between the look at it and its opening is
+// refused, since the file opened then has another name. Only a check of the opened file reaches this, as the link is the
+// file that was looked at.
+func TestOldPartRefusesALinkMadeInTheWindow(t *testing.T) {
+	dir := t.TempDir()
+	part := filepath.Join(dir, "f.bin.part")
+	if err := os.WriteFile(part, []byte("held"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := beforePartOpen
+	t.Cleanup(func() { beforePartOpen = old })
+	beforePartOpen = func(string) {
+		if err := os.Link(part, filepath.Join(dir, "other")); err != nil {
+			t.Error(err)
+		}
+	}
+	pf, err := oldPart(openRoot(t, dir), "f.bin", true)
+	if err == nil {
+		pf.close()
+		t.Fatal("a part file with a link added after the look was reopened")
+	}
+	if code, _, msg := exitcode.Of(err); code != exitcode.Usage || !strings.Contains(msg, "has another name") {
+		t.Errorf("exit %d, message %q, want a refusal naming another link", code, msg)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "other")); string(b) != "held" {
+		t.Errorf("the other name holds %q", b)
+	}
+}
