@@ -69,7 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return fsckCommand(args[1:], stdout, stderr)
 	case "info", "api", "profile", "login", "logout", "whoami",
 		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "upload", "settings",
-		"folder", "group", "user":
+		"folder", "group", "user", "share", "link", "access", "shared":
 		if code, ok := remote(args, stdout, stderr); ok {
 			return code
 		}

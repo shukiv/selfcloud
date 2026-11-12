@@ -12,6 +12,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/manage"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
 	"github.com/shukiv/selfcloud/internal/cli/settings"
+	"github.com/shukiv/selfcloud/internal/cli/sharing"
 	"github.com/shukiv/selfcloud/internal/cli/signin"
 )
 
@@ -237,6 +238,71 @@ var remoteCommands = []remoteCommand{
 		help: `  user grants [--account ACC] USER
                                  the team spaces shared with a person, and at what level
 `, run: manage.UserGrants},
+	// The sharing commands (cli7). Each acts on a node, or on a team folder or an account with --folder and --account.
+	{name: "share ls", route: "GET /api/v1/nodes/{nod}/permissions",
+		more: []string{"GET /api/v1/accounts/{acc}/folders/{fld}/grants"},
+		help: `  share ls NODE | --folder FOLDER [--account ACCOUNT] [--json]
+                                 who holds a role on a node, or a grant on a team folder
+`, run: sharing.ShareLs},
+	{name: "share grant", route: "PUT /api/v1/nodes/{nod}/permissions/{subject}",
+		more: []string{"PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}"},
+		help: `  share grant NODE USER|GROUP --role ROLE [--expires TIME | --expires-in DURATION] [--message TEXT] [--no-notify]
+  share grant --folder FOLDER [--account ACCOUNT] USER --level read|write
+                                 give a person or a group a role on a node, or a person a level on a team folder
+`, run: sharing.ShareGrant},
+	{name: "share revoke", route: "DELETE /api/v1/nodes/{nod}/permissions/{subject}",
+		more:  []string{"DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}"},
+		reads: []string{"GET /api/v1/nodes/{nod}"},
+		help: `  share revoke NODE USER|GROUP... [--yes]
+  share revoke --folder FOLDER [--account ACCOUNT] USER... [--yes]
+                                 take a role or a grant away (asks first)
+`, run: sharing.ShareRevoke},
+	{name: "share transfer-ownership", route: "POST /api/v1/nodes/{nod}/transfer-ownership",
+		reads: []string{"GET /api/v1/nodes/{nod}"},
+		help: `  share transfer-ownership NODE --to USER [--yes]
+                                 give a file or folder to another user of the account (asks first)
+`, run: sharing.TransferOwnership},
+	{name: "link ls", route: "GET /api/v1/nodes/{nod}/share-links", more: []string{"GET /api/v1/accounts/{acc}/share-links"},
+		help: `  link ls NODE [--json]
+  link ls --account ACCOUNT [--audience organisation|anyone] [--kind access|drop] [--all]
+                                 the share links on a node, or every live link of an account; no secret is shown
+`, run: sharing.LinkLs},
+	{name: "link create", route: "POST /api/v1/nodes/{nod}/share-links", more: []string{"POST /api/v1/nodes/{nod}/links"},
+		help: `  link create NODE [--audience organisation|anyone] [--role ROLE] [--expires TIME | --expires-in DURATION]
+                   [--password-file FILE|-] [--drop [--title T] [--message M] [--ask-name] [--notify]]
+  link create NODE --signed [--ttl DURATION] [--inline]
+                                 make a share link, or a short-lived download address; its address is shown once
+`, run: sharing.LinkCreate},
+	{name: "link update", route: "PATCH /api/v1/share-links/{shl}",
+		help: `  link update LINK [--audience A] [--role R] [--expires T | --expires-in D | --no-expiry]
+                   [--password-file FILE|- | --no-password] [--title T] [--message M] [--ask-name[=false]] [--notify[=false]]
+                                 change a link; a field not given keeps its value
+`, run: sharing.LinkUpdate},
+	{name: "link reset", route: "POST /api/v1/share-links/{shl}/reset",
+		help: `  link reset LINK                give a link a new secret; the old address stops working, the new one is shown once
+`, run: sharing.LinkReset},
+	{name: "link rm", route: "DELETE /api/v1/share-links/{shl}",
+		more:  []string{"POST /api/v1/accounts/{acc}/share-links/delete-public"},
+		reads: []string{"GET /api/v1/accounts/{acc}/share-links"},
+		help: `  link rm LINK... [--yes]
+  link rm --public [--account ACCOUNT] [--yes]
+                                 remove links, or every link of the account that anyone can open (asks first)
+`, run: sharing.LinkRm},
+	{name: "access ls", route: "GET /api/v1/nodes/{nod}/access-requests", more: []string{"GET /api/v1/access-requests"},
+		help: `  access ls NODE | --pending [--all]
+                                 the access requests on a node, or the pending ones the caller may decide
+`, run: sharing.AccessLs},
+	{name: "access approve", route: "POST /api/v1/access-requests/{arq}/approve",
+		help: `  access approve REQUEST... [--role viewer|commenter|editor]
+                                 give the people the role they asked for, or another one
+`, run: sharing.AccessApprove},
+	{name: "access deny", route: "POST /api/v1/access-requests/{arq}/deny",
+		help: `  access deny REQUEST...         refuse the requests
+`, run: sharing.AccessDeny},
+	{name: "shared", route: "GET /api/v1/shared",
+		notProbed: "an account key has no shared items (the API refuses it); internal/cli/sharing records its calls",
+		help: `  shared [--recent] [--all]      what other people shared with the signed-in person
+`, run: sharing.Shared},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.

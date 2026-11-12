@@ -80,7 +80,7 @@ fn	lib/files/api.ts:renameNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	trash restore	cli5	built in cli5
 fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
-fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
+fn	lib/files/api.ts:signedLink	link create	cli7	built in cli7
 fn	lib/files/api.ts:statNode	stat	cli5	built in cli5
 fn	lib/files/api.ts:unlockNode	unlock	cli5	built in cli5
 fn	lib/files/api.ts:updateAppearance	-	-	colours and icons are display only: no CLI
@@ -129,7 +129,7 @@ fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
 fn	lib/manage/api.ts:deleteAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:deleteAdmin	-	cli9	planned, cli9
-fn	lib/manage/api.ts:deleteAllPublicLinks	-	cli7	planned, cli7
+fn	lib/manage/api.ts:deleteAllPublicLinks	link rm	cli7	built in cli7
 fn	lib/manage/api.ts:deleteGroup	group rm	cli8	built in cli8
 fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
 fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
@@ -137,7 +137,7 @@ fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
 fn	lib/manage/api.ts:getJob	-	cli10	planned, cli10
 fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
-fn	lib/manage/api.ts:listAccountLinks	-	cli7	planned, cli7
+fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
 fn	lib/manage/api.ts:listAccounts	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
@@ -166,38 +166,38 @@ fn	lib/notifications/api.ts:unreadCount	-	cli11	planned, cli11
 fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
 fn	lib/settings/api.ts:changeSettings	-	se4	planned, se4 (settings set and settings reset)
 fn	lib/settings/api.ts:getSettings	-	se4	planned, se4 (settings get)
-fn	lib/sharing/api.ts:approveAccessRequest	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:approveAccessRequest	access approve	cli7	built in cli7
 fn	lib/sharing/api.ts:createAccessRequest	-	-	a viewer asks for access in the browser
-fn	lib/sharing/api.ts:createDropLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:createShareLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:deleteShareLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:denyAccessRequest	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:createDropLink	link create	cli7	built in cli7
+fn	lib/sharing/api.ts:createShareLink	link create	cli7	built in cli7
+fn	lib/sharing/api.ts:deleteShareLink	link rm	cli7	built in cli7
+fn	lib/sharing/api.ts:denyAccessRequest	access deny	cli7	built in cli7
 fn	lib/sharing/api.ts:getSharingPolicy	-	cli9	planned, cli9
-fn	lib/sharing/api.ts:listAccessRequests	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:listPermissions	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:listShareLinks	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:listAccessRequests	access ls	cli7	built in cli7
+fn	lib/sharing/api.ts:listPermissions	share ls	cli7	built in cli7
+fn	lib/sharing/api.ts:listShareLinks	link ls	cli7	built in cli7
 fn	lib/sharing/api.ts:openShareLink	get	cli6	built in cli6
-fn	lib/sharing/api.ts:removePermission	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:removePermission	share revoke	cli7	built in cli7
 fn	lib/sharing/api.ts:renewShareLink	get	cli6	built in cli6
-fn	lib/sharing/api.ts:resetShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:resetShareLink	link reset	cli7	built in cli7
 fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
 fn	lib/sharing/api.ts:setHidden	folder hide	cli8	built in cli8 (folder show-again is the other direction)
-fn	lib/sharing/api.ts:setPermission	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:setPermission	share grant	cli7	built in cli7
 fn	lib/sharing/api.ts:setSharingPolicy	-	cli9	planned, cli9
 fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
-fn	lib/sharing/api.ts:sharedWithMe	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:transferOwnership	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:updateDropLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:updateShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:sharedWithMe	shared	cli7	built in cli7
+fn	lib/sharing/api.ts:transferOwnership	share transfer-ownership	cli7	built in cli7
+fn	lib/sharing/api.ts:updateDropLink	link update	cli7	built in cli7
+fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	not built: the no-download and editors-can-share flags belong to a node, not to a link or a grant, and PATCH /nodes/{nod} is mv's route; undecided
+fn	lib/sharing/api.ts:updateShareLink	link update	cli7	built in cli7
 fn	lib/sharing/api.ts:updateSpaceSettings	folder settings set	cli8	built in cli8
 fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory; get <share-url> takes a link to a file (decision 142)
 fn	lib/sharing/api.ts:visitorInfo	-	-	a drop link's page; get refuses a drop link, which takes uploads only (decision 142)
-fn	lib/sharing/api.ts:visitorLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:visitorLink	-	-	a link visitor's preview address in the browser; link create --signed makes one for a signed-in credential
 fn	lib/sharing/api.ts:visitorNode	get	cli6	built in cli6
 fn	lib/stars.ts:clearRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:listRecent	-	cli11	planned, cli11
-fn	lib/stars.ts:listSharedRecent	-	cli7	planned, cli7
+fn	lib/stars.ts:listSharedRecent	shared	cli7	built in cli7
 fn	lib/stars.ts:listStarred	-	cli11	planned, cli11
 fn	lib/stars.ts:removeRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:starNode	-	cli11	planned, cli11
@@ -211,7 +211,7 @@ fn	lib/storage/api.ts:setPersonLimit	-	cli9	planned, cli9
 fn	lib/storage/api.ts:setPolicyDefault	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}	folder rm	cli8	built in cli8
-route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
+route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}	group rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group remove-member	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/keys/{key}	-	cli9	planned, cli9
@@ -225,7 +225,7 @@ route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
-route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
+route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	DELETE /api/v1/playlists/{pls}	-	cli12	planned, cli12
@@ -234,23 +234,23 @@ route	DELETE /api/v1/recent	-	cli11	planned, cli11
 route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
 route	DELETE /api/v1/settings/brand/icon	settings icon remove	se4	built in se4
 route	DELETE /api/v1/settings/brand/logo	settings logo remove	se4	built in se4
-route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
+route	DELETE /api/v1/share-links/{shl}	link rm	cli7	built in cli7
 route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	upload cancel	cli6	built in cli6
 route	DELETE /api/v1/zips/{zip}	-	cli12	planned, cli12
-route	GET /api/v1/access-requests	-	cli7	planned, cli7
+route	GET /api/v1/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/accounts	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/audit	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/folders	folder ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}	folder show	cli8	built in cli8
-route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	-	cli7	planned, cli7
+route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	share ls	cli7	built in cli7
 route	GET /api/v1/accounts/{acc}/groups	group ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/groups/{grp}	group show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/groups/{grp}/members	group members	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/share-links	-	cli7	planned, cli7
+route	GET /api/v1/accounts/{acc}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
@@ -279,7 +279,7 @@ route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
 route	GET /api/v1/media/tags	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
-route	GET /api/v1/nodes/{nod}/access-requests	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/activity	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132); the CLI reads a folder by its path or ID
 route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
@@ -288,10 +288,10 @@ route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
 route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/labels	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/people	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/permissions	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/permissions	share ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/preview	-	-	rendered preview for the browser viewer
 route	GET /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
-route	GET /api/v1/nodes/{nod}/share-links	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/subtitles	-	-	playback subtitles: a player feature
 route	GET /api/v1/nodes/{nod}/tags	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
@@ -309,7 +309,7 @@ route	GET /api/v1/recent	-	cli11	planned, cli11
 route	GET /api/v1/search	-	cli11	planned, cli11
 route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
-route	GET /api/v1/shared	-	cli7	planned, cli7
+route	GET /api/v1/shared	shared	cli7	built in cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
 route	GET /api/v1/templates	-	cli11	planned, cli11
 route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
@@ -345,16 +345,16 @@ route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	PATCH /api/v1/settings	settings set,settings reset	se4	built in se4
-route	PATCH /api/v1/share-links/{shl}	-	cli7	planned, cli7
+route	PATCH /api/v1/share-links/{shl}	link update	cli7	built in cli7
 route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
-route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7
-route	POST /api/v1/access-requests/{arq}/deny	-	cli7	planned, cli7
+route	POST /api/v1/access-requests/{arq}/approve	access approve	cli7	built in cli7
+route	POST /api/v1/access-requests/{arq}/deny	access deny	cli7	built in cli7
 route	POST /api/v1/accounts	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/folders	folder create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/groups	group create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
-route	POST /api/v1/accounts/{acc}/share-links/delete-public	-	cli7	planned, cli7
+route	POST /api/v1/accounts/{acc}/share-links/delete-public	link rm	cli7	built in cli7
 route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
@@ -396,20 +396,20 @@ route	POST /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
 route	POST /api/v1/nodes/{nod}/copy	cp	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/documents	-	cli11	planned, cli11
 route	POST /api/v1/nodes/{nod}/exports	-	cli11	planned, cli11
-route	POST /api/v1/nodes/{nod}/links	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/links	link create	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/move	mv	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/office	-	-	opens the Collabora editor in a browser tab
 route	POST /api/v1/nodes/{nod}/restore	trash restore	cli5	built in cli5
-route	POST /api/v1/nodes/{nod}/share-links	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/share-links	link create	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/shortcuts	shortcut add	cli5	built in cli5
-route	POST /api/v1/nodes/{nod}/transfer-ownership	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/transfer-ownership	share transfer-ownership	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/unlock	unlock	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
 route	POST /api/v1/playlists	-	cli12	planned, cli12
 route	POST /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
-route	POST /api/v1/share-links/{shl}/reset	-	cli7	planned, cli7
+route	POST /api/v1/share-links/{shl}/reset	link reset	cli7	built in cli7
 route	POST /api/v1/share/open	get	cli6	built in cli6
 route	POST /api/v1/share/renew	get	cli6	built in cli6
 route	POST /api/v1/trash/empty	trash empty	cli5	built in cli5
@@ -418,7 +418,7 @@ route	POST /api/v1/uploads/{upl}/commit	put	cli6	built in cli6
 route	POST /api/v1/zips	-	cli12	planned, cli12
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
-route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
+route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7
 route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
 route	PUT /api/v1/accounts/{acc}/imports/archive	-	cli10	planned, cli10
 route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
@@ -426,7 +426,7 @@ route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
 route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
-route	PUT /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
+route	PUT /api/v1/nodes/{nod}/permissions/{subject}	share grant	cli7	built in cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
 route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
 route	PUT /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12

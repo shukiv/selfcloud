@@ -281,5 +281,11 @@ func routeOf(call string) string {
 			segs[i] = "{" + m[1] + "}"
 		}
 	}
+	// A node's permission is set on a user or a group, and the route table names either {subject}.
+	for i := 1; i < len(segs); i++ {
+		if segs[i-1] == "permissions" && (segs[i] == "{usr}" || segs[i] == "{grp}") {
+			segs[i] = "{subject}"
+		}
+	}
 	return method + " " + strings.Join(segs, "/")
 }
