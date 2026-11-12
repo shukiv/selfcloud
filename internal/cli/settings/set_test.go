@@ -3,6 +3,7 @@
 package settings
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -188,6 +189,43 @@ func TestSetWithAnAccountKeyAndA403HintsAtTheAdminKey(t *testing.T) {
 	f.on("GET", settingsPath, reply{403, `{"error":{"code":"forbidden","message":"an installation admin is required"}}`})
 	r := f.run(Set, "count.key=1")
 	if r.code != 3 || !strings.Contains(r.stderr, hint) {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// Under --json stderr is the one error line a script parses: the detail lines and the admin-key hint are not added to it.
+func TestARefusalUnderJSONIsOneEnvelopeLine(t *testing.T) {
+	isolate(t, accountKey)
+	f := newFake(t)
+	f.on("GET", settingsPath, reply{200, listing})
+	f.on("PATCH", settingsPath, reply{409, `{"error":{"code":"conflict","message":"a setting is locked",
+	 "details":{"reason":"setting_locked","keys":["dur.key"]}}}`})
+	r := f.run(Set, "dur.key=1h", "--json")
+	if r.code != 3 {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	lines := strings.Split(strings.TrimRight(r.stderr, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stderr has %d lines: %q", len(lines), r.stderr)
+	}
+	var env struct {
+		Error struct{ Code, Message string }
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &env); err != nil || env.Error.Code != "conflict" {
+		t.Errorf("stderr is not the error envelope: %q (%v)", lines[0], err)
+	}
+	if strings.Contains(r.stderr, "keys:") || strings.Contains(r.stderr, hint) {
+		t.Errorf("detail lines under --json: %q", r.stderr)
+	}
+}
+
+// With an account key a 403 under --json carries no hint line either.
+func TestA403UnderJSONHasNoHintLine(t *testing.T) {
+	isolate(t, accountKey)
+	f := newFake(t)
+	f.on("GET", settingsPath, reply{403, `{"error":{"code":"forbidden","message":"an installation admin is required"}}`})
+	r := f.run(Get, "--json")
+	if r.code != 3 || strings.Contains(r.stderr, hint) || strings.Count(r.stderr, "\n") != 1 {
 		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }

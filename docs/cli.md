@@ -180,7 +180,8 @@ selfcloud settings reset trash.retention
 
 These commands read and change the server's live settings (`GET` and `PATCH /api/v1/settings`). They need an
 installation admin key (`sc_admin_...`, from `selfcloud admin create-key` on the server): an account key or a device
-token is refused with a 403, and the message says which key to use. `settings get` prints a table of `KEY`, `VALUE`,
+token is refused with a 403, and a line after the error names the admin key to use. That line, and the lines that list the
+keys or the problems of a refused change, are not printed with `--json`, where stderr stays one JSON line. `settings get` prints a table of `KEY`, `VALUE`,
 `SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the two pictures. With a key it prints
 that setting as `key=value` lines. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
 do not expect a value to come back as it was typed. `--json` prints the server's document.
