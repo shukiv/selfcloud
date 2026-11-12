@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -182,8 +183,27 @@ func TestImportItemsPagesBySequence(t *testing.T) {
 	if res.stdout != want {
 		t.Fatalf("stdout:\n%q\nwant\n%q", res.stdout, want)
 	}
-	if !strings.Contains(res.stderr, "more items exist") {
-		t.Fatalf("stderr %q", res.stderr)
+	// The API sets next to the last item's number on every page that has an item, so a page shorter than the limit asked
+	// for is the last one, and no note says otherwise.
+	if res.stderr != "" {
+		t.Fatalf("a short page got a note: %q", res.stderr)
+	}
+
+	// A page as long as the limit may have more: the note says where to go on.
+	f = newFake(t)
+	f.on("GET", route, doc(200, map[string]any{"items": []map[string]any{itemDoc(1, nil), itemDoc(2, nil)}, "next": 2}))
+	res = f.run(ImportItems, testImport, "--limit", "2")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stderr, "more items may exist") || !strings.Contains(res.stderr, "--after 2") {
+		t.Fatalf("a full page: stderr %q", res.stderr)
+	}
+	// With no --limit the page is the server's 100.
+	f = newFake(t)
+	f.on("GET", route, doc(200, map[string]any{"items": itemDocs(100), "next": 100}))
+	res = f.run(ImportItems, testImport)
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stderr, "--after 100") {
+		t.Fatalf("a page of 100: stderr %q", res.stderr)
 	}
 
 	f = newFake(t)
@@ -213,11 +233,27 @@ func TestImportItemsStopsWhenNextDoesNotMove(t *testing.T) {
 	f := newFake(t)
 	route := impRoute(testImport, "/items")
 	f.on("GET", route, doc(200, map[string]any{"items": []map[string]any{itemDoc(5, nil)}, "next": 5}))
-	res := f.run(ImportItems, testImport, "--all", "--after", "5")
-	wantCode(t, res, 1)
+	// A command that does not stop would run for ever, so it runs against a deadline.
+	done := make(chan result, 1)
+	go func() { done <- f.run(ImportItems, testImport, "--all", "--after", "5") }()
+	select {
+	case res := <-done:
+		wantCode(t, res, 1)
+	case <-time.After(5 * time.Second):
+		t.Fatalf("--all does not stop when next does not move on; %d calls so far", len(f.requests()))
+	}
 	if len(f.requests()) > 2 {
 		t.Fatalf("calls %v", f.requests())
 	}
+}
+
+// itemDocs returns n items numbered from 1.
+func itemDocs(n int) []map[string]any {
+	out := make([]map[string]any, 0, n)
+	for i := 1; i <= n; i++ {
+		out = append(out, itemDoc(i, nil))
+	}
+	return out
 }
 
 // TestImportItemsRefusesBadFlagsBeforeAnyRequest.

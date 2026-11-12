@@ -86,20 +86,30 @@ func TestTheAccountComesFromTheEnvironmentWhenNoFlagIsGiven(t *testing.T) {
 
 const accountHintText = "this needs an account key; a signed-in device cannot manage an account"
 
-// TestADeviceTokenIsToldAnAccountNeedsAKey: the server answers a device token not found on every route of an account, and
-// the person is told why. The refusal is exit 4, and it is not told under --json.
+// TestADeviceTokenIsToldAnAccountNeedsAKey: a device token is answered "no such account" (404, exit 4) by the reads, rm, test
+// and retry, and refused with 403 reason device_token (exit 3) by add, update and rotate-secret, which are noDevice routes.
+// Either way the person is told that an account key is needed, and not under --json.
 func TestADeviceTokenIsToldAnAccountNeedsAKey(t *testing.T) {
+	noDevice := map[string]bool{"webhook add": true, "webhook update": true, "webhook rotate-secret": true}
 	for _, c := range webhookCommands() {
 		t.Run(c.name, func(t *testing.T) {
 			isolate(t, testDeviceTok)
-			f := newFake(t) // every route answers 404 no such thing
+			f := newFake(t) // a route answers 404 no such thing unless it is queued
+			want := 4
+			if noDevice[c.name] {
+				want = 3
+				refusal := apiErrWith(403, "forbidden", "a terminal's sign-in does not make this; use the browser", "device_token")
+				f.set("POST", accHooks(), refusal)
+				f.set("PATCH", accHook(testHook), refusal)
+				f.set("POST", accHook(testHook)+"/secret", refusal)
+			}
 			res := f.runAcc(c.run, c.args...)
-			wantCode(t, res, 4)
+			wantCode(t, res, want)
 			if !strings.Contains(res.stderr, accountHintText) {
 				t.Fatalf("stderr %q lacks the hint", res.stderr)
 			}
 			res = f.runAcc(c.run, append(append([]string{}, c.args...), "--json")...)
-			wantCode(t, res, 4)
+			wantCode(t, res, want)
 			if strings.Contains(res.stderr, "hint") || !strings.HasPrefix(res.stderr, `{"error"`) {
 				t.Fatalf("--json stderr %q: want only the JSON error", res.stderr)
 			}
@@ -121,8 +131,44 @@ func TestTheAccountHintIsForADeviceTokenOnly(t *testing.T) {
 	f.set("POST", accHooks(), apiErrWith(403, "forbidden", "a terminal's sign-in does not make this; use the browser", "device_token"))
 	res = f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
 	wantCode(t, res, 3)
-	if strings.Contains(res.stderr, "hint") || !strings.Contains(res.stderr, "device_token") && !strings.Contains(res.stderr, "forbidden") {
-		t.Fatalf("a device_token refusal: stderr %q", res.stderr)
+	if !strings.Contains(res.stderr, accountHintText) {
+		t.Fatalf("a device_token refusal on an account route: stderr %q lacks the hint", res.stderr)
+	}
+	// Another 403 of a device token (no reason, or another reason) is not this one.
+	f.set("POST", accHooks(), apiErr(403, "forbidden", "no"))
+	res = f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
+	wantCode(t, res, 3)
+	if strings.Contains(res.stderr, "hint") {
+		t.Fatalf("a plain 403 got the hint: %q", res.stderr)
+	}
+	// A key that gets device_token (it cannot, but a fake can say it) is not told it.
+	isolate(t, testAccountKey)
+	f = newFake(t)
+	f.set("POST", accHooks(), apiErrWith(403, "forbidden", "x", "device_token"))
+	res = f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
+	if strings.Contains(res.stderr, "hint") {
+		t.Fatalf("a key got the hint: %q", res.stderr)
+	}
+}
+
+// TestWebhookAnswerWithoutAnIDIsNotAWebhook: an answer that holds no id is refused, by every command that reads one.
+func TestWebhookAnswerWithoutAnIDIsNotAWebhook(t *testing.T) {
+	for _, body := range []string{`{}`, `{"id":""}`, `{"url":"https://hooks.example.test/in","state":"active"}`} {
+		isolate(t, testAccountKey)
+		f := newFake(t)
+		f.on("GET", accHook(testHook), reply{status: 200, body: body})
+		f.on("PATCH", accHook(testHook), reply{status: 200, body: body})
+		f.on("POST", accHooks(), reply{status: 201, body: body})
+		f.on("POST", accHook(testHook)+"/secret", reply{status: 200, body: body})
+		for name, res := range map[string]result{
+			"show": f.runAcc(WebhookShow, testHook), "update": f.runAcc(WebhookUpdate, testHook, "--state", "paused"),
+			"add":    f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created"),
+			"rotate": f.runAcc(WebhookRotateSecret, testHook, "--yes"),
+		} {
+			if res.code != 1 || !strings.Contains(res.stderr, "not a webhook") {
+				t.Errorf("%s with %s: exit %d, stderr %q", name, body, res.code, res.stderr)
+			}
+		}
 	}
 }
 
@@ -210,6 +256,9 @@ func TestWebhookAddRefusesBadInputBeforeAnyRequest(t *testing.T) {
 				if strings.Contains(res.stdout+res.stderr, leak) {
 					t.Fatalf("the refusal repeats %q: %q", leak, res.stderr)
 				}
+			}
+			if strings.Contains(res.stderr, "path or query") || strings.Contains(res.stderr, "token in") {
+				t.Fatalf("the refusal advises a credential in the address: %q", res.stderr)
 			}
 		})
 	}
@@ -451,11 +500,26 @@ func TestWebhookRotateSecretAsksFirstAndShowsTheNewSecretOnce(t *testing.T) {
 	if strings.Contains(res.stderr, testSecret) || !strings.Contains(res.stderr, "shown only now") {
 		t.Fatalf("stderr %q", res.stderr)
 	}
+	if !strings.Contains(res.stderr, "the old secret keeps signing until 2026-11-03T10:00:00Z") {
+		t.Fatalf("stderr %q lacks the note about the old secret", res.stderr)
+	}
 
+	// No grace period, no note about one; and none under --json.
 	f = newFake(t)
 	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(map[string]any{"secret": testSecret})))
+	res = f.runAcc(WebhookRotateSecret, testHook, "--yes")
+	wantCode(t, res, 0)
+	if strings.Contains(res.stderr, "old secret") {
+		t.Fatalf("stderr %q", res.stderr)
+	}
+	f = newFake(t)
+	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(map[string]any{
+		"secret": testSecret, "previous_secret_until": "2026-11-03T10:00:00Z"})))
 	res = f.runAcc(WebhookRotateSecret, testHook, "--yes", "--json")
 	wantCode(t, res, 0)
+	if res.stderr != "" {
+		t.Fatalf("--json stderr %q", res.stderr)
+	}
 	var got map[string]any
 	if err := json.Unmarshal([]byte(res.stdout), &got); err != nil || got["secret"] != testSecret {
 		t.Fatalf("--json: %v, %q", err, res.stdout)

@@ -86,6 +86,12 @@ func table(rows ...[]string) string {
 	return b.String()
 }
 
+// dropStatus is the status of a reply that closes the connection instead of answering.
+const dropStatus = -1
+
+// dropped is a reply that closes the connection.
+func dropped() reply { return reply{status: dropStatus} }
+
 type reply struct {
 	status int
 	body   string
@@ -141,6 +147,15 @@ func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
+	if rep.status == dropStatus {
+		// Cut the connection in the middle of an answer, as a dropped network does. The answer has started, so the transport
+		// does not send the request again by itself.
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_, _ = io.WriteString(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"id\":")
+			_ = conn.Close()
+		}
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(rep.status)
 	_, _ = io.WriteString(w, rep.body)

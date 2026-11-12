@@ -141,6 +141,45 @@ func TestJobShowWaitStopsOnARefusal(t *testing.T) {
 	wantCode(t, f.run(JobShow, testJob, "--wait"), 3)
 }
 
+// TestJobShowWaitGoesOnAfterADroppedConnection: a poll that does not reach the server is tried again, up to three in a row;
+// a refusal is never tried again.
+func TestJobShowWaitGoesOnAfterADroppedConnection(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("GET", jobRoute(), doc(200, jobDoc("running", nil)), dropped(), doc(200, jobDoc("running", nil)), dropped(), dropped(),
+		doc(200, jobDoc("succeeded", nil)))
+	res := f.run(JobShow, testJob, "--wait")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stdout, "status=succeeded\n") || len(f.requests()) != 6 {
+		t.Fatalf("stdout %q, %d calls", res.stdout, len(f.requests()))
+	}
+
+	// A third drop in a row ends the wait with the transport error.
+	f = newFake(t)
+	f.on("GET", jobRoute(), doc(200, jobDoc("running", nil)), dropped())
+	res = f.run(JobShow, testJob, "--wait")
+	wantCode(t, res, 1)
+	if len(f.requests()) != 4 || strings.Contains(res.stderr, "job_failed") {
+		t.Fatalf("%d calls, stderr %q", len(f.requests()), res.stderr)
+	}
+
+	// A refusal that is followed by a good answer is still the end of the wait.
+	f = newFake(t)
+	f.on("GET", jobRoute(), doc(200, jobDoc("running", nil)), apiErr(404, "not_found", "no such job"), doc(200, jobDoc("succeeded", nil)))
+	wantCode(t, f.run(JobShow, testJob, "--wait"), 4)
+	if len(f.requests()) != 2 {
+		t.Fatalf("calls %v", f.requests())
+	}
+
+	// A drop on the first read, before any wait, is the command's failure.
+	f = newFake(t)
+	f.on("GET", jobRoute(), dropped(), doc(200, jobDoc("succeeded", nil)))
+	wantCode(t, f.run(JobShow, testJob, "--wait"), 1)
+	if len(f.requests()) != 1 {
+		t.Fatalf("calls %v", f.requests())
+	}
+}
+
 // TestJobShowWaitFlagsAreChecked: --wait-timeout goes with --wait and must be positive.
 func TestJobShowWaitFlagsAreChecked(t *testing.T) {
 	for _, args := range [][]string{

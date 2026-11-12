@@ -19,6 +19,8 @@ func leaky() map[string]any {
 		"secret": testSecret, "previous_secret": testOldSecret, "secret_enc": "AAAA" + testSecret,
 		"signature": "t=1,v1=" + testSecret, "headers": map[string]string{"Selfcloud-Signature": "t=1,v1=" + testSecret},
 		"payload": `{"secret":"` + testSecret + `"}`, "body": testSecret,
+		"signing_secret": testSecret, "secret_key": testSecret, "hmac": testSecret, "response_body": testSecret,
+		"request_headers": map[string]string{"Selfcloud-Signature": "t=1,v1=" + testSecret, "Authorization": "Bearer " + testSecret},
 	}
 }
 
@@ -53,6 +55,19 @@ func TestNoCommandButAddAndRotatePrintsASecretTheServerSends(t *testing.T) {
 		{"test", WebhookTest, []string{testHook}, func(f *fake) {
 			f.on("POST", accHook(testHook)+"/test", doc(202, map[string]any{"event_id": "evt_abc", "secret": testSecret}))
 		}},
+		{"job show", JobShow, []string{testJob}, func(f *fake) { f.on("GET", jobRoute(), doc(200, jobDoc("running", leaky()))) }},
+		{"import show", ImportShow, []string{testImport}, func(f *fake) {
+			f.on("GET", impRoute(testImport, ""), doc(200, importDoc(leaky())))
+		}},
+		{"import pause", ImportPause, []string{testImport}, func(f *fake) {
+			f.on("POST", impRoute(testImport, "/pause"), doc(200, importDoc(leaky())))
+		}},
+		{"import items", ImportItems, []string{testImport}, func(f *fake) {
+			f.on("GET", impRoute(testImport, "/items"), doc(200, map[string]any{"items": []map[string]any{itemDoc(1, leaky())}, "next": 1}))
+		}},
+		{"import archive set", ImportArchiveSet, []string{"on"}, func(f *fake) {
+			f.on("PUT", archiveRoute(), doc(200, map[string]any{"source": "archive", "enabled": true, "signing_secret": testSecret}))
+		}},
 		{"deliveries", WebhookDeliveries, []string{testHook}, func(f *fake) { f.on("GET", deliveries, page("", deliveryDoc(leaky()))) }},
 		{"retry", WebhookRetry, []string{testHook, testDelivery}, func(f *fake) {
 			f.on("POST", deliveries+"/"+testDelivery+"/retry", doc(202, deliveryDoc(leaky())))
@@ -70,7 +85,11 @@ func TestNoCommandButAddAndRotatePrintsASecretTheServerSends(t *testing.T) {
 				isolate(t, testAccountKey)
 				f := newFake(t)
 				c.setup(f)
-				res := f.runAcc(c.run, args...)
+				run := f.runAcc
+				if strings.HasPrefix(c.name, "job ") || strings.HasPrefix(c.name, "import ") && c.name != "import archive set" {
+					run = f.run // these routes name no account
+				}
+				res := run(c.run, args...)
 				wantCode(t, res, 0)
 				noSecret(t, name, res)
 				if strings.Contains(res.stdout, "signature") || strings.Contains(res.stdout, "headers") {
@@ -145,7 +164,12 @@ func TestWebhookAddFailsWhenTheAnswerHasNoSecret(t *testing.T) {
 	f := newFake(t)
 	f.on("POST", accHooks(), doc(201, hookDoc(nil)))
 	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(nil)))
-	wantCode(t, f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created"), 1)
+	add := f.runAcc(WebhookAdd, "--endpoint", "https://hooks.example.test/in", "--event", "file.created")
+	wantCode(t, add, 1)
+	// The webhook exists now, so the error names it.
+	if !strings.Contains(add.stderr, testHook) {
+		t.Fatalf("stderr %q does not name the webhook that was made", add.stderr)
+	}
 	wantCode(t, f.runAcc(WebhookRotateSecret, testHook, "--yes"), 1)
 }
 
