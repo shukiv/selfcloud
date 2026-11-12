@@ -627,8 +627,11 @@ these commands sets it.
 ## Webhooks, imports and jobs
 
 **Which credential reaches what.** The webhook routes are under `/api/v1/accounts/{acc}`, so an account key reaches them
-and a device token does not: the server answers it "no such account", exit 4, and in plain output the command adds the
-line `hint: this needs an account key; a signed-in device cannot manage an account`. The import routes belong to a
+and a device token does not. The reads, `rm`, `test` and `retry` answer a device token "no such account" (404, exit 4);
+`add`, `update` and `rotate-secret` refuse it first, with 403 and the reason `device_token` (exit 3), whose message says to
+use the browser, which is no help here: only the account key manages webhooks, and the browser's session is refused too.
+Either way, in plain output the command adds the line `hint: this needs an account key; a signed-in device cannot manage
+an account`. The import routes belong to a
 signed-in person, so they are the other way round: an account key or an admin key is refused with 403 ("imports are for a
 signed-in user"), exit 3, and plain output adds `hint: imports belong to a signed-in person; an account key or an admin
 key cannot use them`. No hint is printed under `--json`.
@@ -636,7 +639,8 @@ key cannot use them`. No hint is printed under `--json`.
 | Command | Credential | Refused to |
 |---|---|---|
 | `webhook ls`, `show`, `deliveries` | an account key (an owner's browser session reads them too) | a device token (404); an admin key |
-| `webhook add`, `update`, `rm`, `rotate-secret`, `test`, `retry` | an account key | everything else (403 `forbidden`, "only the account key manages webhooks"); a device token gets the 404 above |
+| `webhook add`, `update`, `rotate-secret` | an account key | a device token (403, reason `device_token`); everything else (403 `forbidden`, "only the account key manages webhooks") |
+| `webhook rm`, `test`, `retry` | an account key | a device token (404); everything else (403 `forbidden`, "only the account key manages webhooks") |
 | `import sources`, `show`, `items`, `pause` | a device token (the person who started the import) | an account key and an admin key (403) |
 | `import archive set` | an account key, or an admin key | a device token (404) |
 | `job show` | an account key or an admin key for the job's account; a device token for a job its own sign-in queued | a job of another account (404) |
@@ -685,8 +689,14 @@ secret. `ls`, `show`, `update`, `test`, `deliveries` and `retry` print only the 
 signature, a header or an event body that a server sent beyond those fields is not shown, plain or `--json`. The delivery
 log holds the event's id and type, the attempts, the last status code and a fixed error word, and no signature or body. No
 error repeats the text of an answer or an address. A receiver checks a delivery with the `Selfcloud-Signature` header:
-`t=<unix seconds>,v1=<hex>`, an HMAC-SHA-256 under the secret of `<t>.<body>`, with one `v1` for each secret that is
-signing. Keep the secret in the receiver's own configuration, and never in an address or an argument list.
+`t=<unix seconds>,v1=<hex>[,v1=<hex>]`. To check one, take the secret's text after `whsec_` and decode it from unpadded
+base64url: the 32 bytes that come out are the HMAC key (the whole `whsec_…` string is not). Compute HMAC-SHA-256 with
+that key over the text `<t>.<body>`, where `<t>` is the number from the header, in decimal, and `<body>` is the request
+body exactly as received, and compare its lowercase hex with each `v1` value. While a rotated secret's grace period lasts
+the header carries two `v1` values, one for each secret that is signing; accept the delivery if either one matches. A
+receiver should also refuse a `t` that is far from its own clock. Keep the secret in the receiver's own configuration, and
+never in an address or an argument list. After a rotation the command prints on standard error that the old secret keeps
+signing until `previous_secret_until`, and that a second rotation ends that at once.
 
 ### Imports
 
@@ -700,7 +710,9 @@ selfcloud import archive set --account acc_… on
 
 Starting, resuming and cancelling an import happen in the browser: a device token is refused all three (decision 125) and
 the import routes refuse keys. `import items` pages by sequence number: `--after SEQ` starts after an item, `--limit N`
-(1 to 500) sizes a page, and `--all` follows the pages. `import archive set on|off` turns the archive source on or off for
+(1 to 500, default 100) sizes a page, and `--all` follows the pages. The server's `next` is the last item's number on every
+page that has an item, so a page shorter than the limit is the last one; only a full page prints the note that more may
+exist, with the `--after` number to read on from. `import archive set on|off` turns the archive source on or off for
 an account.
 
 ### Jobs
