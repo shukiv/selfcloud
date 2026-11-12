@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"os"
@@ -30,18 +31,47 @@ const (
 	pictureNone     = "none"
 	pictureFile     = "file"
 	pictureUploaded = "uploaded"
+	// pictureUnusable is an upload the start did not use (decision 148): it is stored, and the answer says why.
+	pictureUnusable = "unusable"
 )
 
 // pictureInvalid is the audit's old value for a stored row the server did not write. Its text is never shown.
 const pictureInvalid = "invalid"
 
 // picture is one of the installation's pictures as the server serves it: its bytes, or nil for none, and where it comes
-// from. ignored is the stored row the start did not use because it or its file failed the checks; DELETE or an upload
-// clears it.
+// from. ignored is the stored row the start did not use because it or its file failed the checks, and reason says why in words
+// that show no path; DELETE or an upload clears it.
 type picture struct {
 	img     *web.Logo
 	from    string
 	ignored string
+	reason  string
+}
+
+// The ways a stored picture fails at start, without the path: errors.Is finds them, and storedReason words them for the answer.
+var (
+	errRowNotWritten = errors.New("the stored row is not a picture the server wrote")
+	errNotRegular    = errors.New("its file is not a regular file")
+	errHashChanged   = errors.New("its file does not have the hash its row stores")
+)
+
+// storedReason is why a stored picture was not used, in words for the settings answer: no path, no system text. A reason the
+// check of the picture itself gives is its own message, which is the one an upload gets.
+func storedReason(err error) string {
+	var pathErr *fs.PathError
+	switch {
+	case errors.Is(err, errRowNotWritten):
+		return errRowNotWritten.Error()
+	case errors.Is(err, errNotRegular):
+		return errNotRegular.Error()
+	case errors.Is(err, errHashChanged):
+		return errHashChanged.Error()
+	case errors.Is(err, fs.ErrNotExist):
+		return "its file is missing"
+	case errors.As(err, &pathErr):
+		return "its file cannot be read"
+	}
+	return err.Error()
 }
 
 // brandPictures are the installation's logo and icon as the server serves them now. It is never changed: a change swaps in
@@ -165,8 +195,9 @@ func (s *Server) startPictures(cfg *config.Config, rows map[string]string) (*bra
 		}
 		img, err := s.readStoredPicture(k, row)
 		if err != nil {
-			s.log.Warn("an uploaded picture is not used", "key", k.key, "reason", err.Error())
-			p = k.with(p, picture{from: pictureNone, ignored: row})
+			s.log.Warn("an uploaded picture is not used; DELETE /api/v1/settings/brand/"+k.stem+" or a new upload clears it",
+				"key", k.key, "reason", err.Error())
+			p = k.with(p, picture{from: pictureNone, ignored: row, reason: storedReason(err)})
 			continue
 		}
 		p = k.with(p, picture{img: img, from: pictureUploaded})
@@ -179,7 +210,7 @@ func (s *Server) startPictures(cfg *config.Config, rows map[string]string) (*bra
 func (s *Server) readStoredPicture(k pictureKind, row string) (*web.Logo, error) {
 	m := pictureRowPattern.FindStringSubmatch(row)
 	if m == nil {
-		return nil, errors.New("the stored row is not a picture the server wrote")
+		return nil, errRowNotWritten
 	}
 	ct, sum := m[1], m[2]
 	path := filepath.Join(s.brandDir(), k.fileName(ct, sum))
@@ -188,7 +219,7 @@ func (s *Server) readStoredPicture(k pictureKind, row string) (*web.Logo, error)
 		return nil, err
 	}
 	if !st.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", path)
+		return nil, fmt.Errorf("%s: %w", path, errNotRegular)
 	}
 	data, err := web.ReadPicture(path)
 	if err != nil {
@@ -199,7 +230,7 @@ func (s *Server) readStoredPicture(k pictureKind, row string) (*web.Logo, error)
 		return nil, err
 	}
 	if img.SHA256() != sum {
-		return nil, fmt.Errorf("%s does not have the hash its row stores", path)
+		return nil, fmt.Errorf("%s: %w", path, errHashChanged)
 	}
 	return img, nil
 }
@@ -246,6 +277,8 @@ type pictureJSON struct {
 	State  string `json:"state"`
 	Type   string `json:"type,omitempty"`
 	SHA256 string `json:"sha256,omitempty"`
+	// Reason says why an unusable picture was not used.
+	Reason string `json:"reason,omitempty"`
 	Locked bool   `json:"locked"`
 }
 
@@ -257,6 +290,8 @@ func picturesOf(c *config.Config, p *brandPictures) []pictureJSON {
 		j := pictureJSON{Key: k.key, State: pic.from, Locked: c.PictureLocked(k.key)}
 		if pic.img != nil {
 			j.Type, j.SHA256 = pic.img.ContentType(), pic.img.SHA256()
+		} else if pic.reason != "" {
+			j.State, j.Reason = pictureUnusable, pic.reason
 		}
 		out = append(out, j)
 	}
@@ -390,7 +425,7 @@ func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k picture
 	defer s.settingsMu.Unlock()
 	cur := s.pics.Load()
 	old := k.of(cur)
-	if old.from != pictureUploaded && old.ignored == "" {
+	if old.from != pictureUploaded && old.reason == "" {
 		writeJSON(w, http.StatusOK, s.settingsAnswer())
 		return nil
 	}

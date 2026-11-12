@@ -8244,16 +8244,21 @@ components:
       description: |
         One of the installation's pictures. Its path is never shown. A picture the config file sets is `file` and
         locked; an upload kept under a locked picture is not shown, and is used again once the file stops setting it.
-        An upload that no longer passes its checks at start is logged and not used, so it shows as `none`.
+        An upload that no longer passes its checks at start (a wrong type, a file missing after a restore, a changed file)
+        is logged and not used, and shows as `unusable` with its reason until a `DELETE` or a new upload clears it.
       required: [key, state, locked]
       properties:
         key: { type: string, enum: [ui.brand.icon, ui.brand.logo] }
         state:
           type: string
-          enum: [none, file, uploaded]
-          description: "`none`: the SelfCloud artwork for the logo, decision 119's choice for the icon."
-        type: { type: string, enum: [image/png, image/svg+xml], description: Absent for `none`. }
-        sha256: { type: string, description: The hex SHA-256 of the picture's bytes, the logo's ETag. Absent for `none`. }
+          enum: [none, file, uploaded, unusable]
+          description: |
+            `none`: the SelfCloud artwork for the logo, decision 119's choice for the icon. `unusable`: an upload is stored
+            but the server did not use it, so the picture shown is what `none` shows; `DELETE` removes the stored upload
+            (and the picture is then `none`), and a new upload replaces it.
+        type: { type: string, enum: [image/png, image/svg+xml], description: Present for `file` and `uploaded` only. }
+        sha256: { type: string, description: The hex SHA-256 of the picture's bytes, the logo's ETag. Present for `file` and `uploaded` only. }
+        reason: { type: string, description: Why the upload was not used, in words that show no path. Present for `unusable` only. }
         locked:
           type: boolean
           description: True when the config file or the environment sets the picture's file (`ui.brand.logo_file` or `ui.brand.icon_file`).
