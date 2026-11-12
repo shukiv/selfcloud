@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +37,9 @@ type fileProbe struct {
 	acc    string
 	// answer is what a person at a terminal types at the confirmation of the command under test, if it asks.
 	answer string
+	// admin is an installation admin key. The settings commands take only that kind; the account key, which the other
+	// probes use, is refused by them with a 403.
+	admin string
 }
 
 // typeAt makes the confirmation read answer, as a person at a terminal types it. It returns the function that puts the
@@ -58,6 +63,10 @@ func newFileProbe(t *testing.T) *fileProbe {
 	}
 	accountID := valueOf(t, out, "account_id=")
 	key := valueOf(t, out, "account_key=")
+	code, adminOut, errOut := runCmd(t, "admin", "create-key", "-name", "probe")
+	if code != 0 {
+		t.Fatalf("create-key: exit %d, stderr %q", code, errOut)
+	}
 
 	srv, st, s := serveDir(t, dir)
 	f := &store.Folder{ID: id.New("fld"), AccountID: accountID, Name: "probe", NameKey: "probe"}
@@ -69,7 +78,8 @@ func newFileProbe(t *testing.T) *fileProbe {
 	recorded := httptest.NewServer(rec)
 	t.Cleanup(recorded.Close)
 	t.Setenv("SELFCLOUD_TOKEN", key)
-	return &fileProbe{t: t, url: srv.URL, recURL: recorded.URL, rec: rec, st: st, folder: f.ID, acc: accountID}
+	return &fileProbe{t: t, url: srv.URL, recURL: recorded.URL, rec: rec, st: st, folder: f.ID, acc: accountID,
+		admin: strings.TrimSpace(adminOut)}
 }
 
 // lock holds node nodeID for an editor the way an office session does, so the node is locked until the break.
@@ -188,6 +198,40 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 		return []string{nodeID, p.t.TempDir()}
 	},
 	"upload cancel": func(p *fileProbe) []string { return []string{p.openUpload("cancel.bin", 10)} },
+}
+
+// settingsProbes gives, for each settings command, the arguments that make it call its route on the real server. They run
+// with the probe's admin key (useAdminKey). trash.retention is a duration setting; 48h is a valid value.
+var settingsProbes = map[string]func(p *fileProbe) []string{
+	"settings get":   func(p *fileProbe) []string { return nil },
+	"settings set":   func(p *fileProbe) []string { return []string{"trash.retention=48h"} },
+	"settings reset": func(p *fileProbe) []string { return []string{"trash.retention"} },
+	"settings logo set": func(p *fileProbe) []string {
+		return []string{p.picture("logo.png", 64, 32)}
+	},
+	"settings logo remove": func(p *fileProbe) []string { return nil },
+	"settings icon set": func(p *fileProbe) []string {
+		return []string{p.picture("icon.png", 512, 512)}
+	},
+	"settings icon remove": func(p *fileProbe) []string { return nil },
+}
+
+// useAdminKey makes the probe's admin key the credential of the commands that follow. It returns the function that puts
+// the account key back.
+func (p *fileProbe) useAdminKey() func() {
+	previous := os.Getenv("SELFCLOUD_TOKEN")
+	p.t.Setenv("SELFCLOUD_TOKEN", p.admin)
+	return func() { p.t.Setenv("SELFCLOUD_TOKEN", previous) }
+}
+
+// picture writes a PNG of width by height pixels called name, in a directory of its own, and returns its path.
+func (p *fileProbe) picture(name string, width, height int) string {
+	p.t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, width, height))); err != nil {
+		p.t.Fatal(err)
+	}
+	return p.local(name, buf.String())
 }
 
 // local writes a local file called name with data, in a directory of its own, and returns its path.

@@ -90,7 +90,8 @@ func undeclaredCalls(c remoteCommand, routes []string) []string {
 }
 
 // probes is how the recording check calls each remote command that reaches a route and needs no fixture. The file
-// commands need one, and are in fileProbes (files_probe_test.go). A new remote command with a route needs its probe in
+// commands need one, and are in fileProbes, and the settings commands, which need an admin key, in settingsProbes
+// (files_probe_test.go). A new remote command with a route needs its probe in
 // one of the two; the check fails until it has one.
 var probes = map[string][]string{
 	"info":     {},
@@ -109,7 +110,11 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 		}
 		p.answer = ""
 		var args []string
-		if fixture, ok := fileProbes[c.name]; ok {
+		restoreKey := func() {}
+		if fixture, ok := settingsProbes[c.name]; ok {
+			restoreKey = p.useAdminKey()
+			args = fixture(p)
+		} else if fixture, ok := fileProbes[c.name]; ok {
 			args = fixture(p)
 		} else if static, ok := probes[c.name]; ok {
 			args = static
@@ -124,6 +129,7 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 		restore := typeAt(p.answer)
 		code, matched := remote(full, &out, &errOut)
 		restore()
+		restoreKey()
 		if !matched || code != 0 {
 			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, matched, errOut.String())
 			continue
