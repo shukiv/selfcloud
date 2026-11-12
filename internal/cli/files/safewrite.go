@@ -335,7 +335,9 @@ func (pf *partFile) replacedError() error {
 
 // finish gives the part file the mode a new file gets, syncs it and gives it its name. Without overwrite the name is
 // taken by a hard link, which fails if the name exists, and the part file's name is removed; on a file system without
-// hard links, a rename after a check, which leaves a short window. With overwrite, a rename over the regular file there.
+// hard links, on Linux a rename that never replaces a file (renameat2 with RENAME_NOREPLACE), and where the file system
+// has none either, a refusal that keeps the part file; on other platforms a rename after a check, which leaves a short
+// window. With overwrite, a rename over the regular file there.
 func (pf *partFile) finish(overwrite bool) error {
 	if err := pf.f.Chmod(newFileMode()); err != nil {
 		return &localWriteError{err}
@@ -363,14 +365,13 @@ func (pf *partFile) finish(overwrite bool) error {
 		return nil
 	}
 	if errors.Is(err, fs.ErrExist) {
-		return exitcode.Usagef("%s appeared at the destination meanwhile; the download is kept as %s, and --overwrite "+
-			"replaces it", pf.name, pf.part)
+		return pf.appearedError()
 	}
-	if err := checkFinal(pf.root, pf.name, false); err != nil {
-		return err
-	}
-	if !pf.stillAtName() {
-		return pf.replacedError()
-	}
-	return pf.root.Rename(pf.part, pf.name)
+	return pf.takeNameWithoutLinks()
+}
+
+// appearedError refuses a file that took the destination's name while the download was written. It is kept.
+func (pf *partFile) appearedError() error {
+	return exitcode.Usagef("%s appeared at the destination meanwhile; the download is kept as %s, and --overwrite "+
+		"replaces it", pf.name, pf.part)
 }
