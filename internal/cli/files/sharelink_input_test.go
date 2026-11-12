@@ -3,6 +3,7 @@
 package files
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -72,6 +73,9 @@ func TestGetShareLinkInputRefusals(t *testing.T) {
 	}
 	missing := filepath.Join(dir, "no-such-file-name")
 	long := "https://drive.example/s#" + strings.Repeat("A", 5000)
+	// A line over the limit that starts with spaces: the read stops at its cap inside the line, and cutting the spaces
+	// and the rest off must not leave a shorter link that passes.
+	padded := strings.Repeat(" ", 3000) + "https://drive.example/s#" + strings.Repeat("A", 2000)
 	cases := []struct {
 		what  string
 		args  func() []string
@@ -83,12 +87,19 @@ func TestGetShareLinkInputRefusals(t *testing.T) {
 		{"an empty input", func() []string { return []string{"-"} }, "", false, "no link"},
 		{"a blank first line", func() []string { return []string{"-"} }, "\n" + badLink + "\n", false, "no link"},
 		{"a line over the limit", func() []string { return []string{"-"} }, long + "\n", false, "longer than"},
+		{"a padded line over the limit", func() []string { return []string{"-"} }, padded + "\n", false, "longer than"},
+		{"a padded line over the limit with no line ending", func() []string { return []string{"-"} }, padded, false, "longer than"},
 		{"a link that is not a share link", func() []string { return []string{"-"} }, badLink + "\n", false, "share link"},
+		{"standard input given as the link file", func() []string { return []string{"--link-file", "-"} }, badLink + "\n", false, "takes a file"},
+		{"standard input as the link file, with the password also on it", func() []string {
+			return []string{"--link-file", "-", "--password-stdin"}
+		}, badLink + "\nsecret-password\n", false, "takes a file"},
 		{"the password also on standard input", func() []string { return []string{"-", "--password-stdin"} }, badLink + "\n", false, "standard input"},
 		{"a file that is not there", func() []string { return []string{"--link-file", missing} }, "", false, "link file"},
 		{"a directory", func() []string { return []string{"--link-file", notRegular} }, "", false, "regular file"},
 		{"an empty file", func() []string { return []string{"--link-file", linkFileWith(t, "")} }, "", false, "no link"},
 		{"a file over the limit", func() []string { return []string{"--link-file", linkFileWith(t, long)} }, "", false, "longer than"},
+		{"a file with a padded line over the limit", func() []string { return []string{"--link-file", linkFileWith(t, padded)} }, "", false, "longer than"},
 		{"a file with a link that is not a share link", func() []string { return []string{"--link-file", linkFileWith(t, badLink)} }, "", false, "share link"},
 		{"a link on the command line besides the file", func() []string {
 			return []string{"--link-file", linkFileWith(t, badLink), badLink, t.TempDir()}
@@ -112,5 +123,81 @@ func TestGetShareLinkInputRefusals(t *testing.T) {
 			}
 			f.wantNoCalls()
 		})
+	}
+}
+
+// endless yields the byte 'A' forever, never a line end, and fails the read once more than limit bytes have been taken.
+type endless struct {
+	n, limit int
+}
+
+func (e *endless) Read(p []byte) (int, error) {
+	if e.n > e.limit {
+		return 0, errors.New("read past the limit")
+	}
+	for i := range p {
+		p[i] = 'A'
+	}
+	e.n += len(p)
+	return len(p), nil
+}
+
+// TestReadLinkIsBoundedBeforeItIsBuffered: an input with no line end is refused as too long after a bounded read, and not
+// read to its end.
+func TestReadLinkIsBoundedBeforeItIsBuffered(t *testing.T) {
+	e := &endless{limit: 1 << 20}
+	Stdin, IsTerminal = e, func(io.Reader) bool { return false }
+	_, err := readLink("-")
+	if err == nil || !strings.Contains(err.Error(), "longer than") {
+		t.Fatalf("an endless input: err = %v, want a refusal that it is longer than the limit", err)
+	}
+	if e.n > 2*maxLink+8192 {
+		t.Errorf("read %d bytes of an endless input, want a few more than %d", e.n, maxLink)
+	}
+}
+
+// TestGetShareLinkFileThatCannotBeOpened: a link file that exists but cannot be opened is refused, and the refusal does
+// not repeat its name.
+func TestGetShareLinkFileThatCannotBeOpened(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a file of mode 000 can be opened by root")
+	}
+	p := filepath.Join(t.TempDir(), "unreadable-link-name")
+	if err := os.WriteFile(p, []byte("x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	withProfile(t, f.srv.URL, testAccountKey)
+	res := getShare(t, "--link-file", p)
+	wantCode(t, res, 2)
+	if !strings.Contains(res.stderr, "could not be opened") {
+		t.Errorf("stderr %q does not say the file could not be opened", res.stderr)
+	}
+	if strings.Contains(res.stderr+res.stdout, "unreadable-link-name") {
+		t.Errorf("the output repeats the file's name: %q", res.stderr)
+	}
+	f.wantNoCalls()
+}
+
+// TestGetShareLinkWithAPasswordFromStandardInput: `get -` cannot take the password from standard input, so the hint for
+// a link that needs one names --link-file, and not the flag that `get -` refuses.
+func TestGetShareLinkWithAPasswordFromStandardInput(t *testing.T) {
+	l := newLive(t, nil, nil)
+	l.isolate()
+	link, _ := l.shareLink(l.upload("/", "locked.bin", randomBytes(t, 1000), "fail"), "correct horse battery", nil)
+
+	fromStdin(link + "\n")
+	res := getShare(t, "-", t.TempDir())
+	l.wantCode(res, 3)
+	if !strings.Contains(res.stderr, "--link-file") {
+		t.Errorf("the hint for a password after `get -` does not name --link-file: %q", res.stderr)
+	}
+
+	// With the link in a file, the hint names the password's flag.
+	res = getShare(t, "--link-file", linkFileWith(t, link+"\n"), t.TempDir())
+	l.wantCode(res, 3)
+	if !strings.Contains(res.stderr, "--password-stdin") {
+		t.Errorf("the hint for a password does not name --password-stdin: %q", res.stderr)
 	}
 }

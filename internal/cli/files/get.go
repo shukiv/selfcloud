@@ -54,6 +54,9 @@ func Get(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
+	if linkFile == "-" {
+		return fail(stderr, g, exitcode.Usagef("--link-file takes a file; `get -` reads the link from standard input"))
+	}
 	if linkFile != "" {
 		if len(pos) > 1 {
 			return fail(stderr, g, exitcode.Usagef("with --link-file, get takes only a destination: the link is in the file"))
@@ -76,6 +79,7 @@ func Get(args []string, stdout, stderr io.Writer) int {
 					"link with --link-file instead"))
 			}
 			source, rest = "-", pos[1:]
+			opts.linkFromStdin = true
 		}
 		link, err := readLink(source)
 		if err != nil {
@@ -144,6 +148,8 @@ type dlOptions struct {
 	piece     int64
 	stall     time.Duration
 	overwrite bool
+	// linkFromStdin is set when the share link was read from standard input, which then cannot also carry the password.
+	linkFromStdin bool
 }
 
 // localDest is the directory a download writes in, opened as a root, and the name the person chose, or "".

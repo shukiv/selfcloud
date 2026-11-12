@@ -115,7 +115,7 @@ func getShared(g conn.Global, link, dest, folder string, passwordStdin bool, o d
 		return fail(stderr, g, exitcode.Usagef("%s", err))
 	}
 	ctx := context.Background()
-	v := &visitor{anon: anon, secret: secret, password: password}
+	v := &visitor{anon: anon, secret: secret, password: password, linkFromStdin: o.linkFromStdin}
 	if err := v.open(ctx); err != nil {
 		return fail(stderr, g, err)
 	}
@@ -152,7 +152,7 @@ func readPasswordLine() (string, error) {
 
 // readLink reads a share link from standard input, when source is "-", or from a regular file, so the link's secret is not
 // in argv, where `ps` and /proc show it to other users and a shell keeps it in its history. It is the first line, with
-// the spaces and the line ending around it trimmed. A terminal is refused for "-", since what is typed there is shown.
+// the spaces and the line ending around it trimmed; the limit counts the spaces too. A terminal is refused for "-", since what is typed there is shown.
 // An error never repeats the link or the file's name.
 func readLink(source string) (string, error) {
 	var r io.Reader
@@ -180,9 +180,12 @@ func readLink(source string) (string, error) {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", exitcode.Usagef("the link could not be read")
 	}
+	// A read that ran to its cap without reaching a line end stopped inside the line, so the limit, which counts the
+	// spaces around the link, was passed; trimming what was read would keep a part of the line as if it were all of it.
+	capped := len(line) >= maxLink+2 && !strings.HasSuffix(line, "\n")
 	line = strings.TrimSpace(line)
 	switch {
-	case len(line) > maxLink:
+	case capped, len(line) > maxLink:
 		return "", exitcode.Usagef("the link is longer than %d bytes", maxLink)
 	case line == "":
 		return "", exitcode.Usagef("the input holds no link on its first line")
@@ -199,6 +202,8 @@ type visitor struct {
 	expires    time.Time
 	node       string
 	uploadOnly bool
+	// linkFromStdin is set when the link came from standard input, which cannot also carry the password.
+	linkFromStdin bool
 }
 
 // visitorAnswer is the answer to an open or a renewal.
@@ -224,6 +229,9 @@ func (v *visitor) open(ctx context.Context) error {
 	if err != nil {
 		var ae *client.APIError
 		if errors.As(err, &ae) && ae.Reason == "password_required" {
+			if v.linkFromStdin {
+				return withHint(err, "give the link with --link-file and the password on standard input with --password-stdin")
+			}
 			return withHint(err, "give it on standard input with --password-stdin")
 		}
 		return err
