@@ -276,6 +276,20 @@ func TestGetAPictureKeyPrintsItsLines(t *testing.T) {
 	}
 }
 
+func TestGetAPictureKeyAsJSONIsThatObject(t *testing.T) {
+	isolate(t, adminKey)
+	f := newFake(t)
+	f.on("GET", settingsPath, reply{200, listing})
+	r := f.run(Get, "ui.brand.logo", "--json")
+	if r.code != 0 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "\n  ") {
+		t.Errorf("not indented: %q", r.stdout)
+	}
+	sameJSON(t, r.stdout, `{"key":"ui.brand.logo","state":"uploaded","type":"image/png","sha256":"abc123","locked":true}`)
+}
+
 func TestGetAnUnknownKeyExitsFour(t *testing.T) {
 	isolate(t, adminKey)
 	f := newFake(t)
