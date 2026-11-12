@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Pencil, Trash2, UserMinus, Users } from "lucide-react";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { App, Alert, Button } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { useAdminText } from "../../lib/manage/adminText";
 import type { Group } from "../../lib/manage/types";
+import type { Names } from "../../lib/audit/sentence";
 import type { DirectoryEntry } from "../../lib/files/types";
 import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
@@ -21,6 +22,15 @@ import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
+
+// EMPTY is module-level, so "no data" stays the same array between renders.
+const EMPTY: string[] = [];
+
+// useMemberRows builds a group's rows. The row memo in Listing compares the row object, so the rows must keep their
+// identity: a new array with new rows would redraw each row's end on every render. The page's actions need the current row.
+export function useMemberRows(ids: string[] | undefined, lookup: Names, unknown: string): { id: string; name: string }[] {
+  return useMemo(() => (ids ?? EMPTY).map((id) => ({ id, name: lookup.person(id) ?? unknown })), [ids, lookup, unknown]);
+}
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
 // and removing a member ends that access at once. The groups and a group's members are the one Listing (design-tl 2).
@@ -71,7 +81,6 @@ function GroupsView() {
     refetchOnMount: "always",
   });
   const lookup = names.data?.names ?? NO_NAMES;
-  const personText = (id: string): string => lookup.person(id) ?? t("people.unknown");
 
   // The heading takes the name the list has now: after a rename the snapshot taken at open would show the old name.
   const listed = q.data?.pages.flatMap((p) => p.items).find((g) => g.id === open?.id);
@@ -152,7 +161,7 @@ function GroupsView() {
   // The groups: one name column, and the three icons of a row (each with its tooltip, and a name for a screen reader).
   const groupColumns: ListColumn<Group>[] = [{ key: "name", title: t("files.col.name"), render: (g) => <bdi>{g.name}</bdi> }];
   // A group's members: one name column and a Remove icon, which takes the member's name in its label.
-  const memberRows = (members.data ?? []).map((usr) => ({ id: usr, name: personText(usr) }));
+  const memberRows = useMemberRows(members.data, lookup, t("people.unknown"));
   const memberColumns: ListColumn<{ id: string; name: string }>[] = [{ key: "name", title: t("files.col.name"), render: (m) => <bdi>{m.name}</bdi> }];
 
   return (

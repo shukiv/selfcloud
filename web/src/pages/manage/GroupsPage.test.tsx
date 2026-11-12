@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +9,8 @@ import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { expectEmptyTable } from "../../test/emptyTable";
 import { DESKTOP, PHONE, setViewport } from "../../test/viewport";
-import GroupsPage from "./GroupsPage";
+import type { Names } from "../../lib/audit/sentence";
+import GroupsPage, { useMemberRows } from "./GroupsPage";
 
 function signedAs(): Session {
   return {
@@ -262,5 +263,62 @@ describe("the open group after a rename", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Members" })).toBeNull());
     expect(document.getElementById("members-title")).toBeNull();
     expect(screen.getByRole("button", { name: "Members: Finance" }).hasAttribute("aria-pressed")).toBe(false);
+  });
+});
+
+describe("the member rows", () => {
+  const names = (people: Record<string, string>): Names => ({ person: (id) => people[id], space: () => undefined });
+
+  // Listing's row memo compares the row object: the same inputs must give the same rows, or every row's end redraws.
+  it("rendered again with the same ids, lookup and unknown, it returns the same array and the same rows", () => {
+    const ids = ["usr_dana", "usr_eli"];
+    const lookup = names({ usr_dana: "Dana", usr_eli: "Eli" });
+    const { result, rerender } = renderHook(({ ids, lookup, unknown }) => useMemberRows(ids, lookup, unknown), {
+      initialProps: { ids, lookup, unknown: "Unknown person" },
+    });
+    const first = result.current;
+    expect(first.map((r) => r.name)).toEqual(["Dana", "Eli"]);
+    rerender({ ids, lookup, unknown: "Unknown person" });
+    expect(result.current).toBe(first);
+    result.current.forEach((row, i) => expect(row).toBe(first[i]));
+  });
+
+  it("a new ids array from new query data returns a new array", () => {
+    const lookup = names({ usr_dana: "Dana" });
+    const { result, rerender } = renderHook(({ ids }) => useMemberRows(ids, lookup, "Unknown person"), {
+      initialProps: { ids: ["usr_dana"] },
+    });
+    const first = result.current;
+    rerender({ ids: ["usr_dana"] });
+    expect(result.current).not.toBe(first);
+    expect(result.current.map((r) => r.name)).toEqual(["Dana"]);
+  });
+
+  it("a new lookup once the names load returns new rows with the new names", () => {
+    const { result, rerender } = renderHook(({ lookup }) => useMemberRows(["usr_dana"], lookup, "Unknown person"), {
+      initialProps: { lookup: names({}) },
+    });
+    const first = result.current;
+    expect(first.map((r) => r.name)).toEqual(["Unknown person"]);
+    const loaded = names({ usr_dana: "Dana" });
+    rerender({ lookup: loaded });
+    expect(result.current).not.toBe(first);
+    expect(result.current.map((r) => r.name)).toEqual(["Dana"]);
+  });
+
+  it("an id the lookup does not know gets the unknown text", () => {
+    const { result } = renderHook(() => useMemberRows(["usr_gone"], names({ usr_dana: "Dana" }), "Unknown person"));
+    expect(result.current).toEqual([{ id: "usr_gone", name: "Unknown person" }]);
+  });
+
+  it("with ids undefined it returns [], and the same [] when rendered again", () => {
+    const lookup = names({});
+    const { result, rerender } = renderHook(({ ids }) => useMemberRows(ids, lookup, "Unknown person"), {
+      initialProps: { ids: undefined as string[] | undefined },
+    });
+    const first = result.current;
+    expect(first).toEqual([]);
+    rerender({ ids: undefined });
+    expect(result.current).toBe(first);
   });
 });
