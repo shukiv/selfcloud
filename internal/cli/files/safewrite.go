@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -39,26 +38,8 @@ const (
 	nameHint = "give the destination a name of its own: selfcloud get FILE DIR/NAME"
 )
 
-// currentUID is the user a part file must belong to. Tests make it another, since they cannot chown.
-var currentUID = os.Geteuid
-
 // umaskStatusPath is where the process's umask is read, as /proc gives it. Tests point it elsewhere.
 var umaskStatusPath = "/proc/self/status"
-
-// partProblem says why an existing part file must not be written: another user owns it, or it has another name (a hard
-// link), so writing it would change another file. "" when neither.
-func partProblem(fi fs.FileInfo) string {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	switch {
-	case !ok:
-		return "cannot be checked"
-	case int64(st.Uid) != int64(currentUID()):
-		return "belongs to another user"
-	case st.Nlink != 1:
-		return "has another name (a hard link), so writing it would change another file"
-	}
-	return ""
-}
 
 // newFileMode is the mode a new file gets: 0666 less the umask, read from /proc so the umask is not changed to learn it,
 // or the part file's mode, 0600, when the umask cannot be read, so the finished file is never more open than the umask
