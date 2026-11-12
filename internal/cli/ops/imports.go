@@ -5,7 +5,7 @@ package ops
 // The import commands. An import belongs to a signed-in person: every import route answers an account key or an admin key
 // with 403 "imports are for a signed-in user", so these commands work with a device token. Starting, resuming and
 // cancelling an import are refused to a device token (decision 125), so the browser does those. Only the archive switch is
-// an account's, and it needs an account key.
+// an account's, and it needs an account key or an admin key.
 
 import (
 	"errors"
@@ -235,20 +235,33 @@ func ImportItems(args []string, stdout, stderr io.Writer) int {
 		}
 		after = *next
 	}
-	if err := printItems(c, items, next); err != nil {
+	asked := limit
+	if asked < 1 {
+		asked = defaultItemsPage
+	}
+	if err := printItems(c, items, next, asked); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
 }
 
-func printItems(c *command, items []itemView, next *int64) error {
+// defaultItemsPage is how many items a page holds when --limit is not given.
+const defaultItemsPage = 100
+
+// printItems prints one page of items, or all of them. The API sets next to the last item's number on every page that has
+// an item, so next alone does not say that more exist: only a page as long as the one asked for may have more, and then the
+// note says where to read on.
+func printItems(c *command, items []itemView, next *int64, asked int) error {
 	if items == nil {
 		items = []itemView{}
+	}
+	if next != nil && len(items) >= asked {
+		_, _ = io.WriteString(c.stderr, "selfcloud: more items may exist; --after "+i64(*next)+" reads on, or --all prints every page\n")
 	}
 	if c.g.JSON {
 		return output.JSON(c.stdout, map[string]any{"items": items, "next": next})
 	}
-	return printList(c, items, next != nil, []string{"SEQ", "NAME", "KIND", "STATE", "BYTES", "NODE", "ERROR"},
+	return printList(c, items, false, []string{"SEQ", "NAME", "KIND", "STATE", "BYTES", "NODE", "ERROR"},
 		func(it itemView) []string {
 			return []string{i64(it.Seq), it.Name, it.Kind, it.State, i64(it.Bytes), str(it.Node), str(it.ErrorCode)}
 		})
@@ -277,7 +290,7 @@ func ImportPause(args []string, stdout, stderr io.Writer) int {
 }
 
 // ImportArchiveSet is `selfcloud import archive set --account ACC on|off`: turns the archive source on or off for an
-// account. It needs an account key.
+// account. It needs an account key or an admin key.
 func ImportArchiveSet(args []string, stdout, stderr io.Writer) int {
 	c := begin("import archive set", true, stdout, stderr)
 	pos, code, ok := c.parse(args)

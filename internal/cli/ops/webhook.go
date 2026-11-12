@@ -177,11 +177,10 @@ func cleanURL(raw string) (string, error) {
 		return "", bad("it is not a valid address")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", bad("it starts with http:// or https://")
+		return "", bad("it must start with http:// or https://")
 	}
 	if u.User != nil {
-		return "", bad("it must not carry a user name or password; pass any token in the address' path or query instead, " +
-			"or have the receiver check the signature")
+		return "", bad("it must not carry a user name or password; have the receiver check the signature instead")
 	}
 	if u.Opaque != "" || u.Hostname() == "" {
 		return "", bad("it must name a host")
@@ -230,7 +229,7 @@ func (c *command) printHook(pairs []output.KV, jsonDoc any) error {
 // printShown prints a webhook with its secret, once, and a note that it is not shown again.
 func (c *command) printShown(v webhookShown) error {
 	if v.Secret == "" {
-		return errNotA("a webhook with its secret; the secret is not shown again, so rotate it")
+		return errNotA("a webhook with its secret (webhook " + v.ID + "); the secret is not shown again, so rotate it")
 	}
 	if c.g.JSON {
 		return output.JSON(c.stdout, v)
@@ -242,7 +241,7 @@ func (c *command) printShown(v webhookShown) error {
 	return nil
 }
 
-// WebhookAdd is `selfcloud webhook add --account ACC --url URL --event TYPE... [--description TEXT]`. It prints the
+// WebhookAdd is `selfcloud webhook add --account ACC --endpoint ADDRESS --event TYPE... [--description TEXT]`. It prints the
 // signing secret, once.
 func WebhookAdd(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook add", true, stdout, stderr)
@@ -379,7 +378,7 @@ func WebhookShow(args []string, stdout, stderr io.Writer) int {
 	return exitcode.OK
 }
 
-// WebhookUpdate is `selfcloud webhook update --account ACC HOOK [--url URL] [--event TYPE...] [--description TEXT]
+// WebhookUpdate is `selfcloud webhook update --account ACC HOOK [--endpoint ADDRESS] [--event TYPE...] [--description TEXT]
 // [--state active|paused]`. Only what is given is sent.
 func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook update", true, stdout, stderr)
@@ -518,6 +517,12 @@ func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		return c.fail(err)
+	}
+	// The secret it replaces goes on signing for a while, so a receiver can switch without a gap. The server keeps only
+	// one old secret, so a second rotation ends that period at once.
+	if !c.g.JSON && v.PreviousSecretUntil != nil {
+		_, _ = io.WriteString(c.stderr, "selfcloud: note: the old secret keeps signing until "+*v.PreviousSecretUntil+
+			"; a second rotation ends that at once\n")
 	}
 	return exitcode.OK
 }
