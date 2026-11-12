@@ -55,6 +55,9 @@ func accountArg(flagValue string) (string, error) {
 	return v, nil
 }
 
+// accountFromEnv reports whether SELFCLOUD_ACCOUNT is set.
+func accountFromEnv() bool { return os.Getenv(accountEnv) != "" }
+
 // idArg checks an id of the given prefix.
 func idArg(prefix, what, v string) (string, error) {
 	if !id.Valid(prefix, v) {
@@ -84,22 +87,29 @@ func expiryArg(at, in string, now time.Time) (string, error) {
 		}
 		return t.UTC().Format(time.RFC3339), nil
 	case in != "":
-		var d time.Duration
-		if days, ok := strings.CutSuffix(in, "d"); ok {
-			n, err := strconv.Atoi(days)
-			if err != nil || n <= 0 || n > 36500 {
-				return "", exitcode.Usagef("--expires-in is a duration such as 36h or 30d")
-			}
-			d = time.Duration(n) * 24 * time.Hour
-		} else {
-			var err error
-			if d, err = time.ParseDuration(in); err != nil || d <= 0 {
-				return "", exitcode.Usagef("--expires-in is a duration such as 36h or 30d")
-			}
+		d, err := durationArg(in)
+		if err != nil {
+			return "", exitcode.Usagef("--expires-in is a duration such as 36h or 30d")
 		}
 		return now.Add(d).UTC().Format(time.RFC3339), nil
 	}
 	return "", nil
+}
+
+// durationArg reads a positive duration: a Go duration such as 36h, or a whole number of days such as 30d.
+func durationArg(in string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(in, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n <= 0 || n > 36500 {
+			return 0, errors.New("not a duration")
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(in)
+	if err != nil || d <= 0 {
+		return 0, errors.New("not a duration")
+	}
+	return d, nil
 }
 
 // optBool is a boolean flag that tells "not given" from "false", so a change sends only what the person named.

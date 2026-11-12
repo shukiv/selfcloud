@@ -158,7 +158,7 @@ func TestLinkCreateRoles(t *testing.T) {
 	}
 	isolate(t, testKey)
 	f := newFake(t)
-	for _, bad := range []string{"manager", "owner", ""} {
+	for _, bad := range []string{"manager", "owner", "Viewer"} {
 		wantCode(t, f.run(LinkCreate, testNode, "--role", bad), 2)
 	}
 	f.wantNoCalls()
