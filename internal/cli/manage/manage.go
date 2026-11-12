@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/shukiv/selfcloud/internal/cli/conn"
@@ -74,6 +75,29 @@ func nameArg(arg string) (string, error) {
 		return "", exitcode.Usagef("the name is not valid: %s", err)
 	}
 	return arg, nil
+}
+
+// confirmByName asks before a removal. Without a terminal and without --yes it refuses before anything is read or sent.
+// At a terminal the person types the target's name, which is read from route first.
+func confirmByName(cn *conn.Conn, route string, yes bool, what string, stderr io.Writer) error {
+	phrase := ""
+	if !yes && files.IsTerminal(files.Stdin) {
+		resp, err := files.Send(cn, http.MethodGet, route, nil, nil)
+		if err != nil {
+			return err
+		}
+		var v struct {
+			Name string `json:"name"`
+		}
+		if err := decodeAs(resp.Body, &v, "a named thing"); err != nil {
+			return err
+		}
+		if v.Name == "" {
+			return errors.New("the server's answer has no name to confirm with; nothing was changed")
+		}
+		phrase = v.Name
+	}
+	return files.Confirm(yes, phrase, what, stderr)
 }
 
 // printDocument writes one document: the API's own under --json, otherwise key=value lines from pairs.

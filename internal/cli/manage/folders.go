@@ -271,21 +271,7 @@ func FolderRm(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	route := accountFoldersRoute(acc) + "/" + folder
-	// Without a terminal and without --yes the command refuses before anything is read or sent. At a terminal the person
-	// types the folder's name, which is read first.
-	phrase := ""
-	if !yes && files.IsTerminal(files.Stdin) {
-		resp, err := files.Send(cn, http.MethodGet, route, nil, nil)
-		if err != nil {
-			return c.fail(err)
-		}
-		var v folderView
-		if err := decodeAs(resp.Body, &v, "a folder"); err != nil {
-			return c.fail(err)
-		}
-		phrase = v.Name
-	}
-	if err := files.Confirm(yes, phrase, "remove the folder, its files and its permissions for good", stderr); err != nil {
+	if err := confirmByName(cn, route, yes, "remove the folder, its files and its permissions for good", stderr); err != nil {
 		return c.fail(err)
 	}
 	if _, err := files.Send(cn, http.MethodDelete, route, nil, nil); err != nil {

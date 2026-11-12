@@ -403,3 +403,18 @@ func TestUserGrantsEmptyAndErrors(t *testing.T) {
 	f.set("GET", userGrantsPath(), apiErr(http.StatusForbidden, "forbidden", "no"))
 	wantCode(t, f.runAcc(UserGrants, testUser), 3)
 }
+
+// TestRemovalWithANamelessAnswerDeletesNothing: a name that is empty cannot be typed back, so a bare Enter must not confirm.
+func TestRemovalWithANamelessAnswerDeletesNothing(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("GET", accGroup(testGroup), doc(http.StatusOK, group(testGroup, "")))
+	f.on("DELETE", accGroup(testGroup), done(http.StatusNoContent))
+	typeAtTerminal("\n")
+	wantCode(t, f.runAcc(GroupRm, testGroup), 1)
+	for _, c := range f.requests() {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Fatalf("calls %v: nothing may be deleted", f.requests())
+		}
+	}
+}
