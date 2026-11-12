@@ -596,8 +596,8 @@ drop link: a second is a conflict (exit 3). A drop link takes no role and must e
 - A link's password is never taken from the command line, where it would be kept in the shell's history and shown by `ps`.
   `--password-file FILE` reads its first line from a file; `--password-file -` reads it from standard input, which must be a
   pipe or a file, not a terminal. Only one carriage return before the line feed is dropped, and spaces are kept, as in
-  `get --password-stdin`, so a password set here opens the link there. The CLI refuses an empty password or one longer than
-  4096 bytes; the server takes 8 to 256 characters. `link update --no-password` removes the password. There is no flag named `--password`.
+  `get --password-stdin`, so a password set here opens the link there. The CLI refuses a password outside the
+  server's 8 to 256 characters before it sends anything (exit 2). `link update --no-password` removes the password. There is no flag named `--password`.
 - An error's message and every stream are scrubbed: the password it read, in each form the output can give it (JSON
   escapes, a space for a tab), and anything shaped like a link's secret (the 43 characters after `/s#`, a signed address's
   token), is replaced by `[hidden]` in what the server answered. A path that only looks like one is left alone. Nothing is
