@@ -173,8 +173,6 @@ func sameJSON(t *testing.T, got, want string) {
 	}
 }
 
-const settingsPath = "/api/v1/settings"
-
 // listing is the server's answer for the keys the tests use. Types follow the key's name.
 const listing = `{"settings":[
  {"key":"flag.enabled","type":"bool","value":false,"default":false,"source":"default","locked":false,"restart":false},
