@@ -279,6 +279,10 @@ func routeOf(call string) string {
 	for i, s := range segs {
 		if m := idSegment.FindStringSubmatch(s); m != nil {
 			segs[i] = "{" + m[1] + "}"
+			// The route names a webhook {hook}, though its ids start with whk.
+			if m[1] == "whk" {
+				segs[i] = "{hook}"
+			}
 		}
 	}
 	// A node's permission is set on a user or a group, and the route table names either {subject}.

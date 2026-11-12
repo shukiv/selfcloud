@@ -10,6 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/info"
 	"github.com/shukiv/selfcloud/internal/cli/manage"
+	"github.com/shukiv/selfcloud/internal/cli/ops"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
 	"github.com/shukiv/selfcloud/internal/cli/settings"
 	"github.com/shukiv/selfcloud/internal/cli/sharing"
@@ -303,6 +304,73 @@ var remoteCommands = []remoteCommand{
 		notProbed: "needs a device token (an account key has no shared items); internal/cli/sharing records its calls",
 		help: `  shared [--recent] [--all]      what other people shared with the signed-in person
 `, run: sharing.Shared},
+	{name: "webhook add", route: "POST /api/v1/accounts/{acc}/webhooks",
+		help: `  webhook add --account ACC --endpoint ADDRESS --event TYPE... [--description TEXT]
+                                 add a webhook; its signing secret is printed once
+`, run: ops.WebhookAdd},
+	{name: "webhook ls", route: "GET /api/v1/accounts/{acc}/webhooks",
+		help: `  webhook ls --account ACC [--all]
+                                 the account's webhooks
+`, run: ops.WebhookLs},
+	{name: "webhook show", route: "GET /api/v1/accounts/{acc}/webhooks/{hook}",
+		help: `  webhook show --account ACC HOOK
+                                 one webhook and its newest deliveries (never its secret)
+`, run: ops.WebhookShow},
+	{name: "webhook update", route: "PATCH /api/v1/accounts/{acc}/webhooks/{hook}",
+		help: `  webhook update --account ACC HOOK [--endpoint ADDRESS] [--event TYPE...] [--description TEXT] [--state active|paused]
+                                 change what is given
+`, run: ops.WebhookUpdate},
+	{name: "webhook rm", route: "DELETE /api/v1/accounts/{acc}/webhooks/{hook}",
+		help: `  webhook rm --account ACC HOOK [--yes]
+                                 remove a webhook and its delivery log (asks first)
+`, run: ops.WebhookRm},
+	{name: "webhook rotate-secret", route: "POST /api/v1/accounts/{acc}/webhooks/{hook}/secret",
+		help: `  webhook rotate-secret --account ACC HOOK [--yes]
+                                 make a new signing secret and print it once (asks first)
+`, run: ops.WebhookRotateSecret},
+	{name: "webhook test", route: "POST /api/v1/accounts/{acc}/webhooks/{hook}/test",
+		help: `  webhook test --account ACC HOOK
+                                 queue a test event for the webhook
+`, run: ops.WebhookTest},
+	{name: "webhook deliveries", route: "GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries",
+		help: `  webhook deliveries --account ACC HOOK [--all]
+                                 the webhook's delivery log
+`, run: ops.WebhookDeliveries},
+	{name: "webhook retry", route: "POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry",
+		help: `  webhook retry --account ACC HOOK DELIVERY
+                                 queue a failed delivery again
+`, run: ops.WebhookRetry},
+	{name: "import sources", route: "GET /api/v1/imports/sources",
+		help: `  import sources                 the import sources, and whether the account has each on
+`, run: ops.ImportSources},
+	{name: "import start", route: "POST /api/v1/imports",
+		help: `  import start --folder FOLDER --upload UPLOAD [--parent DIR] [--on-conflict fail|rename|replace]
+                                 unpack a finished archive upload into a folder
+`, run: ops.ImportStart},
+	{name: "import show", route: "GET /api/v1/imports/{imp}",
+		help: `  import show IMPORT             an import's state and counts
+`, run: ops.ImportShow},
+	{name: "import items", route: "GET /api/v1/imports/{imp}/items",
+		help: `  import items IMPORT [--after SEQ] [--limit N] [--all]
+                                 the items of an import, in order
+`, run: ops.ImportItems},
+	{name: "import pause", route: "POST /api/v1/imports/{imp}/pause",
+		help: `  import pause IMPORT            stop a queued or running import at its next checkpoint
+`, run: ops.ImportPause},
+	{name: "import resume", route: "POST /api/v1/imports/{imp}/resume",
+		help: `  import resume IMPORT           queue a paused import again
+`, run: ops.ImportResume},
+	{name: "import cancel", route: "POST /api/v1/imports/{imp}/cancel",
+		help: `  import cancel IMPORT [--yes]   end an import and remove what it staged (asks first)
+`, run: ops.ImportCancel},
+	{name: "import archive set", route: "PUT /api/v1/accounts/{acc}/imports/archive",
+		help: `  import archive set --account ACC on|off
+                                 turn the archive import source on or off for an account
+`, run: ops.ImportArchiveSet},
+	{name: "job show", route: "GET /api/v1/jobs/{job}",
+		help: `  job show JOB [--wait [--wait-timeout DURATION]]
+                                 a job's state; --wait follows it to its end
+`, run: ops.JobShow},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.

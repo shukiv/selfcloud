@@ -62,7 +62,7 @@ fn	lib/files/api.ts:createZipJob	-	cli12	planned, cli12
 fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
 fn	lib/files/api.ts:deleteVersion	-	cli11	planned, cli11
 fn	lib/files/api.ts:emptyTrashStep	trash empty	cli5	built in cli5
-fn	lib/files/api.ts:getJob	-	cli10	planned, cli10
+fn	lib/files/api.ts:getJob	job show	cli10	built in cli10
 fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
 fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:inlineRange	-	-	the browser viewer's range read of a file: the text preview and the subtitles
@@ -134,7 +134,7 @@ fn	lib/manage/api.ts:deleteGroup	group rm	cli8	built in cli8
 fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
 fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
-fn	lib/manage/api.ts:getJob	-	cli10	planned, cli10
+fn	lib/manage/api.ts:getJob	job show	cli10	built in cli10
 fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
@@ -218,7 +218,7 @@ route	DELETE /api/v1/accounts/{acc}/keys/{key}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
-route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
+route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
 route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
 route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
@@ -260,19 +260,19 @@ route	GET /api/v1/accounts/{acc}/usage	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users/{usr}/grants	user grants	cli8	built in cli8
-route	GET /api/v1/accounts/{acc}/webhooks	-	cli10	planned, cli10
-route	GET /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
-route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	-	cli10	planned, cli10
+route	GET /api/v1/accounts/{acc}/webhooks	webhook ls	cli10	built in cli10
+route	GET /api/v1/accounts/{acc}/webhooks/{hook}	webhook show	cli10	built in cli10
+route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	webhook deliveries	cli10	built in cli10
 route	GET /api/v1/admins	-	cli9	planned, cli9
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
 route	GET /api/v1/directory	-	cli11	planned, cli11
 route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); folder ls --mine (cli8) lists the same route
 route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5
-route	GET /api/v1/imports/sources	-	cli10	planned, cli10
-route	GET /api/v1/imports/{imp}	-	cli10	planned, cli10
-route	GET /api/v1/imports/{imp}/items	-	cli10	planned, cli10
+route	GET /api/v1/imports/sources	import sources	cli10	built in cli10
+route	GET /api/v1/imports/{imp}	import show	cli10	built in cli10
+route	GET /api/v1/imports/{imp}/items	import items	cli10	built in cli10
 route	GET /api/v1/info	info	cli3	public route; info prints it
-route	GET /api/v1/jobs/{job}	-	cli10	planned, cli10
+route	GET /api/v1/jobs/{job}	job show	cli10	built in cli10
 route	GET /api/v1/label-fields	-	cli11	planned, cli11
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
@@ -336,7 +336,7 @@ route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
-route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
+route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in cli10
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
@@ -364,10 +364,10 @@ route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in	-	-	sign in as a user: bro
 route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/users/{usr}/verification	-	cli9	planned, cli9
-route	POST /api/v1/accounts/{acc}/webhooks	-	cli10	planned, cli10
-route	POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry	-	cli10	planned, cli10
-route	POST /api/v1/accounts/{acc}/webhooks/{hook}/secret	-	cli10	planned, cli10
-route	POST /api/v1/accounts/{acc}/webhooks/{hook}/test	-	cli10	planned, cli10
+route	POST /api/v1/accounts/{acc}/webhooks	webhook add	cli10	built in cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry	webhook retry	cli10	built in cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/secret	webhook rotate-secret	cli10	built in cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/test	webhook test	cli10	built in cli10
 route	POST /api/v1/admins	-	cli9	planned, cli9
 route	POST /api/v1/auth/cli/approve	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
 route	POST /api/v1/auth/cli/lookup	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
@@ -386,10 +386,10 @@ route	POST /api/v1/auth/verify	-	-	browser sign-in flow; the CLI signs in with c
 route	POST /api/v1/comments/{cmt}/resolve	-	cli11	planned, cli11
 route	POST /api/v1/folders/{fld}/directories	mkdir	cli5	built in cli5
 route	POST /api/v1/folders/{fld}/files	touch	cli5	built in cli5
-route	POST /api/v1/imports	-	cli10	planned, cli10
-route	POST /api/v1/imports/{imp}/cancel	-	cli10	planned, cli10
-route	POST /api/v1/imports/{imp}/pause	-	cli10	planned, cli10
-route	POST /api/v1/imports/{imp}/resume	-	cli10	planned, cli10
+route	POST /api/v1/imports	import start	cli10	built in cli10
+route	POST /api/v1/imports/{imp}/cancel	import cancel	cli10	built in cli10
+route	POST /api/v1/imports/{imp}/pause	import pause	cli10	built in cli10
+route	POST /api/v1/imports/{imp}/resume	import resume	cli10	built in cli10
 route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
 route	POST /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
@@ -420,7 +420,7 @@ route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7
 route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
-route	PUT /api/v1/accounts/{acc}/imports/archive	-	cli10	planned, cli10
+route	PUT /api/v1/accounts/{acc}/imports/archive	import archive set	cli10	built in cli10
 route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
 route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
