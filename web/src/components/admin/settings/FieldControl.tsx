@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Input, InputNumber, Select, Space, Switch } from "antd";
+import { lazy, Suspense } from "react";
 import { useT } from "../../../lib/i18n";
 import type { Setting } from "../../../lib/settings/api";
+import type { FieldSpec } from "../../../lib/settings/fields";
 import type { Draft } from "../../../lib/settings/form";
 import type { Amount, DurationUnit, SizeUnit } from "../../../lib/settings/units";
 
 const SIZE_UNITS: SizeUnit[] = ["MB", "GB"];
 const DURATION_UNITS: DurationUnit[] = ["minutes", "hours", "days"];
+
+const ColourInput = lazy(() => import("./ColourInput"));
 
 interface Props {
   setting: Setting;
@@ -15,17 +19,30 @@ interface Props {
   value: Draft;
   readOnly: boolean;
   onChange: (value: Draft) => void;
+  // spec says a text is a colour, or how long it may be.
+  spec?: FieldSpec;
+  // fallback is the colour drawn for a colour that is empty.
+  fallback?: string;
 }
 
 // FieldControl is the input of one setting: a switch, a text, a count, or a number with a unit picker for a size or a duration.
 // A read-only field keeps its value on show and cannot be changed.
-export default function FieldControl({ setting, label, value, readOnly, onChange }: Props) {
+export default function FieldControl({ setting, label, value, readOnly, onChange, spec, fallback = "#FFFFFF" }: Props) {
   const { t } = useT();
   switch (setting.type) {
     case "bool":
       return <Switch checked={value === true} disabled={readOnly} onChange={onChange} aria-label={label} />;
-    case "string":
-      return <Input value={typeof value === "string" ? value : ""} disabled={readOnly} onChange={(e) => onChange(e.target.value)} aria-label={label} style={{ maxWidth: "100%" }} />;
+    case "string": {
+      const text = typeof value === "string" ? value : "";
+      if (spec?.colour) {
+        return (
+          <Suspense fallback={<Input value={text || fallback} disabled aria-label={label} style={{ width: 120 }} />}>
+            <ColourInput value={text} fallback={fallback} label={label} disabled={readOnly} onChange={onChange} />
+          </Suspense>
+        );
+      }
+      return <Input value={text} disabled={readOnly} maxLength={spec?.maxLength} onChange={(e) => onChange(e.target.value)} aria-label={label} style={{ maxWidth: "100%" }} />;
+    }
     case "int":
       return (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, maxWidth: "100%" }}>

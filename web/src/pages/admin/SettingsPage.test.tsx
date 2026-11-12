@@ -565,7 +565,7 @@ describe("the layout follows the content's width", () => {
     await screen.findByRole("region", { name: "Uploads and storage" });
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getAllByRole("region")).toHaveLength(4);
+    expect(screen.getAllByRole("region")).toHaveLength(5);
     expect(twoColumns("upload.max_file_size")).toBe(true);
   });
 
@@ -625,7 +625,7 @@ describe("the layout follows the content's width", () => {
     watch.observe(document.body, { childList: true, subtree: true });
     server();
     renderPage();
-    await screen.findByRole("region", { name: "Uploads and storage" });
+    await screen.findByRole("region", { name: "Branding" });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 200));
     });
@@ -651,19 +651,19 @@ describe("the layout follows the content's width", () => {
 });
 
 describe("the layout", () => {
-  it("lists the four sections beside the cards on a wide window, and no Branding", async () => {
+  it("lists the five sections beside the cards on a wide window, Branding first", async () => {
     server();
     renderPage();
     await screen.findByRole("region", { name: "Uploads and storage" });
     const nav = screen.getByRole("navigation", { name: "Sections" });
     expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Branding",
       "Uploads and storage",
       "Sharing, trash and versions",
       "Sign-in, search, office and administration",
       "About",
     ]);
-    expect(screen.getAllByRole("region")).toHaveLength(4);
-    expect(screen.queryByText("Branding")).toBeNull();
+    expect(screen.getAllByRole("region")).toHaveLength(5);
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 
@@ -674,12 +674,17 @@ describe("the layout", () => {
     renderPage();
     const tabs = await screen.findByRole("tablist");
     expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "Branding",
       "Uploads and storage",
       "Sharing, trash and versions",
       "Sign-in, search, office and administration",
       "About",
     ]);
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    // Branding is the tab shown first.
+    expect(screen.getByRole("region", { name: "Branding" })).toBeTruthy();
+    fireEvent.click(within(tabs).getByRole("tab", { name: "Uploads and storage" }));
+    await waitFor(() => expect(numberBox("upload.max_file_size")).toBeTruthy());
     fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "5" } });
     fireEvent.click(within(tabs).getByRole("tab", { name: "Sharing, trash and versions" }));
     await waitFor(() => expect(row("trash.retention")).toBeTruthy());

@@ -27,15 +27,21 @@ export interface FieldSpec {
   range?: Range;
   // notes are the keys of the sentences that follow the help, for a rule the field shares with others.
   notes?: string[];
+  // colour says the value is a #rrggbb colour, drawn with a picker. An empty value means the colour follows the accent.
+  colour?: boolean;
+  // maxLength is the most characters of a text, as the server holds it.
+  maxLength?: number;
 }
 
 export interface Group {
   // title is the catalogue key of the group's heading, or null for a section that has one group and needs none.
   title: string | null;
   fields: FieldSpec[];
+  // folded says the group is drawn closed under its title until a person opens it (the Branding card's Advanced).
+  folded?: boolean;
 }
 
-export type SectionId = "uploads" | "sharing" | "signin" | "about";
+export type SectionId = "branding" | "uploads" | "sharing" | "signin" | "about";
 
 export interface SectionSpec {
   id: SectionId;
@@ -44,7 +50,35 @@ export interface SectionSpec {
 
 const LOWERING = "settings.note.lowering";
 
+const palette = (theme: "light" | "dark"): FieldSpec[] =>
+  ["accent", "accent_fill", "accent_fill_hover", "accent_fill_active", "accent_text", "accent_soft", "accent_border"].map((token) => ({
+    key: `ui.brand.palette.${theme}.${token}`,
+    type: "string" as const,
+    colour: true,
+  }));
+
 export const SECTIONS: SectionSpec[] = [
+  {
+    id: "branding",
+    groups: [
+      {
+        title: null,
+        fields: [
+          { key: "ui.brand.name", type: "string", maxLength: 64 },
+          { key: "ui.brand.accent", type: "string", colour: true },
+        ],
+      },
+      {
+        title: "settings.group.advanced",
+        folded: true,
+        fields: [
+          ...["bg", "text", "caption", "active", "on_active"].map((token) => ({ key: `ui.brand.sidebar.${token}`, type: "string" as const, colour: true })),
+          ...palette("light"),
+          ...palette("dark"),
+        ],
+      },
+    ],
+  },
   {
     id: "uploads",
     groups: [

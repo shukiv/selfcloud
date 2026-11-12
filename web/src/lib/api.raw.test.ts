@@ -16,7 +16,7 @@ describe("a raw body", () => {
     const fn = answer(200, { ok: true });
     const file = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
     await api("PUT", "/api/v1/settings/brand/logo", { raw: { body: file, type: "image/png" } });
-    const init = fn.mock.calls[0][1];
+    const init = fn.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("PUT");
     expect(init.body).toBe(file);
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("image/png");
@@ -25,7 +25,7 @@ describe("a raw body", () => {
   it("a JSON body is still JSON", async () => {
     const fn = answer(200, {});
     await api("PATCH", "/api/v1/settings", { body: { reset: ["a"] } });
-    const init = fn.mock.calls[0][1];
+    const init = fn.mock.calls[0][1] as RequestInit;
     expect(init.body).toBe('{"reset":["a"]}');
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });

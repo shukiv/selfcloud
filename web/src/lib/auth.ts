@@ -2,7 +2,7 @@
 
 import { api, ApiError } from './api';
 import { beginSignOut, clearSession, endSignOut, setMe, setSignedIn } from './session';
-import type { Brand } from './brand';
+import { applyBrand, type Brand } from './brand';
 import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
 import { markSignedOut } from "./pwa/cacheState";
@@ -38,6 +38,20 @@ export async function loadInfo(): Promise<Info> {
     features: info.features,
     limits: info.limits ?? null,
   };
+}
+
+// refreshBrand reads the brand again and applies it, so a change made on the Settings page shows in this page's own sidebar and title
+// at once. bust is for a picture that changed: its address is the same, so a stamp makes the browser fetch it again. A failed read
+// leaves the brand as it is.
+export async function refreshBrand(bust = false): Promise<void> {
+  try {
+    const { brand } = await loadInfo();
+    if (brand === null) return;
+    const url = brand.logo_url;
+    applyBrand({ ...brand, logo_url: bust && url && url.startsWith('/') ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : url });
+  } catch {
+    // The page keeps the brand it has.
+  }
 }
 
 // loadMe answers the signed-in user, or null when nobody is signed in.

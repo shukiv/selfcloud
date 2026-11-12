@@ -94,7 +94,8 @@ async function pick(key: string, hex: string) {
   });
   fireEvent.click(trigger);
   const box = await waitFor(() => {
-    const el = document.querySelector(".ant-color-picker-hex-input input");
+    // A picker that was closed stays in the page: the newest one is the one just opened.
+    const el = [...document.querySelectorAll(".ant-color-picker-hex-input input")].pop();
     if (!el) throw new Error("the picker is not open");
     return el as HTMLInputElement;
   });
@@ -256,7 +257,8 @@ describe("the preview", () => {
     expect(preview("signin").querySelector("img")?.getAttribute("alt")).toBe("SelfCloud");
     fireEvent.change(text("ui.brand.name"), { target: { value: "Acme" } });
     await pick("ui.brand.accent", "0f766e");
-    await waitFor(() => expect(within(preview("signin")).getByText("Acme")).toBeTruthy());
+    // With no logo the artwork is drawn, which has the name inside the picture, so the name is its label.
+    await waitFor(() => expect(preview("signin").querySelector("img")?.getAttribute("alt")).toBe("Acme"));
     expect((preview("signin").querySelector("[data-preview-button]") as HTMLElement).style.background).toBe("rgb(15, 118, 110)");
     // The icon's tile is the accent too.
     expect((preview("icons").querySelector("[data-preview-tile]") as HTMLElement).style.background).toBe("rgb(15, 118, 110)");
@@ -293,13 +295,13 @@ describe("the preview", () => {
     server();
     renderPage();
     await ready();
-    expect(within(region("Branding")).queryByText(/keeps the default/)).toBeNull();
+    expect(within(region("Branding")).queryByText(/so the (light|dark) theme keeps/)).toBeNull();
     await pick("ui.brand.accent", "fde68a");
     expect(await within(region("Branding")).findByText("This colour is too light for the light theme, so the light theme keeps the default blue.")).toBeTruthy();
     await pick("ui.brand.accent", "000000");
     expect(await within(region("Branding")).findByText("This colour is too dark for the dark theme, so the dark theme keeps its default.")).toBeTruthy();
     await pick("ui.brand.accent", "0f766e");
-    await waitFor(() => expect(within(region("Branding")).queryByText(/keeps (the default|its default)/)).toBeNull());
+    await waitFor(() => expect(within(region("Branding")).queryByText(/so the (light|dark) theme keeps/)).toBeNull());
   });
 });
 

@@ -44,7 +44,7 @@ describe("the page when its own strings do not load", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("region", { name: "Uploads and storage" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Branding" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

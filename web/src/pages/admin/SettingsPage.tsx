@@ -12,18 +12,20 @@ import { queryKey } from "../../lib/query";
 import { getInfo } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { useAdminTextState } from "../../lib/manage/adminText";
-import { changeSettings, getSettings, type SettingsChange } from "../../lib/settings/api";
+import { refreshBrand } from "../../lib/auth";
+import { changeSettings, getSettings, type SettingsAnswer, type SettingsChange } from "../../lib/settings/api";
 import { fieldKeys, SECTIONS, type SectionId, type SectionSpec } from "../../lib/settings/fields";
-import { draftOf, isChanged, refusal, sectionChange, type Draft, type Edits } from "../../lib/settings/form";
+import { draftOf, isChanged, refusal, sectionChange, withoutSent, type Draft, type Edits } from "../../lib/settings/form";
 import NotFoundPage from "../NotFoundPage";
 import { pageTitle } from "../../components/admin/adminStyles";
 import { useGuard } from "../../components/admin/hooks";
 import About from "../../components/admin/settings/About";
+import BrandingCard from "../../components/admin/settings/BrandingCard";
 import SectionCard, { type Notice } from "../../components/admin/settings/SectionCard";
 
 // SettingsPage is the installation admin's Settings (decision 143). Each section of settings has its own Save, which sends that
-// section's changed keys only. A setting the config file writes is read-only here. The Branding section sits before the first
-// card when it lands (the list of sections and the tabs are built from the one list below).
+// section's changed keys only. A setting the config file writes is read-only here. Branding is the first section, with a card of
+// its own (decision 148); the list of sections and the tabs are built from the one list of sections.
 export default function SettingsPage() {
   const user = useStore(session)?.user;
   return isAdmin(user) ? <SettingsView /> : <NotFoundPage />;
@@ -108,7 +110,7 @@ function SettingsView() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notices, setNotices] = useState<Partial<Record<SectionId, Notice | null>>>({});
   const [busy, setBusy] = useState<SectionId | null>(null);
-  const [tab, setTab] = useState<Tab>("uploads");
+  const [tab, setTab] = useState<Tab>("branding");
   const answer = q.data;
   const settings = answer?.settings ?? [];
 
@@ -138,7 +140,7 @@ function SettingsView() {
   }, [dirty]);
 
   // The section list marks the section in view.
-  const [inView, setInView] = useState<Tab>("uploads");
+  const [inView, setInView] = useState<Tab>("branding");
   useEffect(() => {
     if (!layout.list || answer === undefined || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
@@ -205,10 +207,14 @@ function SettingsView() {
       if (body.set === undefined && body.reset === undefined) return;
       setBusy(section.id);
       setNotice(section.id, null);
+      // What was sent is what this snapshot of the edits says: a value typed while the change is on its way is a new edit, and stays.
+      const sent = edits;
       try {
         const next = await changeSettings(body);
         qc.setQueryData(settingsKey, next);
-        dropEdits(keys);
+        setEdits((cur) => withoutSent(cur, sent, keys));
+        // The page's own sidebar, title and colours follow a change of the brand at once.
+        if (keys.some((k) => k.startsWith("ui.brand."))) void refreshBrand();
         setNotice(section.id, { kind: "saved" });
         // What the rest of the page reads from the server follows the change: the answer is re-read, and so is About's.
         void qc.invalidateQueries({ queryKey: settingsKey });
@@ -233,23 +239,31 @@ function SettingsView() {
       }
     });
 
-  const card = (s: SectionSpec): ReactNode => (
-    <SectionCard
-      key={s.id}
-      section={s}
-      settings={settings}
-      edits={edits}
-      errors={errors}
-      notice={notices[s.id] ?? null}
-      dirty={sectionDirty(s)}
-      busy={busy !== null}
-      wide={wide}
-      onChange={(k, v) => change(s, k, v)}
-      onReset={(k) => reset(s, k)}
-      onSave={() => void save(s)}
-      onDiscard={() => discard(s)}
-    />
-  );
+  // A picture is changed at once and is not part of any Save: its answer replaces the settings, and the page's own brand is read again.
+  const picturesChanged = (next: SettingsAnswer) => {
+    qc.setQueryData(settingsKey, next);
+    void refreshBrand(true);
+  };
+  const common = (s: SectionSpec) => ({
+    section: s,
+    settings,
+    edits,
+    errors,
+    notice: notices[s.id] ?? null,
+    dirty: sectionDirty(s),
+    busy: busy !== null,
+    wide,
+    onChange: (k: string, v: Draft) => change(s, k, v),
+    onReset: (k: string) => reset(s, k),
+    onSave: () => void save(s),
+    onDiscard: () => discard(s),
+  });
+  const card = (s: SectionSpec): ReactNode =>
+    s.id === "branding" ? (
+      <BrandingCard key={s.id} {...common(s)} pictures={answer?.pictures ?? []} onPictures={picturesChanged} onLocked={() => void qc.invalidateQueries({ queryKey: settingsKey })} />
+    ) : (
+      <SectionCard key={s.id} {...common(s)} />
+    );
   const about = <About key="about" info={infoQ.data} facts={answer?.facts ?? []} failure={infoQ.isError ? failureText(infoQ.error, lang) : null} />;
   const cards: { id: Tab; node: ReactNode }[] = [...SECTIONS.map((s) => ({ id: s.id as Tab, node: card(s) })), { id: "about", node: about }];
 

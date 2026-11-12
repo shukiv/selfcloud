@@ -9,6 +9,8 @@ export { ApiError } from './apiError';
 
 export interface RequestOptions {
   body?: unknown;
+  // raw sends the bytes as they are, with their own content type, in place of a JSON body (a picture upload).
+  raw?: { body: Blob; type: string };
   // headers adds request headers, such as If-Match. The CSRF header is set by api itself.
   headers?: Record<string, string>;
   // noRedirect is for calls where a 401 is an answer, not an expired session: the start-up check,
@@ -41,8 +43,11 @@ export function onSignInAsEnded(fn: (expired: boolean) => void): void {
 // request that changes something carries the CSRF token from the session.
 export async function api<T = void>(method: Method, path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json', ...opts.headers };
-  let body: string | undefined;
-  if (opts.body !== undefined) {
+  let body: string | Blob | undefined;
+  if (opts.raw !== undefined) {
+    headers['Content-Type'] = opts.raw.type;
+    body = opts.raw.body;
+  } else if (opts.body !== undefined) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(opts.body);
   }
@@ -112,8 +117,9 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   } finally {
     window.clearTimeout(timer);
   }
-  const env = data as { error?: { code?: unknown; details?: unknown } } | null;
+  const env = data as { error?: { code?: unknown; message?: unknown; details?: unknown } } | null;
   const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
+  const said = typeof env?.error?.message === 'string' ? env.error.message : '';
   const raw = env?.error?.details;
   const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
 
@@ -140,7 +146,7 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   }
   if (!res.ok) {
     const retry = Number(res.headers.get('Retry-After') ?? 0);
-    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0);
+    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0, said);
   }
   return data as T;
 }

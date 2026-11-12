@@ -77,6 +77,16 @@ export default function SectionCard({ section, settings, edits, errors, notice, 
           })}
         </div>
       ))}
+      <SectionFoot notice={notice} dirty={dirty} busy={busy} onSave={onSave} onDiscard={onDiscard} />
+    </CardFrame>
+  );
+}
+
+// SectionFoot is what ends a section: the last Save's notice, the unsaved mark, Discard and Save.
+export function SectionFoot({ notice, dirty, busy, onSave, onDiscard }: Pick<Props, "notice" | "dirty" | "busy" | "onSave" | "onDiscard">) {
+  const { t } = useT();
+  return (
+    <>
       {notice?.kind === "error" && <Alert type="error" showIcon role="alert" message={notice.text} style={{ marginBlockEnd: 12 }} />}
       {notice?.kind === "conflict" && (
         <Alert type="warning" showIcon role="alert" message={t("settings.conflict", { keys: notice.keys.join(", ") })} style={{ marginBlockEnd: 12 }} />
@@ -99,6 +109,6 @@ export default function SectionCard({ section, settings, edits, errors, notice, 
           {t("settings.save")}
         </Button>
       </div>
-    </CardFrame>
+    </>
   );
 }

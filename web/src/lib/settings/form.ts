@@ -50,7 +50,19 @@ export function wireOf(type: Setting["type"], d: Draft): Wire | null {
 function sameValue(type: Setting["type"], a: Wire, b: Wire): boolean {
   if (type === "bytes") return sizeBytes(a as string | number) === sizeBytes(b as string | number);
   if (type === "duration") return durationSeconds(a as string) === durationSeconds(b as string);
+  // A colour is the same in either case: #0f766e and #0F766E are one colour.
+  if (typeof a === "string" && typeof b === "string" && COLOUR.test(a) && COLOUR.test(b)) return a.toLowerCase() === b.toLowerCase();
   return a === b;
+}
+
+const COLOUR = /^#[0-9a-fA-F]{6}$/;
+
+// withoutSent is the edits left after a Save of keys that sent the edits in sent: an edit is dropped only when it is still the very
+// one that was sent. A value typed into a field while its section was saving is a new edit, and stays.
+export function withoutSent(cur: Edits, sent: Edits, keys: string[]): Edits {
+  const next = { ...cur };
+  for (const k of keys) if (next[k] === sent[k]) delete next[k];
+  return next;
 }
 
 // isChanged says whether an edit changes the field. A locked field never changes; a reset changes a field that has a value

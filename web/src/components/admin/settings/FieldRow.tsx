@@ -18,20 +18,23 @@ interface Props {
   wide: boolean;
   onChange: (value: Draft) => void;
   onReset: () => void;
+  // fallback is the colour drawn for a colour field that is empty.
+  fallback?: string;
 }
 
 const muted = { margin: "4px 0 0", fontSize: 13, lineHeight: 1.5, color: "var(--ant-color-text-secondary)", maxWidth: "62ch" } as const;
 
 // FieldRow is one setting: its name, its help and rules, where its value comes from, and its input. A field the config file
 // writes, or that the server reads only at start, is read-only. A stored value has Reset, an icon that puts the default back.
-export default function FieldRow({ spec, setting, edit, error, wide, onChange, onReset }: Props) {
+export default function FieldRow({ spec, setting, edit, error, wide, onChange, onReset, fallback }: Props) {
   const { t } = useT();
   const lang = useLang();
   const label = t(`settings.field.${setting.key}.label`);
   const readOnly = setting.locked || setting.restart;
   const changed = isChanged(setting, edit);
   const words = { on: t("settings.on"), off: t("settings.off"), none: t("settings.none") };
-  const shown = formatValue(setting.type, setting.default, lang, words);
+  // A colour that has no default of its own follows the accent.
+  const shown = spec.colour && setting.default === "" ? t("settings.colour.derived") : formatValue(setting.type, setting.default, lang, words);
   const canReset = !readOnly && setting.source === "settings" && edit?.reset !== true;
   const range = spec.range;
   // An emptied box is an edit of null, which must stay empty and not fall back to the saved value.
@@ -88,7 +91,7 @@ export default function FieldRow({ spec, setting, edit, error, wide, onChange, o
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: wide ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
-          <FieldControl setting={setting} label={label} value={value} readOnly={readOnly} onChange={onChange} />
+          <FieldControl setting={setting} label={label} value={value} readOnly={readOnly} onChange={onChange} spec={spec} fallback={fallback} />
           {canReset ? (
             <Tooltip title={t("settings.reset", { value: shown })}>
               <Button type="text" aria-label={t("settings.reset", { value: shown })} icon={<RotateCcw size={16} aria-hidden="true" />} onClick={onReset} />
