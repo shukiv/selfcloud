@@ -311,9 +311,14 @@ func LabelSet(args []string, stdout, stderr io.Writer) int {
 		}
 		return code
 	}
+	// A number is shown in the form the API stores and label show prints; every other value as it was given.
+	shown := value
+	if typ == "number" {
+		shown = labelValueText(bodyValue)
+	}
 	if err := output.KeyValues(stdout, []output.KV{
 		{Key: "field", Value: fieldID},
-		{Key: "value", Value: value},
+		{Key: "value", Value: shown},
 	}); err != nil {
 		return fail(stderr, g, err)
 	}

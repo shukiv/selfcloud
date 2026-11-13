@@ -1085,7 +1085,7 @@ labels. The values on files have their own commands, in Labels on files below.
 | `label field add [--account ACC] --type TYPE [--restricted] [--choice NAME]... NAME` | defines a field (`TYPE`: `text`, `number`, `date`, `user` or `choice`); prints `id`, `name`, `type`, `restricted` and each `choice` |
 | `label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true\|false] [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...` | changes only what is given |
 | `label field rm [--account ACC] FIELD [--yes]` | removes a field and every value it holds on files; asks first |
-| `label field ls [--json]` | prints `ID`, `NAME`, `TYPE`, `RESTRICTED`, `CHOICES` and `VALUES`; the values count needs an account key or the owner's sign-in |
+| `label field ls [--json]` | prints `ID`, `NAME`, `TYPE`, `RESTRICTED`, `CHOICES` and `VALUES`; the values count comes only with an account key; a signed-in device's token does not get it |
 | `sharing policy show [--account ACC]` | prints `public_links`, `anyone_links`, `comments` and `who_viewed` |
 | `sharing policy set [--account ACC] [--public-links true\|false] [--comments true\|false] [--who-viewed true\|false] [--yes]` | changes only the switches given |
 
@@ -1232,10 +1232,11 @@ These routes need a credential that manages the file: an account key or a signed
 
 `label set` reads the file's labels first to learn the field's type, so the value is sent in the shape the API expects:
 a text value is at most 500 characters and cannot be empty, a number is finite, a date is `YYYY-MM-DD`, a user is a
-`usr_…` id, and a choice is sent as it was typed. A value the command cannot send exits 2; a field the file does not show
-the caller exits 4 before the change. A restricted field's refusal exits 3 and says that only a manager of the item may
-set it. `label clear` succeeds when the field had no value, and prints `cleared` and the field's id. `label show` writes a number without a trailing zero, a person
-or choice as `Name (id)`, and an archived choice with `[archived]`; the value is empty when the field is unset.
+`usr_…` id, and a choice is sent as it was typed. A value the command cannot send exits 2; a field the file does not
+show the caller exits 4 before the change. A restricted field's refusal exits 3 and says that only a manager of the item
+may set it. `label clear` succeeds when the field had no value, and prints `cleared` and the field's id. `label show`
+writes a number without a trailing zero, a person or choice as `Name (id)`, and an archived choice with `[archived]`;
+the value is empty when the field is unset.
 
 ```sh
 selfcloud label show nod_…

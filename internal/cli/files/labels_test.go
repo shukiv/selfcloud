@@ -143,7 +143,7 @@ func TestLabelSetSendsTheTypedValue(t *testing.T) {
 		shown string
 	}{
 		{"text", "text", "high", "high", "high"},
-		{"number", "number", "2.50", 2.5, "2.50"},
+		{"number", "number", "1.50", 1.5, "1.5"},
 		{"date", "date", "2026-11-03", "2026-11-03", "2026-11-03"},
 		{"user", "user", testLabelUser, testLabelUser, testLabelUser},
 		{"choice", "choice", testLabelChoice, testLabelChoice, testLabelChoice},

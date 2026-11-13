@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The label field list (slice cli11f): `label field ls`. It names every field the caller's account lets it see, with the
-// choices of a choice field and, for an account key or the owner's own sign-in, how many values the field has. An
-// installation admin key has no account, so the API refuses it; the hint says what to use instead.
+// choices of a choice field and, with an account key, how many values the field has; a signed-in device's token does not
+// get the count. An installation admin key has no account, so the API refuses it; the hint says what to use instead.
 
 package manage
 
