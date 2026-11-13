@@ -137,6 +137,8 @@ const ce2b2Stale = new Set();
 const ce2b2Taken = new Set();
 // ce3Ended collects the files whose save is answered 401 on purpose: the section ends the session on the server (ce3Checks, decision 133).
 const ce3Ended = new Set();
+// The refusals the se3 section causes on purpose and has not yet seen logged: the 400 of a logo upload that is not a picture.
+const se3Refused = { logo: 0 };
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -260,10 +262,15 @@ const EXPECTED = [
     name: 'dropped connection',
     matches: (e) => e.source === 'network' && /ERR_INTERNET_DISCONNECTED/.test(e.text ?? ''),
   },
-  // The Branding card's check sends a file that is not a picture, and the server refuses it with 400 (se3Checks, decision 148).
+  // The Branding card's check sends a file that is not a picture, and the server refuses it with 400 (se3Checks, decision 152). The
+  // section names the one refusal right before it, and the first matching entry takes it: a second 400 on a picture upload fails the run.
   {
     name: 'picture refused',
-    matches: (e) => e.source === 'network' && /\/api\/v1\/settings\/brand\/logo$/.test(e.url ?? '') && /status of 400\b/.test(e.text ?? ''),
+    matches: (e) => {
+      if (e.source !== 'network' || !/\/api\/v1\/settings\/brand\/logo$/.test(e.url ?? '') || !/status of 400\b/.test(e.text ?? '') || se3Refused.logo < 1) return false;
+      se3Refused.logo--;
+      return true;
+    },
   },
   // The conversions the s4b checks refuse on purpose: a refused preview or export, and a file type the converter does not
   // take. Only a 415 on a node s4b refused is expected; any other 415 on a preview or an export fails the run.
@@ -1147,7 +1154,7 @@ async function main() {
       await signIn(page, ADMIN);
       if (onlySet.has('admin')) await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
       if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
-      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey, ADMIN });
+      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused });
     }
     // Slice tl3 (decision 122): the owner's tables, on their own as the owner (SELFCLOUD_E2E_ONLY=tl3). The full run reaches
     // them after the owner's management pages.
@@ -1186,7 +1193,7 @@ async function main() {
     // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
     await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
     // Slice se3 (decision 143): the Settings page, on the admin's session.
-    await se3Checks(h, { page, base, adminKey, ADMIN });
+    await se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);

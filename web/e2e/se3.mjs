@@ -11,11 +11,12 @@
 //  6. The label column is readable at 768, 992, 1000, 1150 and 1280 px (the layout follows the content's width).
 //  7. Signed out, the old address goes to sign-in and back to Settings; so does /login?next= the old address, and the address
 //     with a trailing slash lands on Settings.
-//  8. Branding (decision 148): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
-//     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is uploaded, drawn in the preview and the sidebar, and removed; a file that is not a
-//     picture is refused in the server's words; no page error or policy violation.
+//  8. Branding (decision 152): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
+//     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is
+//     uploaded, drawn in the preview and the sidebar, and removed; a file that is not a picture is refused in the page's own
+//     words for a logo; no page error or policy violation.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setLanguage, setTheme, sleep } from './media.mjs';
@@ -42,10 +43,7 @@ async function stored(h, base, adminKey, key) {
   return got.settings.find((s) => s.key === key);
 }
 
-// unexpectedErrors are the browser errors since from, but for the 400 of the file the Branding check sends on purpose.
-const unexpectedErrors = (page, from) => page.errors.slice(from).filter((e) => !/status of 400\b.*\/api\/v1\/settings\/brand\/logo\b/.test(e));
-
-const brandRow =(key) => `[data-setting=${q(key)}]`;
+const brandRow = (key) => `[data-setting=${q(key)}]`;
 
 // pictureState reads what the server says of a picture.
 async function pictureState(h, base, adminKey, kind) {
@@ -54,7 +52,7 @@ async function pictureState(h, base, adminKey, kind) {
 }
 
 // brandingChecks drives the Branding card as the signed-in admin and leaves the brand as it found it.
-async function brandingChecks(h, { page, base, adminKey }) {
+async function brandingChecks(h, { page, base, adminKey, refused }) {
   const { check } = h;
   const errorsBefore = page.errors.length;
   await page.waitFor(`!!document.getElementById('settings-branding') && !!document.querySelector('${brandRow('ui.brand.accent')} input[type="color"]')`, 15000);
@@ -99,36 +97,47 @@ async function brandingChecks(h, { page, base, adminKey }) {
 
   // The logo: upload, see it, remove it.
   const dir = mkdtempSync(join(tmpdir(), 'se3-logo-'));
-  const logo = join(dir, 'logo.svg');
-  writeFileSync(logo, '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30" viewBox="0 0 120 30"><rect width="120" height="30" fill="#c00000"/></svg>');
-  await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [logo]);
-  await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
-  const held = await pictureState(h, base, adminKey, 'logo');
-  check(held.state === 'uploaded' && held.type === 'image/svg+xml', `the server holds the uploaded logo (${held.state}, ${held.type})`);
-  await page.waitFor(`document.querySelector('[data-preview="sidebar"] img')?.src.includes('/brand/logo?v=')`, 10000);
-  const shown = await page.evaluate(`(async () => {
-    const img = document.querySelector('[data-preview="sidebar"] img');
-    await img.decode().catch(() => undefined);
-    return { src: img.getAttribute('src'), w: img.naturalWidth, side: document.querySelector('[data-testid="sidebar-brand"] img')?.getAttribute('src') };
-  })()`);
-  check(shown.w > 0 && shown.src.includes('/brand/logo?v='), `the preview draws the uploaded logo (${shown.src}, ${shown.w} px wide)`);
-  check(/^\/brand\/logo\?v=/.test(shown.side ?? ''), `the page's own sidebar draws the uploaded logo at once (${shown.side})`);
-  await h.clickOn(page, '[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]');
-  await page.waitFor(`!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
-  check((await pictureState(h, base, adminKey, 'logo')).state === 'none', 'Remove puts the logo back to none');
+  try {
+    const logo = join(dir, 'logo.svg');
+    writeFileSync(logo, '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30" viewBox="0 0 120 30"><rect width="120" height="30" fill="#c00000"/></svg>');
+    await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [logo]);
+    await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
+    const held = await pictureState(h, base, adminKey, 'logo');
+    check(held.state === 'uploaded' && held.type === 'image/svg+xml', `the server holds the uploaded logo (${held.state}, ${held.type})`);
+    await page.waitFor(`document.querySelector('[data-preview="sidebar"] img')?.src.includes('/brand/logo?v=')`, 10000);
+    const shown = await page.evaluate(`(async () => {
+      const img = document.querySelector('[data-preview="sidebar"] img');
+      await img.decode().catch(() => undefined);
+      return { src: img.getAttribute('src'), w: img.naturalWidth, side: document.querySelector('[data-testid="sidebar-brand"] img')?.getAttribute('src') };
+    })()`);
+    check(shown.w > 0 && shown.src.includes('/brand/logo?v='), `the preview draws the uploaded logo (${shown.src}, ${shown.w} px wide)`);
+    check(/^\/brand\/logo\?v=/.test(shown.side ?? ''), `the page's own sidebar draws the uploaded logo at once (${shown.side})`);
+    await h.clickOn(page, '[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]');
+    await page.waitFor(`!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
+    check((await pictureState(h, base, adminKey, 'logo')).state === 'none', 'Remove puts the logo back to none');
 
-  // A file the server refuses is shown with the server's own words.
-  const bad = join(dir, 'bad.svg');
-  writeFileSync(bad, 'plain text, not a picture');
-  await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [bad]);
-  await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]')`, 15000);
-  const refused = await page.evaluate(`document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]').textContent`);
-  check(refused.length > 10 && (await pictureState(h, base, adminKey, 'logo')).state === 'none', `a file that is not a picture is refused with the server's words (${refused})`);
-  const unexpected = unexpectedErrors(page, errorsBefore);
+    // A file the server refuses is told in the page's own words: the rule for a logo. The run expects the one 400 this sends, and
+    // only this one: it is named to the run right before and must have been taken by the time the answer is shown.
+    const bad = join(dir, 'bad.svg');
+    writeFileSync(bad, 'plain text, not a picture');
+    refused.logo = 1;
+    await page.setFiles('[data-picture="ui.brand.logo"] input[type="file"]', [bad]);
+    await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]')`, 15000);
+    const said = await page.evaluate(`document.querySelector('[data-picture="ui.brand.logo"] [role="alert"]').textContent`);
+    check(
+      said.startsWith('The file is not a PNG or an SVG the server can use. A PNG logo is at most 4096 pixels') && (await pictureState(h, base, adminKey, 'logo')).state === 'none',
+      `a file that is not a picture is refused with the logo's rule (${said})`,
+    );
+    for (let i = 0; i < 50 && refused.logo !== 0; i++) await sleep(100);
+    check(refused.logo === 0, 'the one expected 400 of the refused upload was logged, and no other');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const unexpected = page.errors.slice(errorsBefore);
   check(unexpected.length === 0, `the Branding checks log no page error or policy violation (${unexpected.join(' | ') || 'none'})`);
 }
 
-export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
+export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
   const { check, navigateTo } = h;
   const errorsBefore = page.errors.length;
   try {
@@ -200,7 +209,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     check(true, 'Discard puts the section back as the server has it');
 
     // 4a. Branding: the sidebar colour is changed, saved and read again; a logo is uploaded, seen and removed.
-    await brandingChecks(h, { page, base, adminKey });
+    await brandingChecks(h, { page, base, adminKey, refused });
 
     // 4b. The label column keeps a readable width at every window width, with the sidebar docked from 992 px: either at least
     //     200 px, or the row is one stacked column.
@@ -253,7 +262,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     check(dark === 'rgb(7, 21, 49)', `in the dark theme the page has the dark background (${dark})`);
     await setTheme(page, 'Light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
-    check(unexpectedErrors(page, errorsBefore).length === 0, `the Settings checks log no page error (${unexpectedErrors(page, errorsBefore).join(' | ') || 'none'})`);
+    check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
 
     // 6. A window whose content straddles the tabs boundary does not flip: 635 px less a classic scrollbar is inside the 24 px
     //    band the layout settles across, so the cards stay stacked and the tablist never appears, over two seconds.
@@ -291,7 +300,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
     await page.goto(`${base}/login?next=%2Fadmin%2Finstallation`);
     await h.signInHere(page, ADMIN);
     await onSettings('signing in through /login?next= the old address lands on Settings');
-    check(unexpectedErrors(page, errorsBefore).length === 0, `the old-address checks log no page error (${unexpectedErrors(page, errorsBefore).join(' | ') || 'none'})`);
+    check(page.errors.length === errorsBefore, `the old-address checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
   } finally {
     // The window comes back whatever happened, and a retention left set is cleared.
     await setWidth(page, 1280).catch(() => undefined);

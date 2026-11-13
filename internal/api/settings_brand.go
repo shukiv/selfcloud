@@ -31,7 +31,7 @@ const (
 	pictureNone     = "none"
 	pictureFile     = "file"
 	pictureUploaded = "uploaded"
-	// pictureUnusable is an upload the start did not use (decision 148): it is stored, and the answer says why.
+	// pictureUnusable is an upload the start did not use (decision 152): it is stored, and the answer says why.
 	pictureUnusable = "unusable"
 )
 
@@ -56,7 +56,7 @@ var (
 	errCheckFailed   = errors.New("its bytes fail the check an upload gets")
 )
 
-// The reason codes of an unusable picture in the settings answer (decision 148). They are a closed set: a client branches on
+// The reason codes of an unusable picture in the settings answer (decision 152). They are a closed set: a client branches on
 // them, and no error text or path reaches the answer.
 const (
 	reasonRowNotWritten = "row_not_written"

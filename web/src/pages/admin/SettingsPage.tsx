@@ -26,7 +26,7 @@ import SectionCard, { type Notice } from "../../components/admin/settings/Sectio
 
 // SettingsPage is the installation admin's Settings (decision 143). Each section of settings has its own Save, which sends that
 // section's changed keys only. A setting the config file writes is read-only here. Branding is the first section, with a card of
-// its own (decision 148); the list of sections and the tabs are built from the one list of sections.
+// its own (decision 152); the list of sections and the tabs are built from the one list of sections.
 export default function SettingsPage() {
   const user = useStore(session)?.user;
   return isAdmin(user) ? <SettingsView /> : <NotFoundPage />;
