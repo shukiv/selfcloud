@@ -157,7 +157,7 @@ func TestPutSendsAFileInCheckedPieces(t *testing.T) {
 	}
 }
 
-// TestPutResumesFromTheServersOffsetAfterThreeCuts is the fault-injection proof for uploads (design-cli section 6): a
+// TestPutResumesFromTheServersOffsetAfterThreeCuts is the fault-injection proof for uploads (decision 142): a
 // 5 MiB file in 1 MiB pieces arrives whole after three cut connections. After each cut, put asks the server how far it
 // got (HEAD) and goes on from that offset: it never starts a new upload, and never sends from zero again.
 func TestPutResumesFromTheServersOffsetAfterThreeCuts(t *testing.T) {
@@ -274,7 +274,7 @@ func wantExpired(t *testing.T, l *live, name string, before int, resumed result)
 	}
 }
 
-// TestPutPastTheUploadsLifetimeExits6 is the expiry proof of design-cli 3.8 for upload.max_lifetime: the server's own
+// TestPutPastTheUploadsLifetimeExits6 is the expiry proof of decision 142 for upload.max_lifetime: the server's own
 // limit, set to two seconds in its configuration, ends the upload; the resume exits 6. The same run with the limit at its
 // default finishes, with a matching SHA-256.
 func TestPutPastTheUploadsLifetimeExits6(t *testing.T) {

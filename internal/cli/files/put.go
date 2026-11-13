@@ -45,7 +45,7 @@ func tusHeader() http.Header { return http.Header{"Tus-Resumable": {tusVersion}}
 // errAwaiting is an upload whose bytes are all on the server and that waits for a name.
 var errAwaiting = errors.New("the upload waits for a name")
 
-// Put is `selfcloud put LOCAL [DIR]` and `selfcloud put --resume ID`: a resumable upload by tus (design-cli 3.8).
+// Put is `selfcloud put LOCAL [DIR]` and `selfcloud put --resume ID`: a resumable upload by tus (decision 142).
 func Put(args []string, stdout, stderr io.Writer) int {
 	set := conn.NewFlagSet("put")
 	var g conn.Global

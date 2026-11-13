@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package manage is the command-line client's folder and group commands (design-cli.md section 8, slice cli8):
+// Package manage is the command-line client's folder and group commands:
 // folder create|ls|show|rename|rm, folder settings set, folder hide, folder show-again, group create|ls|show|rename|rm|
 // members|add-member|remove-member, and user grants.
 //

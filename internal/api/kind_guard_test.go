@@ -46,7 +46,7 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // reused directory must be a directory of the target folder, else target_moved. import_job.go importPublish: the target
 // directory must be a directory of the target folder, else target_moved. Neither import check decides access.
 var reviewedNodeKindSites = map[string]int{
-	// The import's own item kinds (store/imports.go), and StagedCounts, are reviewed in the store's guard (round 6): the
+	// The import's own item kinds (store/imports.go), and StagedCounts, are reviewed in the store's guard: the
 	// item kinds are import_items.kind, not a node's, and StagedCounts counts files of the staging folder, which holds
 	// only the files and directories an import writes.
 	"internal/api/imports.go":    1,

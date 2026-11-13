@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package conn holds what every remote command shares: the global flags, the order in which the server address and the
-// credential are chosen (design-cli.md 3.11), the warnings that are printed on every use, and the client built from them.
+// credential are chosen (decision 123), the warnings that are printed on every use, and the client built from them.
 package conn
 
 import (
@@ -107,7 +107,7 @@ type Conn struct {
 	Kind     string // the credential's kind, or ""
 }
 
-// Connect resolves the address and the credential, in the order of design-cli.md 3.11: flags, then environment, then the
+// Connect resolves the address and the credential, in the order of decision 123: flags, then environment, then the
 // profile, then the defaults. A profile's credential is sent only to that profile's own address; when the address is
 // given another way, the credential is sent only with needCred, where it is a refusal, and a public command runs without
 // it. Warnings go to stderr on every call.

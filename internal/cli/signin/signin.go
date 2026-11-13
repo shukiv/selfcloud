@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package signin is the command-line client's device sign-in (design-cli 3.3, decision 125): `login`, `logout` and
+// Package signin is the command-line client's device sign-in (decision 125): `login`, `logout` and
 // `whoami`. The client never takes a password. `login` asks the server for a sign-in, prints the code and the approval
 // page, polls until a person approves it in the browser, and saves the device token in a profile. The token never goes to
 // standard output, to standard error, into an error, or into a --json document.

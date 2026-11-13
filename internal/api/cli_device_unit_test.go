@@ -10,7 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/auth"
 )
 
-// The fields of a device token are checked after its MAC (design-cli 3.3): its version, its IDs, its audience and its times.
+// The fields of a device token are checked after its MAC (decision 125): its version, its IDs, its audience and its times.
 func TestDevicePayloadValid(t *testing.T) {
 	t.Parallel()
 	good := devicePayload{Version: deviceVersion, KeyID: "k", AccountID: "acc_" + strings.Repeat("a", 26),

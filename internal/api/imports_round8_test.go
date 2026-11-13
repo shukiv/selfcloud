@@ -13,7 +13,7 @@ import (
 )
 
 // A directory the import reuses, purged while the import is staged, is a target that moved: the publish fails with conflict,
-// as for any other moved directory, not as an internal error (round 8, R7-4). The purge is of the reused directory, not of
+// as for any other moved directory, not as an internal error. The purge is of the reused directory, not of
 // the import's target, so EndImportsAt does not end the import: the publish finds the directory gone.
 func TestPurgedReusedDirectoryFailsWithTargetMoved(t *testing.T) {
 	fx := newImportFixture(t)
@@ -51,7 +51,7 @@ func TestPurgedReusedDirectoryFailsWithTargetMoved(t *testing.T) {
 }
 
 // A poison import ends with the same owner-visible record as any failed import: one import.finish audit entry and one
-// import.failed event, written in the write that cleans it up (round 8, R7-3). Before, it ended with neither.
+// import.failed event, written in the write that cleans it up. Before, it ended with neither.
 func TestPoisonImportEndsWithAFailureEventAndAudit(t *testing.T) {
 	ctx := context.Background()
 	wf := newWebhookFixture(t)

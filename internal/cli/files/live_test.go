@@ -370,7 +370,7 @@ func (w *captureWriter) Flush() {
 	}
 }
 
-// cutter is the fault-injecting listener of design-cli section 6. It closes a connection after a set number of bytes
+// cutter is the fault-injecting listener of decision 142. It closes a connection after a set number of bytes
 // has moved on it: read from the client, for an upload, or written to the client, for a download. The connections it
 // accepts take the budgets in order; those past the list take after, where -1 is never cut and 0 is closed at once.
 type cutter struct {

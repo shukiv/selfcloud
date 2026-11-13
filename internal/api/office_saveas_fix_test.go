@@ -272,7 +272,7 @@ func TestWOPIPutUserInfoRefusedForDelegatedToken(t *testing.T) {
 }
 
 // TestCopyPrincipalNeverLiftsADelegatedToken: copyPrincipal clears the node scope of a browser-origin token only. A token
-// minted by a delegated key keeps its scope, so a later reorder of the write cannot widen it (decision 87, round 3).
+// minted by a delegated key keeps its scope, so a later reorder of the write cannot widen it (decision 87).
 func TestCopyPrincipalNeverLiftsADelegatedToken(t *testing.T) {
 	t.Parallel()
 	delegated := &auth.Principal{Kind: auth.KindUser, ID: "usr_test", AccountID: "acc_test", UserID: "usr_test",
@@ -289,7 +289,7 @@ func TestCopyPrincipalNeverLiftsADelegatedToken(t *testing.T) {
 
 // TestWOPISaveAsOverwriteOfATrashedNameIsFree: trashing a file frees its name (the store gives the name key to the trash), so
 // an overwrite of that name finds no file to replace and makes the copy under the name. The trashed file is not touched.
-// The round 3 review took this for a 409 case; the store's rule makes it a plain free name, so this pins that behaviour.
+// The review took this for a 409 case; the store's rule makes it a plain free name, so this pins that behaviour.
 func TestWOPISaveAsOverwriteOfATrashedNameIsFree(t *testing.T) {
 	t.Parallel()
 	fx, tok := saveAsFixture(t)
@@ -306,7 +306,7 @@ func TestWOPISaveAsOverwriteOfATrashedNameIsFree(t *testing.T) {
 }
 
 // TestWOPISaveAsNamesTheCopyFromTheSourceAsItIsWritten: the source is renamed while the copy's body arrives. The copy takes its
-// suggested name from the source's name as the write reads it (the round 3 nit), so it is named from the new name.
+// suggested name from the source's name as the write reads it (the nit), so it is named from the new name.
 func TestWOPISaveAsNamesTheCopyFromTheSourceAsItIsWritten(t *testing.T) {
 	t.Parallel()
 	fx, tok := saveAsFixture(t)

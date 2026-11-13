@@ -288,12 +288,12 @@ func restoreHash(state []byte, offset int64) (hash.Hash, error) {
 // uploadDeadline is when an upload expires, given that it was just created, or just written, at now:
 // upload.expiry after now, but never upload.max_lifetime after its creation.
 // uploadDeadlineFor is the expiry of an upload written at now. An import archive that no import has claimed expires
-// imports.unclaimed_expiry_hours after its last write, whatever the uploads' own expiry says (round 3, F1; round 4, N3).
+// imports.unclaimed_expiry_hours after its last write, whatever the uploads' own expiry says.
 func (s *Server) uploadDeadlineFor(up *store.Upload, now time.Time) time.Time {
 	deadline := s.uploadDeadline(up.CreatedAt, now)
 	if up.Purpose == store.UploadPurposeImport {
 		// The window runs from the last write: now is the write that sets this deadline, so an archive that is still
-		// being written is not cut off after a day from its creation (round 4, N3).
+		// being written is not cut off after a day from its creation.
 		if claim := now.Add(time.Duration(s.cfg.Imports.UnclaimedExpiryHours) * time.Hour); claim.Before(deadline) {
 			return claim
 		}
@@ -638,7 +638,7 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string, size int64)
 		return err
 	}
 	// The bytes about to be written count too, so a single entry larger than the usable space is refused before any byte
-	// of it is written (round 3, F5).
+	// of it is written.
 	return s.checkDisk(usable, mine, total+size, false)
 }
 
@@ -680,7 +680,7 @@ func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, p *auth.Principal,
 		}
 	}
 	if up.Purpose == store.UploadPurposeImport {
-		// An archive is reserved against the quota like any upload, until its import holds it (round 3, F1). A user holds a
+		// An archive is reserved against the quota like any upload, until its import holds it. A user holds a
 		// limited number of them, so an unclaimed archive cannot pile up.
 		n, err := tx.CountArchiveUploads(ctx, up.AccountID, p.ID)
 		if err != nil {
@@ -765,7 +765,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return err
 		}
 	}
-	// An import archive is a signed-in user's: a drop-link visitor or a key cannot send one (round 3, F2).
+	// An import archive is a signed-in user's: a drop-link visitor or a key cannot send one.
 	if meta["kind"] == store.UploadPurposeImport {
 		if err := importCaller(p); err != nil {
 			return err

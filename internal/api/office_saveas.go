@@ -146,7 +146,7 @@ func saveAsPrincipal(p *auth.Principal) *auth.Principal {
 // 87), so a lifted cap never reaches it.
 func copyPrincipal(p *auth.Principal) *auth.Principal {
 	// A token minted by a delegated key is never lifted, whatever the write refuses earlier: returned as it is, its node
-	// scope still refuses the copy (decision 87, the defence in depth of the round 3 review).
+	// scope still refuses the copy (decision 87, the defence in depth of the review).
 	if p.Token == nil || delegatedOrigin(p.Token) {
 		return p
 	}
@@ -376,7 +376,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 			return errSaveAsNotAuthorized
 		}
 		// The name comes from the source as this write reads it, not from the name it had before the body arrived, so a
-		// source renamed during the upload gives a copy named from its new name (the round 3 nit).
+		// source renamed during the upload gives a copy named from its new name (the nit).
 		inWrite, inWriteSuggested, err := saveAsNames(src.node.Name, rel, sug)
 		if err != nil {
 			return err

@@ -128,14 +128,14 @@ func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
 	return tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -length})
 }
 
-// DeleteUploadHanded deletes an import's archive upload after its reservation moved to the staging folder (round 3, F1):
+// DeleteUploadHanded deletes an import's archive upload after its reservation moved to the staging folder:
 // the row goes and nothing is released, because the staging folder holds the length until the import ends.
 func (tx *Tx) DeleteUploadHanded(ctx context.Context, accountID, id string) error {
 	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ?", accountID, id))
 }
 
-// CountArchiveUploads counts the import archives a user holds as uploads: the uploads that no import has claimed yet
-// (round 3, F1). The limit on them is imports.max_archive_uploads_per_user.
+// CountArchiveUploads counts the import archives a user holds as uploads: the uploads that no import has claimed yet.
+// The limit on them is imports.max_archive_uploads_per_user.
 func (tx *Tx) CountArchiveUploads(ctx context.Context, accountID, userID string) (int, error) {
 	var n int
 	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads

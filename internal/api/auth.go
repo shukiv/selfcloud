@@ -284,7 +284,7 @@ func (s *Server) managedAccount(r *http.Request) (*store.Account, error) {
 }
 
 // auditSource is what an audit entry takes from a request: the user agent, the client address and the principal. A
-// background job copies it before its goroutine starts, so the job never reads the request (round 5).
+// background job copies it before its goroutine starts, so the job never reads the request.
 type auditSource struct {
 	userAgent string
 	ip        netip.Addr
@@ -292,7 +292,7 @@ type auditSource struct {
 }
 
 // auditSourceOf copies what an audit entry takes from r. The principal is copied with its token and link scopes, so the
-// copy shares no pointer or slice with the request's principal (round 6).
+// copy shares no pointer or slice with the request's principal.
 func auditSourceOf(r *http.Request) auditSource {
 	src := auditSource{userAgent: r.UserAgent()}
 	if info := infoFrom(r.Context()); info != nil {

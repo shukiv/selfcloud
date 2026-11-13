@@ -90,9 +90,9 @@ type Server struct {
 	limits     map[string]*limiter // rate limiters by "endpoint.dimension"
 	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
 	limitClock func() time.Time
-	// deviceSlots bounds the device confirmation mails in flight (sec2, decision 86, round 2 M2).
+	// deviceSlots bounds the device confirmation mails in flight (sec2, decision 86).
 	deviceSlots chan struct{}
-	// confirmBusy names the users with a confirmation job in flight, at most one each (round 3). confirmMu guards it.
+	// confirmBusy names the users with a confirmation job in flight, at most one each. confirmMu guards it.
 	confirmMu   sync.Mutex
 	confirmBusy map[string]bool
 	// verifyHook, when set, is told of each password check a device confirmation makes (dummy reports the check against no
@@ -100,7 +100,7 @@ type Server struct {
 	verifyHook func(dummy bool)
 	// sessionClock is the time the web sessions read. Production keeps time.Now; tests move it.
 	sessionClock func() time.Time
-	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
+	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (item 1).
 	dropFlight dropFlight
 	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
 	oneFlight oneRequestFlight
@@ -423,7 +423,7 @@ func New(opts Options) (*Server, error) {
 			// Sign-in links: made by an account key, per account; redeemed per client address, as login is.
 			"signlink.create": newLimiter(60),
 			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
-			// Device sign-in (decision 125, design-cli 3.3). A terminal may start ten sign-ins an hour from one address, so at
+			// Device sign-in (decision 125). A terminal may start ten sign-ins an hour from one address, so at
 			// most ten requests are pending for it. A poll is limited per device code, and per address at a fixed rate; the
 			// interval the poll returns (slow_down) is the client's own pace. Approval is limited per session and per address.
 			"cli.start.ip":  newLimiterRate(cliStartPerHour, time.Hour),
@@ -434,10 +434,10 @@ func New(opts Options) (*Server, error) {
 			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
 			"device.confirm.ip":   newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"mail.device.address": newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
-			// Password checks for one email from one client address while the email's failed-sign-in cap is spent (round 2 M1,
-			// per address since round 3). The setting is rate_limit.capped_per_email_per_hour.
+			// Password checks for one email from one client address while the email's failed-sign-in cap is spent (
+			// per address). The setting is rate_limit.capped_per_email_per_hour.
 			"login.capped": newLimiterRate(cfg.RateLimit.CappedPerEmailPerHour, time.Hour),
-			// The ceiling on those checks for one email from all addresses together (round 4). The setting is
+			// The ceiling on those checks for one email from all addresses together. The setting is
 			// rate_limit.capped_email_per_hour.
 			"login.capped.email": newLimiterRate(cfg.RateLimit.CappedEmailPerHour, time.Hour),
 			// Verification and reset mail: per account, and per address it goes to. Links returned

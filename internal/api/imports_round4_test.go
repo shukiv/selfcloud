@@ -58,7 +58,7 @@ func stageAndYield(t *testing.T, fx *importFixture, folder, parent string) impor
 }
 
 // assertJobCodeOnly reads a job as the account's manager and checks that its error is the API code alone: no server
-// path, no store text, and no cause of the failure (round 4, F8 and N6).
+// path, no store text, and no cause of the failure.
 func assertJobCodeOnly(t *testing.T, fx *importFixture, jobID string) {
 	t.Helper()
 	rec := call(t, fx.s, "GET", "/api/v1/jobs/"+jobID, fx.key, nil)
@@ -96,7 +96,7 @@ func leakyFaults(fx *importFixture) {
 }
 
 // A run that fails and whose cleanup dies reports the cleanup's error as the code only. The sweep queues the cleanup
-// again, and the resumed run reports the code of the stored failure, not its cause's text (round 4, F8 and N6).
+// again, and the resumed run reports the code of the stored failure, not its cause's text.
 func TestImportResumeReportsOnlyTheCode(t *testing.T) {
 	fx := newImportFixture(t)
 	leakyFaults(fx)
@@ -117,7 +117,7 @@ func TestImportResumeReportsOnlyTheCode(t *testing.T) {
 }
 
 // Deleting the folder an import writes into ends the import in the same write: its archive's reservation is released
-// once, and its staging folder goes with it (round 4, N1). Before, the row went by cascade and the reservation stayed.
+// once, and its staging folder goes with it. Before, the row went by cascade and the reservation stayed.
 func TestDeletingTheTargetEndsItsImport(t *testing.T) {
 	fx := newImportFixture(t)
 	target := newFolder(t, fx.s, fx.key, fx.acc.ID, "Target")
@@ -149,7 +149,7 @@ func TestDeletingTheTargetEndsItsImport(t *testing.T) {
 	}
 }
 
-// The same holds when the target directory is purged from the trash (round 4, N1).
+// The same holds when the target directory is purged from the trash.
 func TestPurgingTheTargetDirectoryEndsItsImport(t *testing.T) {
 	fx := newImportFixture(t)
 	first := fx.startOK(t, fx.archive(t, "dir.zip", zipArchive(t, [][2]string{{"t/", ""}, {"t/b.txt", "2"}})), "")
@@ -176,7 +176,7 @@ func TestPurgingTheTargetDirectoryEndsItsImport(t *testing.T) {
 }
 
 // A directory an earlier import made is reused by a later import of the same archive. Moved to another folder between
-// the staging and the publish, it must not take the later import's files: the publish refuses it (round 4, N5).
+// the staging and the publish, it must not take the later import's files: the publish refuses it.
 func TestImportPublishRechecksReusedDirectories(t *testing.T) {
 	fx := newImportFixture(t)
 	// No entry for "t/" itself: the directory is made as the entry under it needs it, so a later import reuses it.
@@ -217,7 +217,7 @@ func TestImportPublishRechecksReusedDirectories(t *testing.T) {
 }
 
 // A scan counts the declared size of the user's other unfinished imports: one paused import holds 600 of a 1000 quota
-// before it is staged, so a second import of 600 is refused at its scan, not left to fill the disk (round 4, F6).
+// before it is staged, so a second import of 600 is refused at its scan, not left to fill the disk.
 func TestImportScanCountsTheOtherUnfinishedImports(t *testing.T) {
 	fx := newImportFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
@@ -244,7 +244,7 @@ func TestImportScanCountsTheOtherUnfinishedImports(t *testing.T) {
 }
 
 // An import whose cleanup fails every time is requeued by the sweep a few times, then not again: it is failed with a code,
-// so the sweep does not queue it for ever (round 4, N7).
+// so the sweep does not queue it for ever.
 func TestPoisonImportIsNotRequeuedForever(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importFault = func(stage string) error {
@@ -280,7 +280,7 @@ func TestPoisonImportIsNotRequeuedForever(t *testing.T) {
 }
 
 // The unclaimed-archive window runs from the last write, not from the creation: an archive written for longer than a day
-// is not cut off while it is being written (round 4, N3).
+// is not cut off while it is being written.
 func TestImportArchiveExpiryRunsFromTheLastWrite(t *testing.T) {
 	fx := newImportFixture(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(72 * time.Hour) })
 	now := time.Now()
@@ -291,7 +291,7 @@ func TestImportArchiveExpiryRunsFromTheLastWrite(t *testing.T) {
 	}
 }
 
-// A restart runs the same job row again. The resumed run reports the code only, as the sweep's does (round 4, F8).
+// A restart runs the same job row again. The resumed run reports the code only, as the sweep's does.
 func TestImportRestartReportsOnlyTheCode(t *testing.T) {
 	fx := newImportFixture(t)
 	leakyFaults(fx)

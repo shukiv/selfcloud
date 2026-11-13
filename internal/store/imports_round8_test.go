@@ -44,8 +44,8 @@ func count(t *testing.T, s *Store, q string, args ...any) int {
 	return n
 }
 
-// Removing a staging folder by an ID that is a live folder changes nothing: its search rows, its nodes and its row stay
-// (round 8, R7-1). Before, the search rows went first, and only then did the staged check refuse the rest.
+// Removing a staging folder by an ID that is a live folder changes nothing: its search rows, its nodes and its row stay.
+// Before, the search rows went first, and only then did the staged check refuse the rest.
 func TestRemoveStagingLeavesALiveFolderAlone(t *testing.T) {
 	s, ctx := round8Live(t)
 	const searchRows = `SELECT COUNT(*) FROM search_trigram WHERE rowid IN (SELECT id FROM search_names WHERE node_id = 'nod_x')`
@@ -76,7 +76,7 @@ func TestRemoveStagingLeavesALiveFolderAlone(t *testing.T) {
 }
 
 // The staging removals of a cancel, a failure and an expiry (CleanupStagedBatch and DropStaging) remove only staged nodes:
-// called with a live folder's ID, they leave its nodes alone (round 8, the re-check's (b)). Before, they removed the live
+// called with a live folder's ID, they leave its nodes alone (the re-check's (b)). Before, they removed the live
 // file.
 func TestStagingCleanupCannotRemoveALiveNode(t *testing.T) {
 	s, ctx := round8Live(t)

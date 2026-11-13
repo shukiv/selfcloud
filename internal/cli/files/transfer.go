@@ -2,7 +2,7 @@
 
 package files
 
-// The large-file commands (design-cli.md 3.8 and 3.9, slice cli6): put sends a file by tus in checked pieces and
+// The large-file commands (decision 142 and 3.9, slice cli6): put sends a file by tus in checked pieces and
 // resumes from the offset the server holds; get reads a file in ranges into a part file, and resumes from the part
 // file's size with If-Range, so a file that changed is never mixed; upload ls and upload cancel manage the uploads this
 // client began. A transfer is bounded by a stall limit, not by the whole-request timeout, because a large piece on a

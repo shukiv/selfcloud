@@ -139,7 +139,7 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 	}
 	ctx := r.Context()
 	// The caller's own archive is checked first, as the upload routes check it: an upload the caller did not make is
-	// not_found, the same answer as a missing one, and it never reaches the slot (round 6).
+	// not_found, the same answer as a missing one, and it never reaches the slot.
 	up, err := s.store.Upload(ctx, p.AccountID, in.Upload)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (up.CreatedBy != p.ID || up.Purpose != store.UploadPurposeImport)) {
 		return notFound("upload")
@@ -148,7 +148,7 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	// The archive is then held for this request, as the upload routes hold it: a second request for the same archive waits
-	// for this one and answers locked (409), instead of racing it to the store (round 5, F14). The archive is read again
+	// for this one and answers locked (409), instead of racing it to the store. The archive is read again
 	// under the slot, since a write that held it before may have changed it.
 	release, err := s.takeUploadSlot(w, in.Upload)
 	if err != nil {
@@ -260,7 +260,7 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 			return apierr.Wrap(apierr.Internal, "the archive could not be kept", err)
 		}
 		// The archive's reservation moves from the upload's folder to the staging folder, which holds it until the import
-		// ends. The upload's row goes without a release (round 3, F1).
+		// ends. The upload's row goes without a release.
 		if err := tx.MoveUsage(ctx, p.AccountID, up.FolderID, im.StagingFolderID, store.UsageChange{Reserved: up.Length}); err != nil {
 			return err
 		}
@@ -299,7 +299,7 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 // hexDigestOf returns the SHA-256 of a finished upload, from the hash state it kept. The archive's digest names its
 // entries in the import's memory (import_sources), so the same archive gives the same names.
 // importDigest is the archive's SHA-256, for the import record and its dedupe key. An archive whose digest cannot be read
-// is refused: an empty hash would make different archives match one another (round 3, F15).
+// is refused: an empty hash would make different archives match one another.
 func importDigest(up *store.Upload) (string, error) {
 	h, err := restoreHash(up.HashState, up.Length)
 	if err != nil {

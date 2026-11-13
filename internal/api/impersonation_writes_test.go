@@ -89,7 +89,7 @@ func TestImpersonationAllowedWrites(t *testing.T) {
 	}
 }
 
-// A new document is refused while an installation admin is signed in as a user (decision 91, round 2): it is made as the
+// A new document is refused while an installation admin is signed in as a user (decision 91): it is made as the
 // person and opens the office editor, which the impersonation does not reach, so the route is refused with the reason
 // the other refused writes give. The refusal comes before the folder is read.
 func TestImpersonatedDocumentRefused(t *testing.T) {

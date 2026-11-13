@@ -280,7 +280,7 @@ func TestNewDocumentRefusesBadInput(t *testing.T) {
 }
 
 // A name is checked as a name given before the type's extension is added, so "." and ".." are refused as they are for any
-// file (round 2): otherwise "." would become "..docx". Every refused name leaves nothing behind.
+// file: otherwise "." would become "..docx". Every refused name leaves nothing behind.
 func TestNewDocumentRefusesANameAsAFileNameRefuses(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)

@@ -29,7 +29,7 @@ type remoteCommand struct {
 	// credential that the test cannot make (a person's approval in the browser, for a device token). Its own package records
 	// its calls instead.
 	notProbed string
-	// reads lists the routes a command calls for a need of its own, which another command owns (design-cli 3.7: rm
+	// reads lists the routes a command calls for a need of its own, which another command owns (decision 118: rm
 	// reads a node's name before it asks; put ends an upload it could not record, which upload cancel owns).
 	// docs/cli-parity.tsv has a row for each, naming that other command, and the probe checks that a command's calls
 	// stay within its routes and these reads.

@@ -215,11 +215,11 @@ type RateLimitConfig struct {
 	// email from all addresses together are capped at 30 an hour, a fixed limit.
 	PerEmailPerMinute int `yaml:"per_email_per_minute"`
 	// CappedPerEmailPerHour limits the password checks made for one email from one client address, while the email's cap
-	// on failed sign-ins is spent (sec2, decision 86, round 2 M1, per address since round 3). Past it, an attempt is
+	// on failed sign-ins is spent (sec2, decision 86, per address). Past it, an attempt is
 	// answered without a password check and sends no mail. At least 1.
 	CappedPerEmailPerHour int `yaml:"capped_per_email_per_hour"`
 	// CappedEmailPerHour is the ceiling on password checks for one email from all addresses together, while its cap on
-	// failed sign-ins is spent (round 4). It bounds the hashing an attacker with many addresses can make, and it is the
+	// failed sign-ins is spent. It bounds the hashing an attacker with many addresses can make, and it is the
 	// price of the per-address budget: an attacker with enough addresses spends it and blocks the real user's mail for
 	// the hour. The device cookie still works meanwhile. At least 1.
 	CappedEmailPerHour int `yaml:"capped_email_per_hour"`
@@ -594,10 +594,10 @@ type ImportsConfig struct {
 	// archive, so without the cap a user could hold any number of them.
 	MaxUnfinishedPerUser int `yaml:"max_unfinished_per_user"`
 	// MaxArchiveUploadsPerUser caps the import archives a user holds as uploads that no import has claimed yet. Each one
-	// reserves its length against the quota, so the cap bounds what an unclaimed archive can hold (round 3, F1).
+	// reserves its length against the quota, so the cap bounds what an unclaimed archive can hold.
 	MaxArchiveUploadsPerUser int `yaml:"max_archive_uploads_per_user"`
 	// UnclaimedExpiryHours is how long an import archive that no import claimed lives after it was uploaded. Its
-	// reservation goes with it (round 3, F1).
+	// reservation goes with it.
 	UnclaimedExpiryHours int `yaml:"unclaimed_expiry_hours"`
 	// PausedExpiryDays is how long an import may stay paused. Then it is cancelled and what it staged is removed.
 	PausedExpiryDays int                 `yaml:"paused_expiry_days"`
@@ -620,7 +620,7 @@ type ArchiveImportConfig struct {
 	// MaxTotalBytes is the most uncompressed bytes all the files of one archive may hold.
 	MaxTotalBytes ByteSize `yaml:"max_total_bytes"`
 	// MaxPathBytes is the most bytes the entries' full paths of one archive may hold, summed over the entries. It bounds the
-	// memory a scan keeps to find the names that clash (round 4, N2).
+	// memory a scan keeps to find the names that clash.
 	MaxPathBytes ByteSize `yaml:"max_path_bytes"`
 }
 

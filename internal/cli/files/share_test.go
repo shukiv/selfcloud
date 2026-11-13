@@ -120,7 +120,7 @@ func TestGetShareLinkWithAPassword(t *testing.T) {
 	}
 }
 
-// TestShareSecretsStayHidden is the secrets test of design-cli section 6 for share links: on the paths that fail and on
+// TestShareSecretsStayHidden is the secrets test of decision 142 for share links: on the paths that fail and on
 // the one that works, the link's secret, its password, the visitor credentials and the account key appear in no output,
 // no file under the profiles directory, and not in the server's log.
 func TestShareSecretsStayHidden(t *testing.T) {

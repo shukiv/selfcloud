@@ -343,7 +343,7 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err := tx.guardFolder(ctx, accountID, folderID); err != nil {
 		return err
 	}
-	// The imports aimed into the folder end first, so their staging and their reservations go in this write (round 4, N1).
+	// The imports aimed into the folder end first, so their staging and their reservations go in this write.
 	if err := tx.EndImportsAt(ctx, accountID, folderID, ""); err != nil {
 		return err
 	}

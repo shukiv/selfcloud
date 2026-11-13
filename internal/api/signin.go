@@ -244,7 +244,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// The holds of a sign-in (decision 90, as revised in round 2). A genuine device cookie's budget (login.device, 10 an hour
+	// The holds of a sign-in (decision 90, as revised in). A genuine device cookie's budget (login.device, 10 an hour
 	// per cookie) covers only the user the cookie names, D, and D's password alone. With a trusted device the email's hold
 	// (login.failed, decision 84) is taken too, whether or not other users have the email, and it covers every candidate
 	// tested under it. A failure spends each hold taken. A hold is given back at its own time only when every candidate
@@ -287,7 +287,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Each hold is given back at the time it was taken (decision 89 (k); a later time restores nothing). The device hold
 	// covers D alone, so it goes back when D matched. The email's hold goes back only when every candidate tested under it
-	// matched, so a match on one user does not refund a failed test of another (round 2, finding 1).
+	// matched, so a match on one user does not refund a failed test of another (finding 1).
 	if deviceHold != nil && slices.Contains(matches, deviceUser) {
 		deviceHold.CancelAt(now)
 	}
@@ -295,7 +295,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		failedHold.CancelAt(now)
 	}
 	if capSpent && len(matches) == 0 {
-		// D's failure is audited against D, as a failed sign-in is (round 2, finding 3). The others get the cap's answer,
+		// D's failure is audited against D, as a failed sign-in is (finding 3). The others get the cap's answer,
 		// which writes its own row. Their passwords are not tested here, and the device's budget stays spent by D's failure.
 		if err := s.auditFailedLogin(r, []*store.User{deviceUser}); err != nil {
 			return err
@@ -504,7 +504,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.pwFails.clear(sess.IDHash)
 	s.clearSessionCookie(w)
-	// A pending confirmation link cannot be redeemed in this browser after sign-out (round 3).
+	// A pending confirmation link cannot be redeemed in this browser after sign-out.
 	s.clearConfirmCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 	return nil

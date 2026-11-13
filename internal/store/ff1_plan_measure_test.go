@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// TestFF1FilterPlansAndTimings is the Phase 0b measurement of slice ff1 (review round 1). It runs only when
+// TestFF1FilterPlansAndTimings is the Phase 0b measurement of slice ff1 . It runs only when
 // SELFCLOUD_FF1_MEASURE is set, and it is not committed.
 //
 // It seeds one folder of children (SELFCLOUD_FF1_ROWS, default 200,000). Names carry an extension for most files, and the
@@ -41,7 +41,7 @@ func TestFF1FilterPlansAndTimings(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 
-	// The pragmas the store sets or relies on, as the measured connection sees them (added for the round 0 repeat).
+	// The pragmas the store sets or relies on, as the measured connection sees them (added for the first measurement).
 	for _, p := range []string{"journal_mode", "wal_autocheckpoint", "cache_size", "synchronous", "page_size"} {
 		var v any
 		if err := s.w.QueryRowContext(ctx, "PRAGMA "+p).Scan(&v); err != nil {
@@ -49,7 +49,7 @@ func TestFF1FilterPlansAndTimings(t *testing.T) {
 		}
 		t.Logf("PRAGMA %s = %v", p, v)
 	}
-	// The database file, so the write-ahead log's size can be logged around each write (added for the round 0 repeat).
+	// The database file, so the write-ahead log's size can be logged around each write (added for the first measurement).
 	var dbSeq int
 	var dbName, dbFile string
 	if err := s.r.QueryRowContext(ctx, "PRAGMA database_list").Scan(&dbSeq, &dbName, &dbFile); err != nil {
@@ -73,7 +73,7 @@ func TestFF1FilterPlansAndTimings(t *testing.T) {
 		return d
 	}
 
-	// The group table (design section 3, with review round 1's fixes). Extensions decide first; then the media type.
+	// The group table (design section 3, with review 's fixes). Extensions decide first; then the media type.
 	type group struct {
 		id       string
 		exts     []string

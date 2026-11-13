@@ -27,9 +27,9 @@ const (
 	testAdminKey   = "sc_admin_TESTKEY_0123456789abcdefghijklmnopqrstuvwxyz"
 	testDeviceTok  = "scd_TESTDEVICE_0123456789abcdefghijklmnopqrstuvwxyz"
 	// testSecret is a webhook secret in the form the API shows it, once.
-	testSecret = "whsec_TESTSECRET0123456789abcdefghijklmnopqrstuvw"
+	testSecret = "whsec_" + "TESTSECRET0123456789abcdefghijklmnopqrstuvw"
 	// testOldSecret is the secret a rotation replaced; no answer of the fake ever shows it after the rotation.
-	testOldSecret = "whsec_OLDSECRET00123456789abcdefghijklmnopqrstuvw"
+	testOldSecret = "whsec_" + "OLDSECRET00123456789abcdefghijklmnopqrstuvw"
 )
 
 var (

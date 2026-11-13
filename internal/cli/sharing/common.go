@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package sharing is the command-line client's sharing commands (design-cli.md section 8, slice cli7): share ls, grant,
+// Package sharing is the command-line client's sharing commands: share ls, grant,
 // revoke and transfer-ownership; link ls, create, update, reset and rm; access ls, approve and deny; and shared.
 //
 // Secrets. A share link's secret is in the URL that the server returns once, when the link is made and when it is reset.
@@ -506,7 +506,7 @@ func failedOutcome(target string, err error) outcome {
 }
 
 // report writes the results of a command that acts on several targets and returns its exit code: the exit code of the
-// error for one target; otherwise 0 when all are done, 7 when some are, and 1 when none is (design-cli 3.11).
+// error for one target; otherwise 0 when all are done, 7 when some are, and 1 when none is (decision 123).
 func (r *run) report(outs []outcome) int {
 	if len(outs) == 1 && outs[0].err != nil {
 		return r.fail(outs[0].err)

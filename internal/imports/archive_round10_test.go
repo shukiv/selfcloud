@@ -12,7 +12,7 @@ import (
 )
 
 // A cancelled context stops a walk while it skips the entries before its cursor, and the error is the context's, not a
-// refusal of the archive: a shutdown must not fail an import as a bad archive (round 10).
+// refusal of the archive: a shutdown must not fail an import as a bad archive.
 func TestWalkStopsOnACancelledContextDuringASkip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

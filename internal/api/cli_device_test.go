@@ -20,7 +20,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// Device sign-in for the CLI (decision 125, design-cli 3.3). These tests drive the flow over HTTP against the real store.
+// Device sign-in for the CLI (decision 125). These tests drive the flow over HTTP against the real store.
 
 type cliStartReply struct {
 	DeviceCode      string `json:"device_code"`

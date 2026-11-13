@@ -10,7 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/client"
 )
 
-// TestCodesAreTheDesignTable pins the numbers of design-cli.md section 3.6. A change here is a change to the CLI's
+// TestCodesAreTheDesignTable pins the numbers of decision 123. A change here is a change to the CLI's
 // contract with scripts.
 func TestCodesAreTheDesignTable(t *testing.T) {
 	t.Parallel()

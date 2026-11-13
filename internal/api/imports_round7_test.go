@@ -44,7 +44,7 @@ func stagedFiles(t *testing.T, fx *importFixture, folder, parent string, data []
 }
 
 // Removing the folder an import is staged into takes no usage with it: the staged bytes were never counted, and the live
-// files of the account keep their usage (round 7, B1). Before, the staging folder's delete subtracted the staged bytes.
+// files of the account keep their usage. Before, the staging folder's delete subtracted the staged bytes.
 func TestRemovingTheTargetKeepsTheUsageOfLiveFiles(t *testing.T) {
 	fx := newImportFixture(t)
 	_ = importInto(t, fx, "", zipArchive(t, [][2]string{{"keep.bin", strings.Repeat("k", 500)}}))
@@ -77,7 +77,7 @@ func TestRemovingTheTargetKeepsTheUsageOfLiveFiles(t *testing.T) {
 }
 
 // A re-import of an archive under a directory an earlier import made meets no clash with its own removed file: the file is
-// placed under the reused directory with its name, whatever the policy (round 7, B2).
+// placed under the reused directory with its name, whatever the policy.
 func TestReimportUnderAReusedDirectoryKeepsItsNames(t *testing.T) {
 	for _, policy := range []string{"rename", "replace", "fail"} {
 		t.Run(policy, func(t *testing.T) {
@@ -106,7 +106,7 @@ func TestReimportUnderAReusedDirectoryKeepsItsNames(t *testing.T) {
 }
 
 // A live file of the same name, put there by another import, is handled by the policy: rename keeps both (the new one is
-// renamed), replace takes the new file's place, fail refuses the import (round 7, B2).
+// renamed), replace takes the new file's place, fail refuses the import.
 func TestReimportClashesWithALiveFileByPolicy(t *testing.T) {
 	for _, policy := range []string{"rename", "replace", "fail"} {
 		t.Run(policy, func(t *testing.T) {
@@ -154,7 +154,7 @@ func importInto2(t *testing.T, fx *importFixture, parent string, data []byte, po
 }
 
 // Pausing an import after it has staged its files keeps its declared size against the quota: its staged bytes are not in
-// the usage until publish, so a second import is refused at its scan (round 7, B4).
+// the usage until publish, so a second import is refused at its scan.
 func TestPausedStagedImportStillHoldsItsQuota(t *testing.T) {
 	fx := newImportFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
@@ -170,8 +170,8 @@ func TestPausedStagedImportStillHoldsItsQuota(t *testing.T) {
 	}
 }
 
-// A removal of the target while the import runs ends the job quietly: the import is gone, so there is no failure to report
-// (round 7, B5). Before, the job reported internal.
+// A removal of the target while the import runs ends the job quietly: the import is gone, so there is no failure to report.
+// Before, the job reported internal.
 func TestTargetRemovedMidRunEndsTheJobQuietly(t *testing.T) {
 	fx := newImportFixture(t)
 	team := newFolder(t, fx.s, fx.key, fx.acc.ID, "Team")
@@ -199,7 +199,7 @@ func TestTargetRemovedMidRunEndsTheJobQuietly(t *testing.T) {
 }
 
 // A poison import whose requeues are used up is failed and cleaned: its reservations are released and its staging is
-// gone, so it holds no quota (round 7, B6). Before, it kept its archive and reservation for ever.
+// gone, so it holds no quota. Before, it kept its archive and reservation for ever.
 func TestPoisonImportEndsItsCleanup(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importFault = func(stage string) error {

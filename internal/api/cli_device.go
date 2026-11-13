@@ -2,7 +2,7 @@
 
 package api
 
-// Device sign-in for the command-line client (decision 125, design-cli 3.3).
+// Device sign-in for the command-line client (decision 125).
 //
 // A terminal asks for a sign-in and gets two codes. The device code stays in the terminal, which polls with it. The user
 // code is typed into the browser at /cli-approve by a person who is signed in, and approves the request. The poll then

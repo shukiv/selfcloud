@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package files is the command-line client's file commands (design-cli.md section 8, slice cli5): ls, stat, mkdir, touch,
+// Package files is the command-line client's file commands: ls, stat, mkdir, touch,
 // mv, cp, rm, trash ls|restore|empty|rm, shortcut add and unlock. A node is named by its nod_ id. A path starts with a
 // slash and is walked by the server from the folder named by --folder (fld_ id). Each name in a path is checked with the
 // API's name rules before the first request, so a refused name costs no call. The commands call the routes that
@@ -279,7 +279,7 @@ func runEach(c *conn.Conn, targets []string, call func(target string) request) [
 
 // report writes the results of a command that acts on several targets, and returns its exit code. One target keeps the
 // exit code of its own error. Otherwise the code is 0 when every target is done, 7 when some are and some are not, and 1
-// when none is (design-cli 3.11).
+// when none is (decision 123).
 func report(stdout, stderr io.Writer, asJSON bool, outs []outcome) int {
 	if len(outs) == 1 && outs[0].err != nil {
 		return output.Fail(stderr, asJSON, outs[0].err)

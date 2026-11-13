@@ -32,7 +32,7 @@ func storedZip(t *testing.T, names []string) []byte {
 }
 
 // A deep archive at the entry cap, every entry with its own deep path, scans in memory bounded by its paths: the scan keeps
-// one key per entry, not one per prefix of each path (round 4, N2). The file that clashes with the first entry's top folder
+// one key per entry, not one per prefix of each path. The file that clashes with the first entry's top folder
 // still refuses the archive.
 func TestDeepPathsScanInBoundedMemory(t *testing.T) {
 	// Each name is about 3.2 KB, under the 4 KiB a central-directory header may take (F18), so the scan reaches the paths.
@@ -76,8 +76,7 @@ func TestDeepPathsScanInBoundedMemory(t *testing.T) {
 	}
 }
 
-// An archive whose entries' paths hold more bytes than max_path_bytes is refused at the scan, however few entries it has
-// (round 4, N2).
+// An archive whose entries' paths hold more bytes than max_path_bytes is refused at the scan, however few entries it has.
 func TestPathBytesCapRefusesALongArchive(t *testing.T) {
 	var names []string
 	for i := 0; i < 10; i++ {

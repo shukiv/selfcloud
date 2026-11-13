@@ -282,7 +282,7 @@ func TestConfirmMailCapSendsNoFourthMail(t *testing.T) {
 
 	first := signInAsked(t, s, "10.86.1.1:4000", "ann@example.com", testPassword)
 	wantStatus(t, first, 202)
-	// Each attempt's job is waited for before the next: one job in flight per user (round 3).
+	// Each attempt's job is waited for before the next: one job in flight per user.
 	s.bg.Wait()
 	for i := 2; i <= 4; i++ {
 		r := signInAsked(t, s, fmt.Sprintf("10.86.1.%d:4000", i), "ann@example.com", testPassword)
@@ -378,11 +378,11 @@ func setAccountStatus(t *testing.T, s *Server, accID, status string) {
 	}
 }
 
-// M1, across addresses (round 4): while an email's cap is spent, the email's password checks are bounded by its ceiling
+// Across addresses: while an email's cap is spent, the email's password checks are bounded by its ceiling
 // (rate_limit.capped_email_per_hour), whichever addresses make them. Past the ceiling no password is checked and no mail
 // is sent, and the answer is the same: the request does one dummy check, as a past-limit request does. Here the ceiling
 // is 2 and the checks come from three addresses, so the third address's right password is not checked. Each job is
-// waited for before the next request: one job in flight per user (round 3).
+// waited for before the next request: one job in flight per user.
 func TestCappedEmailHasAHardLimitOnPasswordChecks(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
@@ -431,7 +431,7 @@ func TestCappedRightAndWrongPasswordsAnswerTheSameBytes(t *testing.T) {
 	spendCap(t, s, "ann@example.com", 90)
 
 	within := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", testPassword) // the one check the limit allows
-	// The same address: the budget is per email and address (round 3), so these two are past the limit.
+	// The same address: the budget is per email and address, so these two are past the limit.
 	overWrong := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", "wrong password here")
 	overRight := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", testPassword)
 	for _, r := range []*httptest.ResponseRecorder{within, overWrong, overRight} {
@@ -611,7 +611,7 @@ func TestConfirmMailCapCountsTheAddressAcrossAccounts(t *testing.T) {
 	spendCap(t, s, "ann@example.com", 99)
 
 	for i := 1; i <= 4; i++ {
-		// Each attempt's jobs are waited for before the next: one job in flight per user (round 3).
+		// Each attempt's jobs are waited for before the next: one job in flight per user.
 		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.99.1.%d:4000", i), "ann@example.com", testPassword))
 		s.bg.Wait()
 	}
@@ -683,7 +683,7 @@ func TestAnEmailCeilingRefusalGivesBackTheAddressBudget(t *testing.T) {
 	wantConfirmAnswer(t, signInAsked(t, s, "10.201.1.1:4000", "ann@example.com", "wrong password here"))
 	wantConfirmAnswer(t, signInAsked(t, s, "10.202.1.1:4000", "ann@example.com", "wrong password here"))
 
-	// The address key is the address and the lowercased email, joined by a NUL (addressKey, round 3).
+	// The address key is the address and the lowercased email, joined by a NUL (addressKey).
 	b := s.limits["login.capped"].buckets["10.202.1.1\x00ann@example.com"]
 	if b == nil {
 		t.Fatal("the second address's budget was never taken, so the refusal path did not run")
@@ -727,7 +727,7 @@ func requestRows(t *testing.T, s *Server) int {
 	return n
 }
 
-// Round 3, timing, round 4 with an accepted job: a miss, a match, a match on two accounts and an admin's right password
+// The timing cases, with an accepted job: a miss, a match, a match on two accounts and an admin's right password
 // each write the same number of rows inside the request, before the answer. Two modes: every job dropped (a full queue),
 // and every job accepted. The job's own rows come after the answer and are not counted (requestRows).
 func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
@@ -928,8 +928,8 @@ func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	spendCap(t, s, "ann@example.com", 180)
 	// The clock steps two seconds on every read, so a refund that reads the clock again is at a later time than its
-	// reservation. A later time restores nothing (rate.CancelAt), so the refund must use the reservation's own time
-	// (round 8). The frozen clock of the other tests would hide that.
+	// reservation. A later time restores nothing (rate.CancelAt), so the refund must use the reservation's own time.
+	// The frozen clock of the other tests would hide that.
 	var reads atomic.Int64
 	s.limitClock = func() time.Time {
 		return frozenLimitInstant.Add(time.Duration(reads.Add(1)) * 2 * time.Second)
@@ -950,7 +950,7 @@ func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		// Each job is waited for before the next request: one job in flight per user (round 3).
+		// Each job is waited for before the next request: one job in flight per user.
 		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.1.1:4000", 180+i), "ann@example.com", testPassword))
 		s.bg.Wait()
 	}

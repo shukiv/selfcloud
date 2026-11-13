@@ -43,7 +43,7 @@ func childrenOfNode(t *testing.T, fx *importFixture, dir string) map[string]node
 
 // A directory reused by an import must lie inside the import's target directory at publish. Moved out of the target,
 // into the folder's root or under a sibling, it stays in the same folder, so only the walk up to the target shows it
-// (round 5, N5 containment).
+// (containment).
 func TestImportPublishRefusesAReusedDirectoryMovedOutOfTheTarget(t *testing.T) {
 	for _, dest := range []string{"root", "sibling"} {
 		t.Run(dest, func(t *testing.T) {
@@ -93,7 +93,7 @@ func TestImportPublishRefusesAReusedDirectoryMovedOutOfTheTarget(t *testing.T) {
 }
 
 // A second request for an archive that another request is turning into an import waits for it, and answers locked (409)
-// while the first is in flight; once the first is done the archive is gone and the answer is not_found (round 5, F14).
+// while the first is in flight; once the first is done the archive is gone and the answer is not_found.
 func TestSecondImportRequestForAnArchiveIsLockedNotFailed(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.uploadSlotWait = 20 * time.Millisecond

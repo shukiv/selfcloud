@@ -31,7 +31,7 @@ func (p *pausingReader) Read(b []byte) (int, error) {
 	return p.r.Read(b)
 }
 
-// TestDropPiecesInFlightCountAgainstTheDisk (round 2, item 1): a drop piece whose body is still arriving has already
+// TestDropPiecesInFlightCountAgainstTheDisk (item 1): a drop piece whose body is still arriving has already
 // passed its disk check, so another piece must count its bytes too. Two pieces of 4 bytes each fit a 6-byte disk
 // one at a time, not together.
 func TestDropPiecesInFlightCountAgainstTheDisk(t *testing.T) {
@@ -69,7 +69,7 @@ func TestDropPiecesInFlightCountAgainstTheDisk(t *testing.T) {
 	}
 }
 
-// TestDropDiskShareAppliesToDropPieces (round 2, item 1): a drop link's visitors may not hold more of the disk than
+// TestDropDiskShareAppliesToDropPieces (item 1): a drop link's visitors may not hold more of the disk than
 // upload.max_disk_share_percent, even on an account with no quota, as other uploads may not.
 func TestDropDiskShareAppliesToDropPieces(t *testing.T) {
 	t.Parallel()
@@ -92,7 +92,7 @@ func TestDropDiskShareAppliesToDropPieces(t *testing.T) {
 	}
 }
 
-// TestDropFailedRecordLeavesNoBytes (round 2, item 2): when the link is paused while a piece's body arrives, the
+// TestDropFailedRecordLeavesNoBytes (item 2): when the link is paused while a piece's body arrives, the
 // piece is refused and its bytes are cut off the file, as every other failed piece is.
 func TestDropFailedRecordLeavesNoBytes(t *testing.T) {
 	t.Parallel()
@@ -115,7 +115,7 @@ func TestDropFailedRecordLeavesNoBytes(t *testing.T) {
 	}
 }
 
-// TestDropDeadLinkKeepsFileWhenDeleteFails (round 2, item 3): when the link dies while a piece's body arrives and the
+// TestDropDeadLinkKeepsFileWhenDeleteFails (item 3): when the link dies while a piece's body arrives and the
 // database then refuses to delete the upload, the upload's file stays, since its row stays.
 func TestDropDeadLinkKeepsFileWhenDeleteFails(t *testing.T) {
 	t.Parallel()
@@ -137,7 +137,7 @@ func TestDropDeadLinkKeepsFileWhenDeleteFails(t *testing.T) {
 	}
 }
 
-// TestDropPasswordChangeReleasesItsUploads (round 2, item 4): changing or removing a drop link's password ends its
+// TestDropPasswordChangeReleasesItsUploads (item 4): changing or removing a drop link's password ends its
 // visitors' credentials, and releases their open uploads with them.
 func TestDropPasswordChangeReleasesItsUploads(t *testing.T) {
 	t.Parallel()
@@ -175,7 +175,7 @@ func TestDropPasswordChangeReleasesItsUploads(t *testing.T) {
 	}
 }
 
-// TestDropPiecesInFlightCountAgainstTheQuota (round 2, item 1): the same race on the account's quota. Two pieces of 4
+// TestDropPiecesInFlightCountAgainstTheQuota (item 1): the same race on the account's quota. Two pieces of 4
 // bytes fit a quota of 6 one at a time, not together, so the second is refused while the first is in flight.
 func TestDropPiecesInFlightCountAgainstTheQuota(t *testing.T) {
 	t.Parallel()
@@ -209,7 +209,7 @@ func TestDropPiecesInFlightCountAgainstTheQuota(t *testing.T) {
 	}
 }
 
-// TestDropPiecesInFlightCountAcrossAccounts (round 2, item 1): a drop piece in flight for one account counts against
+// TestDropPiecesInFlightCountAcrossAccounts (item 1): a drop piece in flight for one account counts against
 // the install-wide pool for another, so two accounts' pieces cannot both pass on the same free space.
 func TestDropPiecesInFlightCountAcrossAccounts(t *testing.T) {
 	t.Parallel()

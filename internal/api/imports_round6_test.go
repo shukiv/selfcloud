@@ -12,7 +12,7 @@ import (
 )
 
 // Another user of the account cannot hold someone else's archive: a request for an upload the caller did not make answers
-// not_found (404), the same as a missing upload, and does not wait for the owner's slot (round 6, F14 ordering).
+// not_found (404), the same as a missing upload, and does not wait for the owner's slot (ordering).
 func TestAnotherUsersImportRequestDoesNotHoldTheArchive(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.uploadSlotWait = 20 * time.Millisecond
@@ -31,7 +31,7 @@ func TestAnotherUsersImportRequestDoesNotHoldTheArchive(t *testing.T) {
 
 // An entry an import has staged is not listed: a directory the import reused holds the staged entries as children by
 // parent_id, but they are in the staging folder until the publish, so the directory's listing must not show them
-// (round 6, the staged-node finding from the node-write guard).
+// (the staged-node finding from the node-write guard).
 func TestStagedEntriesAreNotListedUnderAReusedDirectory(t *testing.T) {
 	fx := newImportFixture(t)
 	data := zipArchive(t, [][2]string{{"t/a.txt", "1"}})

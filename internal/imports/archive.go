@@ -43,7 +43,7 @@ type Caps struct {
 	MaxRatio   int64 // uncompressed over compressed size, for one zip entry, and for a tar.gz as a whole
 	MaxFile    int64 // the largest file, as upload.max_file_size
 	MaxTotal   int64 // the uncompressed bytes of all the files
-	// MaxPathBytes is the bytes of all the entries' full paths. Zero is no cap; the settings never give zero (round 4, N2).
+	// MaxPathBytes is the bytes of all the entries' full paths. Zero is no cap; the settings never give zero.
 	MaxPathBytes int64
 }
 
@@ -67,7 +67,7 @@ type Entry struct {
 	Size   int64 // the declared uncompressed size of a file; 0 for a folder
 	Packed int64 // the declared compressed size of a zip entry; 0 for a tar entry
 	// Zipped is set for a zip entry, whose size is held to the ratio against Packed. A tar entry has no compressed size of
-	// its own: a tar's ratio is measured on the stream as a whole (round 3, F12).
+	// its own: a tar's ratio is measured on the stream as a whole.
 	Zipped bool
 }
 
@@ -145,7 +145,7 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 
 type scanner struct {
 	caps      Caps
-	keys      []pathKey // one per entry: the path for the clash check, and whether it is a folder (round 4, N2)
+	keys      []pathKey // one per entry: the path for the clash check, and whether it is a folder
 	pathBytes int64     // the bytes of the keys, held to caps.MaxPathBytes
 	sum       Summary
 }
@@ -157,10 +157,10 @@ type pathKey struct {
 	dir  bool
 }
 
-// clashes refuses an archive in which one path is both a file and a folder, or is listed twice (round 3, F7). A folder is
+// clashes refuses an archive in which one path is both a file and a folder, or is listed twice. A folder is
 // a folder of the archive whether or not it has an entry of its own, so a file that is a folder's path refuses the archive
 // in either order. The keys are sorted, and the entries under a path follow it at once, so each path is compared with the
-// next one only: the scan keeps one key per entry, not one per folder above it (round 4, N2).
+// next one only: the scan keeps one key per entry, not one per folder above it.
 func (s *scanner) clashes() error {
 	sort.Slice(s.keys, func(i, j int) bool { return s.keys[i].path < s.keys[j].path })
 	for i := 0; i+1 < len(s.keys); i++ {
@@ -456,7 +456,7 @@ func zipSizes(f *zip.File, archive int64) (int64, int64, error) {
 // Walk calls fn for each entry of the archive after the first skip entries, in archive order, with a reader of the
 // entry's bytes for a file (nil for a folder). fn reads what it needs; Walk goes on after fn returns. The entries are
 // those Scan counted, so Index matches the scan. The skip reads the entries before the cursor, and it checks ctx at every
-// entry: a cancelled ctx returns ctx's error, and it is never reported as a refusal of the archive (round 10).
+// entry: a cancelled ctx returns ctx's error, and it is never reported as a refusal of the archive.
 func Walk(ctx context.Context, r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body io.Reader) error) error {
 	if f == Zip {
 		zr, err := zip.NewReader(r, size)

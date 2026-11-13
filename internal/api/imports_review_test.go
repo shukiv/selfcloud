@@ -34,7 +34,7 @@ func TestImportReservationIsHeldOnce(t *testing.T) {
 	if err := fx.runJob(t); !errors.Is(err, jobs.ErrYield) {
 		t.Fatalf("first run = %v, want a yield", err)
 	}
-	// The archive is held by the staging folder, and the entry's one byte is held beside it (round 3, F1).
+	// The archive is held by the staging folder, and the entry's one byte is held beside it.
 	if u := usageOf(t, fx.s, fx.key, fx.acc.ID); u.ReservedBytes != int64(len(data))+1 {
 		t.Fatalf("reserved after the yield = %d, want the archive's %d and the entry's 1 byte", u.ReservedBytes, len(data))
 	}
@@ -184,7 +184,7 @@ func TestImportArchiveReleasesNoOtherReservation(t *testing.T) {
 	}
 	data := zipArchive(t, [][2]string{{"a.txt", "1"}})
 	fx.startOK(t, fx.archive(t, "one.zip", data), "")
-	// The archive's length moved to the staging folder, which holds it until the import ends (round 3, F1).
+	// The archive's length moved to the staging folder, which holds it until the import ends.
 	if u := usageOf(t, fx.s, fx.key, fx.acc.ID); u.ReservedBytes != 5+int64(len(data)) {
 		t.Fatalf("reserved after the import is created = %d, want the other upload's 5 and the archive's %d", u.ReservedBytes, len(data))
 	}

@@ -42,7 +42,7 @@ const (
 	// importYieldAfter is how long one run stages entries before it yields its turn to the other jobs of the pool.
 	importYieldAfter = 30 * time.Second
 	// importWindowMax caps a turn's window (importWindow). A deep .tar.gz has a long reach, and an uncapped window would hold
-	// one of the pool's workers for many minutes (round 10, pool fairness).
+	// one of the pool's workers for many minutes (pool fairness).
 	importWindowMax = 10 * time.Minute
 )
 
@@ -102,7 +102,7 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 	}
 	var failure error
 	if cur.State == store.ImportFailed {
-		// The stored failure is the code (round 4, F8); a record from before that carries text, so it is reported as the code too.
+		// The stored failure is the code; a record from before that carries text, so it is reported as the code too.
 		failure = importCodeError(cur.ErrorCode)
 	}
 	for {
@@ -159,7 +159,7 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 }
 
 // importJobFailure is the error a failed import's job reports: the API code only. The cause's text, which can hold a
-// server path or a store error, goes to the server log and not to the job record that the user can read (round 3, F8).
+// server path or a store error, goes to the server log and not to the job record that the user can read.
 func (s *Server) importJobFailure(impID string, cause error) error {
 	code := string(apierr.Internal)
 	var ae *apierr.Error
@@ -171,7 +171,7 @@ func (s *Server) importJobFailure(impID string, cause error) error {
 }
 
 // importJobError is the error an import job reports: a failure code and nothing else. A job error that is not one of
-// these is replaced by runImportJob, so no raw error text reaches jobs.error (round 4, F8 and N6).
+// these is replaced by runImportJob, so no raw error text reaches jobs.error.
 type importJobError string
 
 func (e importJobError) Error() string { return string(e) }
@@ -198,7 +198,7 @@ func (s *Server) runImportJob(ctx context.Context, job *store.Job) (err error) {
 		return err
 	}
 	// The import was removed while the job ran (its target went, and the cascade took the row): there is nothing left
-	// to fail, so the job ends quietly (round 7, B5).
+	// to fail, so the job ends quietly.
 	if _, gone := s.store.Import(ctx, job.Target); errors.Is(gone, store.ErrNotFound) {
 		return nil
 	}
@@ -319,7 +319,7 @@ func (s *Server) importScan(ctx context.Context, impID string, p *auth.Principal
 			return err
 		}
 		// The user's other unfinished imports have not all been staged: what they still have to stage is held too, so
-		// several imports cannot each take the whole headroom (round 4, F6).
+		// several imports cannot each take the whole headroom.
 		pending, err := tx.OtherUnfinishedBytes(ctx, im.AccountID, im.UserID, im.ID)
 		if err != nil {
 			return err
@@ -358,7 +358,7 @@ func (s *Server) openImportArchive(im *store.Import) (*os.File, int64, error) {
 // importWindow is how long a turn may stage entries after it reaches its first new entry: base, or twice the time the walk
 // took to reach that entry if that is longer, and never more than importWindowMax. A gzipped tar is read from its start to
 // reach an entry, so the reach is the cost of a re-read; below the cap the window keeps that re-read to about a third of a
-// turn (round 9). Above the cap the re-read's share of a turn rises, at most about half at a 10 minute reach (round 10).
+// turn. Above the cap the re-read's share of a turn rises, at most about half at a 10 minute reach.
 func importWindow(reach, base time.Duration) time.Duration {
 	w := 2 * reach
 	if w < base {
@@ -380,7 +380,7 @@ func (s *Server) importTime() time.Time {
 
 // importStage stages the entries of the archive after its cursor. A turn stages at least one new entry before it may
 // yield, so every turn makes progress whatever a re-read costs; its window starts when the walk reaches the first new
-// entry, and lasts importWindow(reach, base) (round 9). The pause and cancel checkpoints stay as they were.
+// entry, and lasts importWindow(reach, base). The pause and cancel checkpoints stay as they were.
 func (s *Server) importStage(ctx context.Context, impID string, p *auth.Principal, base time.Duration) error {
 	turnStart := s.importTime()
 	if err := s.importFaultAt("stage"); err != nil {
@@ -509,7 +509,7 @@ func (s *Server) importMakeDir(ctx context.Context, tx *store.Tx, im *store.Impo
 		return "", err
 	}
 	// A reused directory gets a placeholder in the staging folder, not the live directory: its entries are staged under the
-	// placeholder, so no staged entry ever has a live parent, where it would clash with itself at publish (round 7, B2).
+	// placeholder, so no staged entry ever has a live parent, where it would clash with itself at publish.
 	// The placeholder's entries are merged into the live directory at publish. The live directory is reused only when it
 	// is in the target folder under the directory the parent stands for (the target directory, or a reused parent's live
 	// directory).
@@ -584,7 +584,7 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 		if n > 0 {
 			if _, err := w.Write(buf[:n]); err != nil {
 				if errors.Is(err, syscall.ENOSPC) {
-					// The disk filled under the write: a pause, as a full disk is for an entry (round 3, F5).
+					// The disk filled under the write: a pause, as a full disk is for an entry.
 					return s.importDiskPause(apierr.New(apierr.StorageFull, "the server's disk is full"))
 				}
 				if errors.Is(err, blob.ErrTooLarge) {
@@ -779,7 +779,7 @@ func (s *Server) importTargetRole(ctx context.Context, tx *store.Tx, im *store.I
 // checkReusedDirs checks that the directory id lies inside the target directory at publish. Each directory from id up to
 // the target must be a directory of the target folder and not trashed, and the walk up must reach the target: a directory
 // moved to the folder's root, or under a sibling of the target, is in the same folder but outside the target, and refused
-// (round 4, N5; round 5, the containment walk). reach holds, for each directory this write has walked, whether its walk
+// (the containment walk). reach holds, for each directory this write has walked, whether its walk
 // reached the target, so a directory is walked once.
 func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target, id string, reach map[string]bool) error {
 	var walked []string
@@ -798,7 +798,7 @@ func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target
 		}
 		n, err := tx.Node(ctx, im.AccountID, cur)
 		if errors.Is(err, store.ErrNotFound) {
-			// A purged directory is not an internal error: the import's target moved away (round 8, R7-4).
+			// A purged directory is not an internal error: the import's target moved away.
 			return importTargetMoved()
 		}
 		if err != nil {
@@ -827,7 +827,7 @@ func importTargetMoved() error {
 
 // placeStaged places one staged node under parent, in the caller's write. The directory it goes into must be reached from
 // the target (checked once per directory through reach). A live node of the same name meets the import's conflict policy,
-// as a top-level entry always did (round 7, B2).
+// as a top-level entry always did.
 func placeStaged(ctx context.Context, tx *store.Tx, im *store.Import, p *auth.Principal, target string,
 	reach map[string]bool, parent *store.Node, n *store.Node, now time.Time) error {
 	if err := checkReusedDirs(ctx, tx, im, target, parent.ID, reach); err != nil {
@@ -866,7 +866,7 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		}
 		// A refusal here fails the import, and its run goes on to the cleanup that removes the staged tree.
 		// The target directory may have moved since staging (a cross-folder move, or a trash): it must still be a
-		// directory of the target folder, and not trashed (round 3, F17).
+		// directory of the target folder, and not trashed.
 		if im.ParentID != "" {
 			dir, err := tx.Node(ctx, im.AccountID, im.ParentID)
 			if err != nil {
@@ -882,8 +882,8 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		}
 		now := store.Now()
 		// Every directory this import reused is checked, whether or not an entry of it is staged now: a move of the directory
-		// carries the staged entries under it along (round 4, N5).
-		// The target is a node: the folder's root when the import names no directory (round 5).
+		// carries the staged entries under it along.
+		// The target is a node: the folder's root when the import names no directory.
 		target := im.ParentID
 		if target == "" {
 			root, err := tx.RootNode(ctx, im.AccountID, im.FolderID)
@@ -954,7 +954,7 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		if err := tx.DropStaging(ctx, im.AccountID, im.StagingFolderID, im.StagingRootID); err != nil {
 			return err
 		}
-		// One summary, not a row or a webhook event per file (round 3, F4): importEnd records the counts, and
+		// One summary, not a row or a webhook event per file: importEnd records the counts, and
 		// import.completed carries them. A copy of a large tree also reports once, not per file.
 		im.Files, im.Bytes = files, bytes
 		im.State, im.Phase, im.FinishedAt = store.ImportDone, store.ImportPhaseDone, &now
@@ -1003,7 +1003,7 @@ func (s *Server) importFail(ctx context.Context, impID string, p *auth.Principal
 		code = string(ae.Code)
 	}
 	// The record and the job carry the code only. The cause's text can name a server path or a store error, so it goes to
-	// the server log (round 4, F8).
+	// the server log.
 	s.log.Warn("import failed", "import", impID, "error", cause)
 	return s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
@@ -1030,7 +1030,7 @@ func (s *Server) requeueImports(ctx context.Context) (int, error) {
 
 // endPoisonedImport writes the end of an import the store failed as poison: its audit entry and its import.failed (or
 // import.cancelled) event, in the write that cleans it up, as importFail writes them for any other failure. A poison
-// import failed after repeated job failures, so its code is internal (round 8, R7-3).
+// import failed after repeated job failures, so its code is internal.
 func (s *Server) endPoisonedImport(ctx context.Context, tx *store.Tx, im *store.Import) error {
 	p, err := importPrincipal(im)
 	if err != nil {

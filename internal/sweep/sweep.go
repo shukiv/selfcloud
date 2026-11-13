@@ -58,7 +58,7 @@ type Options struct {
 	// ImportPausedExpiry is imports.paused_expiry_days as a duration: an import paused for longer is cancelled, and what it
 	// staged and its archive are removed. Zero keeps paused imports.
 	ImportPausedExpiry time.Duration
-	// ImportEnder writes the end of an import the sweep fails as a poison one: its audit entry and its event (round 8, R7-3).
+	// ImportEnder writes the end of an import the sweep fails as a poison one: its audit entry and its event.
 	// Nil writes neither, as in tests of the store.
 	ImportEnder store.ImportEnder
 	// Derived is the cache of derived files (thumbnails). Nil means there are none to sweep, as in tests.

@@ -41,7 +41,7 @@ func tarGzFiles(t *testing.T, names []string) []byte {
 
 // turnClock is the clock of one turn in a test. It counts the importTime() calls of importStage in order: the first is the
 // turn's start, the second is the time the walk reaches the first new entry, and every later call returns later. So an
-// added importTime() call in importStage shifts the script, and the script must be updated with it (round 10).
+// added importTime() call in importStage shifts the script, and the script must be updated with it.
 func turnClock(start, reached, later time.Time) func() time.Time {
 	n := 0
 	return func() time.Time {
@@ -73,7 +73,7 @@ func importItemCount(t *testing.T, fx *importFixture, impID string) int {
 
 // TestTurnAfterASlowReachStagesAtLeastOneEntry: the walk takes 3 s to reach the first new entry, and the window runs out
 // 20 s into the turn, before the second entry. The turn still stages its first entry, since each turn makes progress
-// (round 9; mutation: the rule removed).
+// (mutation: the rule removed).
 func TestTurnAfterASlowReachStagesAtLeastOneEntry(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importYield = time.Nanosecond
@@ -88,7 +88,7 @@ func TestTurnAfterASlowReachStagesAtLeastOneEntry(t *testing.T) {
 
 // TestTurnAfterASlowReachStagesMoreThanOneEntry: the walk takes 3 s to reach the first new entry, and the window of
 // 2 × 3 s runs out 9 s into the turn; the entries before then are staged in that turn. Before the fix the window ran from
-// the turn's start, so the turn yielded after its first entry (round 9; mutation: the window started at the turn's start).
+// the turn's start, so the turn yielded after its first entry (mutation: the window started at the turn's start).
 func TestTurnAfterASlowReachStagesMoreThanOneEntry(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importYield = time.Nanosecond
@@ -102,7 +102,7 @@ func TestTurnAfterASlowReachStagesMoreThanOneEntry(t *testing.T) {
 }
 
 // TestImportWindowIsTheBaseOrTwiceTheReach: a turn's window is at least its base, and twice the time the walk took to reach
-// its first new entry, so the re-read of an archive costs at most about a third of a turn (round 9).
+// its first new entry, so the re-read of an archive costs at most about a third of a turn.
 func TestImportWindowIsTheBaseOrTwiceTheReach(t *testing.T) {
 	const base = 30 * time.Second
 	cases := []struct {
@@ -113,7 +113,7 @@ func TestImportWindowIsTheBaseOrTwiceTheReach(t *testing.T) {
 		{"a reach of 10 s under a base of 30 s gives the base", 10 * time.Second, base},
 		{"a reach of 40 s gives twice the reach", 40 * time.Second, 80 * time.Second},
 		{"twice the reach equal to the base gives the base", 15 * time.Second, base},
-		{"a reach of 10 min is capped at 10 min (pool fairness, round 10)", 10 * time.Minute, 10 * time.Minute},
+		{"a reach of 10 min is capped at 10 min (pool fairness)", 10 * time.Minute, 10 * time.Minute},
 		{"a reach of 40 min is capped at 10 min", 40 * time.Minute, 10 * time.Minute},
 	}
 	for _, c := range cases {
@@ -127,7 +127,7 @@ func TestImportWindowIsTheBaseOrTwiceTheReach(t *testing.T) {
 
 // TestGzipTarStagesAtLeastOneEntryPerTurn: with a yield after every turn's first moment, a gzipped tar of 20 entries still
 // finishes. Each turn stages at least one entry, so the import is done in at most 20 turns and one publish turn, and no turn
-// yields with no progress (round 9). Before the fix, every turn yielded before its first new entry, so the import never
+// yields with no progress. Before the fix, every turn yielded before its first new entry, so the import never
 // moved, since a gzip stream is read from its start to reach any entry.
 func TestGzipTarStagesAtLeastOneEntryPerTurn(t *testing.T) {
 	fx := newImportFixture(t)

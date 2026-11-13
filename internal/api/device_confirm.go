@@ -29,7 +29,7 @@ const (
 	// is sent, and the answer is the same.
 	deviceConfirmMailCap    = 3
 	deviceConfirmMailWindow = 15 * time.Minute
-	// deviceConfirmSlots bounds the confirmation mails being written or sent at once (round 2 M2). When every slot is
+	// deviceConfirmSlots bounds the confirmation mails being written or sent at once. When every slot is
 	// busy a job is dropped and logged; the answer is the same.
 	deviceConfirmSlots = 8
 )
@@ -115,15 +115,15 @@ func (s *Server) clearConfirmCookie(w http.ResponseWriter) {
 }
 
 // confirmByEmail answers a sign-in whose email's cap is spent, from a browser with no trusted device, when a mail can be
-// sent. The answer is 202 with the confirmation whatever the password, admins included (round 2 M3). Past the per-email limit on password checks (login.capped) no password is checked and no
+// sent. The answer is 202 with the confirmation whatever the password, admins included. Past the per-email limit on password checks (login.capped) no password is checked and no
 // mail is sent. Otherwise a matching password queues its mail, and the answer does not wait for it.
 func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidates []*store.User, email, password string,
 	remember *bool) error {
 	ctx := r.Context()
 	nonce := s.setConfirmCookie(w, r)
 	short := remember != nil && !*remember
-	// Two budgets are taken together, before any password check (round 4), or neither is taken. The first is per email
-	// and client address (round 3): an attacker who spends it from its own address does not stop another address's mail.
+	// Two budgets are taken together, before any password check, or neither is taken. The first is per email
+	// client address: an attacker who spends it from its own address does not stop another address's mail.
 	// The address is read as login.ip reads it, so proxy headers are trusted the same way. The NUL separates the two parts:
 	// an address key never holds one. The second is the email's ceiling from all addresses together: it bounds the hashing
 	// that many addresses could make, and the price is that an attacker with enough addresses spends it and blocks the real
@@ -144,7 +144,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 		writeJSON(w, http.StatusAccepted, deviceConfirmAnswer{Confirm: methodEmail})
 		return nil
 	}
-	// An installation admin's password is checked as anyone's is, but an admin is never mailed a link (round 2 M3): a
+	// An installation admin's password is checked as anyone's is, but an admin is never mailed a link: a
 	// link would tell the attacker the address is an admin's, and nothing else in the answer does. Its right password
 	// is audited as a failed sign-in, as a miss is, since no sign-in completes here.
 	var matches []*store.User
@@ -164,7 +164,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 			return err
 		}
 	}
-	// Every answer writes exactly one audit row inside the request, before the answer (round 3): a miss as a failed
+	// Every answer writes exactly one audit row inside the request, before the answer: a miss as a failed
 	// sign-in, a match as a confirmation requested, whatever the number of matched accounts. The mail work is queued and
 	// is not in the request, so no path waits for a mail. Both writes are one transaction with one row.
 	if len(matches) == 0 {
@@ -182,7 +182,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 }
 
 // auditConfirmRequested writes the one synchronous audit row of a sign-in whose password matched, so that it costs what a
-// miss costs (round 3). The row names the account when exactly one account matched, as a miss's does.
+// miss costs. The row names the account when exactly one account matched, as a miss's does.
 func (s *Server) auditConfirmRequested(r *http.Request, matches []*store.User) error {
 	accountID, actor := "", ""
 	if len(matches) == 1 {
@@ -200,7 +200,7 @@ func (s *Server) auditConfirmRequested(r *http.Request, matches []*store.User) e
 
 // queueConfirmMail prepares the link and its audit rows for a matched user and hands them to a bounded background job.
 // When no slot is free the job is dropped and logged, and nothing is written: the answer is the same. At most one job
-// is in flight per user (round 3): a second for the same user is dropped as a duplicate, with the same answer, so one
+// is in flight per user: a second for the same user is dropped as a duplicate, with the same answer, so one
 // caller cannot hold every slot through slow sends.
 func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, short bool) {
 	select {
@@ -218,7 +218,7 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 	}
 	s.confirmBusy[u.ID] = true
 	s.confirmMu.Unlock()
-	// The job gets what it needs from the request now, as a plain value, and never reads the request (round 5). Its
+	// The job gets what it needs from the request now, as a plain value, and never reads the request. Its
 	// context is detached from the request's too: nothing in the job reads a request value through it.
 	src := auditSourceOf(r)
 	accountID, userID := u.AccountID, u.ID
@@ -238,7 +238,7 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 }
 
 // prepareConfirmJob makes a confirmation's token, its link values and its audit rows. It runs in the job, not in the
-// request, so the request does no match-only work (round 4). It takes the copied request source, not the request.
+// request, so the request does no match-only work. It takes the copied request source, not the request.
 func (s *Server) prepareConfirmJob(src auditSource, accountID, userID, nonce string, short bool) *confirmJob {
 	secret, hash := auth.NewToken()
 	details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
@@ -288,12 +288,12 @@ func usableNow(ctx context.Context, tx *store.Tx, u *store.User) (bool, error) {
 // runConfirmJob writes the link for a matched user and mails it. The link row and its attempted audit entry are written
 // before the mail leaves, so no mail goes out without a row. A user who cannot sign in, or who is over the per-address
 // mail cap, gets no link. The mail's token is given back when the write fails, so a failed write spends nothing from the
-// cap (round 2 L1). The limit is in memory, as the other limits are.
+// cap. The limit is in memory, as the other limits are.
 func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 	var (
 		held *rate.Reservation
 		// heldAt is the time the token was reserved at. A refund must use it: rate.CancelAt restores nothing when the
-		// time is later than the reservation's, so a fresh clock read would lose the token (round 8).
+		// time is later than the reservation's, so a fresh clock read would lose the token.
 		heldAt time.Time
 		target *store.User
 	)
@@ -312,7 +312,7 @@ func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 		if !ok {
 			return tx.InsertAudit(ctx, j.failed)
 		}
-		// The cap counts the address, not each account that matched (round 2 L4).
+		// The cap counts the address, not each account that matched.
 		at := s.limitClock()
 		res, err := s.limits["mail.device.address"].reserve(emailKey(found.Email), at)
 		if err != nil {

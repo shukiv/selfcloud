@@ -2,7 +2,7 @@
 
 // Package apispec is `selfcloud api spec`: the server's OpenAPI document, GET /api/v1/openapi.yaml. It goes to standard
 // output, or to a file written through an os.Root with O_EXCL, so the file is never replaced unless --overwrite says so
-// (design-cli.md 3.9).
+// (decision 142).
 package apispec
 
 import (

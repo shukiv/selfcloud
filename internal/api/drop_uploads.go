@@ -270,7 +270,7 @@ func pieceBytes(r *http.Request, chunkCap int64) int64 {
 
 // dropFlight counts the bytes of drop pieces whose bodies are still arriving, per account and in all. A piece is
 // checked against the quota and the disk with these counted, so pieces in flight cannot each pass on the same space
-// (slice o3, round 2, item 1). The count is kept under mu from the check to the release.
+// (slice o3, item 1). The count is kept under mu from the check to the release.
 type dropFlight struct {
 	mu        sync.Mutex
 	total     int64

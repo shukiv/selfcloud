@@ -10,7 +10,7 @@ import (
 )
 
 // N1. A cancelled run is not a damaged database: it is an error (exit 2), with integrity still unchecked and no
-// sqlite_integrity finding. Mutant: every failure at the start is a finding, as in round 2.
+// sqlite_integrity finding. Mutant: every failure at the start is a finding, as in.
 func TestCancelledRunIsNotADamagedDatabase(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

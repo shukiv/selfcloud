@@ -14,7 +14,7 @@ import (
 )
 
 // A stage turn whose context is cancelled returns the context's error and leaves the import where it was: running, in
-// the stage phase, with its cursor unchanged. A shutdown does not fail the import (round 10). The cancellation comes at the
+// the stage phase, with its cursor unchanged. A shutdown does not fail the import. The cancellation comes at the
 // stage hook, before the first store read of the turn, so the cursor cannot move.
 func TestCancelledStageTurnLeavesTheImportInStage(t *testing.T) {
 	fx := newImportFixture(t)

@@ -159,7 +159,7 @@ func (s *Store) CLIDevicesOf(ctx context.Context, accountID, userID string, now 
 	return out, rows.Err()
 }
 
-// DeviceAccess is the state a device token is checked against, in one query (design-cli 3.3). It is Delegation, with the
+// DeviceAccess is the state a device token is checked against, in one query (decision 125). It is Delegation, with the
 // device's row filled in: DeviceFound (the row exists, in this account, and belongs to this user), its revocation and its
 // expiry. The account and user fields are read as Delegation reads them. It returns ErrNotFound when the account does not
 // exist.

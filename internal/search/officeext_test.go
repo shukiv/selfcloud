@@ -214,7 +214,7 @@ func openBytes(t *testing.T, data []byte) (*os.File, int64) {
 	return f, int64(len(data))
 }
 
-// sec1 item 6, review F5 round 3 (decision 84): a zip whose end record declares more entries than the cap, with two real
+// (decision 84): a zip whose end record declares more entries than the cap, with two real
 // headers, is refused before its entries are read. The declaration is a zip64 count of 65,538, which archive/zip accepts
 // for two headers (the count is compared modulo 65,536). Mutation: without the declared-count check the zip is read and
 // decided as a document.
@@ -248,7 +248,7 @@ func TestOfficeExtRefusesADeclaredCountOverTheCap(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 round 3 (decision 84): a zip with data in front of it (base above zero) and more real headers than
+// (decision 84): a zip with data in front of it (base above zero) and more real headers than
 // the cap is refused, whichever directory start archive/zip takes. Mutation: walking only from dirOff, where this zip's
 // headers are not, lets the zip through to zip.NewReader, which builds all 10,001 entries.
 func TestOfficeExtRefusesAPrependedZipOverTheCap(t *testing.T) {
@@ -287,7 +287,7 @@ func TestOfficeExtRefusesAPrependedZipOverTheCap(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 round 3 (decision 84): a normal office file with data in front of it is still decided.
+// (decision 84): a normal office file with data in front of it is still decided.
 func TestOfficeExtDecidesAPrependedOfficeFile(t *testing.T) {
 	data := append(make([]byte, 1000), zipData(t, []string{"word/document.xml"})...)
 	f, size := openBytes(t, data)

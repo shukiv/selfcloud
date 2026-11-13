@@ -54,7 +54,7 @@ const (
 	// unsupported media type, so it is a 415.
 	EncryptedArchive Code = "encrypted_archive"
 	// AuthorizationPending, SlowDown and ExpiredToken are the answers of a device sign-in poll that is not yet a token
-	// (design-cli 3.3, decision 125). They are 400s, as RFC 8628 gives them, so a client reads the code, not the status.
+	// (decision 125). They are 400s, as RFC 8628 gives them, so a client reads the code, not the status.
 	AuthorizationPending Code = "authorization_pending"
 	SlowDown             Code = "slow_down"
 	ExpiredToken         Code = "expired_token"

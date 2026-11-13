@@ -32,7 +32,7 @@ const maxRestarts = 3
 var errRangeIgnored = errors.New("the server, or a proxy in front of it, sent the whole file instead of a range; get " +
 	"needs the Range and If-Range headers to reach the server")
 
-// Get is `selfcloud get FILE [DEST]`: a resumable download in ranges (design-cli 3.9). FILE is a node id, a path in
+// Get is `selfcloud get FILE [DEST]`: a resumable download in ranges (decision 142). FILE is a node id, a path in
 // --folder, or a share link, which needs no sign-in (3.5). DEST is a directory, where the file takes the server's name,
 // or a new file's path; the default is the current directory.
 func Get(args []string, stdout, stderr io.Writer) int {

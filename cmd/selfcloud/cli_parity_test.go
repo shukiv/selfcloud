@@ -117,7 +117,7 @@ func TestCLIParityCommands(t *testing.T) {
 			t.Errorf("admin command %q is in the table but has no cmd row in docs/cli-parity.tsv", c.name)
 		}
 	}
-	// A declared read is a route another command owns, which this command calls for a check of its own (design-cli 3.7:
+	// A declared read is a route another command owns, which this command calls for a check of its own (decision 118:
 	// rm reads a node's name before it asks). It must have a row naming that other command, and it must not be one of this
 	// command's own routes, which the rows above already cover.
 	for _, c := range remoteCommands {

@@ -196,7 +196,7 @@ func (s *Store) ExpirePausedImports(ctx context.Context, before time.Time, limit
 
 // ReleaseArchiveReservation releases the reservation an import holds for its archive, from the staging folder, once: the
 // row's amount goes to zero in the same write, so a second call releases nothing. It runs where the staging folder is
-// dropped, published or cleaned up, while that folder still exists (round 3, F1). im is updated to match the row.
+// dropped, published or cleaned up, while that folder still exists. im is updated to match the row.
 func (tx *Tx) ReleaseArchiveReservation(ctx context.Context, im *Import) error {
 	held := im.ArchiveReserved
 	im.ArchiveReserved = 0
@@ -214,8 +214,8 @@ func (tx *Tx) ReleaseArchiveReservation(ctx context.Context, im *Import) error {
 // EndImportsAt ends the unfinished imports whose target is inside a folder that is being deleted, or under a node that is
 // being purged (the node and its subtree). Each one ends as a cancelled import ends, in the caller's write: its archive
 // reservation and its entry's reservation are released once, and its staging folder goes with its nodes. Its row goes by
-// the cascade when its target goes, so no reservation is left on a folder or an account with no row to release it
-// (round 4, N1). folderID is "" for a purge and nodeID is "" for a folder delete.
+// the cascade when its target goes, so no reservation is left on a folder or an account with no row to release it.
+// folderID is "" for a purge and nodeID is "" for a folder delete.
 func (tx *Tx) EndImportsAt(ctx context.Context, accountID, folderID, nodeID string) error {
 	rows, err := tx.q.QueryContext(ctx, `SELECT id FROM import_jobs WHERE account_id = ? AND phase <> 'done'
 		AND (folder_id = ? OR parent_id IN (WITH RECURSIVE sub(nid) AS (
@@ -266,15 +266,15 @@ func (tx *Tx) EndImportsAt(ctx context.Context, accountID, folderID, nodeID stri
 }
 
 // stagedFolderOfNode is the condition, on a nodes row, that its folder is a staging folder. Every statement that removes
-// staged nodes adds it, so a live node is not removed through a staging folder ID, even one that is wrong (round 8).
+// staged nodes adds it, so a live node is not removed through a staging folder ID, even one that is wrong.
 const stagedFolderOfNode = "EXISTS (SELECT 1 FROM folders f WHERE f.account_id = nodes.account_id AND f.id = nodes.folder_id AND f.staged = 1)"
 
 // removeStaging removes a staging folder with its nodes and its row, in this transaction, and changes no usage. Staged
 // bytes are not in the account's usage until publish, so there is nothing to take off; DeleteFolder would take them off
-// and corrupt the count (round 7, B1). The caller releases the reservations first. The blobs of the removed nodes are no
+// corrupt the count. The caller releases the reservations first. The blobs of the removed nodes are no
 // longer referenced, and the orphan sweep removes their files. Only a staged folder is removed: a live one is left alone.
 func (tx *Tx) removeStaging(ctx context.Context, accountID, stagingFolder string) error {
-	// The staged check comes first: a live folder is left alone, search rows included (round 8, R7-1).
+	// The staged check comes first: a live folder is left alone, search rows included.
 	var staged int
 	if err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM folders WHERE account_id = ? AND id = ? AND staged = 1`,
 		accountID, stagingFolder).Scan(&staged); err != nil {
@@ -294,18 +294,18 @@ func (tx *Tx) removeStaging(ctx context.Context, accountID, stagingFolder string
 	return err
 }
 
-// importRequeueLimit is the number of failed jobs of one import after which the sweep stops queuing it (round 4, N7).
+// importRequeueLimit is the number of failed jobs of one import after which the sweep stops queuing it.
 const importRequeueLimit = 3
 
 // RequeueAbandonedImports queues a job for each import that needs one and has none: a queued import whose job ended, a
 // running one whose job died (a store error in the run), and a cancelled or failed one whose cleanup has not ended. A
 // pause, a resume or a cancel that raced a job's end leaves one of these. It queues at most one batch of 100 a call and
-// returns how many it queued (round 3, F10).
+// returns how many it queued.
 func (s *Store) RequeueAbandonedImports(ctx context.Context, end ImportEnder) (int, error) {
 	var n int
 	err := s.Write(ctx, func(tx *Tx) error {
 		// An import whose jobs have failed importRequeueLimit times is poison: it is failed with a code, and it is not
-		// queued again (round 4, N7). Its archive and staging stay until an operator looks at it.
+		// queued again. Its archive and staging stay until an operator looks at it.
 		now := Now()
 		if _, err := tx.q.ExecContext(ctx, `UPDATE import_jobs SET
 			state = CASE WHEN state IN ('queued', 'running') THEN 'failed' ELSE state END,
@@ -315,7 +315,7 @@ func (s *Store) RequeueAbandonedImports(ctx context.Context, end ImportEnder) (i
 				AND j.status = 'failed') >= ?`, millis(now), millis(now), importRequeueLimit); err != nil {
 			return err
 		}
-		// A poison import that no job is working on is cleaned in this write, as a failed import is (round 7, B6): its
+		// A poison import that no job is working on is cleaned in this write, as a failed import is: its
 		// reservations are released once, its staging goes, and its archive blob is no longer referenced, so the orphan
 		// sweep removes the file. Its row keeps the failure and reads done, for PurgeImports.
 		poison, err := tx.q.QueryContext(ctx, `SELECT i.id FROM import_jobs i
@@ -390,13 +390,13 @@ func (s *Store) RequeueAbandonedImports(ctx context.Context, end ImportEnder) (i
 }
 
 // ImportEnder writes the end of an import that the store ends itself, in the caller's write: its audit entry and its
-// event. The API supplies it, since those are written the same way for every end (round 8, R7-3).
+// event. The API supplies it, since those are written the same way for every end.
 type ImportEnder func(ctx context.Context, tx *Tx, im *Import) error
 
-// cleanPoisonImport ends a failed import the way its normal cleanup does, in the caller's write (round 7, B6): the archive
+// cleanPoisonImport ends a failed import the way its normal cleanup does, in the caller's write: the archive
 // and entry reservations are released once, the staging goes with no usage change, the archive blob is unlinked from the
 // row so the orphan sweep finds it, the sources are dropped, and the row reads done. Its end is written through end, so
-// the owner sees the failure in the audit log and the webhooks as for any other failed import (round 8, R7-3).
+// the owner sees the failure in the audit log and the webhooks as for any other failed import.
 func (tx *Tx) cleanPoisonImport(ctx context.Context, importID string, now time.Time, end ImportEnder) error {
 	im, err := tx.Import(ctx, importID)
 	if err != nil {
@@ -601,8 +601,8 @@ func (tx *Tx) SetImportSwitch(ctx context.Context, accountID string, on bool) er
 
 // OtherUnfinishedBytes is the size the user's other unfinished imports hold against the quota: the full declared size of
 // each one. Staged bytes are not in the account's usage until the publish, which is one write, so an import that has
-// staged but not published (queued, running or paused) still holds all of its declared size; a scan counts it (round 4,
-// F6; round 7, B4, which counted only the bytes not yet staged).
+// staged but not published (queued, running or paused) still holds all of its declared size; a scan counts it (
+// which counted only the bytes not yet staged).
 func (tx *Tx) OtherUnfinishedBytes(ctx context.Context, accountID, userID, importID string) (int64, error) {
 	var n int64
 	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(declared_bytes), 0)
@@ -619,7 +619,7 @@ type ReusedDir struct {
 }
 
 // ReusedDirs lists the reused directories of an import, the deepest first (the reverse of their seq), so a publish merges
-// a directory's entries into its live directory before the directory's own placeholder goes (round 4, N5; round 7, B2).
+// a directory's entries into its live directory before the directory's own placeholder goes.
 func (tx *Tx) ReusedDirs(ctx context.Context, importID string) ([]ReusedDir, error) {
 	rows, err := tx.q.QueryContext(ctx, `SELECT node_id, reuses FROM import_items WHERE import_id = ? AND kind = 'dir'
 		AND reuses <> '' ORDER BY seq DESC`, importID)
@@ -639,7 +639,7 @@ func (tx *Tx) ReusedDirs(ctx context.Context, importID string) ([]ReusedDir, err
 }
 
 // ImportReuses returns the live directory that a staged directory of an import stands for, when it is a placeholder of a
-// reused directory, or "" when it is a directory the import made (round 7, B2).
+// reused directory, or "" when it is a directory the import made.
 func (tx *Tx) ImportReuses(ctx context.Context, importID, nodeID string) (string, error) {
 	var live string
 	err := tx.q.QueryRowContext(ctx, `SELECT reuses FROM import_items WHERE import_id = ? AND node_id = ? AND reuses <> ''
@@ -682,8 +682,7 @@ func (tx *Tx) DropStagedDir(ctx context.Context, accountID, stagingFolder, impor
 }
 
 // StagedTopLevel returns the staged children of the import's staging root: the entries a publish places under the target
-// directory. Nothing else is staged under a live node, so no entry can clash with itself in the directory it reuses
-// (round 7, B2).
+// directory. Nothing else is staged under a live node, so no entry can clash with itself in the directory it reuses.
 func (tx *Tx) StagedTopLevel(ctx context.Context, accountID, stagingFolder, rootID string) ([]*Node, error) {
 	rows, err := tx.q.QueryContext(ctx, nodeSelect+` WHERE n.account_id = ? AND n.folder_id = ? AND n.parent_id = ?
 		ORDER BY n.id`, accountID, stagingFolder, rootID)
@@ -703,7 +702,7 @@ func (tx *Tx) StagedTopLevel(ctx context.Context, accountID, stagingFolder, root
 }
 
 // SetStagedParent places a staged top-level node under parentID, named name, in this transaction. Only a node of the
-// staging folder is changed: a node of a live folder that the ID names is not found (round 6).
+// staging folder is changed: a node of a live folder that the ID names is not found.
 func (tx *Tx) SetStagedParent(ctx context.Context, accountID, stagingFolder, nodeID, parentID, name, key string, at time.Time) error {
 	group, err := typeGroupFor(ctx, tx.q, accountID, nodeID, name)
 	if err != nil {

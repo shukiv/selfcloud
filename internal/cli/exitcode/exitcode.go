@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package exitcode holds the CLI's exit codes (design-cli.md section 3.6) and the one place where an HTTP status and an
+// Package exitcode holds the CLI's exit codes (decision 123) and the one place where an HTTP status and an
 // API error code become one of them.
 package exitcode
 

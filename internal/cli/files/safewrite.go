@@ -2,7 +2,7 @@
 
 package files
 
-// Safe writes for downloads (design-cli 3.9). A download's name is the server's, and the server's name is untrusted, so
+// Safe writes for downloads (decision 142). A download's name is the server's, and the server's name is untrusted, so
 // it is checked with the API's own name rules and then refused if it would not stay one plain file name on any
 // platform. Every write goes through an os.Root of the destination directory, so no name can leave it, even through a
 // link already there. The part file is created with O_EXCL and mode 0600; an existing one is reopened only when it is a

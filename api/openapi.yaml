@@ -2632,7 +2632,7 @@ paths:
         short-lived `selfcloud_confirm` cookie, and the link signs in only the browser that holds
         it, through `POST /api/v1/auth/device-confirm`. A server without mail keeps the refusal:
         `429 rate_limited`. An installation admin's email gets the same `202`, whatever the password,
-        and no mail is sent to it (decision 86, round 2 M3).
+        and no mail is sent to it (decision 86).
       security: []
       requestBody:
         required: true

@@ -2,7 +2,7 @@
 
 package files
 
-// get of a share link (design-cli 3.5): the link names its own server and carries its secret in the fragment, so it
+// get of a share link (decision 146): the link names its own server and carries its secret in the fragment, so it
 // needs no profile and no sign-in. The link is opened with no Authorization header; the visitor credential the open
 // gives is used for the file's reads alone, renewed before it ends, and opened again when it is refused. The profile's
 // and the environment's credentials are never sent to the link's server. The secret, the password and the visitor

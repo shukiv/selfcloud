@@ -22,7 +22,7 @@ import (
 // webhookAuditNoEvent is every audit action that writes no event, with the reason. The actions that do
 // write one are in webhookAuditEvents.
 var webhookAuditNoEvent = map[string]string{
-	// Background imports (decision 92, round 3, F19): the audit rows are the record; the outcome is an import.* event.
+	// Background imports (decision 92): the audit rows are the record; the outcome is an import.* event.
 	"imports.archive": "the archive source switch is an account setting; no event (decision 92)",
 	// The account's templates folder is a setting, as the archive switch is; the documents made from a template are
 	// node.create, which already reports file.created (decision 105).
@@ -65,7 +65,7 @@ var webhookAuditNoEvent = map[string]string{
 	// The device confirmation (sec2, decision 86) is sign-in activity too; a blank line keeps this block's alignment apart.
 	"user.device_confirm_sent":     "sign-in activity is not on the event list (sec2, decision 86)",
 	"user.device_confirmed":        "sign-in activity is not on the event list (sec2, decision 86)",
-	"user.login_confirm_requested": "sign-in activity is not on the event list (sec2, decision 86, round 3)",
+	"user.login_confirm_requested": "sign-in activity is not on the event list (sec2, decision 86)",
 
 	// A terminal's device sign-in (cli4, decision 125) is sign-in activity too.
 	"cli.approve":       "sign-in activity is not on the event list (cli4, decision 125)",
@@ -249,15 +249,15 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	// Round 6 reviewed the import's node writes (decision 92), one reason per site. Each one is limited to the import's
 	// staging folder, or creates a node in it, so a staged node is changed by its import only, and a live node is never
 	// changed by one. The writes into the target folder are MoveStagedTree and SetStagedParent, at the publish only.
-	"../api/import_job.go InsertNodeNoIndex":                   {2, lockAdds, "importMakeDir's directory and importFileEntry's file: each is inserted in the import's staging folder, which no lock can hold; the parent is a placeholder in the same staging folder or the staging root, never a live directory (round 7, B2), so no listing shows a staged entry"},
+	"../api/import_job.go InsertNodeNoIndex":                   {2, lockAdds, "importMakeDir's directory and importFileEntry's file: each is inserted in the import's staging folder, which no lock can hold; the parent is a placeholder in the same staging folder or the staging root, never a live directory, so no listing shows a staged entry"},
 	"../store/imports.go CleanupStagedBatch DELETE FROM nodes": {1, lockFree, "the staging folder's own staged nodes: account_id and folder_id = the import's staging folder, and the IDs come from that folder's rows; a staged node is in no folder a caller reaches, so no lock is over it"},
 	"../store/imports.go DropStaging DELETE FROM folders":      {1, lockFree, "the staging folder's row, by account_id, id and staged = 1: a folder that holds no node a caller can reach, so nothing is refused or reported"},
-	"../store/imports.go DropStagedDir DELETE FROM nodes":      {1, lockFree, "the placeholder of a reused directory, by account_id, folder_id = the staging folder and id, after its entries were merged into the live directory: a staged node, which no editor reaches, so nothing is refused or reported (round 7, B2)"},
-	"../store/imports.go removeStaging DELETE FROM folders":    {1, lockFree, "the staging folder's row, by account_id, id and staged = 1, with its nodes removed first: a folder no caller reaches, and no usage is changed (round 7, B1: its staged bytes were never counted)"},
-	"../store/imports.go removeStaging DELETE FROM nodes":      {1, lockFree, "the nodes of a staged folder only (folder_id IN the folders with account_id, id and staged = 1): staged nodes that no editor reaches, so nothing is refused; no usage is changed (round 7, B1)"},
+	"../store/imports.go DropStagedDir DELETE FROM nodes":      {1, lockFree, "the placeholder of a reused directory, by account_id, folder_id = the staging folder and id, after its entries were merged into the live directory: a staged node, which no editor reaches, so nothing is refused or reported"},
+	"../store/imports.go removeStaging DELETE FROM folders":    {1, lockFree, "the staging folder's row, by account_id, id and staged = 1, with its nodes removed first: a folder no caller reaches, and no usage is changed (its staged bytes were never counted)"},
+	"../store/imports.go removeStaging DELETE FROM nodes":      {1, lockFree, "the nodes of a staged folder only (folder_id IN the folders with account_id, id and staged = 1): staged nodes that no editor reaches, so nothing is refused; no usage is changed"},
 	"../store/imports.go DropStaging DELETE FROM nodes":        {1, lockFree, "the staging root, by account_id, folder_id = the staging folder and id: a staged node, which reports nothing"},
 	"../store/imports.go MoveStagedTree UPDATE nodes":          {1, lockAdds, "the publish moves the staged nodes of the staging folder (account_id and folder_id) into the target folder: they are new to it, so no lock is over them, and changes no node already there; the publish's counts are reported in import.finish"},
-	"../store/imports.go SetStagedParent UPDATE nodes":         {1, lockAdds, "the publish places a staged top under its parent, by account_id, folder_id = the staging folder and id: a staged node gains its place and name, and no node already in a folder changes (round 6: before, it was matched by ID alone)"},
+	"../store/imports.go SetStagedParent UPDATE nodes":         {1, lockAdds, "the publish places a staged top under its parent, by account_id, folder_id = the staging folder and id: a staged node gains its place and name, and no node already in a folder changes (before, it was matched by ID alone)"},
 }
 
 // webhookAuditCalls maps the names of helpers that take an audit action to the position of the action
