@@ -125,7 +125,7 @@ fn	lib/manage/api.ts:createAccount	account create	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:createAdmin	admin add	cli9a3	built in cli9a3
 fn	lib/manage/api.ts:createGroup	group create	cli8	built in cli8
 fn	lib/manage/api.ts:createKey	account key create	cli9a1	built in cli9a1
-fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createPerson	user add	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
 fn	lib/manage/api.ts:deleteAccount	account rm	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:deleteAdmin	admin rm	cli9a3	built in cli9a3
@@ -135,7 +135,7 @@ fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
 fn	lib/manage/api.ts:getAccount	account show	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
 fn	lib/manage/api.ts:getJob	job show	cli10	built in cli10
-fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:getPerson	user show	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
 fn	lib/manage/api.ts:listAccounts	account ls	cli9a2	built in cli9a2
@@ -143,10 +143,10 @@ fn	lib/manage/api.ts:listAdmins	admin ls	cli9a3	built in cli9a3
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
 fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
 fn	lib/manage/api.ts:listKeys	account key ls	cli9a1	built in cli9a1
-fn	lib/manage/api.ts:listPeople	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listPeople	user ls	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:listSpaces	folder ls	cli8	built in cli8
 fn	lib/manage/api.ts:removeGroupMember	group remove-member	cli8	built in cli8
-fn	lib/manage/api.ts:removePerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:removePerson	user rm	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:renameGroup	group rename	cli8	built in cli8
 fn	lib/manage/api.ts:renameSpace	folder rename	cli8	built in cli8
 fn	lib/manage/api.ts:resendVerification	-	cli9	planned, cli9
@@ -156,7 +156,7 @@ fn	lib/manage/api.ts:sendPasswordReset	-	cli9	planned, cli9
 fn	lib/manage/api.ts:setUserPassword	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (decision 41)
 fn	lib/manage/api.ts:updateAccount	account update	cli9a2	built in cli9a2
-fn	lib/manage/api.ts:updatePerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:updatePerson	user update	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:usage	account usage	cli9a2	built in cli9a2
 fn	lib/notifications/api.ts:getEmailSwitch	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:listNotices	-	cli11	planned, cli11
@@ -219,7 +219,7 @@ route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group remove-memb
 route	DELETE /api/v1/accounts/{acc}/keys/{key}	account key revoke	cli9a1	built in cli9a1
 route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/quota-warning	account quota-warning clear	cli9a1	built in cli9a1
-route	DELETE /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/users/{usr}	user rm	cli9b1	built in cli9b1
 route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
 route	DELETE /api/v1/admins/{usr}	admin rm	cli9a3	built in cli9a3
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
@@ -259,8 +259,8 @@ route	GET /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage/largest	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	GET /api/v1/accounts/{acc}/usage	account usage	cli9a2	built in cli9a2
-route	GET /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/users	user ls	cli9b1	built in cli9b1
+route	GET /api/v1/accounts/{acc}/users/{usr}	user show	cli9b1	built in cli9b1
 route	GET /api/v1/accounts/{acc}/users/{usr}/grants	user grants	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/webhooks	webhook ls	cli10	built in cli10
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}	webhook show	cli10	built in cli10
@@ -337,7 +337,7 @@ route	PATCH /api/v1/accounts/{acc}/groups/{grp}	group rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
-route	PATCH /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/users/{usr}	user update	cli9b1	built in cli9b1
 route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in cli10
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
@@ -359,7 +359,7 @@ route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/share-links/delete-public	link rm	cli7	built in cli7
 route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
-route	POST /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users	user add	cli9b1	built in cli9b1
 route	POST /api/v1/accounts/{acc}/users/{usr}/password	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 route	POST /api/v1/accounts/{acc}/users/{usr}/password-reset	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in	-	-	sign in as a user: browser session only (decision 41)

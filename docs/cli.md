@@ -931,6 +931,50 @@ selfcloud admin rm usr_… --yes
 
 Exit codes are the usual ones: 0 done, 1 failed, 2 usage or a bad id, 3 refused (401, 403, 409 or 429), 4 not found.
 
+## People
+
+The people commands list, add, change and remove an account's people. They take `--account acc_...`, or the
+`SELFCLOUD_ACCOUNT` variable when the flag is absent, and a person is named by their `usr_` id, as the commands print it.
+They need an account key for that account, or an installation admin key; a device sign-in (`selfcloud login`) cannot
+manage an account, an owner's included, and the server answers it `404 not_found "no such account"` (exit 4).
+
+| Command | What it does |
+|---|---|
+| `user add [--account ACC] --verification email\|link\|none [--name NAME] [--locale TAG] [--role ROLE] [--external-id ID] EMAIL` | adds a person. `email` mails them a sign-in link, `link` prints one once, `none` makes them active at once. With `--external-id`, a repeat with the same id and fields answers the existing person (exit 0) and changes nothing |
+| `user ls [--account ACC] [--all] [--email EMAIL] [--external-id ID]` | the account's people: `ID`, `EMAIL`, `NAME`, `ROLE`, `STATUS`, `VERIFIED` |
+| `user show [--account ACC] USER` | one person: id, external id, email, display name, locale, role, status, verification time, quota and the limit that applies, times, a pending email and the last sign-in |
+| `user update [--account ACC] USER [--name NAME] [--locale TAG] [--role ROLE] [--external-id ID] [--status active\|disabled] [--quota SIZE\|default] [--email EMAIL --verification email\|link] [--yes]` | changes only what the flags give; `--external-id ""` clears it, `--quota default` uses the account's default and `0` lifts the limit |
+| `user rm [--account ACC] USER [--transfer-to USER2 \| --delete-files] [--yes]` | removes a person; their My files go to another person, or are deleted |
+
+**A sign-in link is shown once.** `user add --verification link`, and an email change that answers with a link, print
+`link=` and `link_expires_at=` in the answer, and the note "the sign-in link is shown only now; give it to the person"
+on standard error. The API does not keep the link to show again. The `token` that the response also carries is never
+printed, in plain output or under `--json`.
+
+**Changing an email.** `--email` and `--verification` are given together; a new address stays pending until the person
+follows the mail or the link, and the answer prints the verification the same way as `user add`.
+
+**Disabling asks first.** `user update --status disabled` reads the person's id, and at a terminal asks for it to be
+typed back; with no terminal and no `--yes` it refuses (exit 2) before anything is sent. `user rm` asks the same way.
+`--yes` skips the question and never skips the checks of the arguments.
+
+Plain output is a table for a list and `key=value` lines for one person; `--json` prints the person's fields (never a
+secret) and, for a list, their array. A removal prints `target=ID` and `status=done`. Errors go to standard error.
+
+**Exit codes.** 0 done; 2 an argument refused locally (no `--verification`, a bad method or quota, `--email` without
+`--verification`, `--transfer-to` with `--delete-files` or naming the same person); 3 refused by the server; 4 not found.
+The server refuses removing the last active owner, removing yourself, and removing a person whose My files is not empty
+without `--transfer-to` or `--delete-files`, all with a conflict (exit 3); for a conflict the command adds the line
+"selfcloud: hint: give --transfer-to USER or --delete-files" on standard error, which `--json` leaves out.
+
+```
+export SELFCLOUD_ACCOUNT=acc_...
+selfcloud user add --verification email --name "Ann Lee" ann@example.test
+selfcloud user ls --all
+selfcloud user update usr_... --quota 10GiB
+selfcloud user rm usr_... --transfer-to usr_... --yes
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
