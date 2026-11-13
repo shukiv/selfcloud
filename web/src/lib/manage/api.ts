@@ -261,10 +261,24 @@ export function deleteAllPublicLinks(id: string, signal?: AbortSignal): Promise<
 
 export function auditLog(
   id: string,
-  p: { action?: string; actor?: string; cursor?: string; limit?: number },
+  p: { action?: string; actor?: string; since?: string; until?: string; cursor?: string; limit?: number },
 ): Promise<Page<AuditEntry & { id: string; time: string }>> {
   return api<Page<AuditEntry & { id: string; time: string }>>(
     'GET',
-    `${acc(id)}/audit${query({ action: p.action, actor: p.actor, cursor: p.cursor, limit: p.limit ?? PAGE_SIZE })}`,
+    `${acc(id)}/audit${query({ action: p.action, actor: p.actor, since: p.since, until: p.until, cursor: p.cursor, limit: p.limit ?? PAGE_SIZE })}`,
   );
+}
+
+// The filters the CSV export takes. since is inclusive and until is exclusive, as on the read route.
+export interface AuditExportFilter {
+  since?: string;
+  until?: string;
+  action?: string;
+  actor?: string;
+}
+
+// auditExportURL is the same-origin address of the log as CSV: the browser's own download follows it, so the session
+// cookie travels and the file is never held in memory by the page.
+export function auditExportURL(id: string, p: AuditExportFilter): string {
+  return `${acc(id)}/audit/export${query({ format: 'csv', since: p.since, until: p.until, action: p.action, actor: p.actor })}`;
 }
