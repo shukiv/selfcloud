@@ -14,9 +14,9 @@ import (
 // linkNote says where a one-time link went. It holds no secret.
 const linkNote = "selfcloud: note: the link is shown only now; give it to the person\n"
 
-// verificationView is an answer's delivery, without the token the API may send. The token is a secret and is never
+// linkVerificationView is an answer's delivery, without the token the API may send. The token is a secret and is never
 // printed, plain or under --json.
-type verificationView struct {
+type linkVerificationView struct {
 	Method    string `json:"method"`
 	URL       string `json:"url,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
@@ -25,7 +25,7 @@ type verificationView struct {
 
 // userVerification is the answer to a verification: the user, with the delivery nested in it.
 type userVerification struct {
-	Verification *verificationView `json:"verification"`
+	Verification *linkVerificationView `json:"verification"`
 }
 
 // methodArg checks the delivery method of a command before anything is sent.
@@ -46,7 +46,7 @@ func methodArg(command, method string, withNone bool) error {
 
 // printVerification writes a delivery: the method, then whether mail went out or the link and its end. A link is shown
 // once, on standard output, and the note on standard error holds no secret.
-func printVerification(c *command, v verificationView) error {
+func printVerification(c *command, v linkVerificationView) error {
 	if c.g.JSON {
 		return output.JSON(c.stdout, v)
 	}
@@ -108,7 +108,7 @@ func verify(name, route, command string, withNone bool, args []string, stdout, s
 	if err != nil {
 		return c.fail(err)
 	}
-	var v verificationView
+	var v linkVerificationView
 	if route == "/verification" {
 		var answer userVerification
 		if err := decodeAs(resp.Body, &answer, "a user and its verification"); err != nil {
