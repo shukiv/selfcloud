@@ -127,8 +127,8 @@ function nodeKey(node: NewMenuNode, index: number): string {
   }
 }
 
-// MENU_ROW_HEIGHT is the New menu's row height in pixels: 40, or 44 on a coarse pointer. The same values are the stylesheet's
-// --menu-row-height (index.css), and menuRowHeight.test.ts keeps them the same.
+// MENU_ROW_HEIGHT is the New menu's row height in pixels: 40, or 44 on a coarse pointer. The row style below sets it on each
+// item (the file menu sizes its own rows), and a submenu title fills its wrapper, so the title takes that row's height.
 export const MENU_ROW_HEIGHT = { fine: 40, coarse: 44 } as const;
 
 // newMenuItems builds the antd items of the tree. A row is 40 px, or 44 px on a coarse pointer; the chord letter sits at the row's
