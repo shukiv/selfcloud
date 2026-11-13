@@ -190,8 +190,8 @@ func UserSignInLink(args []string, stdout, stderr io.Writer) int {
 		if err := output.KeyValues(c.stdout, pairs); err != nil {
 			return c.fail(err)
 		}
+		_, _ = io.WriteString(c.stderr, linkNote)
 	}
-	_, _ = io.WriteString(c.stderr, linkNote)
 	return exitcode.OK
 }
 

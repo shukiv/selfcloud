@@ -200,6 +200,21 @@ func TestUserSignInLink(t *testing.T) {
 	}
 }
 
+// TestUserSignInLinkJSONLeavesStderrEmpty: the note about the one-time link is plain output only, as it is for the
+// other commands that show a link.
+func TestUserSignInLinkJSONLeavesStderrEmpty(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("POST", userLinkPath("/sign-in-links"), doc(http.StatusCreated, map[string]any{
+		"url": testLink, "token": "sck_secret_value", "expires_at": "2026-11-13T12:00:00Z",
+	}))
+	res := f.runAcc(UserSignInLink, testUser, "--json")
+	wantCode(t, res, 0)
+	if res.stderr != "" {
+		t.Errorf("stderr %q, want nothing", res.stderr)
+	}
+}
+
 func TestUserRevokeTokensConfirms(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
