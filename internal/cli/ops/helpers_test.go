@@ -41,6 +41,7 @@ var (
 	testImport   = id.Derive("imp", "cli10-import")
 	testUpload   = id.Derive("upl", "cli10-upload")
 	testJob      = id.Derive("job", "cli10-job")
+	testKey      = id.Derive("key", "cli9a1-key")
 )
 
 func isolate(t *testing.T, token string) {
