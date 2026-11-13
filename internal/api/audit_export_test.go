@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -234,6 +237,51 @@ func TestAuditExportPagesThroughTheLog(t *testing.T) {
 	}
 	if rows[1][0] != csvTime(probeAt(2499)) || rows[2500][0] != csvTime(probeAt(0)) {
 		t.Errorf("first %q last %q, want the newest and oldest probe times", rows[1][0], rows[2500][0])
+	}
+}
+
+func TestAuditExportAbortsWhenAPageFails(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	entries := make([]*store.AuditEntry, 0, 2500)
+	for i := 0; i < 2500; i++ {
+		entries = append(entries, &store.AuditEntry{Time: probeAt(i), AccountID: acc.ID,
+			ActorKind: "user", ActorID: "usr_a", Action: "probe.page", Target: "nod_" + itoa(i)})
+	}
+	insertAuditRows(t, s, entries...)
+	var log bytes.Buffer
+	s.log = slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	s.exportBeforePage = func(page int) error {
+		if page == 1 {
+			return errors.New("the second page is unreadable")
+		}
+		return nil
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	q := url.Values{"action": {"probe.page"}, "since": {probeAt(0).Format(time.RFC3339Nano)},
+		"until": {probeAt(2500).Format(time.RFC3339Nano)}}
+	req, err := http.NewRequest("GET", srv.URL+auditURL(acc.ID, "export", q), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if _, err := io.ReadAll(resp.Body); err == nil {
+		t.Fatal("the export ended cleanly after a page read failed; the client would save a short CSV")
+	}
+	if got := log.String(); !strings.Contains(got, "level=ERROR") || !strings.Contains(got, "account="+acc.ID) {
+		t.Fatalf("log = %q, want one error line naming account %s", got, acc.ID)
 	}
 }
 

@@ -98,6 +98,9 @@ type Server struct {
 	// exportMu guards exporting, the accounts with a CSV audit export in flight: one per account.
 	exportMu  sync.Mutex
 	exporting map[string]bool
+	// exportBeforePage, when set, runs before each audit export page read. A test uses it to fail a later page.
+	// Production leaves it nil and the call is a nil test.
+	exportBeforePage func(page int) error
 	// verifyHook, when set, is told of each password check a device confirmation makes (dummy reports the check against no
 	// hash). A test counts the checks with it; production leaves it nil and the call is a nil test.
 	verifyHook func(dummy bool)
