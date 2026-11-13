@@ -332,7 +332,9 @@ a {
 
 /* A dropdown's submenu title (the New menu's Document, Spreadsheet, Presentation and More, and the file menu's submenus) is
    drawn by antd at 32 px, beside 40 px rows. The row style of its item lands on the wrapper, not on this title, so the title
-   takes the row height here: 40 px, or 44 px on a coarse pointer (nt2, decision 108). */
+   takes the row height here: 40 px, or 44 px on a coarse pointer (nt2, decision 108). antd centres a plain item's icon and label
+   but leaves a title's stretched, and a line-height as tall as the row then pushes the label off the middle: flex centring
+   aligns both, and the line-height goes with it. */
 /* The New menu's row height, in pixels: 40, or 44 on a coarse pointer (MENU_ROW_HEIGHT in newMenu.ts holds the same values). */
 :root {
   --menu-row-height: 40px;
@@ -343,8 +345,8 @@ a {
   }
 }
 .ant-dropdown-menu-submenu-title {
+  align-items: center;
   block-size: var(--menu-row-height);
-  line-height: var(--menu-row-height);
   box-sizing: border-box;
 }
 

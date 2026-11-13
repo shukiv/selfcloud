@@ -134,9 +134,10 @@ export const MENU_ROW_HEIGHT = { fine: 40, coarse: 44 } as const;
 // newMenuItems builds the antd items of the tree. A row is 40 px, or 44 px on a coarse pointer; the chord letter sits at the row's
 // end (in RTL, the start), and the row names its keys to a screen reader through aria-keyshortcuts.
 export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullable<MenuProps["items"]> {
-  // The height is the row's whole box (border-box), so the antd item's padding is inside the 40 or 44 px.
+  // The height is the row's whole box (border-box), so the antd item's padding is inside the 40 or 44 px. antd centres the row's
+  // icon and label in it (align-items: center), so the row needs no line-height of its own.
   const rowPx = o.coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine;
-  const rowStyle: CSSProperties = { height: rowPx, lineHeight: `${rowPx}px`, boxSizing: "border-box" };
+  const rowStyle: CSSProperties = { height: rowPx, boxSizing: "border-box" };
   const ink = o.dark ? KIND_INK.dark : KIND_INK.light;
   const hint = (chord: NewChordAction | undefined) =>
     chord === undefined ? undefined : createElement("span", { "aria-hidden": "true", className: "menu-hint", "data-hint": `Alt+C, ${CHORD_LETTER[chord]}`, title: o.text.shortcut });
