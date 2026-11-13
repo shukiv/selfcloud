@@ -180,3 +180,76 @@ describe("MediaPlaylist drawer (decision 63)", () => {
     expect(toggle()).toBeTruthy();
   });
 });
+
+// The Media page (mp1) draws the queue in a slot of its own, below the player: no drawer and no Playlist toggle, and the
+// player keeps its place in the tree, so moving the queue out of the drawer never makes the element again.
+describe("MediaPlaylist with the queue in a page slot", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mountSlot(slot: HTMLElement | null) {
+    const start = file("a.webm");
+    const view = render(
+      <MediaPlaylist
+        start={start}
+        folder={new Pager([start, file("b.webm")], null, async () => ({ items: [] }))}
+        fetchLink={async (n) => ({ url: `https://content.example/${n.id}` })}
+        active
+        queueSlot={slot}
+      />,
+    );
+    return view;
+  }
+
+  it("draws the queue in the slot, with no drawer and no toggle", async () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    const { container } = mountSlot(slot);
+    await flush();
+    expect(screen.queryByRole("button", { name: "Playlist" })).toBeNull();
+    expect(container.querySelector("[data-media-drawer]")).toBeNull();
+    expect(slot.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="media-screen"] video')).not.toBeNull();
+    slot.remove();
+  });
+
+  it("a null slot draws no queue at all, and the player still plays", async () => {
+    const { container } = mountSlot(null);
+    await flush();
+    expect(screen.queryByRole("button", { name: "Playlist" })).toBeNull();
+    expect(container.querySelector("[data-media-drawer]")).toBeNull();
+    expect(document.querySelector('[data-testid="media-queue"]')).toBeNull();
+    expect(container.querySelector("video")).not.toBeNull();
+  });
+
+  it("moving the queue from the drawer to a slot keeps the same element, never reporting it gone", async () => {
+    const start = file("a.webm");
+    const onElement = vi.fn();
+    const props = {
+      start,
+      folder: new Pager([start, file("b.webm")], null, async () => ({ items: [] })),
+      fetchLink: async (n: Node) => ({ url: `https://content.example/${n.id}` }),
+      active: true,
+      onElement,
+    };
+    const { rerender, container } = render(<MediaPlaylist {...props} />);
+    await flush();
+    const video = container.querySelector("video") as HTMLVideoElement;
+    expect(video).not.toBeNull();
+    expect(onElement).toHaveBeenCalledWith(video);
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    rerender(<MediaPlaylist {...props} queueSlot={slot} />);
+    await flush();
+    expect(container.querySelector("video")).toBe(video);
+    expect(slot.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    expect(container.querySelector("[data-media-drawer]")).toBeNull();
+    expect(onElement.mock.calls.some(([v]) => v === null)).toBe(false);
+    slot.remove();
+  });
+});

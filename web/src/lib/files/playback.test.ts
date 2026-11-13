@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "./types";
 import { Pager } from "./pager";
-import { closeViewer, getPlayback, setCurrent, setMedia, showViewer, startPlayback, stopPlayback } from "./playback";
+import { attachPage, closeViewer, getPlayback, setCurrent, setMedia, showViewer, startPlayback, stopPlayback } from "./playback";
+import { parkBox, placeBox, playerBox } from "./playerBox";
 import { session, type Session } from "../session";
 
 const node = (name: string, mime: string) => ({ id: `n-${name}`, name, kind: "file", mime_type: mime, size: 1 }) as unknown as Node;
@@ -108,5 +109,131 @@ describe("a change of person ends the session", () => {
     startPlayback(seedOf(audio));
     session.set(who("usr_a"));
     expect(getPlayback().seed).not.toBeNull();
+  });
+});
+
+// The Media page (mp1) hosts the running session: its stage and queue are given to the session while the page is open,
+// and leaving the page is closing the viewer. The close waits one microtask, so a mount that detaches and attaches again
+// in the same tick (StrictMode's double effect) keeps the session.
+describe("the Media page hosts the session", () => {
+  let hosts: { stage: HTMLElement; queue: HTMLElement };
+  let detach: (() => void) | null;
+
+  beforeEach(() => {
+    const stage = document.createElement("div");
+    const queue = document.createElement("div");
+    document.body.append(stage, queue);
+    hosts = { stage, queue };
+    detach = null;
+  });
+
+  afterEach(async () => {
+    detach?.();
+    detach = null;
+    await Promise.resolve();
+    hosts.stage.remove();
+    hosts.queue.remove();
+    playerBox().replaceChildren();
+    parkBox();
+  });
+
+  const attach = () => {
+    detach = attachPage(hosts);
+  };
+
+  it("gives the page's hosts to the session, and a start keeps them", () => {
+    attach();
+    expect(getPlayback().page).toBe(hosts);
+    startPlayback(seedOf(audio));
+    expect(getPlayback().page).toBe(hosts);
+  });
+
+  it("a stop keeps the page: the hosts stay for the next session", () => {
+    attach();
+    startPlayback(seedOf(audio));
+    stopPlayback();
+    expect(getPlayback().seed).toBeNull();
+    expect(getPlayback().page).toBe(hosts);
+  });
+
+  it("detach parks the box at once and clears the page", () => {
+    attach();
+    startPlayback(seedOf(audio));
+    placeBox(hosts.stage);
+    detach!();
+    detach = null;
+    expect(getPlayback().page).toBeNull();
+    const box = playerBox();
+    expect(box.parentElement).not.toBe(hosts.stage);
+    expect((box.parentElement as HTMLElement).style.display).toBe("none");
+    expect(document.body.contains(box)).toBe(true);
+  });
+
+  it("leaving the page closes the viewer one microtask later: audio goes on in the mini player", async () => {
+    const told = vi.fn();
+    startPlayback(seedOf(audio), told);
+    setCurrent({ node: audio, kind: "audio" });
+    setMedia(el());
+    attach();
+    detach!();
+    detach = null;
+    expect(getPlayback().viewerOpen).toBe(true);
+    await Promise.resolve();
+    expect(getPlayback().viewerOpen).toBe(false);
+    expect(getPlayback().seed).not.toBeNull();
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaving the page on a video ends the session", async () => {
+    startPlayback(seedOf(video));
+    setCurrent({ node: video, kind: "video" });
+    setMedia(document.createElement("video"));
+    attach();
+    detach!();
+    detach = null;
+    await Promise.resolve();
+    expect(getPlayback().seed).toBeNull();
+  });
+
+  it("a reattach in the same tick keeps the session: the close never runs (StrictMode's double effect)", async () => {
+    const told = vi.fn();
+    startPlayback(seedOf(audio), told);
+    setCurrent({ node: audio, kind: "audio" });
+    setMedia(el());
+    const first = attachPage(hosts);
+    first();
+    detach = attachPage(hosts);
+    await Promise.resolve();
+    expect(getPlayback().seed).not.toBeNull();
+    expect(getPlayback().page).toBe(hosts);
+    expect(told).not.toHaveBeenCalled();
+  });
+
+  it("a stale detach does nothing: the page that attached last keeps the session", async () => {
+    const told = vi.fn();
+    startPlayback(seedOf(audio), told);
+    setCurrent({ node: audio, kind: "audio" });
+    setMedia(el());
+    const first = attachPage(hosts);
+    const other = { stage: document.createElement("div"), queue: document.createElement("div") };
+    detach = attachPage(other);
+    first();
+    await Promise.resolve();
+    expect(getPlayback().page).toBe(other);
+    expect(getPlayback().seed).not.toBeNull();
+    expect(told).not.toHaveBeenCalled();
+  });
+
+  it("a detach after the session ended closes nothing", async () => {
+    const told = vi.fn();
+    startPlayback(seedOf(audio), told);
+    attach();
+    stopPlayback();
+    told.mockClear();
+    detach!();
+    detach = null;
+    await Promise.resolve();
+    expect(getPlayback().seed).toBeNull();
+    expect(told).not.toHaveBeenCalled();
   });
 });

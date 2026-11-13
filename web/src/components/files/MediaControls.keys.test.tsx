@@ -5,6 +5,7 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HIDE_MS } from "../../lib/files/mediaKeys";
+import { parkBox, playerBox } from "../../lib/files/playerBox";
 import MediaControls from "./MediaControls";
 
 function playing(el: HTMLMediaElement) {
@@ -80,5 +81,54 @@ describe("keyboard focus in a playing video's bar keeps it shown", () => {
       vi.advanceTimersByTime(HIDE_MS + 10);
     });
     expect(bar.className).toContain("media-controls--hidden");
+  });
+});
+
+// On the Media page (mp1) the player sits in the session's box, and the page around it has its own keys: a key aimed
+// outside the box is not the player's. The body is the exception: a page shortcut lands there with no target of its own.
+describe("MediaControls keys on the Media page (keysInBox)", () => {
+  let box: HTMLDivElement;
+  let el: HTMLAudioElement;
+  let outside: HTMLButtonElement;
+
+  beforeEach(() => {
+    box = playerBox();
+    document.body.appendChild(box);
+    el = document.createElement("audio");
+    Object.defineProperty(el, "paused", { value: true, configurable: true });
+    box.appendChild(el);
+    outside = document.createElement("button");
+    outside.textContent = "elsewhere";
+    document.body.appendChild(outside);
+  });
+
+  afterEach(() => {
+    box.replaceChildren();
+    parkBox();
+    outside.remove();
+  });
+
+  it("leaves a key aimed outside the box to the page", () => {
+    render(<MediaControls media={el} kind="audio" stage={null} active keysInBox />);
+    fireEvent.keyDown(outside, { key: " " });
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("takes a key aimed at the player inside the box", () => {
+    render(<MediaControls media={el} kind="audio" stage={null} active keysInBox />);
+    fireEvent.keyDown(el, { key: " " });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a key aimed at the body, where a page's own shortcut lands", () => {
+    render(<MediaControls media={el} kind="audio" stage={null} active keysInBox />);
+    fireEvent.keyDown(document.body, { key: " " });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("without the box (the dialog), a key anywhere is the player's, as before", () => {
+    render(<MediaControls media={el} kind="audio" stage={null} active />);
+    fireEvent.keyDown(outside, { key: " " });
+    expect(play).toHaveBeenCalledTimes(1);
   });
 });

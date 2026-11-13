@@ -29,6 +29,7 @@ describe("viewFor", () => {
     expect(viewFor("/manage/people")).toBe("manage");
     expect(viewFor("/admin/tenants")).toBe("admin");
     expect(viewFor("/sign-in")).toBe("sign-in");
+    expect(viewFor("/media")).toBe("media");
     expect(viewFor("/nope")).toBe("notfound");
   });
 });

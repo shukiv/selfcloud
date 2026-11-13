@@ -166,6 +166,42 @@ describe("Shell", () => {
     expect(names).not.toContain("People");
   });
 
+  // The Media page (mp1): its entry sits right after Starred, for everyone who has Starred, and opens /media.
+  it("lists Media right after Starred, and the entry opens the Media page", async () => {
+    signIn("member");
+    folders.set([team("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    const router = createMemoryRouter(
+      [
+        { path: "/files", element: <Shell><p>files body</p></Shell> },
+        { path: "/media", element: <Shell><p>media body</p></Shell> },
+      ],
+      { initialEntries: ["/files"] },
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <Direction>
+            <RouterProvider router={router} />
+          </Direction>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    const nav = await openNav();
+    const names = within(nav).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(names[names.indexOf("Starred") + 1]).toBe("Media");
+    fireEvent.click(within(nav).getByRole("menuitem", { name: "Media" }));
+    expect(await screen.findByText("media body")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/media");
+  });
+
+  it("shows no Media entry to an installation admin, who has no drive", async () => {
+    signIn("admin");
+    renderShell("/admin/tenants");
+    const nav = await openNav();
+    expect(within(nav).queryByRole("menuitem", { name: "Media" })).toBeNull();
+  });
+
   // Decision 69: the top bar has no brand, so it has no link to the home page; the search box starts it.
   it("the top bar holds no brand link, for a member or an admin", async () => {
     signIn("member");

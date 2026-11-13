@@ -6,7 +6,7 @@
 import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
-import { closeViewer, getPlayback, showViewer, startPlayback, stopPlayback } from "../../lib/files/playback";
+import { attachPage, closeViewer, getPlayback, showViewer, startPlayback, stopPlayback } from "../../lib/files/playback";
 import { Pager } from "../../lib/files/pager";
 import { session, type Session } from "../../lib/session";
 import type { Node } from "../../lib/files/types";
@@ -554,5 +554,109 @@ describe("the viewer's own behaviour", () => {
     fireEvent.error(video);
     expect(await screen.findByText("Downloads are off for this file.")).toBeTruthy();
     expect(screen.queryByText("Something went wrong. Try again.")).toBeNull();
+  });
+});
+
+// The Media page (mp1) hosts the session in its own stage: the same player moves there, with no dialog around it and no
+// mini player beside it, and the queue is the page's panel. Leaving the page is closing the viewer.
+describe("the Media page hosts the session", () => {
+  let stage: HTMLDivElement;
+  let queue: HTMLDivElement;
+  let detach: (() => void) | null = null;
+
+  beforeEach(() => {
+    stage = document.createElement("div");
+    stage.setAttribute("data-testid", "media-stage");
+    queue = document.createElement("div");
+    queue.setAttribute("data-testid", "media-page-queue");
+    document.body.append(stage, queue);
+  });
+
+  afterEach(async () => {
+    detach?.();
+    detach = null;
+    await act(async () => {
+      await Promise.resolve();
+    });
+    stage.remove();
+    queue.remove();
+  });
+
+  const attach = () => {
+    act(() => {
+      detach = attachPage({ stage, queue });
+    });
+  };
+
+  it("draws the player in the page's stage, with no dialog, no mini player and no drawer", async () => {
+    const a = file("a.ogg", "audio/ogg");
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    const audio = await element("audio");
+    fireEvent.loadedMetadata(audio);
+    attach();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector("[aria-modal]")).toBeNull();
+    expect(screen.queryByTestId("preview")).toBeNull();
+    expect(screen.queryByTestId("media-mini")).toBeNull();
+    expect(stage.querySelector("audio")).toBe(audio);
+    expect(document.body.style.overflow).not.toBe("hidden");
+    expect(queue.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    expect(document.querySelector("[data-media-drawer]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Playlist" })).toBeNull();
+  });
+
+  it("the page's X stops the session and closes the files", async () => {
+    const a = file("a.ogg", "audio/ogg");
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    fireEvent.loadedMetadata(await element("audio"));
+    attach();
+    fireEvent.click(within(stage).getByRole("button", { name: "Stop and close" }));
+    expect(getPlayback().seed).toBeNull();
+    await waitFor(() => expect(document.querySelector("audio")).toBeNull());
+  });
+
+  it("dialog to page to mini keeps the same element, and never reports it gone", async () => {
+    const a = file("a.ogg", "audio/ogg");
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    const audio = await element("audio");
+    fireEvent.loadedMetadata(audio);
+    pause.mockClear();
+    attach();
+    expect(stage.querySelector("audio")).toBe(audio);
+    expect(getPlayback().media).toBe(audio);
+    detach!();
+    detach = null;
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(await screen.findByTestId("media-mini")).toBeTruthy();
+    expect(document.querySelector("audio")).toBe(audio);
+    expect(getPlayback().media).toBe(audio);
+    expect(getPlayback().seed).not.toBeNull();
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("a page attached under an open viewer takes the player out of the dialog, and leaving closes the viewer", async () => {
+    const a = file("a.ogg", "audio/ogg");
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    const audio = await element("audio");
+    fireEvent.loadedMetadata(audio);
+    expect(screen.getByTestId("preview")).toBeTruthy();
+    attach();
+    expect(screen.queryByTestId("preview")).toBeNull();
+    expect(stage.querySelector("audio")).toBe(audio);
+    expect(getPlayback().viewerOpen).toBe(true);
+    detach!();
+    detach = null;
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getPlayback().viewerOpen).toBe(false);
+    expect(await screen.findByTestId("media-mini")).toBeTruthy();
+    expect(document.querySelector("audio")).toBe(audio);
   });
 });
