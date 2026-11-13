@@ -505,7 +505,7 @@ var remoteCommands = []remoteCommand{
                                  define a label field (TYPE: text, number, date, user or choice)
 `, run: manage.LabelFieldAdd},
 	{name: "label field update", route: "PATCH /api/v1/accounts/{acc}/label-fields/{lbf}",
-		more: []string{"GET /api/v1/label-fields"},
+		reads: []string{"GET /api/v1/label-fields"},
 		help: `  label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true|false]
                      [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...
                                  change what is given; an archived choice keeps the values that use it
@@ -514,6 +514,20 @@ var remoteCommands = []remoteCommand{
 		help: `  label field rm [--account ACC] FIELD [--yes]
                                  remove a label field and every value it holds on files (asks first)
 `, run: manage.LabelFieldRm},
+	{name: "label field ls", route: "GET /api/v1/label-fields",
+		help: `  label field ls [--json]        the account's label fields, their choices and, with an account key, how many values each holds
+`, run: manage.LabelFieldList},
+	// The node label commands (cli11f).
+	{name: "label show", route: "GET /api/v1/nodes/{nod}/labels",
+		help: `  label show NODE [--json]       the label values of a node
+`, run: files.LabelShow},
+	{name: "label set", route: "PUT /api/v1/nodes/{nod}/labels/{lbf}",
+		reads: []string{"GET /api/v1/nodes/{nod}/labels"},
+		help: `  label set NODE FIELD VALUE     set a label field's value on a node (FIELD is its lbf_ id)
+`, run: files.LabelSet},
+	{name: "label clear", route: "DELETE /api/v1/nodes/{nod}/labels/{lbf}",
+		help: `  label clear NODE FIELD [--yes] remove a label field's value from a node (asks first)
+`, run: files.LabelClear},
 	// The sharing policy commands (cli9b4).
 	{name: "sharing policy show", route: "GET /api/v1/accounts/{acc}/sharing-policy",
 		help: `  sharing policy show [--account ACC]
