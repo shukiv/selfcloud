@@ -2,20 +2,19 @@
 
 import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
 import { useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
-import { auditRange, downloadAuditExport, rangeInvalid, type AuditRange } from "../../lib/manage/auditRange";
+import type { AuditRange } from "../../lib/manage/auditRange";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import { type AuditEntry, type Names } from "../../lib/audit/sentence";
-import IconButton from "../IconButton";
 import Listing from "../files/Listing";
 import { auditColumns, auditSaid } from "../manage/auditColumns";
-import { dateField, dateInput, fieldError, more, sectionTitle, toolbar } from "./adminStyles";
+import AuditRangeBar from "../manage/AuditRangeBar";
+import { more, sectionTitle, toolbar } from "./adminStyles";
 import { useAdminText } from "../../lib/manage/adminText";
 
 type Entry = AuditEntry & { id: string; time: string };
@@ -27,18 +26,7 @@ export default function TenantAudit({ account }: { account: string }) {
   const { t } = useT();
   const lang = useLang();
   const [action, setAction] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [range, setRange] = useState<AuditRange>({});
-  const invalid = rangeInvalid(from, to);
-  const chooseFrom = (next: string) => {
-    setFrom(next);
-    if (!rangeInvalid(next, to)) setRange(auditRange(next, to));
-  };
-  const chooseTo = (next: string) => {
-    setTo(next);
-    if (!rangeInvalid(from, next)) setRange(auditRange(from, next));
-  };
   const adminText = useAdminText();
   const namesQ = useQuery({
     queryKey: queryKey("tenant-names", account),
@@ -64,30 +52,6 @@ export default function TenantAudit({ account }: { account: string }) {
       <div style={toolbar}>
         <h2 style={sectionTitle}>{t("tenant.audit.title")}</h2>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <div style={dateField}>
-            <label htmlFor="tenant-audit-from">{t("audit.from")}</label>
-            <input
-              id="tenant-audit-from"
-              type="date"
-              value={from}
-              onChange={(e) => chooseFrom(e.target.value)}
-              aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? "tenant-audit-range-error" : undefined}
-              style={dateInput}
-            />
-          </div>
-          <div style={dateField}>
-            <label htmlFor="tenant-audit-to">{t("audit.to")}</label>
-            <input
-              id="tenant-audit-to"
-              type="date"
-              value={to}
-              onChange={(e) => chooseTo(e.target.value)}
-              aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? "tenant-audit-range-error" : undefined}
-              style={dateInput}
-            />
-          </div>
           <label htmlFor="tenant-audit-action">{t("audit.filter")}</label>
           <Select
             id="tenant-audit-action"
@@ -98,19 +62,7 @@ export default function TenantAudit({ account }: { account: string }) {
             style={{ minWidth: 200, maxInlineSize: "100%" }}
             options={[{ value: "", label: t("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
           />
-          {loaded && (
-            <IconButton
-              label={t("audit.export")}
-              icon={<Download size={18} />}
-              disabled={invalid}
-              onClick={() => downloadAuditExport(account, { ...range, action: action || undefined })}
-            />
-          )}
-          {invalid && (
-            <p id="tenant-audit-range-error" role="alert" style={fieldError}>
-              {t("audit.rangeInvalid")}
-            </p>
-          )}
+          <AuditRangeBar account={account} action={action} idPrefix="tenant-audit" loaded={loaded} onRange={setRange} />
         </div>
       </div>
 

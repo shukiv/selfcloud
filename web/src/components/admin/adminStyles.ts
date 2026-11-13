@@ -32,14 +32,21 @@ export const field: CSSProperties = { display: "grid", gap: 4 };
 export const fieldset: CSSProperties = { display: "grid", gap: 8, margin: 0, padding: 0, border: 0 };
 export const foot: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" };
 export const mono: CSSProperties = { fontFamily: "ui-monospace, monospace", overflowWrap: "anywhere", margin: 0 };
-export const dateField: CSSProperties = { display: "grid", gap: 4, inlineSize: 150, maxInlineSize: "100%", minWidth: 0 };
+export const dateField: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  maxInlineSize: "100%",
+  minWidth: 0,
+};
 export const dateInput: CSSProperties = {
   font: "inherit",
   minWidth: 0,
   padding: "4px 11px",
   border: "1px solid var(--ant-color-border)",
   borderRadius: 6,
-  inlineSize: "100%",
+  inlineSize: 150,
+  maxInlineSize: "100%",
   color: "inherit",
   background: "var(--ant-color-bg-container)",
 };

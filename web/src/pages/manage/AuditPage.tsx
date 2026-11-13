@@ -3,18 +3,16 @@
 import { useState } from "react";
 import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { useAdminText } from "../../lib/manage/adminText";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
-import { auditRange, downloadAuditExport, rangeInvalid, type AuditRange } from "../../lib/manage/auditRange";
+import type { AuditRange } from "../../lib/manage/auditRange";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import { auditColumns, auditSaid, type AuditRow } from "../../components/manage/auditColumns";
-import { dateField, dateInput, fieldError } from "../../components/admin/adminStyles";
-import IconButton from "../../components/IconButton";
+import AuditRangeBar from "../../components/manage/AuditRangeBar";
 import Listing from "../../components/files/Listing";
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
 
@@ -27,19 +25,7 @@ function AuditView() {
   const account = useAccountID();
   useManageTitle("manage.audit.title");
   const [action, setAction] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [range, setRange] = useState<AuditRange>({});
-  const invalid = rangeInvalid(from, to);
-  // A contradicting pair keeps the last valid range in the query, so nothing is sent until the dates agree.
-  const chooseFrom = (next: string) => {
-    setFrom(next);
-    if (!rangeInvalid(next, to)) setRange(auditRange(next, to));
-  };
-  const chooseTo = (next: string) => {
-    setTo(next);
-    if (!rangeInvalid(from, next)) setRange(auditRange(from, next));
-  };
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "audit", action, range.since, range.until),
@@ -71,30 +57,6 @@ function AuditView() {
           {t("manage.audit.title")}
         </h1>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <div style={dateField}>
-            <label htmlFor="audit-from">{t("audit.from")}</label>
-            <input
-              id="audit-from"
-              type="date"
-              value={from}
-              onChange={(e) => chooseFrom(e.target.value)}
-              aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? "audit-range-error" : undefined}
-              style={dateInput}
-            />
-          </div>
-          <div style={dateField}>
-            <label htmlFor="audit-to">{t("audit.to")}</label>
-            <input
-              id="audit-to"
-              type="date"
-              value={to}
-              onChange={(e) => chooseTo(e.target.value)}
-              aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? "audit-range-error" : undefined}
-              style={dateInput}
-            />
-          </div>
           <label htmlFor="audit-action">{t("audit.filter")}</label>
           <Select
             id="audit-action"
@@ -103,19 +65,7 @@ function AuditView() {
             style={{ minWidth: 220 }}
             options={[{ value: "", label: t("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
           />
-          {loaded && (
-            <IconButton
-              label={t("audit.export")}
-              icon={<Download size={18} />}
-              disabled={invalid}
-              onClick={() => downloadAuditExport(account, { ...range, action: action || undefined })}
-            />
-          )}
-          {invalid && (
-            <p id="audit-range-error" role="alert" style={fieldError}>
-              {t("audit.rangeInvalid")}
-            </p>
-          )}
+          <AuditRangeBar account={account} action={action} idPrefix="audit" loaded={loaded} onRange={setRange} />
         </div>
       </div>
 
