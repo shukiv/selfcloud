@@ -390,6 +390,9 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 			if err := b.UnmarshalText([]byte(quota)); err != nil {
 				return c.fail(exitcode.Usagef("--quota is a size such as 10GiB or 0, or default: %v", err))
 			}
+			if b < 0 {
+				return c.fail(exitcode.Usagef("--quota must not be negative"))
+			}
 			body["quota_bytes"] = int64(b)
 		}
 	}

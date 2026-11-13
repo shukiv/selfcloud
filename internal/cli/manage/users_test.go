@@ -254,6 +254,14 @@ func TestUserUpdateQuotaAndExternalID(t *testing.T) {
 	wantCode(t, f.runAcc(UserUpdate, testUser), 2)
 }
 
+func TestUserUpdateNegativeQuotaRefused(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	wantCode(t, f.runAcc(UserUpdate, testUser, "--quota", "-1GiB"), 2)
+	wantCode(t, f.runAcc(UserUpdate, testUser, "--quota", "-1"), 2)
+	f.wantNoCalls()
+}
+
 func TestUserUpdateStatusDisabledAsks(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
