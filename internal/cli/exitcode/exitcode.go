@@ -21,6 +21,7 @@ const (
 	CheckFailed   = 5 // a check failed after a transfer: a checksum or a size differs
 	UploadExpired = 6 // an upload expired; the file must be sent again from the start
 	Partial       = 7 // some of several targets were done and some failed
+	Conflict      = 8 // the file changed on the server since it was opened; the local text is kept
 )
 
 // Error is a failure the CLI decides on itself, with its exit code and its JSON code.
@@ -45,6 +46,12 @@ func NotFoundf(format string, args ...any) error {
 // Partialf is some of several targets failing (exit 7). No command reaches it yet.
 func Partialf(format string, args ...any) error {
 	return &Error{Exit: Partial, Name: "partial", Message: fmt.Sprintf(format, args...)}
+}
+
+// Conflictf is a change the server refused because the file moved on since it was read (exit 8). The caller keeps the
+// local text and names where it is.
+func Conflictf(format string, args ...any) error {
+	return &Error{Exit: Conflict, Name: "conflict", Message: fmt.Sprintf(format, args...)}
 }
 
 // ForAPI maps an HTTP status and the API's error code to an exit code. The code wins for the two that the status cannot
