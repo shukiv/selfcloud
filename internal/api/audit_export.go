@@ -3,10 +3,15 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"syscall"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -127,6 +132,11 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) error
 
 	p := principalOf(r)
 	seeAll := p.Kind == auth.KindAccountKey
+	if s.exportBeforePage != nil {
+		if err := s.exportBeforePage(0); err != nil {
+			return storeErr(err)
+		}
+	}
 	page, next, err := s.store.AuditLogFiltered(r.Context(), acc.ID, p.UserID, seeAll, filter,
 		store.Page{Limit: 1000})
 	if err != nil {
@@ -146,16 +156,19 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) error
 		_ = controller.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	}
 	setDeadline()
+	rows := 0
 	if _, err := w.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
+		s.auditExportFailed(r, acc.ID, rows, err)
 		return nil
 	}
 	cw := csv.NewWriter(w)
 	cw.UseCRLF = true
 	if err := cw.Write(auditCSVColumns); err != nil {
+		s.auditExportFailed(r, acc.ID, rows, err)
 		return nil
 	}
 	names := map[string]string{}
-	for {
+	for pageNo := 0; ; pageNo++ {
 		items := make([]auditJSON, 0, len(page))
 		for _, e := range page {
 			items = append(items, auditJSON{
@@ -179,25 +192,61 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) error
 			}
 			setDeadline()
 			if err := cw.Write(row); err != nil {
+				s.auditExportFailed(r, acc.ID, rows, err)
 				return nil
 			}
+			rows++
 		}
 		cw.Flush()
 		_ = controller.Flush()
 		if err := cw.Error(); err != nil {
+			s.auditExportFailed(r, acc.ID, rows, err)
 			return nil
 		}
 		if next == "" {
 			return nil
 		}
+		if s.exportBeforePage != nil {
+			if err := s.exportBeforePage(pageNo + 1); err != nil {
+				s.auditExportFailed(r, acc.ID, rows, err)
+				return nil
+			}
+		}
 		setDeadline()
 		page, next, err = s.store.AuditLogFiltered(r.Context(), acc.ID, p.UserID, seeAll, filter,
 			store.Page{Limit: 1000, Cursor: next})
 		if err != nil {
-			// The first byte is out, so the answer can no longer be a JSON error. The CSV ends early.
+			s.auditExportFailed(r, acc.ID, rows, err)
 			return nil
 		}
 	}
+}
+
+// auditExportFailed handles an error after the CSV headers are out. The answer can no longer be a
+// JSON error: a short CSV would look complete, so the connection is cut and the browser marks the
+// download as failed. A client that went away is not a server failure and is not logged at error
+// level.
+func (s *Server) auditExportFailed(r *http.Request, accountID string, rows int, err error) {
+	if auditExportClientGone(r, err) {
+		return
+	}
+	s.log.Error("cannot stream the audit export", "account", accountID, "rows", rows, "error", err)
+	panic(http.ErrAbortHandler)
+}
+
+// auditExportClientGone reports whether an export error is the client going away: the request's own
+// context was canceled, or the connection was closed under the writer.
+func auditExportClientGone(r *http.Request, err error) bool {
+	if r.Context().Err() != nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) ||
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // exportActorName names a user row's actor: the name the list gives, else the account user's display

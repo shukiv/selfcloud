@@ -251,7 +251,7 @@ func TestAuditExportAbortsWhenAPageFails(t *testing.T) {
 			ActorKind: "user", ActorID: "usr_a", Action: "probe.page", Target: "nod_" + itoa(i)})
 	}
 	insertAuditRows(t, s, entries...)
-	var log bytes.Buffer
+	var log lockedBuffer
 	s.log = slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	s.exportBeforePage = func(page int) error {
 		if page == 1 {
@@ -280,8 +280,18 @@ func TestAuditExportAbortsWhenAPageFails(t *testing.T) {
 	if _, err := io.ReadAll(resp.Body); err == nil {
 		t.Fatal("the export ended cleanly after a page read failed; the client would save a short CSV")
 	}
-	if got := log.String(); !strings.Contains(got, "level=ERROR") || !strings.Contains(got, "account="+acc.ID) {
-		t.Fatalf("log = %q, want one error line naming account %s", got, acc.ID)
+	_ = resp.Body.Close()
+	srv.Close()
+
+	lines := strings.Split(log.String(), "\n")
+	named := 0
+	for _, line := range lines {
+		if strings.Contains(line, "level=ERROR") && strings.Contains(line, "account="+acc.ID) {
+			named++
+		}
+	}
+	if named != 1 {
+		t.Fatalf("log = %q, want one error line naming account %s", log.String(), acc.ID)
 	}
 }
 
