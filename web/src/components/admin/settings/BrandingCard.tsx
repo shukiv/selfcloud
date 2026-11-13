@@ -45,6 +45,9 @@ const SIDEBAR_COLOUR = { bg: "bg", text: "text", caption: "caption", active: "ac
 
 const KINDS: PictureKind[] = ["logo", "icon"];
 
+// hashOf is the hash of a picture in use, or undefined.
+const hashOf = (p: Picture): string | undefined => (p.state === "uploaded" || p.state === "file" ? p.sha256 : undefined);
+
 // BrandingCard is the Branding section: the name and the accent, the logo and the icon, the sidebar colours and theme tokens folded
 // under Advanced, a preview of the brand with the unsaved values, and the section's Save. The preview reads the values being edited
 // and the pictures in use, and changes nothing else on the page.
@@ -60,7 +63,10 @@ export default function BrandingCard({ section, settings, pictures, edits, error
   };
   const picture = (kind: PictureKind): Picture => pictures.find((p) => p.key === `ui.brand.${kind}`) ?? { key: `ui.brand.${kind}`, state: "none", locked: false };
   const logo = pictureSrc("logo", picture("logo"));
-  const icon = pictureSrc("icon", picture("icon"));
+  // The server draws the tab's icon from /favicon.svg and the app icons from /brand/icon-512.png, from the icon, or else the logo.
+  const stamp = hashOf(picture("icon")) ?? hashOf(picture("logo"));
+  const tab = stamp !== undefined ? `/favicon.svg?v=${stamp}` : null;
+  const app = stamp !== undefined ? `/brand/icon-512.png?v=${stamp}` : null;
 
   const resolved = useMemo<ResolvedBrand>(() => {
     const given = (key: string) => {
@@ -114,7 +120,7 @@ export default function BrandingCard({ section, settings, pictures, edits, error
         style={{ margin: "4px -12px 8px" }}
         items={folded.map((g) => ({ key: g.title ?? "advanced", label: t(g.title ?? "settings.group.advanced"), children: <div>{g.fields.map(row)}</div> }))}
       />
-      <BrandPreview brand={resolved} logo={logo} icon={icon} />
+      <BrandPreview brand={resolved} logo={logo} tab={tab} app={app} />
       <SectionFoot notice={notice} dirty={dirty} busy={busy} onSave={onSave} onDiscard={onDiscard} />
     </CardFrame>
   );

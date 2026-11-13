@@ -11,7 +11,6 @@ import type { Amount, DurationUnit, SizeUnit } from "../../../lib/settings/units
 const SIZE_UNITS: SizeUnit[] = ["MB", "GB"];
 const DURATION_UNITS: DurationUnit[] = ["minutes", "hours", "days"];
 
-
 interface Props {
   setting: Setting;
   label: string;
@@ -36,7 +35,7 @@ export default function FieldControl({ setting, label, value, readOnly, onChange
       if (spec?.colour) {
         return <ColourInput value={text} fallback={fallback} label={label} disabled={readOnly} onChange={onChange} />;
       }
-      return <Input value={text} disabled={readOnly} maxLength={spec?.maxLength} onChange={(e) => onChange(e.target.value)} aria-label={label} style={{ maxWidth: "100%" }} />;
+      return <Input value={text} disabled={readOnly} maxLength={spec?.maxLength} showCount={spec?.maxLength !== undefined} onChange={(e) => onChange(e.target.value)} aria-label={label} style={{ maxWidth: "100%" }} />;
     }
     case "int":
       return (

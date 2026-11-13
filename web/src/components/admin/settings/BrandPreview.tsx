@@ -8,9 +8,11 @@ import { useModeOrLight } from "../../../theme/theme";
 interface Props {
   // brand is the brand as it would be with the unsaved values: the name, and the colours the interface would use.
   brand: ResolvedBrand;
-  // logo and icon are the pictures in use (the server's), or null.
+  // logo is the logo in use (the server's), or null. tab and app are the addresses the server draws the tab's icon and the app icons from
+  // (/favicon.svg and /brand/icon-512.png, with the picture's hash), or null when there is neither a logo nor an icon.
   logo: string | null;
-  icon: string | null;
+  tab: string | null;
+  app: string | null;
 }
 
 const figure: CSSProperties = { margin: 0, minWidth: 0 };
@@ -18,7 +20,7 @@ const caption: CSSProperties = { margin: "0 0 6px", fontSize: 12, fontWeight: 60
 
 function Item({ children, style, current }: { children: ReactNode; style?: CSSProperties; current?: boolean }) {
   return (
-    <div aria-current={current ? "page" : undefined} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 12, ...style }}>
+    <div data-current={current ? "" : undefined} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 12, ...style }}>
       {children}
     </div>
   );
@@ -27,7 +29,7 @@ function Item({ children, style, current }: { children: ReactNode; style?: CSSPr
 // BrandPreview draws the unsaved brand in three small scenes: the sidebar, the sign-in page and the icons. It reads the values it is
 // given and nothing else changes: the page's own brand and theme stay as they are until Save. Its colours are set as style values,
 // which the page's policy allows.
-export default function BrandPreview({ brand, logo, icon }: Props) {
+export default function BrandPreview({ brand, logo, tab, app }: Props) {
   const { t } = useT();
   const mode = useModeOrLight();
   const palette = mode === "dark" ? brand.dark : brand.light;
@@ -42,9 +44,9 @@ export default function BrandPreview({ brand, logo, icon }: Props) {
     ) : (
       <img src="/brand/logo" alt={brand.name} height={22} />
     );
-  const tile = (size: number, radius: number | string, mark: number) =>
-    icon !== null ? (
-      <img src={icon} alt="" width={size} height={size} style={{ borderRadius: radius, objectFit: "cover", background: "#fff" }} />
+  const tile = (src: string | null, size: number, radius: number | string, mark: number) =>
+    src !== null ? (
+      <img src={src} alt="" width={size} height={size} style={{ borderRadius: radius, objectFit: "cover", background: "#fff" }} />
     ) : (
       <span data-preview-tile style={{ width: size, height: size, borderRadius: radius, background: brand.accent, display: "grid", placeItems: "center" }}>
         <span
@@ -94,7 +96,7 @@ export default function BrandPreview({ brand, logo, icon }: Props) {
             [56, "50%", 30, "round"],
           ].map(([size, radius, mark, name]) => (
             <figure key={name as string} style={{ ...figure, display: "grid", justifyItems: "center", gap: 2 }}>
-              {tile(size as number, radius, mark as number)}
+              {tile(name === "tab" ? tab : app, size as number, radius, mark as number)}
               <figcaption style={{ fontSize: 11, color: "var(--ant-color-text-secondary)" }}>{t(`settings.preview.${name as string}`)}</figcaption>
             </figure>
           ))}
