@@ -314,7 +314,11 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     name: "letter (2).docx",
     kind: "file",
     size: 5,
-    created_at: new Date().toISOString(),
+    // Read when the page reads the copy, so it is made "now" whenever the test gets there: a time fixed when the file loads
+    // would fall outside the skew after a slow run, and the copy would stop being a candidate.
+    get created_at() {
+      return new Date().toISOString();
+    },
     modified_at: "2026-11-08T10:00:00Z",
     role: "editor",
     no_download: false,
