@@ -82,7 +82,8 @@ export const menuHeaderText = (page) =>
 
 // MENU_ROWS is every row of the dropdowns and submenu popups that are open now: a plain item's row is its li, a submenu's row is
 // its title (the title is where the row is drawn; the li around it carries the styling but not the height). For each row it gives
-// the centre of the row's box, of the icon's box and of the box the label's text is drawn in, in CSS pixels from the viewport top.
+// the centre of the row's box, of the icon's box and of the box the label's text is drawn in, in CSS pixels from the viewport top,
+// and for a submenu title the styles it was laid out with and the height of its wrapper, so a row that is off can be explained.
 export const MENU_ROWS = `(() => {
   const hidden = (el) => !!el.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]');
   const shown = (el) => {
@@ -98,29 +99,60 @@ export const MENU_ROWS = `(() => {
     const tc = row.querySelector(':scope > .ant-dropdown-menu-title-content') ?? row.querySelector('.ant-dropdown-menu-title-content');
     const icon = row.querySelector(':scope > .ant-dropdown-menu-item-icon') ?? row.querySelector('.ant-dropdown-menu-item-icon');
     const name = (tc ?? row).textContent.trim().replace(/\\s+/g, ' ');
+    const r = row.getBoundingClientRect();
     let text = null;
     if (tc) {
       const range = document.createRange();
       range.selectNodeContents(tc);
-      const r = range.getBoundingClientRect();
-      if (r.height > 0) text = middle(r);
+      const t = range.getBoundingClientRect();
+      if (t.height > 0) text = middle(t);
     }
-    rows.push({ name, row: middle(row.getBoundingClientRect()), icon: icon && shown(icon) ? middle(icon.getBoundingClientRect()) : null, text });
+    const sub = row.classList.contains('ant-dropdown-menu-submenu-title');
+    const wrap = sub ? row.closest('.ant-dropdown-menu-submenu') : null;
+    const cs = getComputedStyle(row);
+    rows.push({
+      name,
+      row: middle(r),
+      rowH: r.height,
+      icon: icon && shown(icon) ? middle(icon.getBoundingClientRect()) : null,
+      text,
+      title: sub
+        ? {
+            display: cs.display,
+            alignItems: cs.alignItems,
+            height: cs.height,
+            lineHeight: cs.lineHeight,
+            paddingTop: cs.paddingTop,
+            paddingBottom: cs.paddingBottom,
+            blockSize: cs.getPropertyValue('block-size'),
+            wrapperH: wrap ? wrap.getBoundingClientRect().height : null,
+            wrapperComputedH: wrap ? getComputedStyle(wrap).height : null,
+          }
+        : null,
+    });
   }
   return rows;
 })()`;
 
 // menuRowChecks measures every row of the menus that are open now and checks that each icon and each label sits on the row's
-// middle, as the row is seen: within one pixel. It returns the measurements, so a caller can print them.
+// middle, as the row is seen: within one pixel. It also checks that a submenu's title (the element that paints the row) is the
+// 40 or 44 px row, not a taller box around one. A row that is off is reported with the styles that laid it out.
 export async function menuRowChecks(page, check, where) {
   const rows = await page.evaluate(MENU_ROWS);
   check(rows.length > 0, `${where}: the open menu has rows to measure (${rows.length})`);
+  const titles = rows.filter((r) => r.title !== null);
+  const badHeight = titles.filter((r) => ![40, 44].some((h) => Math.abs(r.rowH - h) <= 0.5));
+  const heights = titles.map((r) => `${q(r.name)} ${r.rowH.toFixed(1)} px (wrapper ${r.title.wrapperH === null ? '?' : `${r.title.wrapperH.toFixed(1)} px`})`);
+  check(badHeight.length === 0, `${where}: every submenu title is a 40 or 44 px row (${heights.join('; ') || 'no submenu titles'})`);
   const off = [];
   for (const r of rows) {
     const moved = [];
     if (r.icon !== null && Math.abs(r.icon - r.row) > ROW_CENTRE_TOLERANCE) moved.push(`icon ${(r.icon - r.row).toFixed(1)} px`);
     if (r.text !== null && Math.abs(r.text - r.row) > ROW_CENTRE_TOLERANCE) moved.push(`label ${(r.text - r.row).toFixed(1)} px`);
-    if (moved.length > 0) off.push(`${q(r.name)} ${moved.join(', ')}`);
+    if (moved.length > 0) {
+      const why = r.title === null ? `row ${r.rowH.toFixed(1)} px` : `row ${r.rowH.toFixed(1)} px; ${Object.entries(r.title).map(([k, v]) => `${k}=${v}`).join(', ')}`;
+      off.push(`${q(r.name)} ${moved.join(', ')} [${why}]`);
+    }
   }
   check(off.length === 0, `${where}: every row's icon and label is centred on the row (${rows.length} rows; off: ${off.join('; ') || 'none'})`);
   return rows;
