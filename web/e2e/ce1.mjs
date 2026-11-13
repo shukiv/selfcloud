@@ -98,10 +98,14 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB, lock
     check(sheets.count > 0 && sheets.nonced === sheets.count, `CodeMirror's style sheets carry the page's nonce (${sheets.nonced} of ${sheets.count})`);
 
     // ---- Find opens the panel; Escape closes the panel and leaves the viewer open.
+    // The dialog takes the focus when it finishes opening; wait for that before the find field, so it is not taken back.
+    await page.waitFor(`document.activeElement?.hasAttribute('data-preview-stage')`, 10000);
     await page.evaluate(`document.querySelector(${q(`${PREVIEW} .find-btn`)}).click(), true`);
-    await page.waitFor(`!!document.querySelector(${q(`${EDITOR} .cm-search input[name="search"]`)})`, 10000);
+    const search = `${EDITOR} .cm-search input[name="search"]`;
+    await page.waitFor(`!!document.querySelector(${q(search)})`, 10000);
     check(true, 'the header\'s Find icon opens the find panel');
-    await page.evaluate(`document.querySelector(${q(`${EDITOR} .cm-search input[name="search"]`)}).focus(), true`);
+    await page.evaluate(`document.querySelector(${q(search)}).focus(), true`);
+    await page.waitFor(`document.activeElement === document.querySelector(${q(search)})`, 10000);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await page.waitFor(`!document.querySelector(${q(`${EDITOR} .cm-search`)})`, 10000);
