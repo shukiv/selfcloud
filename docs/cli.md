@@ -840,6 +840,58 @@ selfcloud account quota-warning clear --account acc_…
   `--yes`); 3 when the server refuses (403, 409); 4 when the account or key is not found; 1 when an answer is not the
   document the command expects.
 
+## Accounts
+
+`account create`, `ls`, `update` and `rm` need an installation admin key. `show`, `usage` and `audit` take a key that
+manages the account: an account key for that account, or an installation admin key. A device token is refused. A 403 from
+one of the four admin commands adds a plain-output hint that names the installation admin key; a device token's 404 on an
+account route adds the hint that the command needs an account key.
+
+| Command | What it does |
+|---|---|
+| `account create [--external-id ID] [--quota SIZE] [--owner-email EMAIL --owner-verification email\|link\|none [--owner-name NAME] [--owner-locale TAG]] NAME` | makes an account, and with the owner flags its first owner; prints it |
+| `account ls [--all] [--status active\|suspended] [--external-id ID] [--search TEXT]` | lists accounts, newest first |
+| `account show [--account ACC]` | prints one account |
+| `account update [--account ACC] [--name NAME] [--external-id ID] [--quota SIZE] [--status active\|suspended] [--yes]` | changes only what is given |
+| `account rm [--account ACC] [--yes]` | removes an account and everything in it, in the background; asks first |
+| `account usage [--account ACC]` | prints an account's usage and limits |
+| `account audit [--account ACC] [--all] [--action ACTION] [--actor ID]` | prints the audit log, newest first |
+
+`create` and `ls` name no account. Every other command takes `--account acc_...`, or `SELFCLOUD_ACCOUNT` when the flag is
+absent; a value that is not an account id is refused before any request (exit 2). `create` trims the one name and sends
+only the flags given. The owner flags belong together: `--owner-email` and `--owner-verification` are required, while
+`--owner-name` and `--owner-locale` are optional. Verification is `email`, `link` or `none`. A link and its expiry are
+printed only when they are made, with a note on standard error that the link is shown only now. An account created again
+with an `--external-id` that exists is answered 200, changed not at all, and the command says so.
+
+`--json` prints an allow-listed account object: `id`, `external_id`, `name`, `status`, `quota_bytes`, `used_bytes`,
+`used_files`, `created_at`, `updated_at` and, when one was made, `owner` with its `verification`. Every other `--json`
+answer comes from its own allow list too: the same account object where one is printed, the twelve usage fields as an
+object, the job's `job_id` and `status`, and audit entries with only the fields the table shows. A token, a secret, or a
+field the API adds beyond that list is never printed, in either output.
+
+`ls` prints `ID NAME STATUS QUOTA USED FILES CREATED`; `--status` takes `active` or `suspended`, `--external-id` selects one
+external id, and `--search` matches the name or external id. `--all` follows every page, otherwise a note says more exist.
+`usage` prints `quota_bytes`, `used_bytes`, `reserved_bytes`, `available_bytes`, `files`, `folders`, `used_files`,
+`users_active`, `users_pending`, `search_text_bytes`, `search_text_cap` and `search_text_skipped` as `key=value` lines; a
+null quota or available count prints empty. `audit` prints `TIME ACTOR ACTION TARGET OUTCOME IP`, with the actor as
+`kind:id`; `--action` and `--actor` filter it, and `--all` follows every page.
+
+`update` sends only the fields given. `--external-id ""` clears it, `--quota 0` removes the limit, and `--status active`
+does not ask. Suspending asks first, as does `rm`; without a terminal and without `--yes` the command refuses before any
+request (exit 2). At a terminal the person types the account's name. `rm` answers with a job, prints `job_id` and `status`,
+and notes on standard error to follow it with `selfcloud job show JOB_ID`.
+
+```sh
+selfcloud account create --external-id crm-3 --quota 10GiB "Sales"
+selfcloud account create --owner-email owner@example.com --owner-verification link "Sales"
+selfcloud account ls --status active
+selfcloud account update --account acc_… --quota 20GiB
+selfcloud account usage --account acc_…
+selfcloud account audit --account acc_… --action file.read
+selfcloud account rm --account acc_… --yes
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
