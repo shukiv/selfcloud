@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,7 @@ func editSetup(t *testing.T) *fake {
 	isolate(t, testAccountKey)
 	typeAtTerminal("")
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("VISUAL", "")
 	return newFake(t)
 }
@@ -306,6 +308,61 @@ func TestEditEditorFailureSendsNothing(t *testing.T) {
 		t.Errorf("stderr = %q, want the editor's status", res.stderr)
 	}
 	wantNoTemp(t)
+}
+
+func TestEditSurvivesTheTerminalInterrupt(t *testing.T) {
+	f := editSetup(t)
+	f.on(http.MethodGet, nodePath(testNode, ""), ok(editFile("note.txt", "file", 4, editETag, "text/plain")))
+	f.on(http.MethodGet, nodePath(testNode, "/content"), reply{status: http.StatusOK, body: "old\n"})
+	f.on(http.MethodPut, nodePath(testNode, "/content"), ok(editFile("note.txt", "file", 4, `"v2"`, "text/plain")))
+	t.Setenv("TESTPID", strconv.Itoa(os.Getpid()))
+	editorScript(t, `printf 'new\n' > "$1"`+"\n"+`kill -INT "$TESTPID"`+"\n"+`sleep 0.2`)
+
+	res := f.run(Edit, testNode)
+	wantCode(t, res, 0)
+	f.wantCalls("GET "+nodePath(testNode, ""), "GET "+nodePath(testNode, "/content"),
+		"PUT "+nodePath(testNode, "/content"))
+	if got := f.bodyAt(2); got != "new\n" {
+		t.Errorf("body = %q, want %q", got, "new\n")
+	}
+	wantNoTemp(t)
+}
+
+func TestEditLetsTheEditorHandleTheInterrupt(t *testing.T) {
+	f := editSetup(t)
+	f.on(http.MethodGet, nodePath(testNode, ""), ok(editFile("note.txt", "file", 4, editETag, "text/plain")))
+	f.on(http.MethodGet, nodePath(testNode, "/content"), reply{status: http.StatusOK, body: "old\n"})
+	f.on(http.MethodPut, nodePath(testNode, "/content"), ok(editFile("note.txt", "file", 10, `"v2"`, "text/plain")))
+	editorScript(t, `trap 'printf "got INT\n" > "$1"; exit 0' INT`+"\n"+`kill -INT $$`+"\n"+`sleep 0.5`)
+
+	res := f.run(Edit, testNode)
+	wantCode(t, res, 0)
+	f.wantCalls("GET "+nodePath(testNode, ""), "GET "+nodePath(testNode, "/content"),
+		"PUT "+nodePath(testNode, "/content"))
+	if got := f.bodyAt(2); got != "got INT\n" {
+		t.Errorf("body = %q, want %q", got, "got INT\n")
+	}
+	wantNoTemp(t)
+}
+
+func TestEditNamesTheFileWhenItCannotBeReadBack(t *testing.T) {
+	f := editSetup(t)
+	f.on(http.MethodGet, nodePath(testNode, ""), ok(editFile("note.txt", "file", 4, editETag, "text/plain")))
+	f.on(http.MethodGet, nodePath(testNode, "/content"), reply{status: http.StatusOK, body: "old\n"})
+	record := filepath.Join(t.TempDir(), "path")
+	t.Setenv("RECORD", record)
+	editorScript(t, `printf '%s' "$1" > "$RECORD"`+"\n"+`rm "$1"`+"\n"+`mkdir "$1"`)
+
+	res := f.run(Edit, testNode)
+	wantCode(t, res, 1)
+	f.wantCalls("GET "+nodePath(testNode, ""), "GET "+nodePath(testNode, "/content"))
+	got, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "your text is kept in " + string(got); !strings.Contains(res.stderr, want) {
+		t.Errorf("stderr = %q, want it to name %q", res.stderr, string(got))
+	}
 }
 
 func TestEditKeepsAnOddNameInsideItsTemporaryDirectory(t *testing.T) {
