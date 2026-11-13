@@ -263,6 +263,29 @@ var remoteCommands = []remoteCommand{
 		help: `  user grants [--account ACC] USER
                                  the team spaces shared with a person, and at what level
 `, run: manage.UserGrants},
+	{name: "user add", route: "POST /api/v1/accounts/{acc}/users",
+		help: `  user add [--account ACC] --verification email|link|none [--name NAME] [--locale TAG]
+                                 [--role ROLE] [--external-id ID] EMAIL
+                                 add a person to the account, and say how they prove their address
+`, run: manage.UserAdd},
+	{name: "user ls", route: "GET /api/v1/accounts/{acc}/users",
+		help: `  user ls [--account ACC] [--all] [--email EMAIL] [--external-id ID]
+                                 the account's people
+`, run: manage.UserLs},
+	{name: "user show", route: "GET /api/v1/accounts/{acc}/users/{usr}",
+		help: `  user show [--account ACC] USER
+                                 one person: their role, status and limits
+`, run: manage.UserShow},
+	{name: "user update", route: "PATCH /api/v1/accounts/{acc}/users/{usr}",
+		help: `  user update [--account ACC] USER [--name NAME] [--locale TAG] [--role ROLE] [--external-id ID]
+                                 [--status active|disabled] [--quota SIZE|default] [--yes]
+                                 [--email EMAIL --verification email|link]
+                                 change a person's name, role, status, limit or email
+`, run: manage.UserUpdate},
+	{name: "user rm", route: "DELETE /api/v1/accounts/{acc}/users/{usr}",
+		help: `  user rm [--account ACC] USER [--transfer-to USER2 | --delete-files] [--yes]
+                                 remove a person; give their My files to another, or delete them (asks first)
+`, run: manage.UserRm},
 	// The sharing commands (cli7). Each acts on a node, or on a team folder or an account with --folder and --account.
 	{name: "share ls", route: "GET /api/v1/nodes/{nod}/permissions",
 		more: []string{"GET /api/v1/accounts/{acc}/folders/{fld}/grants"},
