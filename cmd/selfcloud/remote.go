@@ -482,6 +482,22 @@ var remoteCommands = []remoteCommand{
 		help: `  account quota-warning clear --account ACC
                                  set the warning back to the default
 `, run: ops.AccountQuotaWarningClear},
+	{name: "storage policy show", route: "GET /api/v1/accounts/{acc}/storage-policy",
+		help: `  storage policy show [--account ACC] [--json]
+                                 the account's default storage limit for each user
+`, run: manage.StoragePolicyShow},
+	{name: "storage policy set", route: "PATCH /api/v1/accounts/{acc}/storage-policy",
+		help: `  storage policy set [--account ACC] --user-quota SIZE [--json]
+                                 set each user's default limit; 0 is no limit
+`, run: manage.StoragePolicySet},
+	{name: "storage usage", route: "GET /api/v1/accounts/{acc}/storage",
+		help: `  storage usage [--account ACC] [--users-limit N] [--all] [--json]
+                                 the account's storage, its folders, and its users' totals
+`, run: manage.StorageUsage},
+	{name: "storage largest", route: "GET /api/v1/accounts/{acc}/storage/largest",
+		help: `  storage largest [--account ACC] [--folder FOLDER] [--all] [--json]
+                                 the largest files in the account's team spaces
+`, run: manage.StorageLargest},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
