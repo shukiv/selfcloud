@@ -86,7 +86,7 @@ fn	lib/files/api.ts:unlockNode	unlock	cli5	built in cli5
 fn	lib/files/api.ts:updateAppearance	-	-	colours and icons are display only: no CLI
 fn	lib/files/api.ts:updateVersion	version label	cli11b	built in cli11b
 fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer
-fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
+fn	lib/files/convertLive.ts:liveExportDeps	export	cli11	built in cli11
 fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview uses; its request is GET /api/v1/nodes/{nod}/preview, browser only
 fn	lib/files/ops.ts:startDownloadURL	get	cli6	built in cli6
 fn	lib/files/playlists.ts:createPlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
@@ -103,8 +103,8 @@ fn	lib/files/templates.ts:createFromTemplate	doc new	cli11g	built in cli11g
 fn	lib/files/templates.ts:getTemplatesFolder	template folder show	cli11g	built in cli11g
 fn	lib/files/templates.ts:listTemplatesPage	template ls	cli11g	built in cli11g
 fn	lib/files/templates.ts:setTemplatesFolder	template folder set	cli11g	built in cli11g
-fn	lib/files/thumbnail.ts:liveDeps	-	cli11	planned, cli11
-fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
+fn	lib/files/thumbnail.ts:liveDeps	thumbnail	cli11	built in cli11
+fn	lib/files/thumbnail.ts:watchThumbnail	thumbnail	cli11	built in cli11
 fn	lib/files/tus.ts:createUpload	put	cli6	built in cli6
 fn	lib/files/tus.ts:deleteUpload	upload cancel	cli6	built in cli6
 fn	lib/files/tus.ts:headOffset	put	cli6	built in cli6
@@ -287,7 +287,7 @@ route	GET /api/v1/nodes/{nod}/ancestors	-	-	browser only: the trail of parents t
 route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	comment ls	cli11c	built in cli11c
 route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
-route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/exports/{drv}	export	cli11	built in cli11
 route	GET /api/v1/nodes/{nod}/labels	label show	cli11f	built in cli11f
 route	GET /api/v1/nodes/{nod}/people	-	-	browser session only: the server refuses every token on this route
 route	GET /api/v1/nodes/{nod}/permissions	share ls	cli7	built in cli7
@@ -296,7 +296,7 @@ route	GET /api/v1/nodes/{nod}/resume	-	-	media playback position: a player featu
 route	GET /api/v1/nodes/{nod}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/subtitles	-	-	playback subtitles: a player feature
 route	GET /api/v1/nodes/{nod}/tags	tag ls	cli11e	built in cli11e
-route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/thumbnail	thumbnail	cli11	built in cli11
 route	GET /api/v1/nodes/{nod}/versions	version ls,version get	cli11b	built in cli11b
 route	GET /api/v1/nodes/{nod}/versions/{ver}/content	version get	cli11b	built in cli11b
 route	GET /api/v1/nodes/{nod}/viewers	-	-	live presence of other viewers: a browser feature
@@ -327,7 +327,7 @@ route	HEAD /api/v1/links/{token}	-	-	HTTP HEAD of a link
 route	HEAD /api/v1/nodes/{nod}/content	-	-	HTTP HEAD; get reads the file's size and version from the node instead
 route	HEAD /api/v1/nodes/{nod}/preview	-	-	HTTP HEAD, rendered preview for the browser viewer
 route	HEAD /api/v1/nodes/{nod}/tags	-	-	HTTP HEAD
-route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumb
+route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumbnail
 route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD; version get reads the version's size and ETag from the list instead
 route	HEAD /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
@@ -397,7 +397,7 @@ route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in t
 route	POST /api/v1/nodes/{nod}/comments	comment add	cli11c	built in cli11c
 route	POST /api/v1/nodes/{nod}/copy	cp	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/documents	doc new	cli11g	built in cli11g
-route	POST /api/v1/nodes/{nod}/exports	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/exports	export	cli11	built in cli11
 route	POST /api/v1/nodes/{nod}/links	link create	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/move	mv	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/office	-	-	opens the Collabora editor in a browser tab

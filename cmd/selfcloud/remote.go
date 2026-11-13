@@ -621,6 +621,16 @@ var remoteCommands = []remoteCommand{
 	{name: "version rm", route: "DELETE /api/v1/nodes/{nod}/versions/{ver}",
 		help: `  version rm NODE VER [--yes]    remove one version from the server (asks first)
 `, run: files.VersionRm},
+
+	{name: "thumbnail", route: "GET /api/v1/nodes/{nod}/thumbnail",
+		help: `  thumbnail NODE DEST [--size PIXELS] [--wait-timeout DURATION] [--force]
+                                 the server's preview of a file, written to DEST; a pending one is waited for
+`, run: files.Thumbnail},
+	{name: "export", route: "POST /api/v1/nodes/{nod}/exports",
+		more: []string{"GET /api/v1/nodes/{nod}/exports/{drv}"},
+		help: `  export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force]
+                                 convert a file to another format and download it
+`, run: files.Export},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
