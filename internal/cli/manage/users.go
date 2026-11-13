@@ -102,8 +102,8 @@ func userDetailKV(v userDetailView) []output.KV {
 }
 
 // verificationKV writes the verification's method, and then what the person needs: whether the mail was sent, or the
-// link and when it ends. The link is printed once, here.
-func verificationKV(v *userVerificationView, method string, stderr io.Writer) []output.KV {
+// link and when it ends.
+func verificationKV(v *userVerificationView, method string) []output.KV {
 	kv := []output.KV{{Key: "verification", Value: method}}
 	if v == nil {
 		return kv
@@ -118,7 +118,6 @@ func verificationKV(v *userVerificationView, method string, stderr io.Writer) []
 	case "link":
 		kv = append(kv, output.KV{Key: "link", Value: v.URL},
 			output.KV{Key: "link_expires_at", Value: textOf(v.ExpiresAt)})
-		_, _ = io.WriteString(stderr, linkShownNote)
 	}
 	return kv
 }
@@ -204,9 +203,15 @@ func printUserShown(c *command, v userShown, created bool) error {
 		{Key: "status", Value: v.Status},
 	}
 	if created {
-		kv = append(kv, verificationKV(v.Verification, v.Verification.Method, c.stderr)...)
+		kv = append(kv, verificationKV(v.Verification, v.Verification.Method)...)
 	}
-	return output.KeyValues(c.stdout, kv)
+	if err := output.KeyValues(c.stdout, kv); err != nil {
+		return err
+	}
+	if created && v.Verification != nil && v.Verification.Method == "link" {
+		_, _ = io.WriteString(c.stderr, linkShownNote)
+	}
+	return nil
 }
 
 // UserLs is `selfcloud user ls --account ACC [--all] [--email EMAIL] [--external-id ID]`.
@@ -423,10 +428,13 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	kv := userDetailKV(v)
 	if doc.Verification != nil {
-		kv = append(kv, verificationKV(doc.Verification, doc.Verification.Method, stderr)...)
+		kv = append(kv, verificationKV(doc.Verification, doc.Verification.Method)...)
 	}
 	if err := output.KeyValues(c.stdout, kv); err != nil {
 		return c.fail(err)
+	}
+	if doc.Verification != nil && doc.Verification.Method == "link" {
+		_, _ = io.WriteString(stderr, linkShownNote)
 	}
 	return exitcode.OK
 }
