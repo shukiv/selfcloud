@@ -1060,3 +1060,96 @@ describe("the sidebar's document entries follow the place, the role and the impe
     });
   });
 });
+
+// ks1, decision 169: the shell answers "/" (focus the search box), "?" and Ctrl+/ (the keyboard shortcuts list). The list is a
+// lazy dialog; the account menu offers it with its key hint, and a finger does not see the entry.
+describe("the shell's global keys and shortcuts list (ks1)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+  });
+
+  const searchBox = () => screen.getByLabelText("Search names and text in files") as HTMLInputElement;
+
+  it("'/' focuses the search box and types nothing into it", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/files");
+      const box = searchBox();
+      screen.getByTestId("rail-toggle").focus();
+      const user = userEvent.setup();
+      await user.keyboard("/");
+      expect(document.activeElement).toBe(box);
+      expect(box.value).toBe("");
+    });
+  });
+
+  it("'/' typed into the search box stays a character", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/files");
+      const box = searchBox();
+      box.focus();
+      const user = userEvent.setup();
+      await user.keyboard("/");
+      expect(box.value).toBe("/");
+    });
+  });
+
+  it("Ctrl+/ opens the shortcuts list, and Escape closes it and gives the focus back", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/files");
+      const trigger = screen.getByTestId("rail-toggle");
+      trigger.focus();
+      const user = userEvent.setup();
+      await user.keyboard("{Control>}/{/Control}");
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog.textContent).toContain("Keyboard shortcuts");
+      // Escape is read by the dialog's own wrapper (rc-dialog), as a key press inside it.
+      fireEvent.keyDown(dialog, { key: "Escape", keyCode: 27 });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
+
+  it("Ctrl+/ a second time closes the list", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/files");
+      const user = userEvent.setup();
+      await user.keyboard("{Control>}/{/Control}");
+      expect((await screen.findByRole("dialog")).textContent).toContain("Keyboard shortcuts");
+      await user.keyboard("{Control>}/{/Control}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+  });
+
+  it("the account menu opens the shortcuts list", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/files");
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId("account-menu"));
+      await user.click(await screen.findByRole("menuitem", { name: "Keyboard shortcuts" }));
+      expect((await screen.findByRole("dialog")).textContent).toContain("Keyboard shortcuts");
+    });
+  });
+
+  it("hides the shortcuts entry from a finger, which has no keyboard to speak of", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = (query: string) => ({ ...original(query), matches: query.includes("pointer: coarse") }) as MediaQueryList;
+    try {
+      signIn("member");
+      renderShell("/files");
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId("account-menu"));
+      await screen.findByRole("menuitem", { name: "Sign out" });
+      expect(screen.queryByRole("menuitem", { name: "Keyboard shortcuts" })).toBeNull();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+});
