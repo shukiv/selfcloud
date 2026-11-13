@@ -101,6 +101,7 @@ type fake struct {
 	calls   []string
 	bodies  []string
 	bearers []string
+	headers []http.Header
 }
 
 // newFake starts a server. A request with no queued answer gets a 404 with the API's error envelope.
@@ -129,6 +130,7 @@ func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, call)
 	f.bodies = append(f.bodies, string(body))
 	f.bearers = append(f.bearers, r.Header.Get("Authorization"))
+	f.headers = append(f.headers, r.Header.Clone())
 	rep := reply{status: http.StatusNotFound, body: `{"error":{"code":"not_found","message":"no such node"}}`}
 	if q := f.replies[r.Method+" "+r.URL.Path]; len(q) > 0 {
 		rep = q[0]
@@ -199,6 +201,28 @@ func (f *fake) wantNoCalls() {
 	if calls := f.requests(); len(calls) != 0 {
 		f.t.Fatalf("calls %v; want none", calls)
 	}
+}
+
+// header returns the value of one header on the i-th call.
+func (f *fake) header(i int, key string) string {
+	f.t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i >= len(f.headers) {
+		f.t.Fatalf("no call %d; %d calls recorded", i, len(f.headers))
+	}
+	return f.headers[i].Get(key)
+}
+
+// bodyAt returns the body of the i-th call.
+func (f *fake) bodyAt(i int) string {
+	f.t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i >= len(f.bodies) {
+		f.t.Fatalf("no call %d; %d calls recorded", i, len(f.bodies))
+	}
+	return f.bodies[i]
 }
 
 // wantCode checks the exit code of a result, and that neither stream carries a credential.

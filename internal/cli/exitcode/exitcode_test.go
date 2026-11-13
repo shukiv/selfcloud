@@ -14,7 +14,7 @@ import (
 // contract with scripts.
 func TestCodesAreTheDesignTable(t *testing.T) {
 	t.Parallel()
-	want := []int{OK, Failed, Usage, Refused, NotFound, CheckFailed, UploadExpired, Partial}
+	want := []int{OK, Failed, Usage, Refused, NotFound, CheckFailed, UploadExpired, Partial, Conflict}
 	for i, got := range want {
 		if got != i {
 			t.Errorf("code %d = %d, want %d", i, got, i)
@@ -76,6 +76,7 @@ func TestEveryCodeIsReached(t *testing.T) {
 		{"a check failed", &client.APIError{Status: 460, Code: "checksum_mismatch", Message: "x"}, CheckFailed, "checksum_mismatch"},
 		{"an upload expired", &client.APIError{Status: 410, Code: "upload_expired", Message: "x"}, UploadExpired, "upload_expired"},
 		{"partial success", Partialf("1 of 2 failed"), Partial, "partial"},
+		{"the file changed since it was read", Conflictf("changed"), Conflict, "conflict"},
 	}
 	for _, c := range cases {
 		got, name, _ := Of(c.err)
