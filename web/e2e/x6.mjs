@@ -66,6 +66,26 @@ async function until(page, expr, ms = 15000, what = expr) {
   }
 }
 
+// READS is a page or link read, the requests a drawer must not add.
+const READS = /\/(links|children|content|thumbnail|subtitles|resume|tags)\b|\/signed/;
+
+// quiet waits until the page has sent no request for a moment: the listing and tree reads that follow a page load start
+// before a mark, so a later count sees only what the action itself asks for. A request from a page already left can stay
+// in the network log without an end, so the log's length, not the open requests, says whether the page has settled.
+async function quiet(page, ms = 600) {
+  const deadline = Date.now() + 15000;
+  let last = page.sent.length;
+  let since = Date.now();
+  for (;;) {
+    await sleep(100);
+    if (page.sent.length !== last) {
+      last = page.sent.length;
+      since = Date.now();
+    } else if (Date.now() - since >= ms) return;
+    if (Date.now() > deadline) throw new Error(`the page kept reading: ${unendedOf(page)}`);
+  }
+}
+
 // dblClick sends a real mouse double click at a point, the way Chrome sends it for a person.
 async function dblClick(page, { x, y }) {
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
@@ -437,11 +457,12 @@ export async function x6Checks(h, { page, base, accountKey, accountID, memberID 
     await step('opening the drawer asks for no page read and no link', async () => {
       await openPlayer(page, urlOf('video') + '?lang=en', 'bright.webm');
       await holdPlaying(page);
+      await quiet(page);
       const mark = page.sent.length;
       await clickAt(page, '.media-playlist-toggle');
       await sleep(500);
       // A read is a GET: the place is saved with a PUT as the file plays, and a save is not a read.
-      const asked = page.sent.slice(mark).filter((r) => r.method === 'GET' && /\/(links|children|content|thumbnail|subtitles|resume|tags)\b|\/signed/.test(r.url));
+      const asked = page.sent.slice(mark).filter((r) => r.method === 'GET' && READS.test(r.url));
       check(asked.length === 0, `opening the drawer asks for no page or link (${asked.map((r) => r.url.replace(/^https?:\/\/[^/]+/, '')).join(' ; ') || 'none'})`);
       await press(page, 'Escape');
       await press(page, 'Escape');
