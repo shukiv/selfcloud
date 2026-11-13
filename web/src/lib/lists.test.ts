@@ -5,7 +5,7 @@ import type { KeyboardEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useListKeys, useListSelection, type ListKeysOptions } from "./lists";
 
-// The shared selection and keys of a list (design-tl section 2.4). The preset lists wait for them in later slices (Starred
+// The shared selection and keys of a list. The preset lists wait for them in later slices (Starred
 // and Trash select, tl4); Listing applies them to every preset list now.
 
 describe("useListSelection", () => {

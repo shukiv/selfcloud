@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice nt2, the New menu (design-nt2 section 3, design-nt2-phase1 W1): at a desktop width an editor opens the sidebar's New in a
+// Slice nt2, the New menu (decision 108 section 3): at a desktop width an editor opens the sidebar's New in a
 // folder of Team A. The menu holds the groups in order (New folder | Upload files, Upload folder | Document, Spreadsheet, Presentation,
 // More), each kind is a submenu of Blank and From a template, and the chord Alt+C then F makes a folder with the menu closed. Blank
 // under Document makes a blank file and opens it in the editor (the fake converter's tab). The folder is removed in a finally.
@@ -12,7 +12,7 @@ const q = (v) => JSON.stringify(v);
 
 // key sends one key press (down and up) to the focused element, with the modifiers the chord needs (Alt is 1).
 // OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
-// .ant-dropdown: it is its own .ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted (MED-7).
+// .ant-dropdown: it is its own.ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted.
 const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"], .ant-dropdown-menu-submenu-popup [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
 // NEW_MENU is the open New menu: the open dropdown with the New folder row, and not one that is closing (its leave animation).
 const NEW_MENU = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((d) => d.textContent.includes('New folder') && !d.classList.contains('ant-slide-up-leave'))";
@@ -131,7 +131,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await page.send('Page.bringToFront');
     await waitNoDropdown(page);
 
-    // The pointer kind sets the submenu title's height (MED-2): a mouse is 40 px, a finger (a coarse pointer) 44 px.
+    // The pointer kind sets the submenu title's height: a mouse is 40 px, a finger (a coarse pointer) 44 px.
     const reopenNew = async () => {
       await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
       await waitNoDropdown(page);

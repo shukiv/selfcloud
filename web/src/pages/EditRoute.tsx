@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The /edit/<node> address, for both editors (design-ce 3.1, decision 124). The node is read once: a code file goes to the code
+// The /edit/<node> address, for both editors (decision 124). The node is read once: a code file goes to the code
 // editor, and everything else to the office editor, as before (which also answers for a folder or a type it does not open). A
 // file the read cannot reach goes to the office editor too, which shows its own failure. This module is lazy, and it imports
 // neither editor's module until it has decided, so the first load does not change.

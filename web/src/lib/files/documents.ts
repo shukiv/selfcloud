@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// New documents (decision 91, round 2 R5, decision 102). The New menu's Document, Spreadsheet and Presentation: the click
+// New documents (decision 91, decision 102). The New menu's Document, Spreadsheet and Presentation: the click
 // opens the wait page in a new tab with a random key, and the opener makes the blank file and hands it over under that key
 // (newDocumentHandoff.ts). A GET never creates a file: the wait page and the editor's address make none. On a coarse pointer
 // the same wait page opens in this tab.
@@ -24,7 +24,7 @@ export type DocumentKind = 'docx' | 'xlsx' | 'pptx' | 'odg' | 'txt';
 
 // openNewDocumentTab starts a new document: the key, the wait page (in a new tab from the click, or in this tab on a coarse
 // pointer), and the one server call. The call's result, or its error text, is handed to the wait page. When the browser
-// blocks the new tab, nothing is made and blocked() says so (review, round 2: no file without a tab to open it in).
+// blocks the new tab, nothing is made and blocked() says so (no file without a tab to open it in).
 export function openNewDocumentTab(
   o: {
     parent: string;

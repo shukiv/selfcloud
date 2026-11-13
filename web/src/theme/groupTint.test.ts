@@ -64,7 +64,7 @@ describe("the sidebar's group tint (decision 93)", () => {
   });
 });
 
-describe("the hover inside the sidebar's tinted group (decision 93, round 2)", () => {
+describe("the hover inside the sidebar's tinted group (decision 93)", () => {
   it("is black at the hover share over the default blue's tint, and the text and the mark read 4.5:1 or more on it", () => {
     const { tint, hover } = groupColours(SIDEBAR);
     expect(hover).toBe(`rgba(0, 0, 0, ${GROUP_HOVER.share})`);
@@ -96,7 +96,7 @@ describe("the hover inside the sidebar's tinted group (decision 93, round 2)", (
   });
 });
 
-describe("the capped hint's caption in the tinted group (decision 93, round 3)", () => {
+describe("the capped hint's caption in the tinted group (decision 93)", () => {
   // The capped hint is drawn in the sidebar's caption colour on the group's tint. The loop checked the text and the mark only, so a caption
   // could read 3.85:1 on the default blue's 14% tint, and the hint would fail WCAG.
   it("on the default blue reads 4.5:1 or more on the tint, and on the hover over it", () => {

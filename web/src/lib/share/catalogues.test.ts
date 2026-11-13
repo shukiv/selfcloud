@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The share page's strings are their own catalogue (decision 82, round 4): web/src/i18n/share/<lang>.json, loaded with the share
+// The share page's strings are their own catalogue (decision 82): web/src/i18n/share/<lang>.json, loaded with the share
 // page, so the main catalogues (which every page loads) do not grow with them. These tests hold the catalogues to the same shape as
 // the search catalogue: every language has every key and nothing more, no text is empty, each placeholder is the one the English
 // text uses, and the main catalogues no longer carry the moved keys.

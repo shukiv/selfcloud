@@ -82,14 +82,14 @@ describe("the largest files are one table (decision 122)", () => {
   });
 
   // Round 2 (M2): Download is a real link to the file's own address, so a middle click, a new tab and Copy link work as before.
-  it("Download is a link to the file's own address (round 2, M2)", () => {
+  it("Download is a link to the file's own address", () => {
     renderCard();
     const link = screen.getByRole("link", { name: "Download: scan.pdf" });
     expect(link.getAttribute("href")).toBe(contentPath("nod_pdf1"));
   });
 
   // Round 2 (M6): on a phone every action is in the row's ⋮ menu, and the menu keeps all three, Download among them.
-  it("on a phone the ⋮ menu keeps every action, Download among them (round 2, M6)", async () => {
+  it("on a phone the ⋮ menu keeps every action, Download among them", async () => {
     const undo = phoneViewport();
     try {
       renderCard();
@@ -120,7 +120,7 @@ describe("the largest files are one table (decision 122)", () => {
 });
 
 // Round 2 (LOW): a row opens its file, as Enter and a click open a row of any list (decision 122).
-describe("a file's row opens the file (round 2, LOW)", () => {
+describe("a file's row opens the file", () => {
   beforeEach(() => {
     officeEdit.set(true);
     pointer(false);
@@ -163,7 +163,7 @@ describe("a file's row opens the file (round 2, LOW)", () => {
   });
 });
 
-describe("the Largest files links (decision 102, round 2 R6, and the rules of the editor's open)", () => {
+describe("the Largest files links (decision 102, the rules of the editor's open)", () => {
   beforeEach(() => {
     officeEdit.set(true);
     pointer(false);

@@ -621,7 +621,7 @@ const MIXED = "This file mixes line break styles. Saving writes the first style 
 const MAYBE = "The last save may have reached the server before the connection failed.";
 const FAILED = "Save failed. The text stays here, so try again.";
 const MESSAGE = "This file changed since you opened it. Reload it to see the saved version.";
-// The new notices of the review round 1 fixes (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
+// The new notices of the review fixes (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
 const SIGNED_OUT = "Your sign-in has ended. The text stays here. Sign in again to save it.";
 const BAD_NAME = "This name is too long or not allowed in this folder. Rename the copy and try again.";
 const SIGNED_OUT_COPY = "Unsaved changes are not kept across sign-in. Copy the text first, then sign in.";
@@ -784,7 +784,7 @@ describe("the version comes from the node's answer, not from a header (decision 
   });
 });
 
-describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
+describe("the sign-in from the page", () => {
   it("Sign in with unsaved text asks first; after Leave the sign-in page shows and the session has ended", async () => {
     refuseStorage();
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
@@ -843,7 +843,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
   });
 
-  it("after a save whose answer was lost, a conflict says the draft may already be on the server (decision 124, LOW-4)", async () => {
+  it("after a save whose answer was lost, a conflict says the draft may already be on the server (decision 124)", async () => {
     // The first save's request fails with no answer; the server may still have stored the draft. The next save is refused with 412.
     let attempt = 0;
     const s = server({
@@ -1083,9 +1083,9 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(content().classList.contains("cm-lineWrapping")).toBe(true));
   });
 
-  // ---- The review round 1 fixes (decision 130, the review's findings). Each test is red before its fix.
+  // ---- The review fixes (decision 130, the review's findings). Each test is red before its fix.
 
-  it("a double click on Keep as a copy sends one copy, not two (MED-1)", async () => {
+  it("a double click on Keep as a copy sends one copy, not two", async () => {
     const s = server();
     const d = await openConflict(s);
     // Two native clicks in one task: React has not yet rendered the busy state between them, so only the ref guard stops the second.
@@ -1097,7 +1097,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(postPaths(s)).toEqual(["/a (2).json"]);
   });
 
-  it("a double click on Overwrite saves once (MED-1)", async () => {
+  it("a double click on Overwrite saves once", async () => {
     const s = server();
     const d = await openConflict(s);
     const over = within(d).getByRole("button", { name: OVERWRITE });
@@ -1109,7 +1109,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(s.puts()).toHaveLength(2);
   });
 
-  it("an overwrite that gets no answer marks the next conflict as possibly saved (MED-2)", async () => {
+  it("an overwrite that gets no answer marks the next conflict as possibly saved", async () => {
     // The overwrite's save gets no answer; the next save is refused with 412, so its dialog must say the draft may be saved.
     let attempt = 0;
     const s = server({
@@ -1126,7 +1126,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
   });
 
-  it("a copy that gets no answer marks the next conflict as possibly saved (MED-2)", async () => {
+  it("a copy that gets no answer marks the next conflict as possibly saved", async () => {
     const s = server({
       post: () => {
         throw new TypeError("connection lost");
@@ -1139,7 +1139,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
   });
 
-  it("an overwrite that is answered clears the possibly-saved mark (MED-2)", async () => {
+  it("an overwrite that is answered clears the possibly-saved mark", async () => {
     let calls = 0;
     const s = server({
       put: () => {
@@ -1178,7 +1178,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(dialogHas(MAYBE)).toBe(false);
   });
 
-  it("a copy that is answered clears the possibly-saved mark (MED-2)", async () => {
+  it("a copy that is answered clears the possibly-saved mark", async () => {
     let calls = 0;
     const s = server({
       post: () => {
@@ -1200,7 +1200,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(dialogHas(MAYBE)).toBe(false);
   });
 
-  it("Close on a tab a script opened asks before it closes, when text is unsaved (MED-3)", async () => {
+  it("Close on a tab a script opened asks before it closes, when text is unsaved", async () => {
     const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
     try {
       server();
@@ -1221,7 +1221,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     }
   });
 
-  it("a save the server answers 401 keeps the draft, names the ended sign-in, and Sign in asks before it leaves when this tab cannot keep the text (MED-4)", async () => {
+  it("a save the server answers 401 keeps the draft, names the ended sign-in, and Sign in asks before it leaves when this tab cannot keep the text", async () => {
     refuseStorage();
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     render();
@@ -1236,14 +1236,14 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
   });
 
-  it("a file whose read is refused because the sign-in has ended says so, with Sign in (MED-4)", async () => {
+  it("a file whose read is refused because the sign-in has ended says so, with Sign in", async () => {
     server({ read: 401 });
     render();
     expect(await screen.findByText(SIGNED_OUT)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 
-  it("a copy the server refuses as a bad name says so, with its own words (LOW-2)", async () => {
+  it("a copy the server refuses as a bad name says so, with its own words", async () => {
     const s = server({ post: () => Response.json({ error: { code: "invalid_path", details: {} } }, { status: 400 }) });
     const d = await openConflict(s);
     fireEvent.click(within(d).getByRole("button", { name: COPY }));
@@ -1251,14 +1251,14 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(screen.queryByText(FAILED)).toBeNull();
   });
 
-  it("a copy whose folder is gone says so, with its own words (LOW-2)", async () => {
+  it("a copy whose folder is gone says so, with its own words", async () => {
     const s = server({ post: () => Response.json({ error: { code: "not_found", details: {} } }, { status: 404 }) });
     const d = await openConflict(s);
     fireEvent.click(within(d).getByRole("button", { name: COPY }));
     expect(await screen.findByText(FOLDER_GONE)).toBeTruthy();
   });
 
-  it("a save the server answers 507 says the storage is full, and offers no retry (LOW-3)", async () => {
+  it("a save the server answers 507 says the storage is full, and offers no retry", async () => {
     server({ put: () => Response.json({ error: { code: "quota_exceeded", details: {} } }, { status: 507 }) });
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1269,7 +1269,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(within(alert).queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
-  it("the app mark leaves through the router, so the unsaved guard asks first (LOW-4)", async () => {
+  it("the app mark leaves through the router, so the unsaved guard asks first", async () => {
     server();
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1280,7 +1280,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
   });
 
-  it("a reload that finishes after the page moved to another file does not put the old file on the page (LOW-5)", async () => {
+  it("a reload that finishes after the page moved to another file does not put the old file on the page", async () => {
     let release: () => void = () => undefined;
     const hold = { on: false, gate: new Promise<void>((r) => (release = r)) };
     const s = server({ hold });
@@ -1322,7 +1322,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(goMock).toHaveBeenCalledWith(`/files/${FLD}`);
   });
 
-  it("a JSON problem is reported in the editor's words, not the parser's (LOW-7)", async () => {
+  it("a JSON problem is reported in the editor's words, not the parser's", async () => {
     const LINT_INVALID = "Not valid JSON here.";
     server({ body: new TextEncoder().encode("{") });
     render();
@@ -1508,7 +1508,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(keptFor()).toEqual([]);
   });
 
-  it("an over-gate text after a kept draft drops the draft, so a later sign-in and open restore nothing (MED-1)", async () => {
+  it("an over-gate text after a kept draft drops the draft, so a later sign-in and open restore nothing", async () => {
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     const first = renderSignIn();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1529,7 +1529,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(screen.queryByText(RESTORED)).toBeNull();
   });
 
-  it("a refused write after a kept draft drops the draft, so a later sign-in and open restore nothing (MED-1)", async () => {
+  it("a refused write after a kept draft drops the draft, so a later sign-in and open restore nothing", async () => {
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     const first = renderSignIn();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1551,7 +1551,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(screen.queryByText(RESTORED)).toBeNull();
   });
 
-  it("a 401 during a save keeps the text typed while the save ran, not the text the save sent (MED-2)", async () => {
+  it("a 401 during a save keeps the text typed while the save ran, not the text the save sent", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
     const s = server({
@@ -1572,7 +1572,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(content().textContent).toContain("x{}y");
   });
 
-  it("a 401 during an overwrite keeps the text typed while it ran, not the text it sent (MED-2)", async () => {
+  it("a 401 during an overwrite keeps the text typed while it ran, not the text it sent", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
     const s = server({
@@ -1589,7 +1589,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     await waitFor(() => expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y"));
   });
 
-  it("a 401 during a keep as a copy keeps the text typed while it ran, not the text it sent (MED-2)", async () => {
+  it("a 401 during a keep as a copy keeps the text typed while it ran, not the text it sent", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
     const s = server({
@@ -1606,7 +1606,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     await waitFor(() => expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y"));
   });
 
-  it("Sign in does not ask when this tab keeps the text, and keeps the text typed after the session ended (MED-3)", async () => {
+  it("Sign in does not ask when this tab keeps the text, and keeps the text typed after the session ended", async () => {
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     renderSignIn();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1620,7 +1620,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y");
   });
 
-  it("an explicit sign-out sends its message on the sign-out channel, and the message carries no text (MED-4)", async () => {
+  it("an explicit sign-out sends its message on the sign-out channel, and the message carries no text", async () => {
     const heard: unknown[] = [];
     const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
     listener.onmessage = (e: MessageEvent) => heard.push(e.data);
@@ -1637,7 +1637,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     }
   });
 
-  it("another tab's explicit sign-out clears the text this tab kept, and a session end after it keeps nothing (MED-4)", async () => {
+  it("another tab's explicit sign-out clears the text this tab kept, and a session end after it keeps nothing", async () => {
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       keepUnsaved("usr_1", NOD_B, { text: "other", etag: ETAG_B, bom: false, sep: "\n" });
@@ -1655,7 +1655,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     }
   });
 
-  it("a sign-in in this tab after another tab's sign-out keeps the text again (MED-4)", async () => {
+  it("a sign-in in this tab after another tab's sign-out keeps the text again", async () => {
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       server();
@@ -1672,7 +1672,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     }
   });
 
-  it("a session end with the saved text drops the older draft, so the next open restores nothing (LOW-7)", async () => {
+  it("a session end with the saved text drops the older draft, so the next open restores nothing", async () => {
     server();
     const first = render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1695,7 +1695,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(keptFor()).toEqual([]);
   });
 
-  it("a restored text takes the byte order mark and the line break of the draft, not the file's (LOW-8)", async () => {
+  it("a restored text takes the byte order mark and the line break of the draft, not the file's", async () => {
     keepUnsaved("usr_1", NOD, { text: "a\nb", etag: ETAG, bom: true, sep: "\r\n" });
     const s = server();
     render();
@@ -1707,7 +1707,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(new TextDecoder().decode(sent.slice(3))).toBe("a\r\nb");
   });
 
-  it("a kept text over the editor's 2 MiB gate is not restored, and the file opens as it is (LOW-8)", async () => {
+  it("a kept text over the editor's 2 MiB gate is not restored, and the file opens as it is", async () => {
     keepUnsaved("usr_1", NOD, { text: "x".repeat(2 * MiB + 1), etag: ETAG, bom: false, sep: "\n" });
     server();
     render();

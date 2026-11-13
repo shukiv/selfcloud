@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The New chord (design-nt2-phase1, Menu and shortcut rules): Alt+C, then one letter that runs a New action. The reader is pure: it
+// The New chord (decision 108, Menu and shortcut rules): Alt+C, then one letter that runs a New action. The reader is pure: it
 // takes the state, the key and the time, and says what to do. A key is read by its position (event.code: KeyF, KeyU, ...), so it
 // is the same key on a Hebrew or Arabic layout. The chord is armed for CHORD_WINDOW_MS; a key that is not in the chord cancels it.
 import { isTextField } from "./keys";

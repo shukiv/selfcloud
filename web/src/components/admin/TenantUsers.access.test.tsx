@@ -25,7 +25,7 @@ function adminWith(switches: { tenantAccess: boolean; mailConfigured: boolean })
   session.set({ ...signedAs("admin"), ...switches });
 }
 
-// The inline icons show on a desktop; below md they are in the ⋮ menu (design-tl section 4), so these tests pin a desktop.
+// The inline icons show on a desktop; below md they are in the ⋮ menu, so these tests pin a desktop.
 let savedMatchMedia: typeof window.matchMedia;
 beforeEach(() => {
   stubFetch(() => ({ status: 200, body: { items: [active, pending] } }));

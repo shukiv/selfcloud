@@ -107,7 +107,7 @@ export function officeLinkClick(e: LinkClick, n: Node, featureOn: boolean, here:
 // so there is no "saving" state (decision 102).
 export type SaveState = "saved" | "unsaved" | "failed" | null;
 
-// saveStateAfter gives the save state after one message from the editor (decision 102, round 2). Doc_ModifiedStatus carries
+// saveStateAfter gives the save state after one message from the editor (decision 102). Doc_ModifiedStatus carries
 // Values.Modified: true is unsaved changes, false is saved; the message may come again with the same value, which keeps the
 // state. Action_Save_Resp carries Values.success: true is saved, false is save failed. Anything else changes nothing.
 export function saveStateAfter(prev: SaveState, msg: EditorMessage): SaveState {

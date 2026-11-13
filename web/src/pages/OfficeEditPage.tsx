@@ -456,7 +456,7 @@ export default function OfficeEditPage() {
     // The window's timer ends it. Once the request has gone to the editor, a timeout may leave a copy the page never heard of, so
     // the copy is lost (copyLost): the page then mints no token for the original. A window that never sent its request is only ended.
     win.timer = setTimeout(() => {
-      // An answer has come: its read ends the window, however long the read takes (round 6), so the timer does nothing.
+      // An answer has come: its read ends the window, however long the read takes, so the timer does nothing.
       if (win.answered) return;
       // Still listing the folder: no request has gone out, so no copy can exist, and the copy did not start.
       if (win.at === 0) {

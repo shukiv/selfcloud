@@ -36,7 +36,7 @@ export default function TenantKeys({ account }: { account: string }) {
   });
   const loaded: ApiKey[] = q.data ?? [];
   const firstFailed = q.isError && q.data === undefined;
-  // The keys are loaded whole, so they are sorted here (design-tl section 5). The first state is the order the server sent.
+  // The keys are loaded whole, so they are sorted here. The first state is the order the server sent.
   const [sort, setSort] = useState<{ key: "" | "name" | "created" | "last"; dir: "asc" | "desc" }>({ key: "", dir: "asc" });
   const sortBy = (key: string) => {
     if (key !== "name" && key !== "created" && key !== "last") return;
@@ -169,7 +169,7 @@ export default function TenantKeys({ account }: { account: string }) {
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {/* The keys table (design-tl section 3.1): Name with the prefix, Created, Last used, Expires, State, and a Revoke icon. */}
+      {/* The keys table: Name with the prefix, Created, Last used, Expires, State, and a Revoke icon. */}
       {!firstFailed && q.data !== undefined && (
         <Listing
           label={t("tenant.keys.title")}

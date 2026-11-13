@@ -151,7 +151,7 @@ function AdminsView() {
   };
 
   const emailOk = EMAIL.test(email.trim());
-  // The signed-in admin's own row says so and has no Remove icon: an admin cannot remove themselves here (design-tl 3.1).
+  // The signed-in admin's own row says so and has no Remove icon: an admin cannot remove themselves here.
   // Its ⋮ menu has Change password instead, a link to the page that changes it (the approved mockup).
   const selfID = useStore(session)?.user?.id;
   const columns: ListColumn<Person>[] = [

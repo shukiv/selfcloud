@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.mocked(createDocument).mockReset();
 });
 
-describe("the new-document key (decision 102, round 2 R5)", () => {
+describe("the new-document key (decision 102)", () => {
   it("is 128 random bits, base64url, and each is new", () => {
     const spy = vi.spyOn(crypto, "getRandomValues");
     const a = newKey();
@@ -61,7 +61,7 @@ describe("the new-document key (decision 102, round 2 R5)", () => {
   });
 });
 
-describe("the opener: the click makes the key, the new tab waits, the server call makes the file (decision 102, round 2 R5)", () => {
+describe("the opener: the click makes the key, the new tab waits, the server call makes the file (decision 102)", () => {
   // popup is the window a script opened: the opener clears its opener link before anything else happens in it.
   const popup = { opener: {} as unknown };
 
@@ -118,7 +118,7 @@ describe("the opener: the click makes the key, the new tab waits, the server cal
   });
 });
 
-describe("the hand-over: a tab that loads late finds the result, and only for its own key (decision 102, round 2 R5)", () => {
+describe("the hand-over: a tab that loads late finds the result, and only for its own key (decision 102)", () => {
   it("a result stored before the tab listens is found by takeHandoff, once", () => {
     startHandoff(K, 0);
     finishHandoff(K, { node: "nod_a1", from: null, tab: true }, 1000);

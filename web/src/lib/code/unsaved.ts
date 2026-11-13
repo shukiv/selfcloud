@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133).
+// The code editor's unsaved text, kept across a sign-in for the same person (decision 133).
 // This module is the part the sign-in and sign-out paths need, and it is in the first load: the purges at every sign-in and sign-out,
 // and the sign-out channel. The text itself is kept and read in kept.ts, which only the editor loads. Nothing here
 // reads the session: the session's own changes call the purges and the channel. The module imports nothing, so the entry chunk that

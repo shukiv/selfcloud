@@ -152,7 +152,7 @@ describe("a row's name and its actions", () => {
     expect(name.getAttribute("href")).toBe("/admin/tenants/acc_1");
   });
 
-  // The ⋮ menu holds Open, Suspend and Delete; there is no inline icon on a tenant row (design-tl section 3.1).
+  // The ⋮ menu holds Open, Suspend and Delete; there is no inline icon on a tenant row.
   it("the ⋮ menu holds Open, Suspend and Delete tenant", async () => {
     stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : { status: 200, body: usage() }));
     renderPage();

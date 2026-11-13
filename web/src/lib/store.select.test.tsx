@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { useStoreSelect, writable } from './store';
 
-// useStoreSelect is subscribed once: a re-render of the component does not subscribe to the store again (LOW-3, decision 127).
+// useStoreSelect is subscribed once: a re-render of the component does not subscribe to the store again (decision 127).
 describe('useStoreSelect subscribes once, not on each render', () => {
   it('keeps its subscription across re-renders of the component', () => {
     const store = writable(1);

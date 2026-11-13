@@ -87,7 +87,7 @@ describe("labels page", () => {
     expect(note.querySelectorAll("td")[1]?.textContent).toBe("Text");
   });
 
-  // design-tl 5: the list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
+  // the list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
   it("sorts by name: A to Z first, then Z to A, with aria-sort on the Name header", async () => {
     stubFetch(() => ({ status: 200, body: { items: [STATUS, NOTE] } }));
     renderPage();
@@ -109,7 +109,7 @@ describe("labels page", () => {
     expect(heads.slice(1).every((h) => within(h).queryByRole("button") === null)).toBe(true);
   });
 
-  // design-tl 2.2: on a phone the type, the restriction and the count are the name's second line, and the row's actions are ⋮.
+  // on a phone the type, the restriction and the count are the name's second line, and the row's actions are ⋮.
   it("on a phone the type, restriction and count are the name's second line, and the actions are one ⋮ menu", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);

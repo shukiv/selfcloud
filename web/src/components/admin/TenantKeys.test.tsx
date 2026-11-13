@@ -23,7 +23,7 @@ function renderKeys(qc = new QueryClient({ defaultOptions: { queries: { retry: f
   return qc;
 }
 
-// These tests are about a desktop: the Revoke icon shows inline there, and below md it moves into the ⋮ menu (design-tl 4).
+// These tests are about a desktop: the Revoke icon shows inline there, and below md it moves into the ⋮ menu.
 const desktop = (query: string) => {
   const m = /min-width: (\d+)px/.exec(query);
   return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
@@ -40,7 +40,7 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-// tl1: the keys are loaded whole, so the table sorts them on the client by name and by creation time (design-tl section 5).
+// tl1: the keys are loaded whole, so the table sorts them on the client by name and by creation time.
 describe("the keys table sorts on the client", () => {
   it("a header click on Name orders the rows by name, and Created by creation time", async () => {
     stubFetch((c: Call) => {

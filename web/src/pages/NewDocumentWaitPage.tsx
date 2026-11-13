@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The wait page of a new document (decision 102, round 2 R5). The opener of this tab made the file and hands the result over
+// The wait page of a new document (decision 102). The opener of this tab made the file and hands the result over
 // under this page's key. The page takes that result and replaces its address with the editor's. It makes no file: a key nobody
 // started, or one whose time has passed, shows nothing to open.
 import { Alert, Button, Spin } from 'antd';

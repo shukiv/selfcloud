@@ -137,9 +137,9 @@ for (const sheet of ['index.css']) {
 }
 
 // The account menu and the New menu draw their headers as the title of an antd group, with Menu the Dropdown's single child (decision
-// 95, round 2). popupRender wraps the overlay in a Fragment, which drops the ref rc-dropdown needs to move focus into the menu: Tab
+// 95). popupRender wraps the overlay in a Fragment, which drops the ref rc-dropdown needs to move focus into the menu: Tab
 // from the trigger then closes the menu, and the keyboard cannot reach its items. So popupRender is not allowed in any component
-// (round 4, L5: the guard covers all of src/components, not only the two files that had the fault). Tests may name the forms they refuse.
+// (the guard covers all of src/components, not only the two files that had the fault). Tests may name the forms they refuse.
 for (const path of (await files(join(root, 'components'))).filter((p) => /\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p))) {
   const file = relative(root, path);
   const lines = (await readFile(path, 'utf8')).split('\n');

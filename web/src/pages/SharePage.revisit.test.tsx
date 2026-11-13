@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // A revisit of a share's address must not bring its files back once the person has cancelled, uploaded, or signed out and in
-// again (decision 82, round 2). The share module and the session are real; the worker is a fake that holds shares by id.
+// again (decision 82). The share module and the session are real; the worker is a fake that holds shares by id.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";

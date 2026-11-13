@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIMITS_STALE_MS, readLimits, seedLimits } from './api';
 
 // The installation's upload limits come from /api/v1/info. The boot read seeds them; a read of the files page uses them while
-// they are fresh (five minutes) and reads /info again once they are older, since the Settings page can change them (LOW-1,
+// they are fresh (five minutes) and reads /info again once they are older, since the Settings page can change them (
 // decision 127).
 describe('readLimits uses the limits while they are fresh', () => {
   const fresh = { max_chunk_size: 8_388_608, max_file_size: 0 };

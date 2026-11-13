@@ -208,7 +208,7 @@ export async function p1Setup(h, base, accountKey, memberID, randomBytes) {
 export async function p1OwnerChecks(page, h, { MEMBER }) {
   await h.navigateTo(page, '/manage/people');
   await page.waitFor(`location.pathname === '/manage/people' && document.querySelector('main').textContent.includes(${q(MEMBER.name)})`);
-  // A row of People opens the person by a click on it (design-tl 3.2, M1): its name is no longer a Details button.
+  // A row of People opens the person by a click on it: its name is no longer a Details button.
   await page.waitFor(
     `(() => { const r = document.querySelector(${q(`[role="row"][aria-label=${JSON.stringify(MEMBER.name)}]`)}); if (!r) return false; r.querySelector('td').click(); return true; })()`,
   );
@@ -252,7 +252,7 @@ export async function p1MemberChecks(page, h, { dir, writeFile, randomBytes, joi
   await page.waitFor(`location.pathname === '/storage' && (${meterAlt}).includes(' used: ')`);
   const alt = await page.evaluate(meterAlt);
   h.check(alt.includes(' of 10 MB used: '), `the storage page shows the meter against the 10 MB limit (${alt})`);
-  // The name is read from the largest-files table only (the storage page has other item names of its own, round 2).
+  // The name is read from the largest-files table only (the storage page has other item names of its own).
   await page.waitFor(`[...document.querySelectorAll('[role="region"][aria-label="Largest files"] tbody .item-name')].some((n) => n.textContent.includes('p1-ledger.bin'))`, 15000);
   h.check(true, "the storage page lists the member's largest file");
 }

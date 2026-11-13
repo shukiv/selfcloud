@@ -141,7 +141,7 @@ for (const { marker, chunk, what } of GROUP_MARKERS) {
 const gzByName = new Map();
 for (const list of Object.values(sizes)) for (const { name, gz } of list) gzByName.set(`/${name}`, gz);
 const firstNames = new Set(firstLoadNames(indexHTML));
-// antd's Table stays out of the first load (design-tl section 9): the admin and preset lists reach it only through lazy pages.
+// antd's Table stays out of the first load: the admin and preset lists reach it only through lazy pages.
 // Its marker is a class name the Table code carries, present in the lazy chunks and in no file the page names at once.
 const TABLE_MARKER = 'ant-table-selection-column';
 for (const ref of firstNames) {

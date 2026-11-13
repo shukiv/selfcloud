@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's conflict answers (design-ce 4.4, decision 130; the version source is decision 135). The check reads the file's
+// The code editor's conflict answers (decision 130; the version source is decision 135). The check reads the file's
 // current etag from its node's stat, which records no view, and never from a response header. Keep as a copy saves the draft as a
 // new file beside the original: the folder path comes from parent_id up to the root, and the first free name is "name (n).ext" for
 // n from 2, at most COPY_TRIES names. The original is never changed.
@@ -58,7 +58,7 @@ async function dirsOf(parentId: string | null): Promise<string[]> {
 // A failed copy says whether a request was sent: only a sent copy can have reached the server, so only it can be a lost reply (LOW-B).
 export type CopyResult = { ok: true; node: Node } | { ok: false; why: SaveFailure | "noName"; sent: boolean };
 
-// copyFailureOfStatus names a refused copy (LOW-2): a name the server will not take (400) and a folder that is gone (404) have words
+// copyFailureOfStatus names a refused copy: a name the server will not take (400) and a folder that is gone (404) have words
 // of their own; every other refusal is the save's table (failureOfStatus).
 function copyFailureOfStatus(status: number): SaveFailure {
   if (status === 400) return "badName";

@@ -68,7 +68,7 @@ afterEach(() => {
 const isLinkDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/share-links/shl_1";
 
 // Round 2 (LOW): a row opens its item, as Enter and a click open a row of any list (decision 122).
-describe("a link row opens its item (round 2, LOW)", () => {
+describe("a link row opens its item", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -150,7 +150,7 @@ describe("links", () => {
     stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Links" });
-    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited.
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]));
     const row = region.querySelector('tbody tr[data-id="shl_1"]') as HTMLElement;
     expect(row.getAttribute("aria-label")).toBe("report.pdf");
@@ -198,7 +198,7 @@ describe("links", () => {
 
   // Round 2 (M5): Load more appends the next page of links; a failed next page keeps the first one, with the error.
   const SECOND_LINK = { ...LINK, id: "shl_2", item_name: "budget.xlsx", item_path: "Plans/budget.xlsx" };
-  it("Load more appends the next page of links (round 2, M5)", async () => {
+  it("Load more appends the next page of links", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/share-links")) {
         return c.url.includes("c2") ? { status: 200, body: { items: [SECOND_LINK] } } : { status: 200, body: { items: [LINK], next_cursor: "c2" } };
@@ -213,7 +213,7 @@ describe("links", () => {
     expect(within(region).getByText("report.pdf")).toBeTruthy();
   });
 
-  it("a failed next page keeps the first one and shows the error (round 2, M5)", async () => {
+  it("a failed next page keeps the first one and shows the error", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/share-links")) {
         return c.url.includes("c2") ? fail(403, "forbidden") : { status: 200, body: { items: [LINK], next_cursor: "c2" } };

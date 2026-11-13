@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The page's held shares follow the person (decision 82, round 3, M4). A different person who signs in over a signed-in one, a
+// The page's held shares follow the person (decision 82). A different person who signs in over a signed-in one, a
 // change of the person viewed as, and the start and end of viewing as are each a point where the page's copy of a share must go.
 // A sign-in from the signed-out state keeps it: that is the exception for a share opened while signed out (decision 82, M2).
 // Each test uses the real share module against a fake worker, and counts what the page asks and what the worker is told.
@@ -65,7 +65,7 @@ async function holdAndTake(id: string): Promise<boolean> {
   return takenIDs().includes(id);
 }
 
-describe("a change of person clears the page's shares (decision 82, round 3, M4)", () => {
+describe("a change of person clears the page's shares (decision 82)", () => {
   it("B signs in over A, and A's shares are cleared", async () => {
     setSignedIn(signedIn("usr_a"));
     expect(await holdAndTake("s1")).toBe(true);
@@ -102,7 +102,7 @@ describe("a sign-in from the signed-out state keeps the shares (decision 82, M2)
   });
 });
 
-describe("a signed-out page's own check keeps the share it was sent (decision 82, round 3, e2e step 6)", () => {
+describe("a signed-out page's own check keeps the share it was sent (decision 82, e2e step 6)", () => {
   it("a 401 on a page with no session to end (the first check of a signed-out load) drops nothing", async () => {
     // The worker holds the share the post made, and the page has not taken it yet, as on a fresh load of the share address.
     session.set(null);
@@ -112,7 +112,7 @@ describe("a signed-out page's own check keeps the share it was sent (decision 82
   });
 });
 
-describe("viewing as another person clears the page's shares (decision 82, round 3, M4)", () => {
+describe("viewing as another person clears the page's shares (decision 82)", () => {
   it("the start of viewing as clears them", async () => {
     setMe(me("usr_admin"));
     expect(await holdAndTake("s1")).toBe(true);

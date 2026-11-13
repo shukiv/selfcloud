@@ -139,7 +139,7 @@ async function hoverChecks(page, check, groups, label) {
 }
 
 // onTop says whether the element that the expression names is the topmost thing at its centre (or contains it): the painting order the
-// group's tint must not cover (round 3, review item 1). The element is scrolled into view first.
+// group's tint must not cover. The element is scrolled into view first.
 const onTop = (page, expr) =>
   page.evaluate(`(() => {
     const scope = ${SCOPE};
@@ -185,7 +185,7 @@ async function answerChildren(page, myID, mode) {
 
 // paintedInk says how many pixels of a box are the ink colour of its text (within a small distance): a screenshot of the box, decoded by
 // the browser. A tint drawn over the text leaves none. elementFromPoint cannot see that: the tint has pointer-events: none, so a hit
-// test passes through it (round 3, review item 1). Null when the box is not on the screen.
+// test passes through it. Null when the box is not on the screen.
 async function paintedInk(page, expr) {
   const box = await page.evaluate(`(() => { const el = ${expr}; if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height, ink: getComputedStyle(el).color }; })()`);
   if (!box) return null;
@@ -413,7 +413,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
     await snap('fu7-dblclick-desktop.png');
   }
 
-  // ---- 4. The painting order: a group's read error and its capped hint are on top of the tint (round 3, review item 1). Each read is
+  // ---- 4. The painting order: a group's read error and its capped hint are on top of the tint. Each read is
   // answered by the test (a 500, then a list that never ends), the page is reloaded, and the tree shows the error or the hint.
   if (want('overlay')) {
     const cappedAt = async (label) => {

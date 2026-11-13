@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The rule order that decides whether a file opens in the code viewer (design-ce 2.1, decision 115). The first rule that
+// The rule order that decides whether a file opens in the code viewer (decision 115). The first rule that
 // matches decides:
 //
 //   1. an office type: the office viewer and editor, as before; never the code viewer;

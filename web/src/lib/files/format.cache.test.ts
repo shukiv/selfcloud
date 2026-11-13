@@ -33,7 +33,7 @@ describe('the formatters reuse their Intl objects', () => {
 });
 
 // A formatter keeps the time zone it was built in, so the cache is keyed by the zone too: a date shown after the browser's zone
-// changed is in the new zone (LOW-2, decision 127). The zone is read at most once a second, so the clock is moved past that.
+// changed is in the new zone (decision 127). The zone is read at most once a second, so the clock is moved past that.
 describe('a change of time zone reaches the dates at once', () => {
   const iso = '2026-10-01T10:00:00Z';
   const savedTZ = process.env.TZ;

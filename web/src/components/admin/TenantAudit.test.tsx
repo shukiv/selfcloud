@@ -31,7 +31,7 @@ describe("tenant audit table", () => {
     );
     renderAudit();
     const region = await screen.findByRole("region", { name: "Audit log" });
-    // The first render is the phone layout until antd knows the breakpoint, and the data arrives later: the When header is awaited (MED-1).
+    // The first render is the phone layout until antd knows the breakpoint, and the data arrives later: the When header is awaited.
     const when = (await waitFor(() => {
       const th = region.querySelector('th[aria-sort="descending"]');
       if (th === null) throw new Error("the When header is not drawn yet");

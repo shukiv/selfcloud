@@ -105,7 +105,7 @@ describe("the people list", () => {
     expect(within(menu).getByText("Remove…")).toBeTruthy();
   });
 
-  // design-tl 3.2 (M1): the "Open" text button goes; the row opens the person, by a click or by Enter on the focused row.
+  // the "Open" text button goes; the row opens the person, by a click or by Enter on the focused row.
   it("a row opens the person's details on Enter, and no row carries an Open button", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
@@ -131,7 +131,7 @@ describe("the people list", () => {
     expect(line.style.color).toMatch(/^rgba?\(/);
   });
 
-  // design-tl 2.2 and the owner's rule: the signed-in person's own row reads "You".
+  // the owner's rule: the signed-in person's own row reads "You".
   it("the signed-in person's own row reads You", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_owen", "active", "owner"), person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
@@ -140,7 +140,7 @@ describe("the people list", () => {
     expect(within(screen.getByRole("row", { name: "Name usr_a" })).queryByText("You")).toBeNull();
   });
 
-  // design-tl 4: below md the role and the status are the name's second line, and the actions are the ⋮ menu alone.
+  // below md the role and the status are the name's second line, and the actions are the ⋮ menu alone.
   it("on a phone, the role and the status are the name's second line, and the row has its ⋮ button alone", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);

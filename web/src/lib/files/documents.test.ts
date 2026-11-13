@@ -31,7 +31,7 @@ describe("New documents (decision 91)", () => {
   });
 
   // The click opens the new-document page in a new tab, from the click itself, and makes nothing: the page makes the file
-  // (decision 102, round 2 R5).
+  // (decision 102).
   // The menu offers the kinds only while office editing is on, and in a place that takes new files with a node to hold them.
   it("offers the three kinds only with office editing on, in a place that takes new files", () => {
     expect(documentKinds(writable, true)).toEqual(["docx", "xlsx", "pptx", "odg", "txt"]);
@@ -54,7 +54,7 @@ describe("New documents (decision 91)", () => {
   });
 });
 
-describe("the place a New document goes in must be the page's own (race, round 2)", () => {
+describe("the place a New document goes in must be the page's own (race)", () => {
   const shown = (folder: string, dirID: string | null): NewPlace => ({
     where: { folder, dirID, path: "/" },
     canFolder: true,
@@ -99,7 +99,7 @@ describe("the place a New document goes in must be the page's own (race, round 2
   });
 });
 
-describe("the New menu offers documents to an editor or a manager only (decision 91, round 2)", () => {
+describe("the New menu offers documents to an editor or a manager only (decision 91)", () => {
   const hereWith = (role: string, dirRole: string | null) =>
     ({
       folder: "fld_tttttttt",
@@ -136,7 +136,7 @@ describe("the New menu offers documents to an editor or a manager only (decision
   });
 });
 
-describe("no documents while an installation admin is signed in as a user (decision 91, round 2)", () => {
+describe("no documents while an installation admin is signed in as a user (decision 91)", () => {
   it("the menu offers none while impersonating, even in a folder the person edits", () => {
     expect(documentKinds(writable, true, true)).toEqual([]);
     expect(documentKinds(writable, true, false)).toEqual(["docx", "xlsx", "pptx", "odg", "txt"]);

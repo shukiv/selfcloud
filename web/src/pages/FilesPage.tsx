@@ -158,7 +158,7 @@ const MENU_FIT = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as const
 const MENU_SCROLL = { maxBlockSize: "calc(100dvh - 16px)", overflowY: "auto" } as const;
 // antd offsets a menu 4 px from its anchor after it has been fitted to the window; 4 px of padding in the popup keeps the offset menu inside.
 const MENU_POPUP = { paddingBlock: 4 } as const;
-// NEW_MENU_STYLE is the New menu's width: 400 px at most, 320 px at least, and the screen less a 16 px gutter each side (design-nt2 section 3).
+// NEW_MENU_STYLE is the New menu's width: 400 px at most, 320 px at least, and the screen less a 16 px gutter each side (decision 108 section 3).
 const NEW_MENU_STYLE = { ...MENU_SCROLL, width: "min(400px, calc(100vw - 32px))", minWidth: 320, boxSizing: "border-box" } as const;
 // MAC_KEYS says whether the shortcuts a menu shows are the Mac's (the command sign) or the Windows and Linux ones (Ctrl).
 const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
@@ -696,7 +696,7 @@ export default function FilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
-  // A visit to a folder that was read before keeps only the first page of what was read (fu8 round 3, decision 94). The read a
+  // A visit to a folder that was read before keeps only the first page of what was read (decision 94). The read a
   // revisit starts then costs one request, as a first visit's first page does, and the other pages are read as the person asks
   // for them. A layout effect runs before the browser paints the new address, so no paint shows the untrimmed revisit.
   useLayoutEffect(() => {

@@ -207,7 +207,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const foldersInput = useRef<HTMLInputElement | null>(null);
   const pickWhere = useRef<UploadWhere | null>(null);
   const [folderWhere, setFolderWhere] = useState<UploadWhere | null>(null);
-  // The place the sidebar's New acts on: on a files page, only the place the page shows (placeForRoute, round 3); null
+  // The place the sidebar's New acts on: on a files page, only the place the page shows (placeForRoute); null
   // leaves the button disabled, so an upload or a New folder never goes to a place that is not on screen.
   const newWhere = admin ? null : newPlaceFor(onFiles, placeForRoute(shownPlace, location.pathname), personal?.id ?? null);
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
@@ -540,11 +540,11 @@ export default function Shell({ children }: { children: ReactNode }) {
         id={accountEmailId}
         className="account-menu-who"
         // The address is left to right in a right-to-left page, and the box that is cut must say so: its overflow runs to the end
-        // side of the address. Without it, Hebrew cuts the start (round 3, M4).
+        // side of the address. Without it, Hebrew cuts the start.
         dir="ltr"
         title={email}
         // The box is as wide as its address, up to the header's width, so a short address sits at the header's start edge in both
-        // directions (round 4, L2). A long one fills the header and is cut at its end.
+        // directions. A long one fills the header and is cut at its end.
         style={{ display: "block", width: "fit-content", maxInlineSize: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inks.email, fontSize: 14 }}
       >
         <bdi>{email}</bdi>
@@ -598,7 +598,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       </div>
     )}
       {/* While the banner shows, the shell fills the window below it, and its content column scrolls inside it, so the page
-          itself never scrolls (F9). Without the banner the page scrolls as before. */}
+          itself never scrolls. Without the banner the page scrolls as before. */}
       <Layout
         style={
           impersonating

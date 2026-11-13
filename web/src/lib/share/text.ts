@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The share page's own strings (decision 82, round 4). They are a catalogue of their own, loaded with the share page, so the main
+// The share page's own strings (decision 82). They are a catalogue of their own, loaded with the share page, so the main
 // catalogues (which every page loads) do not grow with them: the budget of the language chunks is close. The keys keep their names
 // (shareTarget.*), and they are read with the main translator once loaded. English is loaded with each language, as the fallback.
 // ShareHold shows no text, so it does not load this catalogue.

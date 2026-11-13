@@ -128,7 +128,7 @@ export interface ListAction {
   // pressed is the state of a toggle-like action, such as a group's Members while that group is open: the inline icon says it
   // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (the design, not in this repository, section 7).
   pressed?: boolean;
-  // href makes the action a real link (round 2 of tl3): inline it is an anchor the browser follows, so a middle click opens a
+  // href makes the action a real link : inline it is an anchor the browser follows, so a middle click opens a
   // new tab and Copy link works; in the ⋮ menu it is the menu's link, and a plain click runs run.
   href?: string;
 }

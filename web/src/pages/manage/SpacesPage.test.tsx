@@ -68,7 +68,7 @@ function answerFor(del: (c: Call) => { status: number; body?: unknown } | null) 
   };
 }
 
-// openDelete opens the space's delete confirmation. Delete is the fourth action, so it is in the row's ⋮ menu (design-tl 2.2).
+// openDelete opens the space's delete confirmation. Delete is the fourth action, so it is in the row's ⋮ menu.
 async function openDelete() {
   fireEvent.click(await screen.findByRole("button", { name: "More actions for Plans" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Delete: Plans" }));
@@ -94,7 +94,7 @@ describe("team spaces", () => {
     expect(screen.queryByText(/No team spaces yet/)).toBeNull();
   });
 
-  // design-tl 3.2 (M4): Share, Settings and Rename are inline icons on a desktop; the fourth action, Delete, is in the ⋮ menu.
+  // Share, Settings and Rename are inline icons on a desktop; the fourth action, Delete, is in the ⋮ menu.
   it("a space has three icons inline on a desktop, and Delete in its ⋮ menu", async () => {
     stubFetch(answerFor(() => null));
     renderPage();
@@ -107,7 +107,7 @@ describe("team spaces", () => {
     ]);
   });
 
-  // design-tl 4: below md the flags are the name's second line, and the actions are the ⋮ menu alone.
+  // below md the flags are the name's second line, and the actions are the ⋮ menu alone.
   it("on a phone the flags are the name's second line, and the actions are one ⋮ menu", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);
@@ -119,7 +119,7 @@ describe("team spaces", () => {
     expect(headers).not.toContain("Access");
   });
 
-  // The Access column shows each flag the space has as a Tag on a desktop (design-tl 3.2, M4).
+  // The Access column shows each flag the space has as a Tag on a desktop.
   it("a space's flags are Tags in its Access cell on a desktop", async () => {
     stubFetch((c) => (c.url.startsWith("/api/v1/accounts/acc_1/folders") ? { status: 200, body: { items: [{ ...SPACE, members_only: true }] } } : fail(404, "not_found")));
     renderPage();
@@ -127,7 +127,7 @@ describe("team spaces", () => {
     expect(within(row).getByText("Members only").className).toContain("ant-tag");
   });
 
-  // Below md the flags are the name's second line, in muted text (design-tl 4).
+  // Below md the flags are the name's second line, in muted text.
   it("on a phone the flags are the name's second line", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);

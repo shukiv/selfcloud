@@ -39,7 +39,7 @@ function renderPage() {
   return qc;
 }
 
-// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+// The desktop columns are the default here; a test of the phone layout asks for it.
 let restoreView: () => void = () => undefined;
 beforeEach(() => {
   restoreView = desktopViewport();
@@ -76,7 +76,7 @@ describe("manage storage", () => {
     renderPage();
     const people = await screen.findByRole("region", { name: "People, by use" });
     // An empty list has no row icons, so no Actions column: it comes with the first row's Change icon.
-    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited.
     await waitFor(() => expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]));
     expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
     // Round 2 (M3): each empty table says what will show there (the admin catalogue, loaded on demand).
@@ -129,7 +129,7 @@ describe("manage storage", () => {
     return fail(404, "not_found");
   };
 
-  it("the people table's Load more appends the next page of people (round 2, M5)", async () => {
+  it("the people table's Load more appends the next page of people", async () => {
     stubFetch((c) => pagedPeople(c, { status: 200, body: { ...ACCOUNT_STORAGE, users: [CY], users_next_cursor: null } }));
     renderPage();
     const people = await screen.findByRole("region", { name: "People, by use" });
@@ -139,7 +139,7 @@ describe("manage storage", () => {
     expect(within(people).getByText("Ada")).toBeTruthy();
   });
 
-  it("a failed next page of people keeps the first one and shows the error (round 2, M5)", async () => {
+  it("a failed next page of people keeps the first one and shows the error", async () => {
     stubFetch((c) => pagedPeople(c, fail(403, "forbidden")));
     renderPage();
     const people = await screen.findByRole("region", { name: "People, by use" });
@@ -150,7 +150,7 @@ describe("manage storage", () => {
   });
 
   // Round 2 (M7): a person's Change icon opens the limit dialog for that person.
-  it("a person's Change icon opens the limit dialog for that person (round 2, M7)", async () => {
+  it("a person's Change icon opens the limit dialog for that person", async () => {
     stubFetch((c) => {
       if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
       if (c.url.includes("/storage")) return { status: 200, body: ACCOUNT_STORAGE };

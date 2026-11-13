@@ -756,7 +756,7 @@ describe("the sidebar's New (decision 66)", () => {
     );
   }
 
-  it("a New place stored for folder A does not feed the sidebar's New while folder B's directory is shown (round 3)", async () => {
+  it("a New place stored for folder A does not feed the sidebar's New while folder B's directory is shown", async () => {
     await wideScreen(async () => {
       signIn("member");
       folders.set([

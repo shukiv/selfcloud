@@ -266,7 +266,7 @@ export interface ServerLimits {
 }
 
 // LIMITS_STALE_MS is how long the upload limits are used without a read. The boot read seeds them (seedLimits), so the files page
-// does not read /info on each mount; after five minutes they are read again, since the Settings page can change them (LOW-1).
+// does not read /info on each mount; after five minutes they are read again, since the Settings page can change them.
 export const LIMITS_STALE_MS = 5 * 60_000;
 const LIMITS_KEY = ['installation', 'upload-limits'];
 

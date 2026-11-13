@@ -1078,7 +1078,7 @@ async function main() {
     }
     // Slice fu3b (decision 77): the list's first frames and place changes, sampled frame by frame in its own browser.
     if (!only || onlySet.has('fu3b')) await fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER });
-    // Slice oe1 (decision 102, round 2 R3): a finger opens an office file in the same tab, full page, and Close goes back.
+    // Slice oe1 (decision 102): a finger opens an office file in the same tab, full page, and Close goes back.
     if (!only || onlySet.has('oe1')) await oe1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
     // Slice nt2 (decision 108): the template gallery at a phone's width, a reload, a tap on a built-in and the file it makes.
     // Slice nt2 (decision 108): the New menu at a desktop width, Blank opens its file, and the chord Alt+C then F makes a folder.
@@ -1190,7 +1190,7 @@ async function main() {
     await signOut(page);
     await signIn(page, ADMIN);
     await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
-    // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
+    // Slice tl1: the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
     await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
     // Slice se3 (decision 143): the Settings page, on the admin's session.
     await se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused });

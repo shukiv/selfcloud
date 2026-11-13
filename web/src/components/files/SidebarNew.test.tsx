@@ -232,7 +232,7 @@ describe("the sidebar's New button", () => {
 
 // Round 4, L4: Escape in the New menu. A parent's keydown stands for the phone drawer's panel, which closes on Escape: while the menu is
 // open the drawer must not see the key (the menu takes it and closes), and with the menu closed the key reaches the parent as before.
-describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
+describe("Escape in the sidebar's New menu (decision 95)", () => {
   beforeEach(async () => {
     await setLang("en");
   });
@@ -274,7 +274,7 @@ describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
   });
 });
 
-// The menu's groups, the submenus, the chord and the hints (design-nt2-phase1: the menu and shortcut rules, W1).
+// The menu's groups, the submenus, the chord and the hints (decision 108: the menu shortcut rules).
 describe("the New menu's submenus, template link, and chord", () => {
   beforeEach(async () => {
     await setLang("en");
@@ -332,7 +332,7 @@ describe("the New menu's submenus, template link, and chord", () => {
     expect(folder.querySelector(".menu-hint")).toBeNull();
   });
 
-  // Width and rows (design-nt2 section 3): min(400px, 100vw - 32px), at least 320 px; rows 40 px, 44 px on a finger.
+  // Width and rows (decision 108 section 3): min(400px, 100vw - 32px), at least 320 px; rows 40 px, 44 px on a finger.
   it("the menu is min(400px, 100vw - 32px) wide, at least 320 px", async () => {
     renderNew(myFilesPlace("fld_mine"));
     fireEvent.click(button());

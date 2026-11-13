@@ -665,7 +665,7 @@ describe("the files preset's actions column", () => {
   });
 });
 
-// A preset list: Listing with columns from its caller (design-tl 2.1). It is the same component as My files, with the same
+// A preset list: Listing with columns from its caller. It is the same component as My files, with the same
 // frame: the region, antd's table at the middle size, the header cell, the row end and the band variables, under the shared
 // CSS group (.files-list, .item-list). Its tests set the viewport themselves: the default mock is narrow.
 type Row = { id: string; name: string; email: string; status: string; when: string };
@@ -951,7 +951,7 @@ describe("Listing with columns: a preset list in the one table", () => {
   });
 });
 
-// design-tl 2.2 and decision 114: a preset action can be the open one of its list (Groups' Members for the open group). Its icon
+// decision 114: a preset action can be the open one of its list (Groups' Members for the open group). Its icon
 // button says so with aria-pressed; an action that is not pressed has no aria-pressed at all.
 describe("a preset action's pressed state", () => {
   afterEach(() => vi.unstubAllGlobals());

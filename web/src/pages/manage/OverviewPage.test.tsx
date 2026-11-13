@@ -18,7 +18,7 @@ function signedAs(): Session {
   } as unknown as Session;
 }
 
-// One activity row, for the table's rows (round 2, M8).
+// One activity row, for the table's rows.
 const ACTIVITY = { id: "aud_1", action: "folder.create", actor: { kind: "user", id: "usr_owen" }, target: "fld_1", details: {}, time: "2026-10-01T00:00:00Z" };
 
 const USAGE ={ quota_bytes: null, used_bytes: 0, reserved_bytes: 0, available_bytes: null, files: 0, folders: 0, users_active: 1, users_pending: 0 };
@@ -31,7 +31,7 @@ function renderPage() {
   );
 }
 
-// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+// The desktop columns are the default here; a test of the phone layout asks for it.
 let restoreView: () => void = () => undefined;
 beforeEach(() => {
   restoreView = desktopViewport();
@@ -79,7 +79,7 @@ describe("the owner overview", () => {
   });
 
   // Round 2 (M8): an activity row is named by its sentence and shows its action code.
-  it("each activity row shows its action code, and is named by its sentence (round 2, M8)", async () => {
+  it("each activity row shows its action code, and is named by its sentence", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };
       if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
@@ -100,7 +100,7 @@ describe("the owner overview", () => {
   });
 
   // Round 2 (M4): the overview keeps its ten rows, as the base did; the design's "five" was wrong (decision 122).
-  it("the overview asks the server for ten activity rows (round 2, M4)", async () => {
+  it("the overview asks the server for ten activity rows", async () => {
     const { calls } = stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };
       if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
@@ -123,7 +123,7 @@ describe("the owner overview", () => {
     });
     renderPage();
     const region = await screen.findByRole("region", { name: "Recent activity" });
-    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited.
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing has happened yet");
     // Round 2 (M3): the overview's empty activity says what will show here (the admin catalogue, loaded on demand).

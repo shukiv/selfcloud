@@ -44,7 +44,7 @@ export function documentKinds(p: NewPlace | null, officeOn: boolean, impersonati
 
 // placeForRoute is the place the New actions may use on the page at pathname, or null. FilesPage writes newPlace in an effect
 // after it renders, so the stored place can still be the one from the folder or directory before (the race behind decision
-// 91's round 2). A place is used only when it is the one the page at pathname shows:
+// 91's). A place is used only when it is the one the page at pathname shows:
 //   /files/{fld}         the folder's root: the folder and no directory;
 //   /files/{fld}/{nod}   that directory of the folder;
 //   /n/{nod}             the place whose directory (or folder root node) is that node, so the entries show only where the node is

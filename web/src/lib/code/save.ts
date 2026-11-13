@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's reads and writes of a file's bytes (design-ce 4.1 to 4.3). The version of a file is the etag in its node's
+// The code editor's reads and writes of a file's bytes (decision 124 to 4.3). The version of a file is the etag in its node's
 // JSON answer (decision 135), never a response header. The open is a GET of the whole file with If-Match set to that etag; the
 // save is a PUT with If-Match set to the etag of the last answer and the stored type sent unchanged. Neither goes through
 // api(), which parses JSON and does not give the response's headers, and a save's body is bytes, not JSON.
@@ -15,8 +15,8 @@ import { EDIT_LIMIT } from "./edit";
 // SaveFailure is why a save did not happen: a stale ETag (conflict), a live office lock (locked), a role that changed
 // (forbidden), a file that was deleted (gone), a draft that is not UTF-8 text (notText), a draft over the limit (tooLarge), and
 // anything else, including no answer at all (failed).
-// signedOut is a sign-in that has ended (401): the draft stays and the page offers to sign in again (MED-4). storageFull is a store
-// with no room left (507, LOW-3). badName and folderGone are a copy's own refusals (400 and 404, LOW-2); see keepCopy.
+// signedOut is a sign-in that has ended (401): the draft stays and the page offers to sign in again. storageFull is a store
+// with no room left (507). badName and folderGone are a copy's own refusals (400 404); see keepCopy.
 export type SaveFailure =
   | "conflict"
   | "locked"
@@ -32,7 +32,7 @@ export type SaveFailure =
 
 export type SaveResult = { ok: true; node: Node } | { ok: false; why: SaveFailure };
 
-// SAVE_TIMEOUT_MS is how long a save may wait for its answer before it is given up as failed (LOW-3).
+// SAVE_TIMEOUT_MS is how long a save may wait for its answer before it is given up as failed.
 export const SAVE_TIMEOUT_MS = 60_000;
 
 const FAILURE_BY_STATUS: Readonly<Record<number, SaveFailure>> = {
@@ -104,7 +104,7 @@ export async function readWhole(id: string, etag: string): Promise<Uint8Array> {
 
 // saveText writes a draft's bytes over the file read with etag. The size is checked before anything is sent: a draft over the
 // limit is refused here, and the server would refuse it too. The stored type is sent exactly as the file has it, so a save never
-// changes it (design-ce 4.2). The answer is the node, whose ETag is the next If-Match.
+// changes it (decision 124). The answer is the node, whose ETag is the next If-Match.
 export async function saveText(nod: string, etag: string, storedType: string, bytes: Uint8Array): Promise<SaveResult> {
   if (bytes.length > EDIT_LIMIT) return { ok: false, why: "tooLarge" };
   if (!quoted(etag)) return { ok: false, why: "failed" };
@@ -115,7 +115,7 @@ export async function saveText(nod: string, etag: string, storedType: string, by
   };
   const csrf = currentCsrf();
   if (csrf) headers["X-CSRF-Token"] = csrf;
-  // A save with no answer within SAVE_TIMEOUT_MS is aborted and reads as failed, so the page offers a retry (LOW-3). The timer
+  // A save with no answer within SAVE_TIMEOUT_MS is aborted and reads as failed, so the page offers a retry. The timer
   // runs until the answer's body is read, since a body can stall too.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SAVE_TIMEOUT_MS);

@@ -250,7 +250,7 @@ describe("the editor page", () => {
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
     sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: true } });
     expect(screen.getByText("Saved")).toBeTruthy();
-    // A save that failed is said so; the next change is unsaved again (decision 102, round 2 R4).
+    // A save that failed is said so; the next change is unsaved again (decision 102).
     sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
     sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: false } });
     expect(screen.getByText("Save failed")).toBeTruthy();
@@ -270,7 +270,7 @@ describe("the editor page", () => {
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
 
-  // A GET never makes a file (decision 102, round 2 R5): the old new-document address makes no file and opens no editor.
+  // A GET never makes a file (decision 102): the old new-document address makes no file and opens no editor.
   it("the address of the old new-document page makes no file and opens no editor", async () => {
     answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
     render("/edit/new?kind=xlsx&parent=nod_root&from=%2Ffiles%2Ffld_b&tab=1");
@@ -637,7 +637,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(announceMock).toHaveBeenCalledWith("nod_c2", "fld_b", "nod_dir"));
   });
 
-  // ef1 round 2 (decision 107): the window of a Save As is bounded in time, ends with its answer or a rename or a new node,
+  // ef1 (decision 107): the window of a Save As is bounded in time, ends with its answer or a rename or a new node,
   // is closed for one copy only, and a Save As cannot start while another is pending. A plain save's answer names nothing.
   it("a Save As window ends a minute after the request: an answer after that binds nothing", async () => {
     nodesMock.children = [COPY];
@@ -660,7 +660,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
       from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
       await flush();
       expect(window.location.pathname).toBe("/edit/nod_a1");
-      // The request was sent, so the timeout is a lost copy (round 4), with its own note (round 5): it says the Save As did not finish.
+      // The request was sent, so the timeout is a lost copy, with its own note: it says the Save As did not finish.
       expect(screen.getByText(/did not finish in time/)).toBeTruthy();
     } finally {
       vi.useRealTimers();
@@ -733,7 +733,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(false);
   });
 
-  // A change of node (the address moves to another file) ends a pending window and blocks a late bind (decision 107, round 2).
+  // A change of node (the address moves to another file) ends a pending window and blocks a late bind (decision 107).
   it("a change of node while a Save As is pending ends its window, and a late answer does not move the page", async () => {
     nodesMock.children = [COPY];
     const navRef: { go: ((to: string) => void) | null } = { go: null };
@@ -779,7 +779,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
   const COPY_NOT_SHOWN = "The copy was saved, but it is not shown here. Open its folder to find it.";
   const REOPEN = "The editor could not renew its session, so the latest changes may not be saved. Reopen the file.";
 
-  it("round 3: a bind that reads after a rename and a new Save As cannot end the new window's timer or busy flag", async () => {
+  it(": a bind that reads after a rename and a new Save As cannot end the new window's timer or busy flag", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -820,7 +820,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     }
   });
 
-  it("round 3: a bind whose listing fails says the copy is not shown, and the window ends", async () => {
+  it(": a bind whose listing fails says the copy is not shown, and the window ends", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -832,7 +832,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("round 4: after a copy is not shown, a renewal mints nothing for the original, and the copy note stays", async () => {
+  it(": after a copy is not shown, a renewal mints nothing for the original, and the copy note stays", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)", true);
@@ -846,7 +846,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(screen.queryByText(REOPEN)).toBeNull();
   });
 
-  it("round 3: a file in a folder's root is listed in its own parent, which is not null, for the request and the bind", async () => {
+  it(": a file in a folder's root is listed in its own parent, which is not null, for the request and the bind", async () => {
     nodesMock.byId.set("nod_a1", { ...NODE, name: "letter.docx", parent_id: "nod_root" });
     nodesMock.children = [COPY];
     await openEditor();
@@ -857,7 +857,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(nodesMock.listed).toEqual(["nod_root", "nod_root"]);
   });
 
-  it("round 3: an answer that names a file before the request is sent does not consume the window", async () => {
+  it(": an answer that names a file before the request is sent does not consume the window", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     nodesMock.children = [];
@@ -882,7 +882,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("round 3: five titles while one check is in flight start one read at a time, and one re-check", async () => {
+  it(": five titles while one check is in flight start one read at a time, and one re-check", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -906,7 +906,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
 
   // Round 4 (decision 107): the newest title is always checked; a timed-out request leaves the copy note and no renewals;
   // a title checks against the window it belongs to.
-  it("round 4: A, B, A queued behind an A check ends with a check of the last A", async () => {
+  it(": A, B, A queued behind an A check ends with a check of the last A", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -931,7 +931,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("round 4: a window that times out after its request was sent leaves the timed-out note, and a renewal then mints nothing", async () => {
+  it(": a window that times out after its request was sent leaves the timed-out note, and a renewal then mints nothing", async () => {
     nodesMock.children = [];
     await openEditor();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -958,7 +958,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     }
   });
 
-  it("round 4: a rename during a Save As does not stop renewals of the file the editor shows", async () => {
+  it(": a rename during a Save As does not stop renewals of the file the editor shows", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -970,7 +970,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(officePosts()[before]?.[1]).toBe("/api/v1/nodes/nod_a1/office");
   });
 
-  it("round 4: a title of a new window is checked when the old window's check ends", async () => {
+  it(": a title of a new window is checked when the old window's check ends", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -1037,11 +1037,11 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     }
   }
 
-  it("round 5: a renewal in flight at the copy loss posts no token for the original", async () => {
+  it(": a renewal in flight at the copy loss posts no token for the original", async () => {
     await renewalInFlightAtLoss("ok");
   });
 
-  it("round 5: a renewal in flight at the copy loss, refused, keeps the timed-out note and does not show the reopen note", async () => {
+  it(": a renewal in flight at the copy loss, refused, keeps the timed-out note and does not show the reopen note", async () => {
     await renewalInFlightAtLoss("refused");
   });
 
@@ -1080,17 +1080,17 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     }
   }
 
-  it("round 6: an answer at 59.9 s whose read outlasts the window binds the copy, and never shows the timed-out note", async () => {
+  it(": an answer at 59.9 s whose read outlasts the window binds the copy, and never shows the timed-out note", async () => {
     await answerNearEnd(true);
     expect(window.location.pathname).toBe("/edit/nod_c2");
   });
 
-  it("round 6: an answer at 59.9 s naming a file that is not found shows the copy note, and never the timed-out note", async () => {
+  it(": an answer at 59.9 s naming a file that is not found shows the copy note, and never the timed-out note", async () => {
     await answerNearEnd(false);
     expect(screen.getByText(COPY_NOT_SHOWN)).toBeTruthy();
   });
 
-  it("round 6: a renewal in flight when the page moves to a copy posts no token for the original", async () => {
+  it(": a renewal in flight when the page moves to a copy posts no token for the original", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -1113,7 +1113,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(spy.mock.calls.filter((c) => String(c[0]).includes("Reset_Access_Token"))).toHaveLength(0);
   });
 
-  it("round 6: a window that ends while the folder is still listed says the copy did not start, and asks for no copy", async () => {
+  it(": a window that ends while the folder is still listed says the copy did not start, and asks for no copy", async () => {
     nodesMock.children = [];
     await openEditor();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

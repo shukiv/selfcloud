@@ -51,8 +51,8 @@ async function readUpTo(body: ReadableStream<Uint8Array>, n: number): Promise<Ui
 }
 
 // Code is a file's text as the viewer shows it, and how it shows. utf8 is false when the bytes are not valid UTF-8: the text
-// then has U+FFFD for each bad sequence, and the viewer says so (design-ce 2.3). bom says the file starts with a UTF-8 byte
-// order mark, which the text leaves out (design-ce 4.8).
+// then has U+FFFD for each bad sequence, and the viewer says so (decision 115). bom says the file starts with a UTF-8 byte
+// order mark, which the text leaves out (decision 130).
 export interface Code {
   text: string;
   viewer: Viewer;

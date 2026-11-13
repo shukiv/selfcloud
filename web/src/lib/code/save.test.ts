@@ -64,7 +64,7 @@ describe("saveText", () => {
     [400, "notText"],
     [413, "tooLarge"],
     [500, "failed"],
-    // A sign-in that has ended is not a failure to retry (MED-4); a full store has its own notice (LOW-3).
+    // A sign-in that has ended is not a failure to retry; a full store has its own notice.
     [401, "signedOut"],
     [507, "storageFull"],
   ])("maps a %i answer to %s", async (status, why) => {

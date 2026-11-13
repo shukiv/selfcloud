@@ -110,7 +110,7 @@ describe("keepCopy", () => {
     expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "failed", sent: true });
   });
 
-  it("names a copy in a folder two levels down, outermost folder first (LOW-1)", async () => {
+  it("names a copy in a folder two levels down, outermost folder first", async () => {
     const nodes: Record<string, unknown> = {
       nod_dir: { id: "nod_dir", folder_id: "fld_b", parent_id: "nod_root", name: "docs", kind: "dir", etag: '"d"' },
       nod_sub: { id: "nod_sub", folder_id: "fld_b", parent_id: "nod_dir", name: "inner", kind: "dir", etag: '"s"' },
@@ -130,7 +130,7 @@ describe("keepCopy", () => {
     expect(new URL(post![0] as string, "http://localhost").searchParams.get("path")).toBe("/docs/inner/a (2).json");
   });
 
-  it("names a copy the server refuses as a bad name, and one whose folder is gone, with their own reasons (LOW-2)", async () => {
+  it("names a copy the server refuses as a bad name, and one whose folder is gone, with their own reasons", async () => {
     fake(() => Response.json({ error: { code: "invalid_path", details: {} } }, { status: 400 }));
     expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "badName", sent: true });
     fake(() => Response.json({ error: { code: "not_found", details: {} } }, { status: 404 }));

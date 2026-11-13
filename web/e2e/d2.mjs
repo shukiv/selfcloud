@@ -555,7 +555,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await clickOn(page, '[data-testid="rail-toggle"]');
     await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]')`, 15000);
     const round = await page.evaluate(`(() => { const b = document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]'); const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) }; })()`);
-    check(round.label === 'New' && round.w === 44 && round.h === 44, `folded, the New button is a round 44 pixel button named New (${JSON.stringify(round)})`);
+    check(round.label === 'New' && round.w === 44 && round.h === 44, `folded, the New button is a pixel button named New (${JSON.stringify(round)})`);
     // The pointer comes from away from the button, so the enter is a real one: the Tooltip opens on it.
     await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 500, button: 'none', buttons: 0 });
     await sleep(200);

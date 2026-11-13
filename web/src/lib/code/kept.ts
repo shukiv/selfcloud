@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The unsaved text the editor keeps across a sign-in, for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133).
+// The unsaved text the editor keeps across a sign-in, for the same person (decision 133).
 // The text is kept in this browser tab only (sessionStorage), one entry per person and file, so it comes back when that person signs in
 // again and opens the file. Only the editor loads this module (the page's chunk); the purges and the sign-out channel are in unsaved.ts,
 // which the sign-in path loads. Every storage call is in try/catch: a store that throws or is full means the text is

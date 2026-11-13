@@ -51,7 +51,7 @@ beforeEach(() => {
   vi.stubGlobal("BroadcastChannel", FakeChannel);
 });
 
-describe("the wait page (decision 102, round 2 R5): it never makes a file", () => {
+describe("the wait page (decision 102): it never makes a file", () => {
   it("a key nobody started shows nothing to open, and creates nothing", async () => {
     render(`/edit/wait?k=${K}`);
     await screen.findByText("Nothing to open here");

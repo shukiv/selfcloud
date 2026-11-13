@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// LONG_LINE is the length past which a line turns wrapping off (design-ce 3.2): a minified file wrapped on a phone would be
+// LONG_LINE is the length past which a line turns wrapping off (decision 115): a minified file wrapped on a phone would be
 // thousands of rows to lay out.
 export const LONG_LINE = 2000;
 

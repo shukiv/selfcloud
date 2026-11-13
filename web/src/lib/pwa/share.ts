@@ -7,16 +7,16 @@
 
 // ANSWER_LIMIT is how long the page waits for the worker's answer before it takes that there is none. A worker that was asleep
 // wakes on the message, so the wait is short. An answer that comes after the limit is lost: the page has already taken that there
-// is none, and the worker has already let go of the files when it handed them over (decision 82, round 3, L4).
+// is none, and the worker has already let go of the files when it handed them over (decision 82).
 const ANSWER_LIMIT = 10_000;
 
 // PAGE_LIMIT is how long the page keeps its copy of a share's files after its last take of the share: sixty seconds (decision 82,
-// round 3, M1). A signed-in person who leaves the share page, by the sidebar or otherwise, and comes back later gets nothing.
+//). A signed-in person who leaves the share page, by the sidebar or otherwise, and comes back later gets nothing.
 const PAGE_LIMIT = 60 * 1000;
 
 // SIGNED_OUT_LIMIT is how long the page keeps the files of a share it took while signed out: five minutes. Signing in with an
 // emailed code takes a few minutes at most, and the page takes the share again after the sign-in, which then gives it PAGE_LIMIT.
-// A person who walks away at the sign-in page does not leave the files in the tab for good (decision 82, round 3, M1).
+// A person who walks away at the sign-in page does not leave the files in the tab for good (decision 82).
 const SIGNED_OUT_LIMIT = 5 * 60 * 1000;
 
 // taken keeps each id's answer, and the timer that forgets it, for the time-box. React runs an effect twice in development, and
@@ -83,14 +83,14 @@ export function dropShare(id: string): void {
   worker?.postMessage({ type: "SHARE_DROP", id });
 }
 
-// forgetShare drops the page's copy of one share's files, once they have gone to the upload queue (decision 82, round 2): a
+// forgetShare drops the page's copy of one share's files, once they have gone to the upload queue (decision 82): a
 // revisit of the address must not bring them back.
 export function forgetShare(id: string): void {
   forget(id);
 }
 
 // clearShares drops the page's copy of every share, and tells the worker to drop every share it still holds: at a sign-out, when
-// the person changes, and when the server ends the session (decision 82, round 2; round 3, L5).
+// the person changes, and when the server ends the session (decision 82).
 export function clearShares(): void {
   for (const id of [...taken.keys()]) forget(id);
   const worker = typeof navigator !== "undefined" ? navigator.serviceWorker?.controller : null;

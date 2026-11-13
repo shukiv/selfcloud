@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A share opened while signed out (decision 82, round 2): its files are taken into the page's memory at once, before the
+// A share opened while signed out (decision 82): its files are taken into the page's memory at once, before the
 // person is sent to sign in, because the worker may be stopped or the share may expire during a long sign-in.
 
 import { render, screen, waitFor } from "@testing-library/react";
@@ -29,7 +29,7 @@ describe("ShareHold", () => {
         </Routes>
       </MemoryRouter>,
     );
-    // The take is made as a signed-out take, so the page keeps the files for the five-minute time-box (decision 82, round 3, M1).
+    // The take is made as a signed-out take, so the page keeps the files for the five-minute time-box (decision 82).
     await waitFor(() => expect(takeShare).toHaveBeenCalledWith("h1", { signedOut: true }));
     expect((await screen.findByTestId("where")).textContent).toBe("/sign-in");
   });

@@ -181,7 +181,7 @@ describe("Preview", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a file that is not UTF-8 read-only, with a notice and a Download button (design-ce 2.3)", async () => {
+  it("shows a file that is not UTF-8 read-only, with a notice and a Download button (decision 115)", async () => {
     // Latin-1 "café" and a line break.
     vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]), { status: 206 })));
     render(<Preview items={[file("notes.txt", "text/plain", 5)]} index={0} onClose={() => {}} onIndex={() => {}} />);

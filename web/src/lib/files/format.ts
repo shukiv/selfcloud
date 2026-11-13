@@ -10,7 +10,7 @@ const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
 // change of language or zone asks for a different object at once. The keys are few: the interface's languages, the units and two digit counts.
 const formatters = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat>();
 // zoneNow is the browser's time zone. Reading it builds a formatter, which costs about what a cached one saves, so it is read at
-// most once a second: a date shown after the zone changed is in the new zone within that second (LOW-2).
+// most once a second: a date shown after the zone changed is in the new zone within that second.
 let zoneName = '';
 let zoneReadAt: number | null = null;
 function zoneNow(): string {

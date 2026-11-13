@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// CodeEditor is the code area of the editor page (design-ce 3.2, 3.4, decision 124): CodeMirror with the viewer's look, its
+// CodeEditor is the code area of the editor page (decision 115, 3.4, decision 124): CodeMirror with the viewer's look, its
 // language pack and its find panel, and the editing keys: undo and redo, and Ctrl or Cmd+S, which asks the page to save and
 // takes the key from the browser (the browser's save dialog does not open). Tab leaves the area: no indent key is bound, so a
 // keyboard user is not held in it (Ctrl or Cmd+] indents). The page owns the text's saved state; this only reports changes.
@@ -90,7 +90,7 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
             keymap.of([
               {
                 key: "Mod-s",
-                // The find panel's own keys run under its scope, so Ctrl+S typed there saves too (MED-1).
+                // The find panel's own keys run under its scope, so Ctrl+S typed there saves too.
                 scope: "editor search-panel",
                 run: () => {
                   now.current.onSave();

@@ -230,9 +230,9 @@ afterEach(() => {
   document.title = "";
 });
 
-// An office file opens in the editor, full page, in its own tab (decision 102, round 2 R3): a double click or Enter calls the
+// An office file opens in the editor, full page, in its own tab (decision 102): a double click or Enter calls the
 // open helper, which opens /edit/<node> with noopener; with the editor off, the preview opens as before.
-describe("an office file's open (decision 102, round 2 R3)", () => {
+describe("an office file's open (decision 102)", () => {
   const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   beforeEach(() => {
     place.role = "editor";

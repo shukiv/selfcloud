@@ -7,7 +7,7 @@ import { packOf, type Pack } from "./names";
 
 const file = (name: string, mime_type: string): Pick<Node, "kind" | "name" | "mime_type"> => ({ kind: "file", name, mime_type });
 
-// The extension table of design-ce 2.2: each name and the pack it gets.
+// The extension table of decision 115: each name and the pack it gets.
 const TABLE: Array<[string, Pack]> = [
   ["a.js", "javascript"],
   ["a.mjs", "javascript"],

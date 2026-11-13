@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor, full page, in its own tab (design-ce 3.2, 3.4, 4.2 to 4.6, decisions 124 and 130). The address is /edit/<node>, the
+// The code editor, full page, in its own tab (decision 115, 3.4, 4.2 to 4.6, decisions 124 and 130). The address is /edit/<node>, the
 // one the office editor uses; App sends a code file here and an office file to OfficeEditPage. The page reads the file's node (its
 // etag is the file's version, decision 135), then the whole content with If-Match set to that etag, shows it in CodeMirror, and
 // saves on an explicit save only: a button, or Ctrl or Cmd+S. A save is a PUT with If-Match set to the etag of the last answer, and
@@ -45,7 +45,7 @@ type OpenFailure = "notFound" | "forbidden" | "signedOut" | "failed";
 type SaveState = "saved" | "unsaved" | "saving" | "failed" | null;
 
 // Notice is a note in the page's notice area: a save that did not happen (its SaveFailure), a file that is not UTF-8, one too
-// large to edit, or one that is not text at all (binary: a NUL byte anywhere in the file, MED-2). signedOutKept is a sign-in that
+// large to edit, or one that is not text at all (binary: a NUL byte anywhere in the file). signedOutKept is a sign-in that
 // ended while this tab kept the unsaved text (decision 133); restored is the kept text coming back after a sign-in.
 type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | "binary" | "signedOutKept" | "restored" | null;
 
@@ -76,7 +76,7 @@ interface Conflict {
   bytes: Uint8Array;
   etag: string;
   noName: boolean;
-  // maybe says a save before this one got no answer: the server may have stored the draft already (decision 124, LOW-4).
+  // maybe says a save before this one got no answer: the server may have stored the draft already (decision 124).
   maybe: boolean;
 }
 
@@ -92,7 +92,7 @@ function failureOf(err: unknown): OpenFailure {
   if (!(err instanceof ApiError)) return "failed";
   if (err.status === 404) return "notFound";
   if (err.status === 403) return "forbidden";
-  // A sign-in that has ended (401) is not a failure to retry: the page offers to sign in again (MED-4).
+  // A sign-in that has ended (401) is not a failure to retry: the page offers to sign in again.
   if (err.status === 401) return "signedOut";
   return "failed";
 }
@@ -115,7 +115,7 @@ async function readVersion(nod: string, first: Node): Promise<{ node: Node; byte
 // NOD is the node in the address, as the API gives it.
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
-// fitsDraft says a text is kept across a sign-in only up to the editor's own gate, 2 MiB after encoding (design-ce 4.2, not in this repository; decision 133).
+// fitsDraft says a text is kept across a sign-in only up to the editor's own gate, 2 MiB after encoding (decision 133).
 function fitsDraft(text: string, bom: boolean, sep: string): boolean {
   return encodeDraft(text, bom, sep).length <= EDIT_LIMIT;
 }
@@ -148,10 +148,10 @@ export default function CodeEditPage() {
   const saved = useRef("");
   const saving = useRef(false);
   // openGen counts the opens. A save answers for the open it was sent in: an answer for a file the page has since left is not
-  // shown, and does not touch the new file's state (LOW-2).
+  // shown, and does not touch the new file's state.
   const openGen = useRef(0);
   // lostSave is set when a save got no answer, and cleared by a save that is answered: a later conflict then says the draft may already
-  // be on the server (decision 124, LOW-4).
+  // be on the server (decision 124).
   const lostSave = useRef(false);
   const keyRef = useRef(0);
   // The latest page and save, read by the editor's keys, which are bound once for the editor's text.
@@ -167,10 +167,10 @@ export default function CodeEditPage() {
     readyRef.current = null;
     handle.current = null;
     openUser.current = get(session)?.user.id ?? null;
-    // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
+    // The new file starts with no save in flight and no ETag, saved text or type of the last file.
     saving.current = false;
     saved.current = "";
-    // A new file is guarded again: a leave chosen for the last one does not carry over (MED-3).
+    // A new file is guarded again: a leave chosen for the last one does not carry over.
     leaving.current = false;
     lostSave.current = false;
     file.current = { etag: "", mime: "application/octet-stream" };
@@ -194,7 +194,7 @@ export default function CodeEditPage() {
         const got = await readVersion(nod, first);
         if (cancelled) return;
         const n = got.node;
-        // The editor has the whole file, so the sniff reads all of it: a NUL byte anywhere means it is not text (MED-2).
+        // The editor has the whole file, so the sniff reads all of it: a NUL byte anywhere means it is not text.
         if (sniffWhole(got.bytes) === "binary") {
           setPage({ s: "binary", name: n.name, node: n });
           setNotice("binary");
@@ -278,7 +278,7 @@ export default function CodeEditPage() {
 
   // keep writes the text into this tab's store for the person who opened the file, with the ETag a save of it is checked against
   // (decision 133). It says whether the store kept it: a text over the editor's gate, or one the store refuses, is not kept. A text that
-  // is not kept also drops the older draft for the file, so a stale text never comes back (MED-1).
+  // is not kept also drops the older draft for the file, so a stale text never comes back.
   const keep = (text: string): boolean => {
     const r = readyRef.current;
     const u = openUser.current;
@@ -292,8 +292,8 @@ export default function CodeEditPage() {
   };
 
   // signedOutNotice is the notice for a sign-in that ended while the text was unsaved: kept, when this tab kept the text, and the
-  // copy-first words otherwise (design-ce 4.3, not in this repository; decision 133). It keeps the editor's text as it is now, not the text a save sent: the
-  // person may have typed while the save ran, and that text is the one on the page (MED-2). The text it was sent with is only the
+  // copy-first words otherwise (decision 133). It keeps the editor's text as it is now, not the text a save sent: the
+  // person may have typed while the save ran, and that text is the one on the page. The text it was sent with is only the
   // fallback for a page with no editor.
   const signedOutNotice = (sent: string): "signedOutKept" | "signedOut" => {
     const cur = handle.current?.text() ?? sent;
@@ -363,7 +363,7 @@ export default function CodeEditPage() {
   saveRef.current = save;
 
   // answerOnce runs one of the dialog's two saves (overwrite, keep as a copy). A second click while one is in flight sends nothing, and
-  // the buttons show as busy until it is answered (MED-1).
+  // the buttons show as busy until it is answered.
   const answering = useRef(false);
   const [busy, setBusy] = useState(false);
   const answerOnce = async (run: () => Promise<void>) => {
@@ -399,7 +399,7 @@ export default function CodeEditPage() {
       await openConflict(c.text, c.bytes, gen);
       return;
     }
-    // A save that got no answer may still have reached the server, so the next conflict says so (MED-2).
+    // A save that got no answer may still have reached the server, so the next conflict says so.
     if (got.why === "failed") lostSave.current = true;
     setSaveState("failed");
     setNotice(got.why === "signedOut" ? signedOutNotice(c.text) : got.why);
@@ -452,7 +452,7 @@ export default function CodeEditPage() {
   const reload = async () => {
     const r = readyRef.current;
     if (r === null) return;
-    // An answer for a file the page has since left is not shown, as save's is (LOW-5).
+    // An answer for a file the page has since left is not shown, as save's is.
     const gen = openGen.current;
     setConflict(null);
     try {
@@ -493,7 +493,7 @@ export default function CodeEditPage() {
 
   // The unsaved guard (4.6): a link, Back or Close that would leave the page with unsaved text asks first. A move to the same address
   // is not a leave.
-  // leaving is set once the person has chosen to leave, so the page's own way out (a tab close, then back) is not asked again (MED-3).
+  // leaving is set once the person has chosen to leave, so the page's own way out (a tab close, then back) is not asked again.
   const leaving = useRef(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -502,9 +502,9 @@ export default function CodeEditPage() {
       (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
   );
   const blocked = blocker.state === "blocked" ? blocker : null;
-  // askClose is the guard for a Close that would end a script's tab with unsaved text (MED-3): the same modal as a link.
+  // askClose is the guard for a Close that would end a script's tab with unsaved text: the same modal as a link.
   const [askClose, setAskClose] = useState(false);
-  // askSignIn is the guard for Sign in with unsaved text (HIGH-1): the same modal, and Leave there ends the sign-in.
+  // askSignIn is the guard for Sign in with unsaved text: the same modal, and Leave there ends the sign-in.
   const [askSignIn, setAskSignIn] = useState(false);
 
   // A reload or a close of the tab with unsaved text asks first, through the browser's own prompt (4.6).
@@ -539,10 +539,10 @@ export default function CodeEditPage() {
     }
     leaveTab();
   };
-  // The guard's three answers, for a blocked link and for a Close that asked (MED-3). Leave sets leaving first, so the close and the
+  // The guard's three answers, for a blocked link and for a Close that asked. Leave sets leaving first, so the close and the
   // back that follows it are not asked again.
   // signInNow ends the sign-in and opens the sign-in page, as the app does on a 401 (lib/api.ts): the session is cleared, then the
-  // page is opened with replace. It runs only after the person chooses to leave, so the guard does not ask again (HIGH-1).
+  // page is opened with replace. It runs only after the person chooses to leave, so the guard does not ask again.
   const signInNow = () => {
     leaving.current = true;
     setAskSignIn(false);
@@ -551,7 +551,7 @@ export default function CodeEditPage() {
   };
   // askSignInFirst is the page's Sign in choice. Without unsaved text the sign-in goes at once. With unsaved text, this tab keeps the text
   // first (decision 133), and the sign-in goes at once when it does, since nothing is lost, text typed after the session ended included.
-  // Only a text this tab cannot keep (over the gate, or refused by the store) asks first, in the leave modal (decision 130, HIGH-1).
+  // Only a text this tab cannot keep (over the gate, or refused by the store) asks first, in the leave modal (decision 130).
   const askSignInFirst = () => {
     const cur = handle.current?.text();
     if (cur === undefined) {
@@ -573,7 +573,7 @@ export default function CodeEditPage() {
   const sessionEnded = () => {
     const cur = handle.current?.text();
     if (readyRef.current === null || closed || cur === undefined) return;
-    // A text back at the saved text has nothing unsaved to keep, so the draft kept before for the file goes too (LOW-7).
+    // A text back at the saved text has nothing unsaved to keep, so the draft kept before for the file goes too.
     if (cur === saved.current) {
       drop();
       return;
@@ -665,7 +665,7 @@ export default function CodeEditPage() {
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", background: "var(--ant-color-bg-container, #fff)" }}
     >
       <header style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 48, padding: "0 12px", borderBottom: "1px solid rgba(0,0,0,0.12)" }}>
-        {/* The router leaves the page, so the unsaved guard asks first, as it does for a link in the page (LOW-4). */}
+        {/* The router leaves the page, so the unsaved guard asks first, as it does for a link in the page. */}
         <a
           href={folderHref}
           onClick={(e) => {
@@ -879,8 +879,8 @@ export default function CodeEditPage() {
         </Button>
       );
     }
-    // The sign-in ended: a retry would fail the same way, so the choice is to sign in again (MED-4). The draft is kept, and the
-    // unsaved guard asks before the sign-in page is opened (HIGH-1).
+    // The sign-in ended: a retry would fail the same way, so the choice is to sign in again. The draft is kept, and the
+    // unsaved guard asks before the sign-in page is opened.
     if (n === "signedOut" || n === "signedOutKept") {
       return (
         <Button size="small" onClick={askSignInFirst}>

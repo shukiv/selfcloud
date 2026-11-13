@@ -63,7 +63,7 @@ export default function TenantAudit({ account }: { account: string }) {
 
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {/* Newest first, so the When column says so with aria-sort and no button (design-tl section 7). The event column is the
+      {/* Newest first, so the When column says so with aria-sort and no button. The event column is the
           sentence and its code, named Action as the filter above it is. */}
       {!firstFailed && q.data !== undefined && (
         <Listing

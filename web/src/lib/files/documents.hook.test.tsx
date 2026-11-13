@@ -45,7 +45,7 @@ function opened(spy: { mock: { calls: unknown[][] } }): string[] {
   return spy.mock.calls.map((c) => String(c[0]));
 }
 
-describe("a New document goes where the page shows, never to a stale place (race, round 2 R5)", () => {
+describe("a New document goes where the page shows, never to a stale place (race)", () => {
   beforeEach(() => {
     newPlace.set(null);
     vi.restoreAllMocks();
@@ -65,7 +65,7 @@ describe("a New document goes where the page shows, never to a stale place (race
   });
 });
 
-describe("the pick opens the new-document page for the directory shown (round 2 R5)", () => {
+describe("the pick opens the new-document page for the directory shown", () => {
   beforeEach(() => {
     newPlace.set(null);
     vi.restoreAllMocks();
@@ -92,7 +92,7 @@ describe("the pick opens the new-document page for the directory shown (round 2 
   });
 });
 
-describe("the opener refreshes the listing its own create changed (decision 102, round 2 R5 fix)", () => {
+describe("the opener refreshes the listing its own create changed (decision 102)", () => {
   beforeEach(() => {
     newPlace.set(null);
     vi.restoreAllMocks();
@@ -146,7 +146,7 @@ function mountPick() {
   render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>);
 }
 
-describe("the New document is not offered while an installation admin is signed in as a person (review, round 2)", () => {
+describe("the New document is not offered while an installation admin is signed in as a person", () => {
   beforeEach(() => {
     newPlace.set(null);
     vi.restoreAllMocks();
@@ -165,7 +165,7 @@ describe("the New document is not offered while an installation admin is signed 
   });
 });
 
-describe("a blocked new tab is said so, and makes no file (review, round 2)", () => {
+describe("a blocked new tab is said so, and makes no file", () => {
   beforeEach(() => {
     newPlace.set(null);
     vi.restoreAllMocks();

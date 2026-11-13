@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { isTextField } from "./files/keys";
 
-// The selection and the keys every list shares (design-tl section 2.4). Listing applies them to a preset list (one that
+// The selection and the keys every list shares. Listing applies them to a preset list (one that
 // passes its columns); My files keeps its own selection and keys in FilesPage for now, and passes them through as before.
 // Both hooks keep ids, not places: a re-sort or a new page cannot move the selection or the focus to another row.
 

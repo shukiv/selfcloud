@@ -182,7 +182,7 @@ export function Boot({ children }: { children: ReactNode }) {
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
       officeEdit.set(info !== null && featureOn(info.features, EDIT_FEATURE));
-      // The upload limits of this read seed the files page, which uses them while they are fresh (perf-1 3.2, LOW-1).
+      // The upload limits of this read seed the files page, which uses them while they are fresh.
       if (info?.limits) seedLimits(qc, info.limits);
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
@@ -289,7 +289,7 @@ export function Gate() {
     return <Public view={view} />;
   }
   // A share opened while signed out: its files are taken into the page's memory first, then the person signs in and the share
-  // page shows them (decision 82, round 2).
+  // page shows them (decision 82).
   if (!signedIn && view === "share") {
     return <ShareHold id={new URLSearchParams(search).get("id") ?? ""} to={signInURL(path + search)} />;
   }

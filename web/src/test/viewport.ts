@@ -16,7 +16,7 @@ export function setViewport(width: number): () => void {
   };
 }
 
-// DESKTOP is a window of 1200 pixels, PHONE one of 375 (design-tl section 4).
+// DESKTOP is a window of 1200 pixels, PHONE one of 375.
 export const DESKTOP = 1200;
 export const PHONE = 375;
 

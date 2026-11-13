@@ -81,7 +81,7 @@ export default function StoragePage() {
     // The row's first icon is its Download (decision 122: the rows are the one table, each carrying its file's ID).
     const id = files[Math.min(index, files.length - 1)].id;
     const tr = [...document.querySelectorAll<HTMLElement>("tbody tr[data-id]")].find((r) => r.dataset.id === id);
-    // On a phone the row's icons are in its ⋮ menu, so the row's first button is that menu's button (round 2, M1).
+    // On a phone the row's icons are in its ⋮ menu, so the row's first button is that menu's button.
     (tr?.querySelector<HTMLElement>(".row-acts button, .row-acts a") ?? tr?.querySelector<HTMLElement>("button"))?.focus();
   }, [files, loading]);
 

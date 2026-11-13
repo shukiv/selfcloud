@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { translateLint } from "./lint";
 
-// translateLint replaces the words of every problem the JSON parser reports with the one translated message (LOW-7). The place
+// translateLint replaces the words of every problem the JSON parser reports with the one translated message. The place
 // of each problem stays as the parser found it.
 describe("translateLint", () => {
   it("gives the translated message at the reported position, with no engine text", () => {

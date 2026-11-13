@@ -39,7 +39,7 @@ const ic = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
 // The raised face: the sidebar's white with its blue word, and a shadow that reads on the blue in light and in dark.
 const RAISED = "0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.28)";
 
-// The menu's width (design-nt2 section 3): 400 px at most, 320 px at least, and never wider than the screen less a 16 px gutter each side.
+// The menu's width (decision 108 section 3): 400 px at most, 320 px at least, and never wider than the screen less a 16 px gutter each side.
 const MENU_STYLE = { width: "min(400px, calc(100vw - 32px))", minWidth: 320, boxSizing: "border-box" } as const;
 
 // useNewChord reads the chord on the window, so it works with the menu closed (Alt+C, then a letter; newShortcut.ts). enabled is read
@@ -135,7 +135,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   const disabled = place === null;
   const reason = disabled ? failure || t("files.loading") : null;
   // The menu is controlled so Escape can close it here. In the phone drawer the drawer's panel takes Escape from the menu and closes
-  // the drawer, and the menu stayed open (decision 95, round 3). So while the menu is open, Escape is taken by the wrapper around the
+  // the drawer, and the menu stayed open (decision 95). So while the menu is open, Escape is taken by the wrapper around the
   // dropdown, which sits between the menu and the drawer: it closes the menu and returns focus to the button.
   const [open, setOpen] = useState(false);
   const newButton = useRef<HTMLButtonElement>(null);

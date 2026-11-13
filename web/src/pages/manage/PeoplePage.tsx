@@ -22,7 +22,7 @@ import { LOCK } from "../../lib/manage/locks";
 
 // People: the account's owners and members, invited by email. An owner changes a person's role or status and removes a
 // person here. The server answers every change; a refusal is shown by its code and reason. The list is the one Listing
-// (design-tl section 2): a row opens the person, and the row's ⋮ menu holds the changes.
+// a row opens the person, and the row's ⋮ menu holds the changes.
 function PeopleView() {
   const { t } = useT();
   const lang = useLang();
@@ -39,7 +39,7 @@ function PeopleView() {
   const once = useOncePer();
   const adminText = useAdminText();
   const { token } = antdTheme.useToken();
-  // The signed-in person's own row reads You (design-tl 2.2).
+  // The signed-in person's own row reads You.
   const me = useStore(session)?.user?.id;
 
   const q = useInfiniteQuery({

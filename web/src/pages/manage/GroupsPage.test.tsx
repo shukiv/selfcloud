@@ -67,7 +67,7 @@ describe("groups", () => {
     expect(screen.queryByText(/No groups yet/)).toBeNull();
   });
 
-  // design-tl 3.2 (M2): Members, Rename and Delete are the row's three icons, each with its tooltip and a name for a screen reader.
+  // Members, Rename and Delete are the row's three icons, each with its tooltip and a name for a screen reader.
   it("each group has its three icons inline on a desktop, named for the group", async () => {
     stubFetch((c) => (c.url.includes("/groups") && c.method === "GET" ? { status: 200, body: { items: [GROUP] } } : { status: 200, body: { items: [] } }));
     renderPage();
@@ -76,7 +76,7 @@ describe("groups", () => {
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Members: Finance", "Rename: Finance", "Delete: Finance"]);
   });
 
-  // design-tl 4: on a phone the three icons are the ⋮ menu, and the list keeps its one Name column.
+  // on a phone the three icons are the ⋮ menu, and the list keeps its one Name column.
   it("on a phone the group's actions are one ⋮ menu, with Members, Rename and Delete in it", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);
@@ -184,7 +184,7 @@ describe("the open group after a rename", () => {
     await waitFor(() => expect(document.getElementById("members-title")?.textContent).toBe("Accounts"));
   });
 
-  // design-tl 3.2 (M3): a group's members are a table too; with no member the table keeps its Name header, and the body says so.
+  // a group's members are a table too; with no member the table keeps its Name header, and the body says so.
   it("a group with no members keeps its table and header, and the body's title says there are none", async () => {
     stubFetch((c) => {
       if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };
@@ -214,7 +214,7 @@ describe("the open group after a rename", () => {
     expect(await within(region).findByRole("button", { name: /^Remove: / })).toBeTruthy();
   });
 
-  // design-tl 2.2 and decision 114: the open group's Members icon is pressed, so a screen reader says which group's members show.
+  // decision 114: the open group's Members icon is pressed, so a screen reader says which group's members show.
   // Only the open group is pressed; the others have no pressed state at all (review M1).
   const OTHER = { ...GROUP, id: "grp_2", name: "Sales" };
   const twoGroups = () =>

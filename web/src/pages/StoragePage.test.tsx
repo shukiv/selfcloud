@@ -250,7 +250,7 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     });
     renderPage();
     await screen.findByRole("link", { name: "One.bin" });
-    // Download is a link to the file's address (round 2, M2), with its tooltip.
+    // Download is a link to the file's address, with its tooltip.
     expect(screen.getByRole("link", { name: "Download: One.bin" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "One.bin" })).toBeNull());

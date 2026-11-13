@@ -18,7 +18,7 @@ describe("disabled icon button cursor (decision 71)", () => {
 
   // A busy row's icon is aria-disabled, not disabled, so it keeps the focus (decision 114). antd gives its hover background to a
   // text button that is not :disabled, so the aria-disabled icon is kept from the pointer as a disabled one is: it passes the
-  // pointer to its wrapper, the wrapper shows not-allowed, and the icon has the disabled colour (tl1 round 4, MED-2). The e2e
+  // pointer to its wrapper, the wrapper shows not-allowed, and the icon has the disabled colour. The e2e
   // reads the background under the pointer in Chrome.
   it("treats an aria-disabled icon button as a disabled one: the pointer to the wrapper, not-allowed, the disabled colour", () => {
     const blockOf = (selector: string) => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice tl1 (design-tl): the admin lists are tables. Checked on the signed-in admin's pages: the tenants list at 375 pixels
+// Slice tl1: the admin lists are tables. Checked on the signed-in admin's pages: the tenants list at 375 pixels
 // has no sideways scroll; the Tab key reaches a sortable header from the search box, and Enter there turns its aria-sort; on
 // the admins list a second admin's row has its Remove icon while the signed-in admin's own row has none; on a tenant's
 // people, a busy row keeps the focus on its pressed icon, which shows no hover disc under the pointer, and Remove asks first;
@@ -131,7 +131,7 @@ async function tenantPeopleChecks(h, { page, base, accountID, accountKey }) {
     await page.waitFor(`(() => { const b = ${rowButton(pat.display_name, resend)}; return !!b && (b.disabled || b.getAttribute('aria-disabled') === 'true'); })()`, 5000);
     const busyFocus = await focusNow(page);
     check(busyFocus === `BUTTON:${resend}`, `while the row is busy, the pressed Resend icon keeps the focus, disabled (${busyFocus})`);
-    // Under the pointer the busy icon looks disabled (round 4, MED-2): antd gives a text button that is not :disabled its hover
+    // Under the pointer the busy icon looks disabled: antd gives a text button that is not:disabled its hover
     // background, so an aria-disabled icon must be kept from it, and it shows the disabled colour and the not-allowed cursor.
     const busyHover = await hoverRead(page, rowButton(pat.display_name, resend));
     check(
@@ -205,7 +205,7 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
     );
     check(seen.title === 'No API keys yet' && seen.action === 'New key', `its body has the Empty, with its title (no full stop, as the mockup's) and New key (${seen.title}; ${seen.action})`);
 
-    // The empty block against the approved mockup's (Main.dc.html, the empty table; round 4, MED-1), in CSS pixels at 1280
+    // The empty block against the approved mockup's (Main.dc.html, the empty table), in CSS pixels at 1280
     // wide, each within 1 pixel: the picture 64 by 41; 14 from the picture to the title, 6 from the title to the description and
     // 16 from the description to the button; the button 36 high, padded 16 on each side with no border, its + 16 by 16 and 16
     // from its edge; the block 48 from the header row to the picture and 56 from the button to the block's end. The title is at

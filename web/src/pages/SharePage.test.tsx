@@ -19,7 +19,7 @@ vi.mock("../lib/pwa/share", () => ({
   forgetShare: (...args: unknown[]) => forgetShare(...args),
 }));
 
-// The page's own strings load in the background (decision 82, round 4). loadText calls the real loader unless a test says otherwise, so
+// The page's own strings load in the background (decision 82). loadText calls the real loader unless a test says otherwise, so
 // the English texts are there as they are in the app; a test can hold the load, or fail it.
 const loadText = vi.fn();
 vi.mock("../lib/share/text", async (importOriginal) => {
@@ -174,7 +174,7 @@ describe("SharePage", () => {
   });
 });
 
-// The three states of the page's own strings (decision 82, round 5, M1): loading, failed, and loaded again after Try again.
+// The three states of the page's own strings (decision 82): loading, failed, and loaded again after Try again.
 describe("the share page's own strings: loading, failing and Try again", () => {
   it("draws a status, and no raw key, until the strings are in", async () => {
     loadText.mockImplementationOnce(() => new Promise<void>(() => {}));

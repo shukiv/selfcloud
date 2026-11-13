@@ -146,7 +146,7 @@ function SpacesView() {
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
 
-  // The flags a space has, as Tags in its Access column (design-tl 3.2, M4); on a phone they are the name's second line.
+  // The flags a space has, as Tags in its Access column; on a phone they are the name's second line.
   const flagsOf = (s: Space): string[] =>
     [
       s.members_only ? t("spaces.flag.membersOnly") : "",

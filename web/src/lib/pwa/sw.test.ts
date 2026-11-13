@@ -635,7 +635,7 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).not.toContain("skipped");
   });
 
-  // Measured in headless Chrome (decision 82, round 2): the worker sees the Origin header, the other site's address for a
+  // Measured in headless Chrome (decision 82): the worker sees the Origin header, the other site's address for a
   // cross-site post, and the string "null" for a post from a page that sends no referrer. Sec-Fetch-* is not visible to it.
   it("refuses a post whose Origin is another web site, even when it sends no referrer", async () => {
     const w = load();
@@ -644,7 +644,7 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
-  // The share sheet's own Origin was not measured (decision 82, round 3, M3). Only a web origin of another site is a refusal: an
+  // The share sheet's own Origin was not measured (decision 82). Only a web origin of another site is a refusal: an
   // Android app's scheme, or any other scheme, is not, so a real share from a device is not refused by its Origin.
   it("accepts a post whose Origin is a non-web scheme such as an Android app, since only a web origin of another site is refused", async () => {
     const w = load();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The hand-over of a new document (decision 102, round 2 R5). The person's click makes a random key and opens the wait page
+// The hand-over of a new document (decision 102). The person's click makes a random key and opens the wait page
 // with that key alone. The opener makes the file, once, and hands the result over under the key: on a BroadcastChannel, and in
 // localStorage for a tab that loads after the message. The wait page only reads the hand-over; a GET never creates a file.
 import { safeFrom } from "./editor";

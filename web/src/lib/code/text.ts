@@ -2,7 +2,7 @@
 
 // The code viewer's own strings, in the seven languages (decision 115). They are TypeScript, not a JSON catalogue: they load
 // with the preview and the viewer, whose chunks are not named after a language, so check-dist does not count them against a
-// language's budget, and the main catalogues do not grow (design-ce 3.3). text.test.ts checks every language has every string.
+// language's budget, and the main catalogues do not grow (decision 130). text.test.ts checks every language has every string.
 import type { Lang } from "../i18n";
 
 export interface CodeText {
@@ -21,7 +21,7 @@ export interface CodeText {
   go: string;
   // The empty file's state.
   empty: string;
-  // The notice over a file that is not valid UTF-8 (design-ce 2.3). The character is the one shown for each bad sequence.
+  // The notice over a file that is not valid UTF-8 (decision 115). The character is the one shown for each bad sequence.
   notUtf8: string;
   // The editor page (decision 124): the save and wrap buttons' names, the save states, and the notices of a save that did not
   // happen. The page shows these words, never the server's.
@@ -60,12 +60,12 @@ export interface CodeText {
   problemOne: string;
   problemMany: string;
   mixedBreaks: string;
-  // A conflict after a save that got no answer: the draft may already be on the server (decision 124, LOW-4).
+  // A conflict after a save that got no answer: the draft may already be on the server (decision 124).
   maybeSaved: string;
-  // The review round 1 notices (decision 130): a sign-in that ended, its Sign in choice, a copy's name or folder refused, a full store.
+  // The review notices (decision 130): a sign-in that ended, its Sign in choice, a copy's name or folder refused, a full store.
   signedOut: string;
   signIn: string;
-  // The line under the signed-out notice: what a sign-in does to unsaved text (HIGH-1).
+  // The line under the signed-out notice: what a sign-in does to unsaved text.
   signedOutCopy: string;
   // The unsaved text kept across a sign-in for the same person (decision 133): the line under the signed-out notice when the text is
   // kept, the notice when the text comes back after a sign-in, and its Discard choice.
@@ -75,7 +75,7 @@ export interface CodeText {
   badName: string;
   folderGone: string;
   storageFull: string;
-  // The one message for a problem the JSON lint finds, in the editor's own words (LOW-7).
+  // The one message for a problem the JSON lint finds, in the editor's own words.
   lintInvalid: string;
 }
 

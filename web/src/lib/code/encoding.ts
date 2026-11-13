@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The read side of the code viewer's text rule (design-ce 2.3, decision 115). The stored type is never trusted on its own:
+// The read side of the code viewer's text rule (decision 115). The stored type is never trusted on its own:
 // the first bytes are sniffed, and a file the sniff calls binary never reaches CodeMirror. The write side (encoding a save,
 // the line breaks it keeps) comes with the editor.
 
@@ -18,7 +18,7 @@ export function sniff(head: Uint8Array): Sniff {
 }
 
 // sniffWhole is the same rule over all of a file's bytes. The editor reads the whole file, so it checks the whole file: a NUL
-// byte anywhere makes it binary, not only one in the first 8 KiB (MED-2).
+// byte anywhere makes it binary, not only one in the first 8 KiB.
 export function sniffWhole(all: Uint8Array): Sniff {
   if (all.length >= 2 && ((all[0] === 0xff && all[1] === 0xfe) || (all[0] === 0xfe && all[1] === 0xff))) return "utf16";
   return all.includes(0) ? "binary" : "text";
@@ -26,7 +26,7 @@ export function sniffWhole(all: Uint8Array): Sniff {
 
 // Decoded is the text the viewer shows. bom says the bytes start with a UTF-8 byte order mark: it is left out of the text
 // (CodeMirror would draw it as a placeholder on the first line) and kept as this flag, so the editor can write it back
-// (design-ce 4.8). utf8 is false when the bytes are not valid UTF-8: each bad sequence is then shown as U+FFFD, read-only,
+// (decision 130). utf8 is false when the bytes are not valid UTF-8: each bad sequence is then shown as U+FFFD, read-only,
 // with a notice, and nothing is written.
 export interface Decoded {
   text: string;

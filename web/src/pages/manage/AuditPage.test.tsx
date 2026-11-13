@@ -37,7 +37,7 @@ function renderPage() {
   return qc;
 }
 
-// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+// The desktop columns are the default here; a test of the phone layout asks for it.
 let restoreView: () => void = () => undefined;
 beforeEach(() => {
   restoreView = desktopViewport();
@@ -55,7 +55,7 @@ describe("the audit log is one table (decision 122)", () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Audit log" });
-    // The first render is the phone layout (antd's breakpoint is not known yet), so the desktop headers are awaited (MED-1).
+    // The first render is the phone layout (antd's breakpoint is not known yet), so the desktop headers are awaited.
     const when = (await waitFor(() => {
       const th = region.querySelector('th[aria-sort="descending"]');
       if (th === null) throw new Error("the When header is not drawn yet");
@@ -115,7 +115,7 @@ describe("the audit log", () => {
   });
 
   // Round 2 (M5): Load more appends the next page of the log; a failed next page keeps the first one, with the error.
-  it("Load more appends the next page of the log (round 2, M5)", async () => {
+  it("Load more appends the next page of the log", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/audit")) {
         return c.url.includes("c2") ? { status: 200, body: { items: [{ ...ENTRY, id: "aud_2", action: "user.create" }] } } : { status: 200, body: { items: [ENTRY], next_cursor: "c2" } };
@@ -130,7 +130,7 @@ describe("the audit log", () => {
     expect(within(region).getByText("folder.create")).toBeTruthy();
   });
 
-  it("a failed next page keeps the first one and shows the error (round 2, M5)", async () => {
+  it("a failed next page keeps the first one and shows the error", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/audit")) {
         return c.url.includes("c2") ? fail(403, "forbidden") : { status: 200, body: { items: [ENTRY], next_cursor: "c2" } };

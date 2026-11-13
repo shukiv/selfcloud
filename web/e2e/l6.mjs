@@ -18,7 +18,7 @@ async function key(page, { code, key: name, vk }) {
 
 // pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
 // OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
-// .ant-dropdown: it is its own .ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted (MED-7).
+// .ant-dropdown: it is its own.ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted.
 const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"], .ant-dropdown-menu-submenu-popup [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
 async function pickMenuItem(page, text) {
   const visible = `${OPEN_ITEMS}.filter((x) => x.textContent.trim() === ${q(text)})`;
@@ -83,7 +83,7 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
-    // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
+    // The new document opens in its own tab (decision 102): the listing stays here; the file's editor is there.
     const listingPage = page;
     const before1 = await tabIds(listingPage);
     await pickBlank(page, 'Document');

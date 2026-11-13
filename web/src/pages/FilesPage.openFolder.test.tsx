@@ -134,7 +134,7 @@ describe("a folder open reads what it needs once (perf-1 3.2)", () => {
   });
 
   // The boot read of /api/v1/info seeds the upload limits. A fresh value is used on mount with no read; an older one is read again
-  // on mount, because the Settings page can change the limits without a restart (LOW-1, decision 127).
+  // on mount, because the Settings page can change the limits without a restart (decision 127).
   it("uses the boot's upload limits on mount while they are fresh, with no read of /info", async () => {
     const qc = createQueryClient();
     seedLimits(qc, { max_chunk_size: 1048576, max_file_size: 1 }, 0);

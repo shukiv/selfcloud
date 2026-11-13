@@ -86,7 +86,7 @@ describe("the page's copy of a share", () => {
     held = { s4: [file("d.txt")], s5: [file("e.txt")] };
     await takeShare("s4");
     await takeShare("s5");
-    // The worker still holds a share the page has not taken: clearShares must reach it too (decision 82, round 3, L5).
+    // The worker still holds a share the page has not taken: clearShares must reach it too (decision 82).
     held = { s6: [file("f.txt")] };
     clearShares();
     expect(held).toEqual({});
@@ -96,7 +96,7 @@ describe("the page's copy of a share", () => {
   });
 });
 
-describe("the time-box on the page's copy (decision 82, round 3, M1)", () => {
+describe("the time-box on the page's copy (decision 82)", () => {
   // Fake timers stand in for the clock, so each limit is run in a moment, not in a minute or five. takenIDs reads the page's copy
   // without taking it, so reading does not restart a limit.
   beforeEach(() => {

@@ -6,7 +6,7 @@ import { decodeText, sniff, sniffWhole, SNIFF_BYTES } from "./encoding";
 const bytes = (...xs: number[]) => new Uint8Array(xs);
 const utf8 = (s: string) => new TextEncoder().encode(s);
 
-// The editor reads the whole file, so its check reads all of it (MED-2): a NUL past the first 8 KiB makes the file binary.
+// The editor reads the whole file, so its check reads all of it: a NUL past the first 8 KiB makes the file binary.
 describe("the whole-file sniff at /edit/", () => {
   it("refuses a NUL byte past the first 8 KiB as binary", () => {
     const late = new Uint8Array(SNIFF_BYTES + 10).fill(0x61);
@@ -26,7 +26,7 @@ describe("the whole-file sniff at /edit/", () => {
   });
 });
 
-// The read side of the text rule (design-ce 2.3 and 4.8). The write side comes with the editor.
+// The read side of the text rule (decision 115 and 4.8). The write side comes with the editor.
 describe("the sniff", () => {
   it("reads 8 KiB", () => {
     expect(SNIFF_BYTES).toBe(8192);
@@ -67,7 +67,7 @@ describe("decoding a read", () => {
   });
 
   it("records a byte order mark and leaves it out of the text the viewer shows", () => {
-    // CodeMirror would draw U+FEFF as a placeholder on the first line. The flag keeps it for the save (design-ce 4.8).
+    // CodeMirror would draw U+FEFF as a placeholder on the first line. The flag keeps it for the save (decision 130).
     expect(decodeText(bytes(0xef, 0xbb, 0xbf, 0x61), false)).toEqual({ text: "a", bom: true, utf8: true });
     expect(decodeText(bytes(0xef, 0xbb, 0xbf), false)).toEqual({ text: "", bom: true, utf8: true });
     // Bytes that are not UTF-8 after the mark: the mark is still left out.

@@ -40,7 +40,7 @@ describe("the new folder dialog", () => {
     expect(input.id).toBe("newfolder-name");
   });
 
-  // nt2 round 3: the name input has focus as soon as the dialog mounts. A person who types right after Alt+C then F must not lose the
+  // nt2: the name input has focus as soon as the dialog mounts. A person who types right after Alt+C then F must not lose the
   // first letters to the New button, so the focus does not wait for antd's open animation (afterOpenChange).
   it("has the focus on the name input as soon as the dialog renders, not after its open animation", async () => {
     renderDialog();

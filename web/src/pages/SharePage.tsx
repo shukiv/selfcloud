@@ -33,7 +33,7 @@ export default function SharePage() {
   const me = useStore(session);
   const params = new URLSearchParams(search);
   const id = params.get("id") ?? "";
-  // skipped is how many files of the share the worker did not keep, above its cap (decision 82, round 2).
+  // skipped is how many files of the share the worker did not keep, above its cap (decision 82).
   const skipped = Math.max(0, Number(params.get("skipped") ?? "0") || 0);
   const viewingAs = me?.impersonation != null;
 
@@ -124,7 +124,7 @@ export default function SharePage() {
   }
 
   // The page's own strings load with the page, in the current language. Until they are there the page draws the spinner, never a
-  // raw key; if the load fails, the main catalogue's retry text is shown instead (decision 82, round 4).
+  // raw key; if the load fails, the main catalogue's retry text is shown instead (decision 82).
   if (textLang !== lang) {
     if (textFailed) {
       return (

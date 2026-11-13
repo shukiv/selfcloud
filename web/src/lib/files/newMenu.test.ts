@@ -101,7 +101,7 @@ describe("the New menu, one list for the sidebar and the files page", () => {
   });
 });
 
-// The row height is the same for every row of the menu, submenu titles included (design-nt2 section 3: 40 px, 44 on a coarse
+// The row height is the same for every row of the menu, submenu titles included (decision 108 section 3: 40 px, 44 on a coarse
 // pointer). A submenu title with no height of its own is drawn at antd's 32 px, so this test pins it.
 describe("the New menu's rows are the same height in every row", () => {
   const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };

@@ -171,7 +171,7 @@ function TenantsView() {
     { key: "delete", danger: true, label: t("tenant.delete.open"), onSelect: () => setDeleting(a) },
   ];
 
-  // The columns of the tenants list (design-tl section 3.1, the approved mockup). Name and Created sort on the server; Usage
+  // The columns of the tenants list (the approved mockup). Name and Created sort on the server; Usage
   // and Users read the account's own used and quota bytes and its user count, so the list makes no request per tenant.
   const columns: ListColumn<Account>[] = [
     {
@@ -278,7 +278,7 @@ function TenantsView() {
           columns={columns}
           menu={menuFor}
           sort={listSort}
-          // A row opens its tenant: a click on it, or Enter (design-tl 2.3).
+          // A row opens its tenant: a click on it, or Enter.
           onOpen={open}
           // The titles have no full stop, as the mockup's; a search or filter that matches nothing says what to change in its
           // description.

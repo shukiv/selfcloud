@@ -53,7 +53,7 @@ function LabelsView() {
   const loaded: LabelField[] = q.data ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: queryKey("labels") });
 
-  // The fields are loaded whole, so Name sorts them here (design-tl section 5). The first order is A to Z by name.
+  // The fields are loaded whole, so Name sorts them here. The first order is A to Z by name.
   const [sort, setSort] = useState<{ key: "name"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
   const sortBy = (key: string) => {
     if (key !== "name") return;
@@ -112,7 +112,7 @@ function LabelsView() {
   const isLoaded = q.data !== undefined;
   const failure = q.isError ? failureText(q.error, lang) : null;
 
-  // The columns (design-tl 3.2, M6): Name sorts; on a phone the type, the restriction and the count are the name's second line.
+  // The columns: Name sorts; on a phone the type, the restriction and the count are the name's second line.
   const columns: ListColumn<LabelField>[] = [
     { key: "name", title: t("files.col.name"), sortKey: "name", render: (f) => <bdi>{f.name}</bdi> },
     { key: "type", title: t("labels.typeLabel"), secondary: true, width: 140, render: (f) => t(`labels.type.${f.type}`) },

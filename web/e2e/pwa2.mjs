@@ -173,7 +173,7 @@ export async function pwa2Checks(h, { page, base, check, MEMBER, openProbe }) {
   await setLanguage(page, 'English');
   await sleep(200);
 
-  // 8. Optional: a 1 GiB file, shared from disk, and the page's memory while it is held and listed (decision 82, round 2).
+  // 8. Optional: a 1 GiB file, shared from disk, and the page's memory while it is held and listed (decision 82).
   if (process.env.SELFCLOUD_PWA2_BIG) {
     await page.goto(`${base}/files`);
     await page.waitFor(`navigator.serviceWorker.controller !== null`, 20000);

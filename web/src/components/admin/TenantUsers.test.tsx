@@ -22,7 +22,7 @@ function renderUsers() {
 }
 
 // Both switches on, so the pending owner offers resend by email and a new link (decision 41).
-// These tests are about a desktop: the inline icons show there, and the Role column is a column (design-tl section 4).
+// These tests are about a desktop: the inline icons show there, and the Role column is a column.
 const desktop = (query: string) => {
   const m = /min-width: (\d+)px/.exec(query);
   return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
@@ -38,7 +38,7 @@ afterEach(() => {
   window.matchMedia = savedMatchMedia;
 });
 
-// tl1: the people are a table (design-tl 3.1, A3). On a phone the inline icons move into the row's ⋮ menu (design-tl 4).
+// tl1: the people are a table. On a phone the inline icons move into the row's ⋮ menu.
 describe("people of a tenant as a table", () => {
   it("is a region with Name, Role and Status headers, and no list", async () => {
     stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
@@ -205,7 +205,7 @@ describe("people of a tenant", () => {
     renderUsers();
     await screen.findByText("Mateo");
     fireEvent.click(screen.getByRole("button", { name: "More actions for Mateo" }));
-    // The mockup's words, from the admin catalogue part (the lead, after the re-check).
+    // The mockup's words, from the admin catalogue part.
     const entry = await screen.findByRole("menuitem", { name: "Remove from account…" });
     expect(entry.className).toContain("ant-dropdown-menu-item-danger");
     fireEvent.click(entry);

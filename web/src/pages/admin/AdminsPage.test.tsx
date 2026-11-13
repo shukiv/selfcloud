@@ -43,7 +43,7 @@ function hangingAdmins(signals: AbortSignal[]) {
 // The admin's session as the server sends it: mail_configured says whether mail can carry an invitation to a new admin.
 const adminSession = (mailConfigured: boolean) => ({ ...signedAs("admin"), mailConfigured }) as Session;
 
-// These tests are about a desktop: the inline icons show there, and below md they move into the ⋮ menu (design-tl section 4).
+// These tests are about a desktop: the inline icons show there, and below md they move into the ⋮ menu.
 const desktop = (query: string) => {
   const m = /min-width: (\d+)px/.exec(query);
   return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
@@ -121,7 +121,7 @@ describe("who sees the admins page", () => {
   });
 });
 
-// tl1: the admins list is a table. The signed-in admin's own row says so and has no Remove icon (owner-approved, design-tl 3.1).
+// tl1: the admins list is a table. The signed-in admin's own row says so and has no Remove icon (owner-approved).
 describe("the admins table marks the signed-in admin and has an empty state", () => {
   it("the signed-in admin's row has a You badge and no Remove; another admin's row has a Remove icon", async () => {
     stubFetch(() => ({
@@ -138,7 +138,7 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     expect(within(other).getByRole("button", { name: "Remove: Other" })).toBeTruthy();
   });
 
-  // On a phone the inline icons move into the ⋮ menu (design-tl 4), so another admin's Remove is reached through it.
+  // On a phone the inline icons move into the ⋮ menu, so another admin's Remove is reached through it.
   it("on a phone, another admin's Remove is in that row's ⋮ menu", async () => {
     window.matchMedia = ((query: string) => ({ ...desktop(query), matches: false })) as unknown as typeof window.matchMedia;
     stubFetch(() => ({ status: 200, body: { items: [person({ id: "usr_2", email: "other@example.com", display_name: "Other" })] } }));

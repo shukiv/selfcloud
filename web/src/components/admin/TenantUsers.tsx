@@ -128,7 +128,7 @@ export default function TenantUsers({ account }: { account: string }) {
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {/* The people table (design-tl 3.1, A3, the approved mockup): Name with the email, Role, Status, Last sign-in and the row's
+      {/* The people table (the approved mockup): Name with the email, Role, Status, Last sign-in and the row's
           actions. The first three actions show inline on a desktop and the rest in the ⋮ menu; a phone has the ⋮ menu alone.
           Each action shows only where it applies. */}
       {!firstFailed && q.data !== undefined && (

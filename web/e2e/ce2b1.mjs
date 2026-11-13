@@ -153,7 +153,7 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     const reloaded = await editorText(page);
     check(reloaded === 'X{\n  "a": 1\n}\n', `a reload of the editor shows the saved change (${JSON.stringify(reloaded)})`);
 
-    // ---- The Save button stays enabled during a save and keeps the focus after it (LOW-1).
+    // ---- The Save button stays enabled during a save and keeps the focus after it.
     // A click in the code area puts the focus there, as a person's click does. The area is waited for first: after a reload the
     // page is drawn again.
     await page.waitFor(`!!document.querySelector(${q(`${EDITOR_PAGE} .cm-content[aria-label=${q(names.json)}]`)})`, 20000);

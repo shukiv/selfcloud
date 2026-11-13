@@ -142,7 +142,7 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB, lock
     check(goText === 'package main', `a .go file stored as octet-stream opens as Go code (${goText})`);
     await closePreview(page);
 
-    // ---- A file that is not UTF-8 opens read-only, with a notice and a Download button (design-ce 2.3).
+    // ---- A file that is not UTF-8 opens read-only, with a notice and a Download button (decision 115).
     await openFile(page, names.latin);
     await page.waitFor(`!!document.querySelector(${q(`${PREVIEW} .ant-alert`)})`, 10000);
     const latin = await page.evaluate(`(() => {

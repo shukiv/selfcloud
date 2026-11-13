@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice oe1 (decision 102, round 2 R3): a phone opens an office file in the same tab. A finger's browser (coarse pointer, no
+// Slice oe1 (decision 102): a phone opens an office file in the same tab. A finger's browser (coarse pointer, no
 // hover) at 390 px signs in as an editor, makes a folder in Team A with a blank document in it, and taps the document's row.
 // The same tab goes to the editor's address, full page (no app shell), with the file's name in the bar; Close goes back to the
 // folder the file was opened from. The folder is removed in a finally.

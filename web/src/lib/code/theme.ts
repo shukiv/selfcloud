@@ -149,7 +149,7 @@ export const codeTheme: Extension = [
       borderRadius: `${RADIUS}px`,
     },
     ".cm-search label": { fontSize: "14px" },
-    // A finger: 16 px text, so a phone does not zoom when the find field takes the focus (design-ce 3.2). Inside an @media
+    // A finger: 16 px text, so a phone does not zoom when the find field takes the focus (decision 115). Inside an @media
     // block style-mod scopes plain selectors only, not "&".
     "@media (pointer: coarse)": {
       ".cm-scroller, .cm-textfield, .cm-button, .cm-search label": { fontSize: "16px" },

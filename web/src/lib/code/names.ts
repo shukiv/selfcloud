@@ -29,7 +29,7 @@ export type Pack =
   | "text";
 
 // CODE_EXTENSIONS maps each listed extension (lower case, no dot) to its pack. Markdown is shown as source, with colours from
-// its pack (design-ce 2.2, decision 124).
+// its pack (decision 115).
 export const CODE_EXTENSIONS: Readonly<Record<string, Pack>> = {
   js: "javascript",
   mjs: "javascript",

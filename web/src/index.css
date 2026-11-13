@@ -223,7 +223,7 @@ a {
    on the group by FolderTree (theme/groupTint.ts), at the menu's inset, with the menu's corner radius. It is painted behind the rows
    (the rows are positioned, later in the order), so the rows keep their own inset. Nested groups have no tint. */
 /* The group is its own stacking context (isolation), and the tint sits at the bottom of it (z-index -1): the group's error, its capped hint
-   and its loading skeleton are drawn on top of the tint, not under it (round 3, review item 1). */
+   and its loading skeleton are drawn on top of the tint, not under it. */
 .tree-group-root {
   position: relative;
   isolation: isolate;
@@ -238,7 +238,7 @@ a {
   background: var(--sc-group-tint);
   pointer-events: none;
 }
-/* A row in the tinted group takes its hover over the tint (decision 93, round 2): the opposite overlay to the tint, so the text and the mark
+/* A row in the tinted group takes its hover over the tint (decision 93): the opposite overlay to the tint, so the text and the mark
    keep 4.5:1 on it (theme/groupTint.ts). Outside a group the sidebar's own hover applies. */
 .tree-group-root .tree-row-side:hover {
   background: var(--sc-group-hover, var(--sc-side-hover, rgba(255, 255, 255, 0.1)));
@@ -621,7 +621,7 @@ a {
 }
 @media (max-width: 599px) {
   /* A phone's head is one row: Close, the name, the count, Playlist and Download. The text buttons here are 44 px tall. The icon
-     buttons keep the .icon-btn size (40 px with a mouse, 44 px on a finger, decision 68), so the row's tops are the same, and the
+     buttons keep the.icon-btn size (40 px with a mouse, 44 px on a finger, decision 68), so the row's tops are the same, and the
      name takes what is left (ellipsis). */
   .media-viewer-head .ant-btn,
   .media-head-download.ant-btn,
@@ -1021,7 +1021,7 @@ a {
   transition: none;
 }
 /* The handle's box is transparent, so on a phone its 44 px touch target paints nothing: the visible dot is the handle's
-   ::after, 14 px white with a yellow ring, in both sizes. */
+::after, 14 px white with a yellow ring, in both sizes. */
 .media-mini .media-mini-seek .ant-slider .ant-slider-handle {
   background-color: transparent;
   border-color: transparent;
@@ -1269,7 +1269,7 @@ tr[data-drop-state="refused"] > td {
   outline-offset: -2px;
 }
 /* In the sidebar and its drawer the ring is the sidebar's own text colour: the page's primary colour is the sidebar's blue in the default theme,
-   so a ring in it was lost on the blue and the tint (round 3, review item 3; the rule above is older than decision 93). */
+   so a ring in it was lost on the blue and the tint (the rule above is older than decision 93). */
 .shell-sider [role="treeitem"]:focus-visible > .tree-row,
 .ant-drawer [data-testid="folder-tree"] [role="treeitem"]:focus-visible > .tree-row {
   outline-color: var(--sc-side-text, #ffffff);
@@ -1286,7 +1286,7 @@ tr[data-drop-state="refused"] > td {
 }
 
 /* An empty preset list's body cell has no padding: its EmptyState (size "table") is the mockup's block, 48 pixels under the header
-   row and 56 under its action (decision 114, tl1 round 4). antd's middle table pads every body cell by 12. */
+   row and 56 under its action (decision 114). antd's middle table pads every body cell by 12. */
 .item-list .ant-table-wrapper .ant-table .ant-table-tbody > tr.ant-table-placeholder > td {
   padding: 0;
 }
@@ -1603,7 +1603,7 @@ tr[data-drop-state="refused"] > td {
 }
 /* A disabled icon button passes its pointer events to its wrapper, which opens the tooltip (IconButton.tsx): a browser may not
    deliver them to a disabled control. An aria-disabled one (a busy row's icon, which keeps the focus; decision 114) does the
-   same, so it gets no hover background: antd gives that to a text button that is not :disabled (tl1 round 4). */
+   same, so it gets no hover background: antd gives that to a text button that is not:disabled. */
 .icon-btn-wrap > .icon-btn:disabled {
   pointer-events: none;
 }

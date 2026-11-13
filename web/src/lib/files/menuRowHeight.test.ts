@@ -2,7 +2,7 @@
 
 // The menu row height is one value per pointer (40 px, 44 px on a coarse pointer) in three places: the TypeScript constant the
 // menus use, the CSS custom property the dropdown's submenu titles use, and the menu theme's item height. This test keeps the
-// constant and the stylesheet's custom property the same, and says the submenu title reads the property (nt2 review, MED-2).
+// constant and the stylesheet's custom property the same, and says the submenu title reads the property .
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

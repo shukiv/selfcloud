@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A session the server ended (decision 82, round 3, L5): the page's shares go, and the worker is told to drop the shares it still
+// A session the server ended (decision 82): the page's shares go, and the worker is told to drop the shares it still
 // holds, so they are not kept until their expiry. The request that found it out answers 401 and the page goes to sign in.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,7 +49,7 @@ afterEach(() => {
   session.set(null);
 });
 
-describe("the server ends the session (decision 82, round 3, L5)", () => {
+describe("the server ends the session (decision 82)", () => {
   it("drops the page's shares and tells the worker to drop the ones it holds", async () => {
     await takeShare("s9");
     expect(takenIDs()).toContain("s9");

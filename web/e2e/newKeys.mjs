@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The New menu, by the keyboard (decision 95, round 3). Every key is a real key press. The button is reached by Tab from the top of the
+// The New menu, by the keyboard (decision 95). Every key is a real key press. The button is reached by Tab from the top of the
 // page (tabTo), opened with Enter or Space, and the menu's items are reached with Tab and ArrowDown. The group title above a read-only
 // reason is not a stop: no key may put focus on it. Escape closes the menu and returns focus to the New button.
 //
@@ -36,7 +36,7 @@ export async function newMenuKeyChecks(page, check, { button, label, opener = 'E
     check(!titleStop, `Tab and ArrowDown never stop on the reason's title (${label}; last focus: ${await focusNow(page)})`);
   } else {
     // Tab reaches the first enabled entry, and the title is not in the walk. The Tab result is asserted before ArrowDown is pressed,
-    // so a Tab that lands elsewhere fails here and is not hidden by the arrow (round 4, L6; as accountKeys does).
+    // so a Tab that lands elsewhere fails here and is not hidden by the arrow (as accountKeys does).
     await pressKey(page, 'Tab', 'Tab', 9);
     const first = await focusNow(page);
     trail.push(`first-stop:${first}`);

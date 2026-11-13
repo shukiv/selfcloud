@@ -33,7 +33,7 @@ export function useMemberRows(ids: string[] | undefined, lookup: Names, unknown:
 }
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
-// and removing a member ends that access at once. The groups and a group's members are the one Listing (design-tl 2).
+// removing a member ends that access at once. The groups and a group's members are the one Listing.
 function GroupsView() {
   const { t } = useT();
   const lang = useLang();
@@ -191,7 +191,7 @@ function GroupsView() {
               key: "members",
               label: `${t("groups.members")}: ${g.name}`,
               icon: <Users size={18} aria-hidden="true" focusable="false" />,
-              // The open group's Members icon is pressed: the members under the list are its (design-tl 2.2, decision 114).
+              // The open group's Members icon is pressed: the members under the list are its (decision 114).
               // Only that icon has a pressed state; a second click on it closes the members (review M1).
               pressed: open?.id === g.id ? true : undefined,
               run: () => {

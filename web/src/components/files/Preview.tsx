@@ -405,7 +405,7 @@ export default function Preview({
               <iframe title={node.name} src={view.link.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
             ) : view.code ? (
               <div style={{ alignSelf: "stretch", width: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                {/* A file that is not UTF-8 still shows, read-only, with a notice and its download (design-ce 2.3). */}
+                {/* A file that is not UTF-8 still shows, read-only, with a notice and its download (decision 115). */}
                 {!view.code.utf8 && (
                   <Alert
                     type="warning"
