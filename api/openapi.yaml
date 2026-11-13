@@ -8258,7 +8258,14 @@ components:
             (and the picture is then `none`), and a new upload replaces it.
         type: { type: string, enum: [image/png, image/svg+xml], description: Present for `file` and `uploaded` only. }
         sha256: { type: string, description: The hex SHA-256 of the picture's bytes, the logo's ETag. Present for `file` and `uploaded` only. }
-        reason: { type: string, description: Why the upload was not used, in words that show no path. Present for `unusable` only. }
+        reason:
+          type: string
+          enum: [row_not_written, not_regular_file, hash_changed, file_missing, unreadable, invalid_picture]
+          description: |
+            Why the upload was not used. Present for `unusable` only. `row_not_written`: the stored row is not one the server
+            wrote. `not_regular_file`: the stored file is not a regular file. `hash_changed`: the stored file's hash is not the
+            row's. `file_missing`: the stored file is gone. `unreadable`: the stored file cannot be read. `invalid_picture`: the
+            stored bytes no longer pass the check an upload gets.
         locked:
           type: boolean
           description: True when the config file or the environment sets the picture's file (`ui.brand.logo_file` or `ui.brand.icon_file`).

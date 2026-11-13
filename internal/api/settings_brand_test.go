@@ -713,17 +713,17 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			if err := os.WriteFile(path, []byte(`<svg xmlns="http://www.w3.org/2000/svg"><title>other</title></svg>`), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "hash", "does not have the hash", stored, nil},
+		}, "hash", "hash_changed", stored, nil},
 		{"no longer an SVG", func(t *testing.T, s *Server, path string) {
 			if err := os.WriteFile(path, []byte("plain text"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "not an SVG", "not an SVG", stored, nil},
+		}, "not an SVG", "invalid_picture", stored, nil},
 		{"missing", func(t *testing.T, s *Server, path string) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
-		}, "no such file", "file is missing", stored, nil},
+		}, "no such file", "file_missing", stored, nil},
 		{"a link to the same bytes", func(t *testing.T, s *Server, path string) {
 			elsewhere := filepath.Join(t.TempDir(), "same.svg")
 			if err := os.WriteFile(elsewhere, []byte(testLogoSVG), 0o600); err != nil {
@@ -735,7 +735,7 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			if err := os.Symlink(elsewhere, path); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a regular file", "not a regular file", stored, nil},
+		}, "not a regular file", "not_regular_file", stored, nil},
 		// No path is ever made from a row the server did not write, so the file the first upload left stays, though the
 		// row would name it through "..".
 		{"a row the server does not write", func(t *testing.T, s *Server, path string) {
@@ -744,7 +744,17 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a picture", "not a picture the server wrote", "invalid", []string{"logo-" + sum + ".svg"}},
+		}, "not a picture", "row_not_written", "invalid", []string{"logo-" + sum + ".svg"}},
+		// A file the server cannot read (last: a skip as root ends the test): the open fails with a system error that names the path, which never reaches the answer.
+		{"unreadable", func(t *testing.T, s *Server, path string) {
+			if os.Geteuid() == 0 {
+				t.Skip("root reads a file with no permissions")
+			}
+			if err := os.Chmod(path, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+		}, "permission denied", "unreadable", stored, nil},
 	} {
 		dir := t.TempDir()
 		first := serverOn(t, configFrom(t, dir, "", nil), true)
@@ -767,8 +777,8 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 		admin2 := adminKey(t, second)
 		// The picture the start ignored is unusable, with the reason and no type or hash: the page can offer to remove it.
 		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.logo"); p.State != "unusable" || p.Type != "" || p.SHA256 != "" ||
-			!strings.Contains(p.Reason, tc.shown) || strings.Contains(p.Reason, dir) || p.Locked {
-			t.Errorf("%s: logo = %+v, want unusable with a reason containing %q and no path", tc.label, p, tc.shown)
+			p.Reason != tc.shown || strings.Contains(p.Reason, dir) || p.Locked {
+			t.Errorf("%s: logo = %+v, want unusable with the reason code %q and no path", tc.label, p, tc.shown)
 		}
 		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.icon"); p.State != "none" || p.Reason != "" {
 			t.Errorf("%s: icon = %+v, want none with no reason", tc.label, p)

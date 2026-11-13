@@ -39,8 +39,8 @@ const (
 const pictureInvalid = "invalid"
 
 // picture is one of the installation's pictures as the server serves it: its bytes, or nil for none, and where it comes
-// from. ignored is the stored row the start did not use because it or its file failed the checks, and reason says why in words
-// that show no path; DELETE or an upload clears it.
+// from. ignored is the stored row the start did not use because it or its file failed the checks, and reason is why, as a code
+// from the reason constants; DELETE or an upload clears it.
 type picture struct {
 	img     *web.Logo
 	from    string
@@ -48,30 +48,40 @@ type picture struct {
 	reason  string
 }
 
-// The ways a stored picture fails at start, without the path: errors.Is finds them, and storedReason words them for the answer.
+// The ways a stored picture fails at start, without the path: errors.Is finds them, and storedReason gives each its code.
 var (
 	errRowNotWritten = errors.New("the stored row is not a picture the server wrote")
 	errNotRegular    = errors.New("its file is not a regular file")
 	errHashChanged   = errors.New("its file does not have the hash its row stores")
+	errCheckFailed   = errors.New("its bytes fail the check an upload gets")
 )
 
-// storedReason is why a stored picture was not used, in words for the settings answer: no path, no system text. A reason the
-// check of the picture itself gives is its own message, which is the one an upload gets.
+// The reason codes of an unusable picture in the settings answer (decision 148). They are a closed set: a client branches on
+// them, and no error text or path reaches the answer.
+const (
+	reasonRowNotWritten = "row_not_written"
+	reasonNotRegular    = "not_regular_file"
+	reasonHashChanged   = "hash_changed"
+	reasonFileMissing   = "file_missing"
+	reasonUnreadable    = "unreadable"
+	reasonInvalid       = "invalid_picture"
+)
+
+// storedReason is the code for why a stored picture was not used. An error it does not know is "unreadable", never its text.
 func storedReason(err error) string {
-	var pathErr *fs.PathError
 	switch {
 	case errors.Is(err, errRowNotWritten):
-		return errRowNotWritten.Error()
+		return reasonRowNotWritten
 	case errors.Is(err, errNotRegular):
-		return errNotRegular.Error()
+		return reasonNotRegular
 	case errors.Is(err, errHashChanged):
-		return errHashChanged.Error()
+		return reasonHashChanged
+	case errors.Is(err, errCheckFailed):
+		return reasonInvalid
 	case errors.Is(err, fs.ErrNotExist):
-		return "its file is missing"
-	case errors.As(err, &pathErr):
-		return "its file cannot be read"
+		return reasonFileMissing
 	}
-	return err.Error()
+	return reasonUnreadable
 }
 
 // brandPictures are the installation's logo and icon as the server serves them now. It is never changed: a change swaps in
@@ -227,7 +237,7 @@ func (s *Server) readStoredPicture(k pictureKind, row string) (*web.Logo, error)
 	}
 	img, err := k.check(data, ct)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errCheckFailed, err)
 	}
 	if img.SHA256() != sum {
 		return nil, fmt.Errorf("%s: %w", path, errHashChanged)
@@ -270,14 +280,14 @@ func (s *Server) useBrand(c *config.Config, p *brandPictures, b *web.Brand) {
 	}
 }
 
-// pictureJSON is one picture in the settings answer: none, the config file's, or an upload, with its type and hash. Its path
-// is never shown.
+// pictureJSON is one picture in the settings answer: none, the config file's, an upload, or an upload the start did not use,
+// with its type and hash, or for the last its reason code. Its path is never shown.
 type pictureJSON struct {
 	Key    string `json:"key"`
 	State  string `json:"state"`
 	Type   string `json:"type,omitempty"`
 	SHA256 string `json:"sha256,omitempty"`
-	// Reason says why an unusable picture was not used.
+	// Reason is the code for why an unusable picture was not used (the reason constants).
 	Reason string `json:"reason,omitempty"`
 	Locked bool   `json:"locked"`
 }
@@ -425,7 +435,7 @@ func (s *Server) deletePicture(w http.ResponseWriter, r *http.Request, k picture
 	defer s.settingsMu.Unlock()
 	cur := s.pics.Load()
 	old := k.of(cur)
-	if old.from != pictureUploaded && old.reason == "" {
+	if old.from != pictureUploaded && old.ignored == "" && old.reason == "" {
 		writeJSON(w, http.StatusOK, s.settingsAnswer())
 		return nil
 	}
