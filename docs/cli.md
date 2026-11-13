@@ -797,6 +797,49 @@ selfcloud zip rm "$ZIP" --yes
 selfcloud zip create --folder fld_… /reports /photos --wait --json
 ```
 
+## Account keys and the quota warning
+
+**Which credential reaches what.** The key routes and the quota-warning routes are under `/api/v1/accounts/{acc}`. A key
+is an installation admin's to make, list and revoke, and every key route refuses an account key or a device token with 403;
+in plain output the command adds `selfcloud: hint: this needs an installation admin key`, which `--json` does not print.
+The quota warning is the account's own setting, so an account key reads and changes it; an installation admin key reaches
+it too, and a device token is refused.
+
+| Command | Credential | What it does |
+|---|---|---|
+| `account key create --account ACC [--expires TIME] NAME` | an installation admin key | makes a key and prints it once |
+| `account key ls --account ACC` | an installation admin key | lists an account's keys |
+| `account key revoke --account ACC KEY [--yes]` | an installation admin key | revokes a key now |
+| `account quota-warning show --account ACC` | an account key or an admin key | prints the warning level |
+| `account quota-warning set --account ACC PERCENT` | an account key or an admin key | sets it |
+| `account quota-warning clear --account ACC` | an account key or an admin key | sets it back to the default |
+
+```sh
+selfcloud account key create --account acc_… --expires 2030-01-01T00:00:00Z backups
+selfcloud account key ls --account acc_…
+selfcloud account key revoke --account acc_… key_…
+selfcloud account quota-warning show --account acc_…
+selfcloud account quota-warning set --account acc_… 90
+selfcloud account quota-warning clear --account acc_…
+```
+
+- `account key create` takes one name. `--expires` is an RFC 3339 time in the future; a time that has passed is refused
+  before any request. The secret is shown once, as `key=…`, with a note on standard error that it cannot be read again. No
+  other command prints it: `ls` shows an id, a name, a prefix, when the key was made, when it expires, when it was revoked
+  and when it was last used, and nothing else.
+- `account key revoke` asks first. At a terminal the person types the key's id; with `--yes` the question is skipped; with
+  no terminal and no `--yes` the command refuses before any request (exit 2). Revoking a key stops every program that uses
+  it at once.
+- The quota warning is the share of the quota at which the server sends `quota.warning`; `quota.exceeded` is at 100.
+  `set` takes one whole number from 1 to 99, and `clear` goes back to the server's default. Both print the level the
+  server answered, as `percent=N`, and `--json` prints `{"percent": N}`.
+- The local `selfcloud admin create-key`, `list-keys` and `revoke-key` work on a host with no running server, against its
+  data folder. These commands work over the API, on any host that can reach the server.
+- Exit codes: 0 when the command is done; 2 for a usage error before any request (a bad `--account`, a blank name, an
+  `--expires` that is not RFC 3339 or not in the future, a percent outside 1 to 99, or `revoke` with no terminal and no
+  `--yes`); 3 when the server refuses (403, 409); 4 when the account or key is not found; 1 when an answer is not the
+  document the command expects.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be

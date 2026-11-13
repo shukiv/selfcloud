@@ -124,7 +124,7 @@ fn	lib/manage/api.ts:auditLog	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createAccount	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createAdmin	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createGroup	group create	cli8	built in cli8
-fn	lib/manage/api.ts:createKey	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createKey	account key create	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
 fn	lib/manage/api.ts:deleteAccount	-	cli9	planned, cli9
@@ -142,7 +142,7 @@ fn	lib/manage/api.ts:listAccounts	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
 fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
-fn	lib/manage/api.ts:listKeys	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listKeys	account key ls	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:listPeople	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listSpaces	folder ls	cli8	built in cli8
 fn	lib/manage/api.ts:removeGroupMember	group remove-member	cli8	built in cli8
@@ -151,7 +151,7 @@ fn	lib/manage/api.ts:renameGroup	group rename	cli8	built in cli8
 fn	lib/manage/api.ts:renameSpace	folder rename	cli8	built in cli8
 fn	lib/manage/api.ts:resendVerification	-	cli9	planned, cli9
 fn	lib/manage/api.ts:resetUserPassword	-	cli9	planned, cli9
-fn	lib/manage/api.ts:revokeKey	-	cli9	planned, cli9
+fn	lib/manage/api.ts:revokeKey	account key revoke	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:sendPasswordReset	-	cli9	planned, cli9
 fn	lib/manage/api.ts:setUserPassword	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (decision 41)
@@ -216,9 +216,9 @@ route	DELETE /api/v1/accounts/{acc}/folders/{fld}	folder rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}	group rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group remove-member	cli8	built in cli8
-route	DELETE /api/v1/accounts/{acc}/keys/{key}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/keys/{key}	account key revoke	cli9a1	built in cli9a1
 route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
-route	DELETE /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/quota-warning	account quota-warning clear	cli9a1	built in cli9a1
 route	DELETE /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
 route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
@@ -250,8 +250,8 @@ route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	share ls	cli7	built in cli
 route	GET /api/v1/accounts/{acc}/groups	group ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/groups/{grp}	group show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/groups/{grp}/members	group members	cli8	built in cli8
-route	GET /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/keys	account key ls	cli9a1	built in cli9a1
+route	GET /api/v1/accounts/{acc}/quota-warning	account quota-warning show	cli9a1	built in cli9a1
 route	GET /api/v1/accounts/{acc}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage	-	cli9	planned, cli9
@@ -354,7 +354,7 @@ route	POST /api/v1/access-requests/{arq}/deny	access deny	cli7	built in cli7
 route	POST /api/v1/accounts	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/folders	folder create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/groups	group create	cli8	built in cli8
-route	POST /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/keys	account key create	cli9a1	built in cli9a1
 route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
 route	POST /api/v1/accounts/{acc}/share-links/delete-public	link rm	cli7	built in cli7
 route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
@@ -423,7 +423,7 @@ route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and th
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7
 route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
 route	PUT /api/v1/accounts/{acc}/imports/archive	import archive set	cli10	built in cli10
-route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	PUT /api/v1/accounts/{acc}/quota-warning	account quota-warning set	cli9a1	built in cli9a1
 route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
 route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
