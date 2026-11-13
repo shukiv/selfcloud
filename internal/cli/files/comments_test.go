@@ -405,6 +405,63 @@ func TestActivityJSONDropsUnknownDetailKeys(t *testing.T) {
 	}
 }
 
+func TestActivityDropsNonScalarDetailValues(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on(http.MethodGet, nodePath(testNode, "/activity"), page("", activityDoc(testActivity, "permission.set",
+		map[string]any{
+			"role":         []any{"x"},
+			"subject_name": map[string]any{"token": "sck_secret_value"},
+			"subject_kind": "user",
+			"subject_gone": true,
+		})))
+
+	res := f.run(Activity, testNode)
+	wantCode(t, res, 0)
+	f.wantCalls("GET " + nodePath(testNode, "/activity"))
+	want := table(
+		[]string{"TIME", "ACTOR", "ACTION", "DETAILS"},
+		[]string{"2026-11-05T09:00:00Z", "Ada", "permission.set", "subject_kind=user subject_gone=true"},
+	)
+	if res.stdout != want {
+		t.Errorf("stdout:\n%s want:\n%s", res.stdout, want)
+	}
+	for _, leaked := range []string{"role", "subject_name", "sck_secret_value"} {
+		if strings.Contains(res.stdout, leaked) {
+			t.Errorf("%q was printed: %q", leaked, res.stdout)
+		}
+	}
+
+	isolate(t, testAccountKey)
+	f = newFake(t)
+	f.on(http.MethodGet, nodePath(testNode, "/activity"), page("", activityDoc(testActivity, "permission.set",
+		map[string]any{
+			"role":         []any{"x"},
+			"subject_name": map[string]any{"token": "sck_secret_value"},
+			"subject_kind": "user",
+			"subject_gone": true,
+		})))
+
+	res = f.run(Activity, testNode, "--json")
+	wantCode(t, res, 0)
+	for _, leaked := range []string{"role", "subject_name", "sck_secret_value"} {
+		if strings.Contains(res.stdout, leaked) {
+			t.Errorf("%q was printed: %q", leaked, res.stdout)
+		}
+	}
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &items); err != nil {
+		t.Fatalf("stdout is not JSON: %v (%q)", err, res.stdout)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items %v", items)
+	}
+	details, _ := items[0]["details"].(map[string]any)
+	if len(details) != 2 || details["subject_kind"] != "user" || details["subject_gone"] != true {
+		t.Errorf("details %v", details)
+	}
+}
+
 func TestActivityAllFollowsAnEmptyPage(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)

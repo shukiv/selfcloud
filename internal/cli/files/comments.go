@@ -278,14 +278,20 @@ var activityDetailKeys = []string{
 	"kind", "via", "reply", "role", "subject_kind", "subject_name", "subject_gone", "field_name", "field_gone",
 }
 
-// activityDetails keeps the documented detail keys only.
+// activityDetails keeps the documented detail keys whose values are a string, a bool or a number. An object, an array
+// or null could hide a secret or print as Go syntax, so it is dropped from both outputs.
 func activityDetails(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(in))
 	for _, k := range activityDetailKeys {
-		if v, ok := in[k]; ok {
+		v, ok := in[k]
+		if !ok {
+			continue
+		}
+		switch v.(type) {
+		case string, bool, float64:
 			out[k] = v
 		}
 	}
