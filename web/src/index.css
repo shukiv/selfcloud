@@ -332,7 +332,7 @@ a {
 
 /* A dropdown's submenu title (the New menu's Document, Spreadsheet, Presentation and More, and the file menu's submenus) is
    drawn by antd at 32 px. The row style of its item lands on the wrapper, not on this title, so the title fills the row it is
-   in: the New menu's wrapper is 40 px, or 44 px on a coarse pointer (decision 162), the file menu's plain rows set its own
+   in: the New menu's wrapper is 40 px, or 44 px on a coarse pointer (decision 108), the file menu's plain rows set its own
    (32 px with a mouse, 44 px on a finger), and every other menu keeps antd's row. antd centres a plain item's icon and label
    but leaves a title's stretched, and a line-height as tall as the row then pushes the label off the middle: flex centring
    aligns both, and the line-height goes with it. */
