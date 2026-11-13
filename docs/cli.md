@@ -1340,6 +1340,47 @@ selfcloud version restore nod_… ver_…
 selfcloud version rm nod_… ver_… --yes
 ```
 
+## Thumbnails and exports
+
+These commands read the existing derived-file routes; they need a node id and follow the server while it works.
+
+| Command | What it does |
+|---|---|
+| `thumbnail NODE DEST [--size N] [--wait-timeout DURATION] [--force]` | writes the node's thumbnail |
+| `export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force]` | converts a file and downloads the result |
+
+A thumbnail is a JPEG. `--size` asks for a preview whose longest side is that many pixels; without it the server's
+smallest size is used. The server may answer at once, after a wait, or with a signed link. A signed link is refused:
+the command line does not follow the web interface's expiring addresses (exit 1). While the server is still making the
+thumbnail, the command waits as the server's `Retry-After` asks, at most 30 seconds at a time, for `--wait-timeout`
+(one minute by default). At that limit it exits 1 with `the thumbnail is not ready yet`; the server goes on making it.
+If `DEST` is a directory the image is written as `thumbnail.jpg` there. An existing file is kept unless `--force` is
+given. `-` writes the JPEG itself to standard output, with `saved` and `size` on standard error.
+
+`export` converts a word-processing, spreadsheet, presentation, drawing or PDF file to one of `docx`, `odp`, `ods`,
+`odt`, `pdf`, `pptx` or `xlsx`. The format is checked before any request. The server is asked once; the command then
+follows the conversion with a one-byte ranged request, waiting as the server's `Retry-After` asks, at most 30 seconds
+at a time, for `--wait-timeout` (ten minutes by default). A conversion the server cannot make (415 with `failed`) exits
+1 with the server's message; a format the node cannot be converted to (415 with `not_convertible`) is a usage error
+(exit 2). A file changed or removed while the conversion runs exits 1 with an explanation and nothing is written.
+
+The download uses the same safe writes, part file, resume and version checks as `get`. `DEST` may be a file or a
+directory; without it, the server's `Content-Disposition` name is used, or `NODE.FORMAT` when the server sends none.
+An existing file is kept unless `--force` is given. The result is printed as `saved` and `size`; `--json` prints
+`{"saved":"…","size":N}`.
+
+```
+selfcloud thumbnail nod_… preview.jpg --size 512
+selfcloud thumbnail nod_… ~/Pictures/ --wait-timeout 5m
+selfcloud thumbnail nod_… - > preview.jpg
+selfcloud export nod_… --format pdf report.pdf
+selfcloud export nod_… --format docx ~/Documents/ --json
+```
+
+Exit codes follow the errors: 2 for a usage error, 3 when the server refuses, 4 for an unknown node, and 1 when a
+wait ends or a conversion fails. A proxy that ignores the range request is an error, not a reason to download the
+whole file twice.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
