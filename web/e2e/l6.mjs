@@ -72,6 +72,8 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     folderID = made.id;
     await navigateTo(page, `/files/${teamA}/${folderID}`);
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
+    // The address changes before the page does: wait until the breadcrumb shows the new folder, so New acts on that place.
+    await page.waitFor(`document.querySelector('nav .ant-breadcrumb [aria-current="location"]')?.textContent.trim() === ${q(folderName)}`, 15000);
 
     // The sidebar's New menu holds the three documents after the uploads. Document opens the new file in the editor.
     await page.waitFor(`!!document.querySelector('[data-testid="new-button"]') && !document.querySelector('[data-testid="new-button"]').disabled`, 15000);
