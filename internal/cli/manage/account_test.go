@@ -16,7 +16,7 @@ type accountCommand struct {
 	args []string
 }
 
-// accountCommands are the 13 commands that call a route under /accounts/{acc}.
+// accountCommands are the commands that call a route under /accounts/{acc}.
 func accountCommands() []accountCommand {
 	return []accountCommand{
 		{"folder create", FolderCreate, []string{"Team"}},
@@ -33,6 +33,11 @@ func accountCommands() []accountCommand {
 		{"group add-member", GroupAddMember, []string{testGroup, testUser}},
 		{"group remove-member", GroupRemoveMember, []string{testGroup, testUser}},
 		{"user grants", UserGrants, []string{testUser}},
+		{"account show", AccountShow, nil},
+		{"account update", AccountUpdate, []string{"--name", "New"}},
+		{"account rm", AccountRm, []string{"--yes"}},
+		{"account usage", AccountUsage, nil},
+		{"account audit", AccountAudit, nil},
 	}
 }
 
