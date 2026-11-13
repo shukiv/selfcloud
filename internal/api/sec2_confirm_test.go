@@ -666,7 +666,7 @@ func (g *gatedSender) Send(ctx context.Context, m mail.Message) error {
 	return g.rec.Send(ctx, m)
 }
 
-// Round 5: when the email ceiling refuses a request, the address budget the request took first is given back (chargeAll
+// When the email ceiling refuses a request, the address budget the request took first is given back (chargeAll
 // cancels it), so the address keeps its token. The ceiling here is one, spent by the first address; the second address
 // is refused by it, and its own budget must still hold its one token.
 func TestAnEmailCeilingRefusalGivesBackTheAddressBudget(t *testing.T) {
@@ -694,7 +694,7 @@ func TestAnEmailCeilingRefusalGivesBackTheAddressBudget(t *testing.T) {
 	}
 }
 
-// Round 6: the audit source a job uses shares nothing with the request's principal. A change to the principal, its token
+// The audit source a job uses shares nothing with the request's principal. A change to the principal, its token
 // scope (including the folder list) or its link scope after the copy does not reach the copy.
 func TestAuditSourceSharesNothingWithThePrincipal(t *testing.T) {
 	t.Parallel()
@@ -774,7 +774,7 @@ func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
 	}
 }
 
-// Round 3, login.capped is per email and client address. An attacker who spends the budget from its own address does
+// Login.capped is per email and client address. An attacker who spends the budget from its own address does
 // not stop the real user's mail from another address: in the capped state the answers are the same, so a guess there
 // gives the attacker nothing, and the limit only bounds password hashing.
 func TestAnAttackersCappedBudgetDoesNotBlockTheRealUsersMail(t *testing.T) {
@@ -795,7 +795,7 @@ func TestAnAttackersCappedBudgetDoesNotBlockTheRealUsersMail(t *testing.T) {
 	}
 }
 
-// Round 3: logout clears the pending confirmation cookie, so a link mailed to this browser cannot be redeemed in it after
+// Logout clears the pending confirmation cookie, so a link mailed to this browser cannot be redeemed in it after
 // sign-out. Without the clearing, the cookie would live on for its fifteen minutes.
 func TestLogoutClearsThePendingConfirmCookie(t *testing.T) {
 	t.Parallel()
@@ -820,7 +820,7 @@ func TestLogoutClearsThePendingConfirmCookie(t *testing.T) {
 	wantError(t, redeemConfirm(t, s, "10.141.1.1:4000", token), 403, apierr.Forbidden)
 }
 
-// Round 3: at most one confirmation job is in flight per user. A second matching request while the first is still
+// At most one confirmation job is in flight per user. A second matching request while the first is still
 // sending is dropped as a duplicate: the same answer, a log line, and no second mail. Once the first has finished, the
 // next request for the user is queued again.
 func TestOneConfirmationJobIsInFlightPerUser(t *testing.T) {
@@ -857,7 +857,7 @@ func TestOneConfirmationJobIsInFlightPerUser(t *testing.T) {
 	}
 }
 
-// Round 3: with every slot busy, the confirmation is dropped and logged, and the answer is the same as a miss's.
+// With every slot busy, the confirmation is dropped and logged, and the answer is the same as a miss's.
 func TestAFullQueueDropsTheMailWithTheSameAnswer(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
@@ -885,7 +885,7 @@ func TestAFullQueueDropsTheMailWithTheSameAnswer(t *testing.T) {
 	}
 }
 
-// Round 3: shutdown waits for in-flight confirmation jobs (Serve waits on the background group). A job still sending
+// Shutdown waits for in-flight confirmation jobs (Serve waits on the background group). A job still sending
 // when the wait starts is finished before the wait returns.
 func TestTheBackgroundWaitCoversAnInFlightConfirmationMail(t *testing.T) {
 	t.Parallel()

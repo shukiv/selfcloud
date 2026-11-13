@@ -19,7 +19,7 @@ func lifeRequest(p *auth.Principal) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, &reqInfo{principal: p}))
 }
 
-// fu2 review fix 3 (decision 74). signedLinkLife takes the least of the token's, the visitor's and the impersonation's
+// fu2 (decision 74). signedLinkLife takes the least of the token's, the visitor's and the impersonation's
 // remaining life. These tests pin the token branch and the visitor branch: each fails when its branch is removed.
 func TestSignedLinkLifeFollowsTheToken(t *testing.T) {
 	t.Parallel()

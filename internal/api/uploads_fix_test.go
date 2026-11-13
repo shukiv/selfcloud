@@ -39,7 +39,7 @@ func dirFiles(t *testing.T, dir string) int {
 	return n
 }
 
-// Item 1: a completion that fails after the rename leaves nothing behind once the upload is deleted
+// A completion that fails after the rename leaves nothing behind once the upload is deleted
 // or expires.
 func TestFailedCompletionLeavesNoFileOnDelete(t *testing.T) {
 	t.Parallel()
@@ -82,7 +82,7 @@ func TestFailedCompletionLeavesNoFileOnExpiry(t *testing.T) {
 	}
 }
 
-// Item 1: completion runs on a context detached from the request, so a client that disconnects at
+// Completion runs on a context detached from the request, so a client that disconnects at
 // the last byte does not roll back the finished work.
 func TestCompletionSurvivesClientDisconnect(t *testing.T) {
 	t.Parallel()
@@ -107,7 +107,7 @@ func TestCompletionSurvivesClientDisconnect(t *testing.T) {
 	}
 }
 
-// Item 2: open uploads are capped per caller and per account.
+// Open uploads are capped per caller and per account.
 func TestUploadOpenCaps(t *testing.T) {
 	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxOpenPerPrincipal = 2 })
@@ -136,7 +136,7 @@ func TestUploadOpenCaps(t *testing.T) {
 	}
 }
 
-// Item 2: creation is rate limited per caller.
+// Creation is rate limited per caller.
 func TestUploadCreationRateLimited(t *testing.T) {
 	t.Parallel()
 	s, key, _, f := uploadSetup(t)
@@ -150,7 +150,7 @@ func TestUploadCreationRateLimited(t *testing.T) {
 	wantError(t, createUpload(t, s, key, 0, md("folder", f.ID, "name", "r5.txt")), 429, apierr.RateLimited)
 }
 
-// Item 2: the disk check counts every open upload's unwritten bytes, not just the new piece.
+// The disk check counts every open upload's unwritten bytes, not just the new piece.
 func TestDiskCheckCountsReservations(t *testing.T) {
 	t.Parallel()
 	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxDiskSharePercent = 100 })
@@ -162,7 +162,7 @@ func TestDiskCheckCountsReservations(t *testing.T) {
 	wantStatus(t, createUpload(t, s, key, 90, md("folder", f.ID, "name", "d90.bin")), 201)
 }
 
-// Item 3: a checksummed piece that is cut short cannot be verified, so it is dropped whole.
+// A checksummed piece that is cut short cannot be verified, so it is dropped whole.
 func TestCutShortChecksummedPieceIsDropped(t *testing.T) {
 	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
@@ -179,7 +179,7 @@ func TestCutShortChecksummedPieceIsDropped(t *testing.T) {
 	}
 }
 
-// Item 4: a creation-with-upload that fails deletes the upload, row and file.
+// A creation-with-upload that fails deletes the upload, row and file.
 func TestFailedCreationWithBodyDeletesUpload(t *testing.T) {
 	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
@@ -206,7 +206,7 @@ func TestFailedCreationWithBodyDeletesUpload(t *testing.T) {
 	}
 }
 
-// Item 5: a missing file of an upload with nothing recorded is made again, not a 500.
+// A missing file of an upload with nothing recorded is made again, not a 500.
 func TestMissingFileWithNothingRecordedIsRecreated(t *testing.T) {
 	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
@@ -263,7 +263,7 @@ func (b *stallBody) Read(p []byte) (int, error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
-// Item 6: a new piece from the owner stops the half-open one holding the slot, waits for it, and
+// A new piece from the owner stops the half-open one holding the slot, waits for it, and
 // then goes on from the durable offset the holder left.
 func TestSlotHolderIsStoppedAndResumed(t *testing.T) {
 	t.Parallel()
@@ -298,7 +298,7 @@ func TestSlotHolderIsStoppedAndResumed(t *testing.T) {
 	}
 }
 
-// Item 6: a holder that does not let go in time keeps the slot, and the new request gets 409 locked.
+// A holder that does not let go in time keeps the slot, and the new request gets 409 locked.
 func TestSlotHolderThatStaysGivesLocked(t *testing.T) {
 	t.Parallel()
 	s, key, _, f := uploadSetup(t)
@@ -343,7 +343,7 @@ func waitForSlot(t *testing.T, s *Server, upl string) {
 	}
 }
 
-// Item 7: creating, terminating and expiring uploads are audited, expiry as the system.
+// Creating, terminating and expiring uploads are audited, expiry as the system.
 func TestUploadsAreAudited(t *testing.T) {
 	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Hour) })
@@ -371,7 +371,7 @@ func TestUploadsAreAudited(t *testing.T) {
 	}
 }
 
-// Item 8: a completion that meets a taken name waits for a commit, the file stays where it is, and
+// A completion that meets a taken name waits for a commit, the file stays where it is, and
 // the owner commits it under another name.
 func TestAwaitingCommitAndCommit(t *testing.T) {
 	t.Parallel()
@@ -419,7 +419,7 @@ func TestAwaitingCommitAndCommit(t *testing.T) {
 	}
 }
 
-// Item 8: committing an upload that is not waiting for a name is a conflict.
+// Committing an upload that is not waiting for a name is a conflict.
 func TestCommitOnlyWhileAwaiting(t *testing.T) {
 	t.Parallel()
 	s, key, _, f := uploadSetup(t)

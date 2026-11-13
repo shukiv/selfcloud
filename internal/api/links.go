@@ -517,7 +517,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 		return s.serveConvertedLink(w, r, n, c.disp)
 	}
 	// With content_url set, an inline link to a no-download file is served on the content origin only (sec1, decision
-	// 84, item 11). On the main origin the inline answer would become an attachment, a download the rule forbids, so the
+	// 84). On the main origin the inline answer would become an attachment, a download the rule forbids, so the
 	// link is refused there with the answer of a bad link, and no bytes are sent.
 	if c.disp == dispInline && s.cfg.ContentURL != "" && !s.onContentHost(r) {
 		restricted, err := s.store.NoDownloadApplies(ctx, n.AccountID, n.ID)

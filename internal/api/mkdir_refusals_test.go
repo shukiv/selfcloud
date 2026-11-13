@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// fu2 review fix 4 (decision 74). The parent form makes a directory, so it needs contributor on the parent, and a
+// fu2 (decision 74). The parent form makes a directory, so it needs contributor on the parent, and a
 // share-link visitor never writes through the directories route. Each refusal is pinned, and the contributor check
 // fails when it is lowered (the mutation proof).
 

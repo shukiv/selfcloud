@@ -289,7 +289,7 @@ func TestCopyPrincipalNeverLiftsADelegatedToken(t *testing.T) {
 
 // TestWOPISaveAsOverwriteOfATrashedNameIsFree: trashing a file frees its name (the store gives the name key to the trash), so
 // an overwrite of that name finds no file to replace and makes the copy under the name. The trashed file is not touched.
-// The review took this for a 409 case; the store's rule makes it a plain free name, so this pins that behaviour.
+// At first this looked like a 409 case; the store's rule makes it a plain free name, so this pins that behaviour.
 func TestWOPISaveAsOverwriteOfATrashedNameIsFree(t *testing.T) {
 	t.Parallel()
 	fx, tok := saveAsFixture(t)

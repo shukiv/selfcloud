@@ -100,7 +100,7 @@ type Server struct {
 	verifyHook func(dummy bool)
 	// sessionClock is the time the web sessions read. Production keeps time.Now; tests move it.
 	sessionClock func() time.Time
-	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (item 1).
+	// dropFlight counts the bytes of drop pieces whose bodies are still arriving.
 	dropFlight dropFlight
 	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84).
 	oneFlight oneRequestFlight

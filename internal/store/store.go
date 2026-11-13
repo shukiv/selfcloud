@@ -145,7 +145,7 @@ func dsn(path string, pragmas []string, txlock string) string {
 }
 
 // Checkpoint moves the write-ahead log into the database file and truncates the log, so a page freed by a delete, and
-// the text it held, leave the -wal file too (review, decision 46). It reports busy when a reader held the log: that is
+// the text it held, leave the -wal file too (decision 46). It reports busy when a reader held the log: that is
 // not an error, and the next pass tries again.
 func (s *Store) Checkpoint(ctx context.Context) (busy bool, err error) {
 	var b, logged, moved int64

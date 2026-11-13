@@ -15,7 +15,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// sec1 item 1 (decision 84): a guesser at one address must not lock the real user out from another address.
+// sec1 (decision 84): a guesser at one address must not lock the real user out from another address.
 // Before, the per-email bucket was keyed on the email alone, so a few tries from one address made every later
 // sign-in and reset for that email answer 429, from anywhere.
 func TestGuessingFromOneAddressDoesNotLockOutTheUserElsewhere(t *testing.T) {
@@ -52,7 +52,7 @@ func TestGuessingFromOneAddressDoesNotLockOutTheUserElsewhere(t *testing.T) {
 	}
 }
 
-// sec1 item 1 (decision 84): online guessing of one email from many addresses is still bounded. Each address has its
+// sec1 (decision 84): online guessing of one email from many addresses is still bounded. Each address has its
 // own per-email budget, and a cap of 30 failed sign-ins an hour counts every address together. An unknown email is
 // charged the same way, so the answer cannot show whether the address is known.
 func TestGuessingOneEmailFromManyAddressesIsBounded(t *testing.T) {
@@ -110,7 +110,7 @@ func deviceCookieFrom(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie
 	return nil
 }
 
-// sec1 item 1 (decision 84): a device the user has signed in from before is not refused by the email's cap, so a
+// sec1 (decision 84): a device the user has signed in from before is not refused by the email's cap, so a
 // guesser who has spent the cap, from one address or from many, cannot keep the user out.
 func TestDeviceCookieSignsInWhileTheCapIsSpent(t *testing.T) {
 	t.Parallel()
@@ -134,7 +134,7 @@ func TestDeviceCookieSignsInWhileTheCapIsSpent(t *testing.T) {
 	}
 }
 
-// sec1 item 1 (decision 84): without a device cookie, a sign-in is subject to the cap once it is spent. The answer
+// sec1 (decision 84): without a device cookie, a sign-in is subject to the cap once it is spent. The answer
 // is the same for an unknown email, and it points the person at Forgot password.
 func TestNoDeviceCookieIsRefusedWhileTheCapIsSpent(t *testing.T) {
 	t.Parallel()
@@ -157,7 +157,7 @@ func TestNoDeviceCookieIsRefusedWhileTheCapIsSpent(t *testing.T) {
 	}
 }
 
-// sec1 item 1 (decision 84): a forged cookie, a cookie for another user, and an expired cookie are not trusted.
+// sec1 (decision 84): a forged cookie, a cookie for another user, and an expired cookie are not trusted.
 func TestForgedOtherUsersAndExpiredDeviceCookiesAreNotTrusted(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -194,7 +194,7 @@ func TestForgedOtherUsersAndExpiredDeviceCookiesAreNotTrusted(t *testing.T) {
 	wantConfirmAnswer(t, loginWith(t, short, "10.8.2.2:4000", "ann@example.com", testPassword, old))
 }
 
-// sec1 item 1 (decision 84): a device cookie has a budget of its own. When it has failed too often, it stops being
+// sec1 (decision 84): a device cookie has a budget of its own. When it has failed too often, it stops being
 // trusted, and the cap applies to it again.
 func TestDeviceCookieThatFailsItsOwnBudgetStopsBeingTrusted(t *testing.T) {
 	t.Parallel()
@@ -246,7 +246,7 @@ func TestDeviceCookieThatFailsItsOwnBudgetStopsBeingTrusted(t *testing.T) {
 	wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev))
 }
 
-// sec1 item 5 (decision 84): a password reset is not refused by the cap, and a successful reset sets a device cookie
+// sec1 (decision 84): a password reset is not refused by the cap, and a successful reset sets a device cookie
 // that signs the user in while the cap stays spent.
 func TestResetWorksWhileTheCapIsSpentAndSetsADeviceCookie(t *testing.T) {
 	t.Parallel()
@@ -273,7 +273,7 @@ func TestResetWorksWhileTheCapIsSpentAndSetsADeviceCookie(t *testing.T) {
 	wantStatus(t, loginWith(t, s, "10.11.0.3:4000", "ann@example.com", newPassword, dev), 200)
 }
 
-// cookieAcrossEvent is the check for decision 84. A device cookie made before an event (a password change or
+// cookieAcrossEvent checks decision 84. A device cookie made before an event (a password change or
 // reset, an admin's set-password, or a disable) stops working after it: with the email's cap spent, the old cookie is
 // refused, while a cookie made after the event is trusted. The event is run by the caller; newPassword is the password
 // the user has after it.

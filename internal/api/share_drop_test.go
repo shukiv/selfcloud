@@ -387,7 +387,7 @@ func TestDropUploadSizeIsTheAccountsLimit(t *testing.T) {
 
 func TestDropMidUploadEndsWhenItsLinkDies(t *testing.T) {
 	t.Parallel()
-	// gone says whether the link's end takes the upload with it. A paused or trashed link keeps it (item 3).
+	// gone says whether the link's end takes the upload with it. A paused or trashed link keeps it.
 	type ending struct {
 		gone bool
 		kill func(fx *dropFixture, secret string)

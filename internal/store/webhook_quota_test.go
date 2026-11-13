@@ -126,7 +126,7 @@ func TestOneChangePastBothLevelsSendsBoth(t *testing.T) {
 	}
 }
 
-// A reservation is not usage, so it does not move a level (review finding 6). Refusals still count it: see the quota
+// A reservation is not usage, so it does not move a level. Refusals still count it: see the quota
 // checks in internal/api.
 func TestReservationsDoNotCountTowardTheLevel(t *testing.T) {
 	q := newQuotaFixture(t, 1000, "quota.warning")

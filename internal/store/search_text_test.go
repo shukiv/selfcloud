@@ -317,7 +317,7 @@ func TestSearchRebuildEmptiesTheContentRowsAndQueuesTheBackfill(t *testing.T) {
 	if done, err := s.TextBackfillDone(context.Background()); err != nil || done {
 		t.Errorf("rebuild left the backfill done: %v %v", done, err)
 	}
-	// The usage goes with the text in the rebuild's write (review, decision 46): a rebuild that kept it would count the
+	// The usage goes with the text in the rebuild's write (decision 46): a rebuild that kept it would count the
 	// bytes twice once the text came back, and would fill the cap.
 	if u := scalarCount(t, s, "SELECT COALESCE(SUM(bytes), 0) FROM search_text_usage"); u != 0 {
 		t.Fatalf("usage after rebuild: %d bytes, want 0", u)
@@ -338,7 +338,7 @@ func TestSearchRebuildEmptiesTheContentRowsAndQueuesTheBackfill(t *testing.T) {
 	}
 }
 
-// TestPurgeDropsItsTextInTheSameWrite (review, decision 46): a purged file's text leaves the full-text table, the content
+// TestPurgeDropsItsTextInTheSameWrite (decision 46): a purged file's text leaves the full-text table, the content
 // row and the usage in the purge's own write, not at the next hourly sweep. The marker leaves the database file after a
 // truncating checkpoint, and the -wal file too.
 func TestPurgeDropsItsTextInTheSameWrite(t *testing.T) {
@@ -374,7 +374,7 @@ func TestPurgeDropsItsTextInTheSameWrite(t *testing.T) {
 	}
 }
 
-// TestCopyCleanupDropsTextOfAStagedOnlyBlob (review, decision 46): the staged copy of a file is the only holder of its blob
+// TestCopyCleanupDropsTextOfAStagedOnlyBlob (decision 46): the staged copy of a file is the only holder of its blob
 // once the source lets go. The cleanup of the copy removes the staged node and its text in the cleanup's writes, not at
 // the sweep.
 func TestCopyCleanupDropsTextOfAStagedOnlyBlob(t *testing.T) {
@@ -429,7 +429,7 @@ func TestCopyCleanupDropsTextOfAStagedOnlyBlob(t *testing.T) {
 	}
 }
 
-// TestPublishKeepsTheTextOfAPublishedFile (review, decision 46): a publish moves the staged files into the destination,
+// TestPublishKeepsTheTextOfAPublishedFile (decision 46): a publish moves the staged files into the destination,
 // and their text stays with their blobs. The publish's own deletes do not take it.
 func TestPublishKeepsTheTextOfAPublishedFile(t *testing.T) {
 	fx := newCopyFixture(t)

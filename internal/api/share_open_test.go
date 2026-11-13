@@ -1000,7 +1000,7 @@ func TestVisitorIsNotListedEveryFolder(t *testing.T) {
 	}
 }
 
-// Item 9: the sharing policy answers how many anyone links the account has, live or paused.
+// The sharing policy answers how many anyone links the account has, live or paused.
 func TestSharingPolicyCountsAnyoneLinks(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)

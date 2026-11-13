@@ -189,8 +189,8 @@ func rowOf(t *testing.T, s *Server, nodeID string) textRow {
 	return r
 }
 
-// docxBytes is a file whose content is a Word document: a real ZIP container with the OOXML entries: the true
-// type is read from the entries). Its name is irrelevant: the content decides what it is.
+// docxBytes is a file whose content is a Word document: a real ZIP container with the OOXML entries; the true
+// type is read from the entries. Its name is irrelevant: the content decides what it is.
 func docxBytes(text string) string {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -651,7 +651,7 @@ func TestConverterTimeoutCountsThreeTriesThenWaitsADay(t *testing.T) {
 	if r := rowOf(t, fx.s, n.ID); r.Attempts != 3 || r.State != "failed" {
 		t.Fatalf("third time-out: %+v, want failed and sticky under the converter key", r)
 	}
-	// After the third try the document waits for a new converter key, as a refusal does (review, decision 46). It is not
+	// After the third try the document waits for a new converter key, as a refusal does (decision 46). It is not
 	// sent again by the clock: a fourth, fifth and sixth day make no request.
 	sent := conv.calls
 	for day := 1; day <= 3; day++ {

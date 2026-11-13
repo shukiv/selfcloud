@@ -28,7 +28,7 @@ func sqlCount(t *testing.T, s *Server, query string, args ...any) int {
 	return n
 }
 
-// fu2 item 7: the audit entries that name a change. Each names the value it set, so the owner can read what changed.
+// fu2: the audit entries that name a change. Each names the value it set, so the owner can read what changed.
 func TestAuditEntriesNameQuotaPolicyAndAppearance(t *testing.T) {
 	t.Parallel()
 	fx := newP1Fixture(t)
@@ -61,7 +61,7 @@ func TestAuditEntriesNameQuotaPolicyAndAppearance(t *testing.T) {
 	}
 }
 
-// fu2 item 7: a label value is kept while its node is in the trash, comes back with a restore, and is removed by a purge.
+// fu2: a label value is kept while its node is in the trash, comes back with a restore, and is removed by a purge.
 func TestLabelValuesSurviveTrashAndGoOnPurge(t *testing.T) {
 	t.Parallel()
 	lf := newLabelFixture(t)
@@ -84,7 +84,7 @@ func TestLabelValuesSurviveTrashAndGoOnPurge(t *testing.T) {
 	}
 }
 
-// fu2 item 7: a field's choices are limited to MaxLabelChoices on PATCH too, not only on POST.
+// fu2: a field's choices are limited to MaxLabelChoices on PATCH too, not only on POST.
 func TestLabelChoicesLimitHoldsOnPatch(t *testing.T) {
 	t.Parallel()
 	lf := newLabelFixture(t)

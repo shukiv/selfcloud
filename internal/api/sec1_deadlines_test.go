@@ -19,7 +19,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// sec1 item 3 (decision 84): a JSON body must arrive within a deadline. A client that sends its body a byte at a time
+// sec1 (decision 84): a JSON body must arrive within a deadline. A client that sends its body a byte at a time
 // held the connection and its goroutine for as long as it liked. Here the body stalls after a few bytes, and the server
 // must end the request.
 func TestJSONBodyThatStallsIsEnded(t *testing.T) {
@@ -77,7 +77,7 @@ func setSegment(t *testing.T, size int64) {
 	t.Cleanup(func() { downloadSegmentBytes = saved })
 }
 
-// sec1 item 3, rework 2 (decision 84): a reader that reads part of a download and then stops is cut off within about one
+// sec1 (decision 84): a reader that reads part of a download and then stops is cut off within about one
 // segment's deadline (download.timeout plus the segment over download.min_rate), not after the whole file's time.
 // Before, one deadline covered the whole file: 12 MiB at 1 MiB/s here is about 12 s, and this test reads after 3 s.
 func TestDownloadThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
@@ -108,7 +108,7 @@ func TestDownloadThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
 	}
 }
 
-// sec1 item 3, rework 2 (decision 84): a reader that keeps reading above download.min_rate completes the download. There
+// sec1 (decision 84): a reader that keeps reading above download.min_rate completes the download. There
 // is no absolute cap on the total time: each segment gets its own deadline as the reader moves on.
 func TestDownloadCompletesForASlowReaderAboveTheMinimumRate(t *testing.T) {
 	setSegment(t, 512<<10)
@@ -146,7 +146,7 @@ func TestDownloadCompletesForASlowReaderAboveTheMinimumRate(t *testing.T) {
 	}
 }
 
-// sec1 item 3, rework 2 (decision 84): a single range and a multipart range both complete.
+// sec1 (decision 84): a single range and a multipart range both complete.
 func TestDownloadRangesComplete(t *testing.T) {
 	setSegment(t, 512<<10)
 	const size = 2 << 20
@@ -183,7 +183,7 @@ func TestDownloadRangesComplete(t *testing.T) {
 	}
 }
 
-// sec1 item 3, rework 2 (decision 84): a whole file is sent by sendfile, one segment at a time. The response's ReadFrom
+// sec1 (decision 84): a whole file is sent by sendfile, one segment at a time. The response's ReadFrom
 // receives the segments, each as a limited reader over the file, and that is the path net/http turns into sendfile. The
 // recorder stands in for the connection's writer.
 func TestDownloadSendsFileSegmentsThroughReadFrom(t *testing.T) {

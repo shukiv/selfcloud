@@ -13,7 +13,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/webhook"
 )
 
-// Review finding 1: one account's busy endpoints do not hold back another account's delivery. Account A has 50
+// One account's busy endpoints do not hold back another account's delivery. Account A has 50
 // endpoints, each owed six deliveries, so its lanes would hold all the tokens for a long time. Account B's single
 // delivery is sent within two lane budgets (plus a second for slots and ticks), not after A's queues end.
 func TestWorkerOneAccountDoesNotStarveAnother(t *testing.T) {
@@ -70,7 +70,7 @@ func TestWorkerOneAccountDoesNotStarveAnother(t *testing.T) {
 	}
 }
 
-// Review finding 8: a scrape reads the webhook queue at most once every 30 seconds. The second scrape inside the window
+// A scrape reads the webhook queue at most once every 30 seconds. The second scrape inside the window
 // reports the first one's numbers, and a scrape after the window reports the change.
 func TestWebhookMetricsReadTheQueueEvery30Seconds(t *testing.T) {
 	t.Parallel()

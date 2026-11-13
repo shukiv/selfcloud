@@ -11,7 +11,7 @@ import (
 )
 
 // The publish's placement of a staged top changes only a staged node: a node of a live folder, named with the import's
-// staging folder's ID, is not moved or renamed by it (the node-write guard's review of SetStagedParent).
+// staging folder's ID, is not moved or renamed by it (the node-write guard's rule for SetStagedParent).
 func TestStagedPlacementTouchesOnlyStagedNodes(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), "placement.db")})

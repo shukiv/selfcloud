@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// A re-enabled endpoint is never offered the queue it had when it was disabled (review finding 2 and 3). The disable
+// A re-enabled endpoint is never offered the queue it had when it was disabled. The disable
 // raised its generation, so those deliveries are stale: no claim takes them, and the cleanup fails them whatever the
 // endpoint's state is by then. pending_count stays equal to the pending rows throughout.
 func TestReEnabledEndpointSendsNoOldQueue(t *testing.T) {
@@ -56,7 +56,7 @@ func TestReEnabledEndpointSendsNoOldQueue(t *testing.T) {
 	}
 }
 
-// A retry of an old delivery is not sent while the endpoint's head is in flight (review finding 4). The endpoint has one
+// A retry of an old delivery is not sent while the endpoint's head is in flight. The endpoint has one
 // request at a time, whatever the retry order.
 func TestRetryDoesNotRunBesideAnInFlightHead(t *testing.T) {
 	t.Parallel()
@@ -86,7 +86,7 @@ func TestRetryDoesNotRunBesideAnInFlightHead(t *testing.T) {
 	}
 }
 
-// A retry is a fresh delivery: its attempts and its 24-hour window start again (review finding 4, the cosmetic part).
+// A retry is a fresh delivery: its attempts and its 24-hour window start again.
 func TestRetryGivesAFreshWindow(t *testing.T) {
 	t.Parallel()
 	s := openTest(t)
@@ -115,7 +115,7 @@ func TestRetryGivesAFreshWindow(t *testing.T) {
 	}
 }
 
-// An outcome applies only to the claim that made it (review finding 5). A lease that lapsed and a second claim: the late
+// An outcome applies only to the claim that made it. A lease that lapsed and a second claim: the late
 // failure of the first claim changes no counter and does not touch the second claim's lease.
 func TestOutcomeOfALapsedLeaseChangesNothing(t *testing.T) {
 	t.Parallel()
@@ -189,7 +189,7 @@ func TestFailStaleDeliveriesTakesOnlyTheOldGeneration(t *testing.T) {
 	}
 }
 
-// Pruning events walks from a cursor and deletes only the events no delivery names, a batch at a time (review finding 8).
+// Pruning events walks from a cursor and deletes only the events no delivery names, a batch at a time.
 // The cursor wraps to 0 when the table has been walked.
 func TestPruneWebhookEventsFromACursor(t *testing.T) {
 	t.Parallel()

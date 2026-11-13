@@ -157,7 +157,7 @@ func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it
 		}
 		return &verificationJSON{Method: methodLink, URL: it.link, Token: it.token, ExpiresAt: &it.expires}
 	}
-	// The attempt is written before the mail leaves (fu2, decision 74; review fix 1), so no mail goes out with no row.
+	// The attempt is written before the mail leaves (fu2, decision 74), so no mail goes out with no row.
 	// A write that fails stops the send, and the answer says the mail was not sent, as for a send that failed.
 	details := map[string]any{"purpose": it.purpose, "method": methodEmail}
 	attempt := s.auditEntry(r, u.AccountID, "verification.send", u.ID, details)

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// fu2 item 7: the colour palette the code keeps and the list the migration's CHECK holds must be the same, in the same
+// fu2: the colour palette the code keeps and the list the migration's CHECK holds must be the same, in the same
 // order (Colors says the migration repeats it).
 func TestColorsMatchTheMigrationCheck(t *testing.T) {
 	b, err := os.ReadFile("migrations/0019_shortcuts.sql")
@@ -35,7 +35,7 @@ func TestColorsMatchTheMigrationCheck(t *testing.T) {
 	}
 }
 
-// fu2 item 7: the global pending cap stops queueing when ten or more accounts are each under their own cap. Ten accounts
+// fu2: the global pending cap stops queueing when ten or more accounts are each under their own cap. Ten accounts
 // each hold NotifyAccountPendingLimit-1 pending rows, and an eleventh holds the ten that reach NotifyPendingLimit. A
 // twelfth account has none, so only the global cap can stop its mail. The per-account test fills one account and is
 // stopped by its own cap first, so it does not show this.

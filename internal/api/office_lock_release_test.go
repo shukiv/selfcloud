@@ -72,7 +72,7 @@ func TestWOPILockKeptWhileAnotherBrowserStillEditsTheFile(t *testing.T) {
 	wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), otherTok, nil, nil), 200)
 }
 
-// lk1 review (Medium): a viewer's live session is not a reason to keep a lock. The owner signs out while a member has the
+// A viewer's live session is not a reason to keep a lock. The owner signs out while a member has the
 // file open to view: the member's session can never save or refresh under the lock, so the lock is freed at the sweep.
 func TestWOPILockReleasedBySweepWhenOnlyAViewerRemains(t *testing.T) {
 	t.Parallel()
@@ -94,7 +94,7 @@ func TestWOPILockReleasedBySweepWhenOnlyAViewerRemains(t *testing.T) {
 	wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), view, nil, nil), 200)
 }
 
-// lk1 review (Medium): a view-mode session cannot take, refresh or release a lock. Each answers as a session with no right
+// A view-mode session cannot take, refresh or release a lock. Each answers as a session with no right
 // to lock does (404, the specification's "user unauthorized"), and the lock held by the editor is unchanged.
 func TestViewModeSessionCannotLock(t *testing.T) {
 	t.Parallel()
@@ -116,7 +116,7 @@ func TestViewModeSessionCannotLock(t *testing.T) {
 	}
 }
 
-// lk1 review (item 2): the owner signs out, then a co-editor's fresh session refreshes the lock before the sweep runs. The
+// The owner signs out, then a co-editor's fresh session refreshes the lock before the sweep runs. The
 // sweep keeps the lock, since a live session on the file is the reason it was refreshed for.
 func TestWOPILockKeptWhenACoEditorRefreshesItAfterTheOwnerSignsOut(t *testing.T) {
 	t.Parallel()

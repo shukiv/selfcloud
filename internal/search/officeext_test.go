@@ -51,7 +51,7 @@ func zipWith(t *testing.T, names []string, mimetype string) (*os.File, int64) {
 	return f, info.Size()
 }
 
-// sec1 item 6 (decision 84): a zip with a very large number of entries is not read entry by entry into a map. Before,
+// sec1 (decision 84): a zip with a very large number of entries is not read entry by entry into a map. Before,
 // every entry was kept, so a zip of many small entries cost memory in proportion to its entries. A container over the
 // entry cap is not decided, and the document is not extracted as an office file.
 func TestOfficeExtRefusesAZipOverTheEntryCap(t *testing.T) {
@@ -305,7 +305,7 @@ func zip64Names(n int) []string {
 	return names
 }
 
-// sec1 item 6 (decision 84): a zip under the cap is still decided, with the entry the document type is read from
+// sec1 (decision 84): a zip under the cap is still decided, with the entry the document type is read from
 // (the last entry of the container is found, as before).
 func TestOfficeExtDecidesAZipUnderTheEntryCap(t *testing.T) {
 	t.Parallel()

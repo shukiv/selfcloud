@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// sec1 item 8 (decision 84): a name in a share mail goes through mail.Name, as the comment mail does, so a dotted
+// sec1 (decision 84): a name in a share mail goes through mail.Name, as the comment mail does, so a dotted
 // name is not turned into a link by a mail client. The rule also strips bidi marks and line breaks, but the API refuses
 // those in a name when it is written (invalid_name), so the reachable effect is the link one, and that is what is
 // tested here.
@@ -31,7 +31,7 @@ func TestShareMailNamesUseTheMailNameRule(t *testing.T) {
 	}
 }
 
-// sec1 item 8 (decision 84): the access-request mail to managers uses the same rule for the requester and the item.
+// sec1 (decision 84): the access-request mail to managers uses the same rule for the requester and the item.
 func TestAccessRequestMailNamesUseTheMailNameRule(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)

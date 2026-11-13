@@ -9,7 +9,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
-// fu2 item 5 (decision 74): verifying an account or resetting a password from a browser that is signed in as another
+// fu2 (decision 74): verifying an account or resetting a password from a browser that is signed in as another
 // user asks first, as a sign-in link does (signed_in_as_other). Nothing is written by the refusal, so the link stays
 // live for the prompt's second answer, which carries confirm.
 

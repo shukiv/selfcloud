@@ -143,7 +143,7 @@ func TestWOPIRefusedCallsWarnOncePerSessionAndReason(t *testing.T) {
 }
 
 // tamperSignature returns tok with its signature changed: one bit of the decoded MAC is flipped and the MAC is encoded
-// again. The last character is not changed, since its filler bits are ignored by the decoder (lk1 review fix).
+// again. The last character is not changed, since its filler bits are ignored by the decoder.
 func tamperSignature(t *testing.T, tok string) string {
 	t.Helper()
 	body, _, ok := strings.Cut(strings.TrimPrefix(tok, auth.TokenPrefix), ".")
@@ -169,7 +169,7 @@ func macOf(t *testing.T, tok string) []byte {
 	return raw
 }
 
-// lk1 review fix: a tampered token must carry a different signature, or the refusal test cannot tell a forgery from a
+// A tampered token must carry a different signature, or the refusal test cannot tell a forgery from a
 // valid token. A raw base64url string's last character has filler bits the decoder ignores, so "...A" and "...B" can decode
 // to one MAC. Here a token ending in "A" is tampered, and the MAC must still change.
 func TestWOPITamperedSignatureChangesTheMAC(t *testing.T) {

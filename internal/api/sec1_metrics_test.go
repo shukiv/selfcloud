@@ -8,7 +8,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/config"
 )
 
-// sec1 item 4 (decision 84): /metrics is not on the public listener by default. It shows storage totals, route counts
+// sec1 (decision 84): /metrics is not on the public listener by default. It shows storage totals, route counts
 // and the webhook queue, and it was unauthenticated there.
 func TestMetricsIsOffTheMainListenerByDefault(t *testing.T) {
 	t.Parallel()
@@ -18,7 +18,7 @@ func TestMetricsIsOffTheMainListenerByDefault(t *testing.T) {
 	}
 }
 
-// sec1 item 4 (decision 84): the main listener serves /metrics only with the explicit flag.
+// sec1 (decision 84): the main listener serves /metrics only with the explicit flag.
 func TestMetricsOnTheMainListenerNeedsTheFlag(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.MetricsOnMain = true })
@@ -27,7 +27,7 @@ func TestMetricsOnTheMainListenerNeedsTheFlag(t *testing.T) {
 	}
 }
 
-// sec1 item 4 (decision 84): with metrics_listen set, /metrics is on that address, and the main listener does not
+// sec1 (decision 84): with metrics_listen set, /metrics is on that address, and the main listener does not
 // serve it even with the flag.
 func TestMetricsListenWinsOverTheFlag(t *testing.T) {
 	t.Parallel()

@@ -12,7 +12,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// sec1 item 11 rework (decision 84): an inline link to a no-download file is served only on the content origin. Opened
+// sec1 (decision 84): an inline link to a no-download file is served only on the content origin. Opened
 // on the main origin it is refused with the answer of a bad link, and no bytes are sent. Before, the main origin turned
 // it into an attachment, which is a download the rule forbids.
 func TestRestrictedInlineLinkIsRefusedOnTheMainOrigin(t *testing.T) {
@@ -40,7 +40,7 @@ func TestRestrictedInlineLinkIsRefusedOnTheMainOrigin(t *testing.T) {
 	wantError(t, got, 400, apierr.InvalidRequest)
 }
 
-// sec1 item 11 rework (decision 84): a restricted viewer's inline link is minted only for a type a browser shows inline.
+// sec1 (decision 84): a restricted viewer's inline link is minted only for a type a browser shows inline.
 // A zip is refused at mint, since the content origin would download it.
 func TestRestrictedInlineLinkForAZipIsRefusedAtMint(t *testing.T) {
 	t.Parallel()
@@ -58,7 +58,7 @@ func TestRestrictedInlineLinkForAZipIsRefusedAtMint(t *testing.T) {
 		map[string]any{"disposition": "inline"}), 403, apierr.DownloadRestricted)
 }
 
-// sec1 item 11 (decision 84): a viewer may open a no-download PDF inline when content_url is configured. The design
+// sec1 (decision 84): a viewer may open a no-download PDF inline when content_url is configured. The design
 // (docs/design.md, the content origin) says a PDF loads from a signed inline link on the content origin, and the
 // main origin never shows a file inline when content_url is set. So the viewer's path is the signed link.
 func TestViewerOpensANoDownloadPDFInlineWithContentURL(t *testing.T) {

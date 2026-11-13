@@ -43,7 +43,7 @@ func countBlobFiles(t *testing.T, dataDir string) int {
 	return n
 }
 
-// sec1 item 2 (decision 84): a one-request write checks the disk first, as an upload does. With the free space below
+// sec1 (decision 84): a one-request write checks the disk first, as an upload does. With the free space below
 // storage.min_free, a small write is refused before any byte reaches the blob directory.
 func TestOneRequestWriteIsRefusedWhenTheDiskIsBelowMinFree(t *testing.T) {
 	t.Parallel()
@@ -60,7 +60,7 @@ func TestOneRequestWriteIsRefusedWhenTheDiskIsBelowMinFree(t *testing.T) {
 	}
 }
 
-// sec1 item 2 (decision 84): a one-request write whose declared length is more than the account's free quota is
+// sec1 (decision 84): a one-request write whose declared length is more than the account's free quota is
 // refused before any byte is written, not after.
 func TestOneRequestWriteIsRefusedByQuotaBeforeItIsWritten(t *testing.T) {
 	t.Parallel()
@@ -99,7 +99,7 @@ func chunkedWrite(t *testing.T, s *Server, key, fld, name string, size int) (*ht
 	return rec, body
 }
 
-// sec1 item 2, gap found in review (decision 84): a body with no Content-Length is counted as the cap, since it may
+// sec1 (decision 84): a body with no Content-Length is counted as the cap, since it may
 // be as large as the cap. With the disk holding less than the cap, it is refused before any of it is read, though one
 // byte would fit.
 func TestChunkedWriteIsCheckedAgainstTheCap(t *testing.T) {
@@ -126,7 +126,7 @@ func TestChunkedWriteIsCheckedAgainstTheCap(t *testing.T) {
 	}
 }
 
-// sec1 item 2, gap found in review (decision 84): a chunked body over the account's remaining quota is refused before
+// sec1 (decision 84): a chunked body over the account's remaining quota is refused before
 // any byte is read. The unsized body is counted as the cap, which is over the 10-byte quota here.
 func TestChunkedWriteIsCheckedAgainstTheQuota(t *testing.T) {
 	t.Parallel()
@@ -269,7 +269,7 @@ func TestConcurrentOneRequestWritesCannotOverrunTheDisk(t *testing.T) {
 	}
 }
 
-// sec1 item 2, review (decision 84): a large one-request write takes two limiters: write.one_request (300 a minute, every
+// sec1 (decision 84): a large one-request write takes two limiters: write.one_request (300 a minute, every
 // write) and write.one_request_large (60 a minute, as upload.create). The 61st large write in a minute from one caller is
 // refused, and a small write from the same caller still passes.
 func TestLargeOneRequestWritesAreLimitedAt60(t *testing.T) {
@@ -290,7 +290,7 @@ func TestLargeOneRequestWritesAreLimitedAt60(t *testing.T) {
 	}
 }
 
-// sec1 item 2, review (decision 84): one account's one-request writes in flight count against its own share of the disk
+// sec1 (decision 84): one account's one-request writes in flight count against its own share of the disk
 // (upload.max_disk_share_percent), as tus and drop pieces do, so one account cannot take the pool and refuse every other
 // account. The disk has 40 MiB above storage.min_free and the share is 50%, so 20 MiB. Account A's first 16 MiB write
 // waits in its body; its second is refused with scope "account" before its body is read, and account B's write still

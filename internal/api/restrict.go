@@ -45,7 +45,7 @@ func (s *Server) inlineAllowed(r *http.Request, n *store.Node, wantInline bool) 
 	return ok
 }
 
-// linkInlineAllowed is the mint-time rule for a restricted caller's inline link (sec1, decision 84, item 11): only a
+// linkInlineAllowed is the mint-time rule for a restricted caller's inline link (sec1, decision 84): only a
 // type a browser shows inline (safeInlineType: images other than SVG, PDF, audio, video, plain text) may be linked
 // inline. Any other type would be downloaded when opened, so it is refused here. Where the link is served is decided
 // at serve time: with content_url set, a no-download file's inline link is served on the content origin only.

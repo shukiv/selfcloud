@@ -21,7 +21,7 @@ import (
 
 // TestZipLongExtensionCollisionDoesNotPanic: two root names that fold to one key, each 255 bytes with a 254-byte
 // extension. The second one takes a suffix, and the name must still fit in 255 bytes. The arithmetic used to go
-// negative here and panicked (review of commit 1a7a512, defect 1).
+// negative here and panicked.
 func TestZipLongExtensionCollisionDoesNotPanic(t *testing.T) {
 	ns := nameSet{}
 	long := "." + strings.Repeat("b", 253)
@@ -46,7 +46,7 @@ func TestZipLongExtensionCollisionDoesNotPanic(t *testing.T) {
 }
 
 // TestZipAccountDiskShare: one account's stored zips may hold its share of zip.max_disk and no more, even when the
-// installation has room. Another account is not affected (review defect 2; zip.max_disk_per_account).
+// installation has room. Another account is not affected (zip.max_disk_per_account).
 func TestZipAccountDiskShare(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
 		c.Zip.MaxBytes = 10 << 20
@@ -78,7 +78,7 @@ func TestZipAccountDiskShare(t *testing.T) {
 }
 
 // TestZipFailedRowsAreSwept: a failed zip is kept for zip.ttl after its creation, and then its row and roots are
-// removed by the sweep (review defect 4).
+// removed by the sweep.
 func TestZipFailedRowsAreSwept(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) { c.Zip.MaxEntries = 3 })
 	job := createZip(t, fx, nil, fx.a.ID)
@@ -104,7 +104,7 @@ func TestZipFailedRowsAreSwept(t *testing.T) {
 }
 
 // TestZipOrphanFilesAreSwept: a zip file that no row names is removed once it is an hour old by its modification
-// time. A young one is kept, so a file being published is not caught (review defect 5).
+// time. A young one is kept, so a file being published is not caught.
 func TestZipOrphanFilesAreSwept(t *testing.T) {
 	fx := zipFixture(t)
 	job := createZip(t, fx, nil, fx.a.ID)
@@ -147,8 +147,7 @@ func TestZipOrphanFilesAreSwept(t *testing.T) {
 }
 
 // TestZipWalkErrorFailsTheZip: an access error that is not a refusal (here, the store failing) fails the zip. It is
-// not taken for "the caller cannot read this", which would leave the node out and say so only in the count (review
-// defect 6).
+// not taken for "the caller cannot read this", which would leave the node out and say so only in the count.
 func TestZipWalkErrorFailsTheZip(t *testing.T) {
 	fx := zipFixture(t)
 	fx.s.zipWalkFault = func(nodeID string) error {
@@ -165,7 +164,7 @@ func TestZipWalkErrorFailsTheZip(t *testing.T) {
 }
 
 // TestZipLeftOutSubtreeCountsEveryNode: a folder the caller cannot read is left out with everything under it, and the
-// header counts all of them (review gap: whole-subtree skip).
+// header counts all of them.
 func TestZipLeftOutSubtreeCountsEveryNode(t *testing.T) {
 	fx := zipFixture(t)
 	fx.s.zipWalkFault = func(nodeID string) error {
@@ -193,7 +192,7 @@ func TestZipLeftOutSubtreeCountsEveryNode(t *testing.T) {
 }
 
 // TestZipPanicReleasesTheWork: a panic in a turn releases what the job holds (the registry entry and the open file),
-// fails the row, removes the partial file, and then goes on, so the runner records the job (review defect 7).
+// fails the row, removes the partial file, and then goes on, so the runner records the job.
 func TestZipPanicReleasesTheWork(t *testing.T) {
 	fx := zipFixture(t)
 	job := createZip(t, fx, nil, fx.a.ID)

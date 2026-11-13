@@ -11,7 +11,7 @@ import (
 
 // TestGoBackRefusesAdminSessionEndedOnTheClock: the admin's unticked session ends 12 hours after its last use, by the
 // server's clock. Going back after that is refused, so the restore reads the same clock as every other session check
-// (decision 75, review fix 5). The clock is fake.
+// (decision 75). The clock is fake.
 func TestGoBackRefusesAdminSessionEndedOnTheClock(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)

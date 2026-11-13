@@ -11,7 +11,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/config"
 )
 
-// fu2 item 2: a signed link made for a thumbnail on the content origin, while an installation admin is signed in as
+// fu2: a signed link made for a thumbnail on the content origin, while an installation admin is signed in as
 // the user, lives no longer than the sign-in-as (decision 41). The link's own lifetime, here the default 5 minutes,
 // is longer than the 3 minutes the impersonation has left, so an uncapped link would outlive it.
 func TestThumbnailLinkLivesNoLongerThanTheImpersonation(t *testing.T) {

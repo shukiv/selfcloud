@@ -73,7 +73,7 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 	args = append(args, match, r.AccountID)
 	// The position is on the full-text rowid (search_text_fts.rowid = search_texts.id), so the lower bound is a constraint on
 	// the full-text scan itself. On st.id it was a filter after the scan, and every batch re-ran MATCH from the start, which
-	// made a search over many matches cost about the square of the matches (review, decision 46).
+	// made a search over many matches cost about the square of the matches (decision 46).
 	b.WriteString(" AND search_text_fts.rowid >= ? AND (search_text_fts.rowid > ? OR n.rowid > ?)")
 	args = append(args, after.A, after.A, after.B)
 	if r.Kind != "" {

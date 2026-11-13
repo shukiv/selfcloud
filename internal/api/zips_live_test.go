@@ -34,7 +34,7 @@ func assertZipRefused(t *testing.T, fx *sharingFixture, zipID string) {
 }
 
 // TestZipJobRefusesARevokedToken: a zip made by a token is refused, and makes no file, once the user's tokens are
-// revoked before the job runs. Copy jobs check this (copyActorLive); a zip must too (review finding).
+// revoked before the job runs. Copy jobs check this (copyActorLive); a zip must too.
 func TestZipJobRefusesARevokedToken(t *testing.T) {
 	fx := zipFixture(t)
 	fx.setPerm(t, fx.a.ID, fx.ann.ID, "viewer")

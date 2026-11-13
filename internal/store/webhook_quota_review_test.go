@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// The review fixes of slice j4 (review-j4.md): crossings count used bytes and are checked once per transaction, an
+// Slice j4: crossings count used bytes and are checked once per transaction, an
 // edit of a limit or percent clears the marks it affects, and a mark is written only for an event someone subscribes to.
 
 // inTx runs fn in one write transaction of the fixture's store.
@@ -88,7 +88,7 @@ func TestDipAndReturnInOneTransactionFiresNothing(t *testing.T) {
 	}
 }
 
-// TestQuotaRaiseLetsTheNextCrossingSend: the review's sequence. The edit sends nothing, and the next change that leaves
+// TestQuotaRaiseLetsTheNextCrossingSend: the expected sequence. The edit sends nothing, and the next change that leaves
 // the account above the level announces it.
 func TestQuotaRaiseLetsTheNextCrossingSend(t *testing.T) {
 	q := newQuotaFixture(t, 1000, "quota.warning")

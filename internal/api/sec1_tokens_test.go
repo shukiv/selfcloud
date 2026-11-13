@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// sec1 item 5 (decision 84): a password reset, a password change, an admin's password set and a disable each end the
+// sec1 (decision 84): a password reset, a password change, an admin's password set and a disable each end the
 // user's delegated tokens. Before, only an explicit revoke did, so a token outlived a stolen or replaced password for
 // up to its hour.
 func TestDelegatedTokenEndsWithEachPasswordAndStatusEvent(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 )
 
 // TestWebhookScaleMeasure times the webhook sweep and the metrics scrape on a store of a million events and a million
-// deliveries (review finding 8). It is skipped unless SELFCLOUD_SCALE=1, because it seeds about two million rows and
+// deliveries. It is skipped unless SELFCLOUD_SCALE=1, because it seeds about two million rows and
 // takes minutes. Each figure is the median of its runs, logged with -v.
 func TestWebhookScaleMeasure(t *testing.T) {
 	if os.Getenv("SELFCLOUD_SCALE") != "1" {

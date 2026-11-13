@@ -19,7 +19,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/search"
 )
 
-// Review fixes to content search (security review of ade087c, S1 to S4 and the missing tests). The privacy tests compare
+// The privacy tests of content search compare
 // what each caller gets; the policy tests read the converter's calls and the worker's rows.
 
 // zipOf returns a ZIP container holding the given entries, the way an office document is stored.

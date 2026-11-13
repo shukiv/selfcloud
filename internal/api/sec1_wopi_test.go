@@ -11,7 +11,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/id"
 )
 
-// sec1 item 9 (decision 84): a refused /wopi request is logged at warn once per client address per window, and at debug
+// sec1 (decision 84): a refused /wopi request is logged at warn once per client address per window, and at debug
 // after that, so unauthenticated requests cannot fill the log with one warning each. Here the office is configured, so
 // a request without a valid proof is refused as a forgery, which is the warned case.
 func TestWOPIRefusalsWarnOncePerAddressPerWindow(t *testing.T) {

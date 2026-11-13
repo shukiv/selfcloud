@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// Review S4: the converter's failures are told apart by what happened, and the content search's own conversions never
+// The converter's failures are told apart by what happened, and the content search's own conversions never
 // take a user's preview slot, nor count a wait for a slot as a conversion's time.
 
 // TestUnreachableConverterIsNotAnAttempt: a connection that cannot be made is ErrUnreachable, not ErrUnavailable, so the

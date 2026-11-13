@@ -13,7 +13,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// fu2 item 3: an installation admin signed in as a member of an account that is then deleted. Decision 41 ends the
+// fu2: an installation admin signed in as a member of an account that is then deleted. Decision 41 ends the
 // sign-ins-as of a disabled or reset user at once and audits each end under the admin; decision 48 keeps the record of
 // a deletion at installation level and removes the account's own audit rows with it. This test pins what the admin's
 // Go back answers in the two windows the deletion has: while the account is deleting (its rows are still there), and
@@ -40,7 +40,7 @@ func TestDeletingAnAccountEndsItsSignInsAs(t *testing.T) {
 	wantStatus(t, callSession(t, fx.s, fx.adminSess, "GET", "/api/v1/me", nil), http.StatusOK)
 }
 
-// fu2 review fix 2 (decision 74). The account's own entries go with it at the job (decision 48), so the end of a
+// fu2 (decision 74). The account's own entries go with it at the job (decision 48), so the end of a
 // sign-in-as that the deletion ended is also written at installation level, as account.delete and account.deleted
 // are: account_id NULL, the account's name as its target, reason account_deleted. The row survives the purge.
 func TestDeletedAccountsSignInAsIsRecordedInstallationWide(t *testing.T) {
@@ -57,7 +57,7 @@ func TestDeletedAccountsSignInAsIsRecordedInstallationWide(t *testing.T) {
 	}
 }
 
-// fu2 review fix 6 (decision 74). A member's sign-in-as that a deletion ends answers the member's next request exactly as
+// fu2 (decision 74). A member's sign-in-as that a deletion ends answers the member's next request exactly as
 // one a disable ends does: 401 unauthenticated, with no reason, so the web (lib/api.ts) signs the browser out. The
 // two are checked side by side.
 func TestDeletionAndDisableAnswerTheMemberTheSameWay(t *testing.T) {

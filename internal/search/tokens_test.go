@@ -19,7 +19,7 @@ var tokenSamples = []string{
 	"שָׁלוֹם", "café", "مَرْحَبًا", "א.ב", "report 2026 דוח", "  spaced   out  ",
 }
 
-// TestTokensAgreeWithFTS5 (review, decision 46): the splitter gives the tokens the word table's tokenizer gives, for every
+// TestTokensAgreeWithFTS5 (decision 46): the splitter gives the tokens the word table's tokenizer gives, for every
 // sample. The tokenizer's own tokens are read from an fts5vocab table over a unicode61 table with the same options as the
 // stored text.
 func TestTokensAgreeWithFTS5(t *testing.T) {
@@ -67,7 +67,7 @@ func TestTokensAgreeWithFTS5(t *testing.T) {
 	}
 }
 
-// TestRefusedTermsNeverReachTheIndex (review, decision 46): the parser keeps the raw length rule only. The word index
+// TestRefusedTermsNeverReachTheIndex (decision 46): the parser keeps the raw length rule only. The word index
 // refuses a term whose one token is a single letter, and a term with no token, in CheckTerms; a name search whose terms
 // are all three runes or more takes the trigram index, which reads them literally, and is not checked.
 func TestRefusedTermsNeverReachTheIndex(t *testing.T) {
@@ -150,7 +150,7 @@ func TestAcceptedTermsMatchStrings(t *testing.T) {
 	}
 }
 
-// TestShortTokenDoesNotExpandInTheRealTable (review, decision 46): run against a real FTS5 table, the expression the
+// TestShortTokenDoesNotExpandInTheRealTable (decision 46): run against a real FTS5 table, the expression the
 // splitter gives for a term of one letter with punctuation matches only the word that is that letter. The words that begin
 // with it do not match.
 func TestShortTokenDoesNotExpandInTheRealTable(t *testing.T) {

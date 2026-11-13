@@ -258,7 +258,7 @@ func (w *Sweeper) searchCheck(ctx context.Context, res *Result) error {
 	if _, err := w.st.ReleaseTextCapped(ctx, w.textMax, w.capAccount, w.capTotal); err != nil {
 		return err
 	}
-	// Deleted text leaves the write-ahead log within this hour: a passive checkpoint would keep it there (review, decision 46).
+	// Deleted text leaves the write-ahead log within this hour: a passive checkpoint would keep it there (decision 46).
 	// A busy log is not an error; the next hour tries again.
 	if _, err := w.st.Checkpoint(ctx); err != nil {
 		return err

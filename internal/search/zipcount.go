@@ -58,7 +58,7 @@ func zipEntryCount(r io.ReaderAt, size int64, limit int) (uint64, bool) {
 		}
 	}
 	// The declared count sizes archive/zip's allocation for its entries, so a declared count over the cap is refused
-	// before anything is read from the directory .
+	// before anything is read from the directory.
 	if dirRecords > uint64(limit) {
 		return dirRecords, true
 	}

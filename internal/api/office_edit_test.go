@@ -33,7 +33,7 @@ func TestInfoNamesTheEditorWhileOfficeIsOn(t *testing.T) {
 // TestNodeShowsTheLockAndWhoHoldsIt: a file an editor holds reads editing true in its stat and its listing, with the
 // holder's display name (editing_by). A file no editor holds carries neither. The lock is read for the caller's own
 // view only: any caller who sees the node sees whether it is being edited.
-// TestVisitorSeesNoEditingMark: a visitor of a share link is not told that someone is editing a file (review of decision
+// TestVisitorSeesNoEditingMark: a visitor of a share link is not told that someone is editing a file (decision
 // 73). The mark is for the account's members, who may open the file in the editor; a visitor cannot, and the mark would
 // tell anyone who holds the link when a member is at work.
 func TestVisitorSeesNoEditingMark(t *testing.T) {

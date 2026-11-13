@@ -99,7 +99,7 @@ func Choose(terms []string) Index {
 
 // CheckTerms refuses the terms the word index cannot search as words (invalid_request). It applies to every content search,
 // and to a name search whose terms take the word index (Choose). A term with no letter or digit, or whose only token has
-// fewer than minTermRunes runes, is refused: as a prefix it would expand one letter across every tenant (review, decision
+// fewer than minTermRunes runes, is refused: as a prefix it would expand one letter across every tenant (decision
 // 46). A term with two tokens or more is a phrase, as Match builds it. A name search whose terms are all three runes or
 // longer takes the trigram index, which reads the name literally, and is not checked here (so "1.2" and "a-b" are found).
 func CheckTerms(terms []string, content bool) error {
@@ -149,7 +149,7 @@ func match(index Index, terms []string, accountID string, minRunes int) (string,
 		}
 		// A word term is the tokens the tokenizer makes of it, as one phrase: "x.ab" is the words x and ab, next to each
 		// other. The phrase has no prefix, unless its last token has at least minRunes runes: then the last token is a
-		// prefix (review, decision 46). The check is on the tokens, so punctuation cannot shorten or lengthen a prefix.
+		// prefix (decision 46). The check is on the tokens, so punctuation cannot shorten or lengthen a prefix.
 		toks := Tokens(t)
 		if len(toks) == 0 {
 			return "", errors.New("search: a term has no tokens")
@@ -283,7 +283,7 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		}
 		// The full-text table is the outer loop (CROSS JOIN keeps the planner from reordering), and the position is on its
 		// rowid, which is sn.id. On sn.id the planner ran the match once per name row of the account, for every batch
-		// (decision 46 measured the same shape for content; decision 54 review).
+		// (decision 46 measured the same shape for content; decision 54).
 		b.WriteString("SELECT sn.id, sn.node_id FROM " + table + " CROSS JOIN search_names sn ON sn.id = " + table + ".rowid")
 		b.WriteString(" JOIN nodes n ON n.id = sn.node_id JOIN folders f ON f.id = n.folder_id")
 		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND " + table + ".rowid > ? AND f.staged = 0 AND n.trashed_at IS NULL")

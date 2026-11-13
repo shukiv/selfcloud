@@ -88,7 +88,7 @@ func TestVacuumIntoCopyHoldsNoDeletedText(t *testing.T) {
 	}
 }
 
-// TestCheckpointTakesDeletedTextOutOfTheLog (review, decision 46): the deleted words sit in the write-ahead log until a
+// TestCheckpointTakesDeletedTextOutOfTheLog (decision 46): the deleted words sit in the write-ahead log until a
 // checkpoint. A passive checkpoint leaves them in the -wal file; the sweep's truncating checkpoint takes them out of both
 // files. The marker is in the log before the checkpoint, so the test is not passing for want of the bytes.
 func TestCheckpointTakesDeletedTextOutOfTheLog(t *testing.T) {

@@ -50,7 +50,7 @@ func (tx *Tx) dropTextIfUnused(ctx context.Context, accountID string, blobs ...s
 
 // textBlobsOf returns the blobs held by the nodes of accountID that match cond, and by their versions. cond is a fixed SQL
 // condition on the alias n, and args are its values. It is read before the nodes are deleted, so that the text of a blob
-// no other node holds goes in the same write (review, decision 46).
+// no other node holds goes in the same write (decision 46).
 func (tx *Tx) textBlobsOf(ctx context.Context, accountID, cond string, args ...any) ([]string, error) {
 	q := `SELECT n.blob_id FROM nodes n WHERE n.account_id = ? AND n.blob_id IS NOT NULL AND (` + cond + `)
 		UNION SELECT v.blob_id FROM versions v JOIN nodes n ON n.id = v.node_id WHERE n.account_id = ? AND (` + cond + `)`

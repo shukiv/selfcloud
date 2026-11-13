@@ -229,7 +229,7 @@ func TestCorrectSignInsAsOneUserLeaveTheCapWhole(t *testing.T) {
 	wantStatus(t, loginWith(t, s, "10.33.2.1:4000", "ann@example.com", testPassword), 200)
 }
 
-// Decision 90 (finding 1): a match on one user does not refund the email's cap for another user who was tested
+// Decision 90: a match on one user does not refund the email's cap for another user who was tested
 // in the same request and failed. The attacker owns Beta's ann, whose password is the guess, so each sign-in matches it,
 // and the victim's ann in Acme is tested against the guess for free under the old rule. Here the thirty sign-ins spend
 // thirty tokens of the email's cap, and the next sign-in from another address is refused.
@@ -247,7 +247,7 @@ func TestAMatchOnOneUserDoesNotRefundTheOtherUsersTest(t *testing.T) {
 	wantError(t, loginWith(t, s, "10.40.2.1:4000", "ann@example.com", "wrong password here"), 429, apierr.RateLimited)
 }
 
-// Decision 90 (finding 1, the other half): a sign-in that matches every candidate it tested gives every hold back.
+// Decision 90: a sign-in that matches every candidate it tested gives every hold back.
 // Two users share one password, so the sign-in is answered with the account choice; the cookie's device budget and the
 // email's cap are whole afterwards, and a wrong guess from another address is still answered as a failed sign-in.
 func TestASignInMatchingEveryCandidateRefundsEveryHold(t *testing.T) {
@@ -274,7 +274,7 @@ func TestASignInMatchingEveryCandidateRefundsEveryHold(t *testing.T) {
 	}
 }
 
-// Decision 90 (finding 1): a match on the cookie's own user alone does not refund the device budget of a
+// Decision 90: a match on the cookie's own user alone does not refund the device budget of a
 // sign-in that the other user's password matched. The device budget covers the cookie's user only, so ten sign-ins with
 // the other account's password spend it, and the budget is not whole afterwards.
 func TestAMatchOnAnotherUserAloneDoesNotRefundTheDeviceBudget(t *testing.T) {
@@ -318,7 +318,7 @@ func TestTwoUsersWithOneEmailSpendOneTokenPerSignIn(t *testing.T) {
 	wantStatus(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword, dev), 200)
 }
 
-// Decision 90 (finding 2): with a cookie, the email's hold is taken whether or not another user holds the email.
+// Decision 90: with a cookie, the email's hold is taken whether or not another user holds the email.
 // A lone user's ten cookie failures spend the device budget and the email's cap, so twenty more failures from other
 // addresses are answered as failed sign-ins, and the next one is refused.
 func TestAnEmailHeldByOneUserCountsTheCookieFailuresToo(t *testing.T) {
@@ -338,7 +338,7 @@ func TestAnEmailHeldByOneUserCountsTheCookieFailuresToo(t *testing.T) {
 	wantError(t, loginWith(t, s, "10.44.3.1:4000", "ann@example.com", "wrong password here"), 429, apierr.RateLimited)
 }
 
-// Decision 90 (finding 2, the oracle): a cookie browser gets the same status codes whether or not another user holds
+// Decision 90: a cookie browser gets the same status codes whether or not another user holds
 // the email. Each run is a sequence of wrong guesses through the cookie, and then the cookie user's right password, so a
 // status code that tells a lone email from a shared one would show as a difference between the two sequences.
 func TestACookieBrowserSeesTheSameStatusesWhetherOrNotAnotherUserHoldsTheEmail(t *testing.T) {
@@ -377,7 +377,7 @@ func TestACookieBrowserSeesTheSameStatusesWhetherOrNotAnotherUserHoldsTheEmail(t
 	}
 }
 
-// Decision 90 (finding 3): when the cap is spent and the cookie's user fails, that failure is audited against the
+// Decision 90: when the cap is spent and the cookie's user fails, that failure is audited against the
 // cookie's user, as a failed sign-in is, with or without a mailer. With a mailer the other account's user is then
 // confirmed by its own row (confirmByEmail keeps its one row), so that account's log has a row too.
 func TestTheCookieUsersFailureWhileCappedIsAudited(t *testing.T) {
@@ -418,7 +418,7 @@ func TestTheCookieUsersFailureWhileCappedIsAudited(t *testing.T) {
 	}
 }
 
-// Decision 90 (review's missing tests): a cookie for ann in one account is not trusted when the sign-in names
+// Decision 90: a cookie for ann in one account is not trusted when the sign-in names
 // another account. The narrowed candidates do not include the cookie's user, so the device budget is never taken and the
 // email's cap applies. This is the known gap of decision 90 in the other direction; behaviour is unchanged.
 func TestACookieNamingAnotherAccountIsNotTrusted(t *testing.T) {
@@ -444,7 +444,7 @@ func TestACookieNamingAnotherAccountIsNotTrusted(t *testing.T) {
 		429, apierr.RateLimited)
 }
 
-// Decision 90 (review's missing tests): a cookie is not trusted under the installation admin scope. The admin's
+// Decision 90: a cookie is not trusted under the installation admin scope. The admin's
 // candidates do not include the tenant user the cookie names, so the device budget is never taken and the cap applies.
 func TestACookieIsNotTrustedUnderTheAdminScope(t *testing.T) {
 	t.Parallel()

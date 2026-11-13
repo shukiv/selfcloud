@@ -197,7 +197,7 @@ func TestBreakLockHolderIsRefusedAfterwards(t *testing.T) {
 	}
 }
 
-// TestBreakLockEndsTheEditingSession: after a break, the editor cannot take the lock again (review of decision 73).
+// TestBreakLockEndsTheEditingSession: after a break, the editor cannot take the lock again (decision 73).
 // Its session still held the file's current content, so a new LOCK was granted at once and the next save went through,
 // and the confirmation's "the editor's next save will be refused" did not hold. The LOCK now answers as for a file that
 // changed after the editor opened it, with no lock on the file. A viewer's session holds no lock and still reads.

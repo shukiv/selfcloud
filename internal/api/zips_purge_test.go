@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// fu2 item 8 (decision 35). A zip is a snapshot of the tree, and it reads each file from the blob the snapshot named. A
+// fu2 (decision 35). A zip is a snapshot of the tree, and it reads each file from the blob the snapshot named. A
 // purge that removes a file's blob after the snapshot and before that file's entry is written cannot be read: the
 // entry fails, and the whole zip fails with it. The decision states that the zip keeps a node trashed or deleted after
 // the snapshot, and this test pins the divergence: a purged blob is not kept, and the job fails rather than leave the

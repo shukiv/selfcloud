@@ -287,7 +287,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Each hold is given back at the time it was taken (decision 89 (k); a later time restores nothing). The device hold
 	// covers D alone, so it goes back when D matched. The email's hold goes back only when every candidate tested under it
-	// matched, so a match on one user does not refund a failed test of another (finding 1).
+	// matched, so a match on one user does not refund a failed test of another.
 	if deviceHold != nil && slices.Contains(matches, deviceUser) {
 		deviceHold.CancelAt(now)
 	}
@@ -295,7 +295,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		failedHold.CancelAt(now)
 	}
 	if capSpent && len(matches) == 0 {
-		// D's failure is audited against D, as a failed sign-in is (finding 3). The others get the cap's answer,
+		// D's failure is audited against D, as a failed sign-in is. The others get the cap's answer,
 		// which writes its own row. Their passwords are not tested here, and the device's budget stays spent by D's failure.
 		if err := s.auditFailedLogin(r, []*store.User{deviceUser}); err != nil {
 			return err

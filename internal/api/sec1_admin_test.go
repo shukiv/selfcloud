@@ -14,7 +14,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// sec1 item 12 (decision 84): an installation admin's session ends sooner than a user's: at admin_idle_timeout unused
+// sec1 (decision 84): an installation admin's session ends sooner than a user's: at admin_idle_timeout unused
 // and admin_max_age in all, unless the user limits are shorter still.
 func TestAdminSessionEndsSoonerThanAUsersSession(t *testing.T) {
 	t.Parallel()
@@ -28,7 +28,7 @@ func TestAdminSessionEndsSoonerThanAUsersSession(t *testing.T) {
 	}
 }
 
-// sec1 item 12 (decision 84): an admin session's link for a pending owner needs the admin's password, on the route that
+// sec1 (decision 84): an admin session's link for a pending owner needs the admin's password, on the route that
 // makes the account and on the route that sends the link again. Wrong or missing is refused as sign-in-as refuses.
 func TestAdminSessionOwnerLinkNeedsThePassword(t *testing.T) {
 	t.Parallel()
@@ -104,7 +104,7 @@ func TestConfirmAdminPasswordNeedsASession(t *testing.T) {
 	}
 }
 
-// sec1 item 12 (decision 84): an admin session makes an account key only with the admin's own password. A wrong or
+// sec1 (decision 84): an admin session makes an account key only with the admin's own password. A wrong or
 // missing one is refused, and the right one makes the key.
 func TestAdminSessionKeyNeedsThePassword(t *testing.T) {
 	t.Parallel()

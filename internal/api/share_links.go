@@ -154,7 +154,7 @@ const (
 // cleanLine makes a user's text one plain line, and trims it. Every control character (Unicode category Cc, which
 // includes the line breaks, tabs and NUL) and the Unicode line and paragraph separators become a space: a line break
 // in a title, message or name would start a new line in the page or a header in a mail, and the others would do the
-// same in a log or a viewer (slice o3, item 7). A CR LF pair is one line break, so it becomes one space.
+// same in a log or a viewer (slice o3). A CR LF pair is one line break, so it becomes one space.
 func cleanLine(v string) string {
 	v = strings.ReplaceAll(v, "\r\n", " ")
 	return strings.TrimSpace(strings.Map(func(r rune) rune {

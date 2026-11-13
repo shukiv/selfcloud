@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// TestFF1FilterPlansAndTimings is the Phase 0b measurement of slice ff1 . It runs only when
+// TestFF1FilterPlansAndTimings is the Phase 0b measurement of slice ff1. It runs only when
 // SELFCLOUD_FF1_MEASURE is set, and it is not committed.
 //
 // It seeds one folder of children (SELFCLOUD_FF1_ROWS, default 200,000). Names carry an extension for most files, and the
@@ -73,7 +73,7 @@ func TestFF1FilterPlansAndTimings(t *testing.T) {
 		return d
 	}
 
-	// The group table (design section 3, with review 's fixes). Extensions decide first; then the media type.
+	// The group table (design section 3). Extensions decide first; then the media type.
 	type group struct {
 		id       string
 		exts     []string

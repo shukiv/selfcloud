@@ -10,7 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// sec1 item 7: a JSON answer is not cached and is not sniffed, as an error already is.
+// sec1: a JSON answer is not cached and is not sniffed, as an error already is.
 func TestWriteJSONSetsNoStoreAndNosniff(t *testing.T) {
 	t.Parallel()
 	rec := httptest.NewRecorder()
@@ -23,7 +23,7 @@ func TestWriteJSONSetsNoStoreAndNosniff(t *testing.T) {
 	}
 }
 
-// sec1 item 7: a handler that set its own cache header keeps it; writeJSON does not overwrite it.
+// sec1: a handler that set its own cache header keeps it; writeJSON does not overwrite it.
 func TestWriteJSONKeepsACacheHeaderTheHandlerSet(t *testing.T) {
 	t.Parallel()
 	rec := httptest.NewRecorder()
@@ -34,7 +34,7 @@ func TestWriteJSONKeepsACacheHeaderTheHandlerSet(t *testing.T) {
 	}
 }
 
-// sec1 item 7: a signed-in answer from a real route carries the headers too.
+// sec1: a signed-in answer from a real route carries the headers too.
 func TestMeAnswerIsNotCachedAndNotSniffed(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})

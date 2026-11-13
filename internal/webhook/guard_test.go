@@ -36,7 +36,7 @@ func TestDeniedAddresses(t *testing.T) {
 	}
 }
 
-// Review finding 7: the forms outside 2000::/3 are denied, as the whole block is (IPv4-mapped and 6to4 aside), and the
+// The forms outside 2000::/3 are denied, as the whole block is (IPv4-mapped and 6to4 aside), and the
 // blocks inside it that are not public are denied.
 func TestDenyTableRestOfIPv6AndSIIT(t *testing.T) {
 	t.Parallel()

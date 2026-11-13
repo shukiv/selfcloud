@@ -11,7 +11,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/office"
 )
 
-// TestCancelledConversionKeepsItsAttempt (review, decision 46): the attempt is written before the document is sent. A
+// TestCancelledConversionKeepsItsAttempt (decision 46): the attempt is written before the document is sent. A
 // conversion cut off by a shutdown keeps it, so a document that kills the converter runs out of tries; the row stays
 // pending, due at once, for the next start.
 func TestCancelledConversionKeepsItsAttempt(t *testing.T) {
@@ -37,7 +37,7 @@ func TestCancelledConversionKeepsItsAttempt(t *testing.T) {
 	}
 }
 
-// TestUnreachableConverterCountsNoAttempt (review, decision 46): no request reached an unreachable converter, so the
+// TestUnreachableConverterCountsNoAttempt (decision 46): no request reached an unreachable converter, so the
 // attempt written before the send is taken back, and the row stays at zero attempts.
 func TestUnreachableConverterCountsNoAttempt(t *testing.T) {
 	t.Parallel()
@@ -71,7 +71,7 @@ func cutAttempt(t *testing.T, fx *contentFixture, clock *fakeClock) {
 	}
 }
 
-// TestCutAttemptsStopAtTheCap (review, decision 46): a document whose three in-flight requests are cut off by shutdowns is
+// TestCutAttemptsStopAtTheCap (decision 46): a document whose three in-flight requests are cut off by shutdowns is
 // refused at the cap on the next start, and no restart sends it again. The count stays at three; the row is refused under
 // the current converter key.
 func TestCutAttemptsStopAtTheCap(t *testing.T) {

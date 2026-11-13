@@ -36,7 +36,7 @@ const (
 	// webhookCleanBatch is how many pending deliveries of disabled endpoints one round fails, in one write per endpoint.
 	webhookCleanBatch = 2000
 	// webhookLaneBudget is how long a lane keeps its token: it sends its endpoint's next deliveries until this much time
-	// has passed, then gives the token back, so the claim of the round decides who is served next (review finding 1).
+	// has passed, then gives the token back, so the claim of the round decides who is served next.
 	webhookLaneBudget = 2 * time.Second
 )
 
@@ -124,7 +124,7 @@ func (w *webhookWorker) takeToken() bool {
 }
 
 // cleaner runs clean on its own ticker until ctx ends. It is not behind the token wait of the rounds, so a busy worker
-// still fails the stale queues (review finding 1).
+// still fails the stale queues.
 func (w *webhookWorker) cleaner(ctx context.Context) {
 	defer w.wg.Done()
 	t := time.NewTicker(webhookTick)
@@ -149,7 +149,7 @@ func (w *webhookWorker) clean(ctx context.Context, now time.Time) {
 
 // lane sends the claimed delivery and then the endpoint's next deliveries, one at a time, until none is due or its
 // budget (webhookLaneBudget) has passed. Then it returns its token, so the claims of the rounds decide who is served
-// next (review finding 1). It returns its token when it ends.
+// next. It returns its token when it ends.
 func (w *webhookWorker) lane(ctx context.Context, j *store.WebhookJob) {
 	defer w.wg.Done()
 	defer func() { w.tokens <- struct{}{} }()

@@ -12,7 +12,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// fu2 item 1: every per-address limit counts an IPv6 client by its /64, as the link guard does (decision 74). Two
+// fu2: every per-address limit counts an IPv6 client by its /64, as the link guard does (decision 74). Two
 // addresses of one /64 share one budget, so a host cannot shed a limit by changing its low bits. An IPv4 client
 // keeps its own address, so two IPv4 addresses never share.
 func TestPerAddressLimitsCountAnIPv6PrefixTogether(t *testing.T) {
@@ -61,7 +61,7 @@ func TestPerAddressLimitsCountAnIPv6PrefixTogether(t *testing.T) {
 	}
 }
 
-// fu2 item 1, IPv4 unchanged: each IPv4 address has its own budget.
+// fu2, IPv4 unchanged: each IPv4 address has its own budget.
 func TestPerAddressLimitsKeepIPv4AddressesApart(t *testing.T) {
 	t.Parallel()
 	const burst = 2

@@ -284,7 +284,7 @@ func (w *Worker) extract(ctx context.Context, j store.TextJob, res *store.TextRe
 			ext = "pdf"
 		} else {
 			// An OLE2 compound file: the old Word, Excel or PowerPoint format, told apart by its stream names (ole.go). A file
-			// whose type cannot be told is skipped and recorded, not sent as a guess (review, decision 46).
+			// whose type cannot be told is skipped and recorded, not sent as a guess (decision 46).
 			var kerr error
 			ext, kerr = oleKind(f)
 			if kerr != nil || ext == "" {
@@ -415,7 +415,7 @@ func (w *Worker) convert(ctx context.Context, j store.TextJob, f *os.File, ext s
 	}
 	// A row at the cap has used its three tries, and its last try did not come back: it is refused under the current key, and
 	// nothing is sent. Without this check a document that stops the converter, or the server, would be sent again on every
-	// restart, with the count going up without a limit (review, decision 46). A new key releases it, with its count reset
+	// restart, with the count going up without a limit (decision 46). A new key releases it, with its count reset
 	// (store.ReleaseTextKey), as for any refusal.
 	if j.Attempts >= failedAttempts {
 		w.refused(res, key, msgUnavailable)
@@ -423,7 +423,7 @@ func (w *Worker) convert(ctx context.Context, j store.TextJob, f *os.File, ext s
 	}
 	tw := &textWriter{max: int(w.o.TextMax)}
 	// The attempt is written before the document is sent, so a conversion cut off by a shutdown or a crash still counts,
-	// and a document that kills the converter runs out of tries (review, decision 46). The worker is one goroutine, so no
+	// and a document that kills the converter runs out of tries (decision 46). The worker is one goroutine, so no
 	// request waits for the bulk slot here: the queue time is not in the count.
 	if err := w.o.Store.StartText(ctx, j.ID); err != nil {
 		w.transient(res, msgUnreadable, outageWait, "")
@@ -461,7 +461,7 @@ func (w *Worker) convert(ctx context.Context, j store.TextJob, f *os.File, ext s
 		case res.Attempts < failedAttempts:
 			w.transient(res, msgTimeout, timeoutWaitTwo, "converter")
 		default:
-			// The third try timed out: the document waits for a new converter key, as a refusal does (review, decision 46).
+			// The third try timed out: the document waits for a new converter key, as a refusal does (decision 46).
 			w.refused(res, key, msgTimeout)
 		}
 	case errors.Is(err, office.ErrBadOutput):

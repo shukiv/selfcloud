@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// fu2 item 6 (decision 74): a directory made under a parent named by its node ID. The path form names the parent by
+// fu2 (decision 74): a directory made under a parent named by its node ID. The path form names the parent by
 // its path, so a folder renamed or moved in another session a moment earlier can get the new folder at its old path.
 // The parent form names the node, which keeps its ID whatever its name, and it keeps every refusal of a write.
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Terms with punctuation (review, decision 46, after the security review of e41f5f0). A name search of three or more
+// Terms with punctuation (decision 46). A name search of three or more
 // runes reads the name literally on the trigram index, so "1.2" and "a-b" find the names that contain them. A term that
 // takes the word index must have a token of two letters or digits: "a." and "a.." are refused, and "1.2" is a phrase of
 // two tokens, exact, which matches "version 1.2" and not "1.25".

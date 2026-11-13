@@ -371,7 +371,7 @@ func TestWhoamiJSON(t *testing.T) {
 }
 
 // login sends no credential at all. An environment token and a stored key are both present here, and neither reaches the
-// server: the sign-in is not made with a key, and the new address is not given the old key (decision 125, review fix).
+// server: the sign-in is not made with a key, and the new address is not given the old key (decision 125).
 func TestLoginSendsNoCredential(t *testing.T) {
 	dir := isolate(t)
 	const key = "sc_acct_key_value_0123456789abcdefghijklmnopqrstuvwxyz"

@@ -67,7 +67,7 @@ func TestWOPIRenameFileRenamesAndKeepsTheExtension(t *testing.T) {
 		t.Errorf("stored name = %q, want quarterly report.docx", got)
 	}
 
-	// A change of case only is a rename of the file to its own name, not a clash with itself (review of decision 73).
+	// A change of case only is a rename of the file to its own name, not a clash with itself (decision 73).
 	wantStatus(t, fx.wopiCall(t, "POST", rt, tok, nil, renameHdr("Quarterly Report", "")), 200)
 	if got := nodeNameOf(t, fx, fx.doc.ID); got != "Quarterly Report.docx" {
 		t.Errorf("stored name = %q, want Quarterly Report.docx", got)
@@ -178,7 +178,7 @@ func TestWOPIRenameFileNeedsAWritableToken(t *testing.T) {
 
 // TestWOPIRenameFileAfterAFolderAboveMovedMeanwhile: a folder above the file moved while the editor is open. A locked
 // file's folder cannot be moved (the lock rule); an unlocked file's token no longer reaches the file in its old place,
-// so the rename answers 404 until the editor is opened again (decision 31, item 4).
+// so the rename answers 404 until the editor is opened again (decision 31).
 func TestWOPIRenameFileAfterAFolderAboveMovedMeanwhile(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)

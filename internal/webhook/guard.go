@@ -29,7 +29,7 @@ var denied4 = prefixes(
 	"240.0.0.0/4",     // reserved, and the broadcast address
 )
 
-// globalUnicast is the only IPv6 block a webhook may reach (review finding 7). Everything outside it is denied: the
+// globalUnicast is the only IPv6 block a webhook may reach. Everything outside it is denied: the
 // unspecified and loopback addresses, link-local, site-local, unique local, multicast, the IPv4-compatible,
 // IPv4-translated (SIIT) and NAT64 prefixes, and the rest of the space. A form that embeds an IPv4 address and sits
 // inside the block (6to4) is checked as the IPv4 address it embeds.

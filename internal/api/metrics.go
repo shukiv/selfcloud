@@ -103,7 +103,7 @@ type webhookCollector struct {
 	states   *prometheus.Desc
 	disabled *prometheus.Desc
 	now      func() time.Time
-	// mu guards the cached queue stats: a scrape reads the queue at most once per webhookStatsTTL (review finding 8).
+	// mu guards the cached queue stats: a scrape reads the queue at most once per webhookStatsTTL.
 	mu        sync.Mutex
 	cached    store.WebhookStats
 	cachedAt  time.Time

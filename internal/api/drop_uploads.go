@@ -34,7 +34,7 @@ const (
 
 // releaseDropUploads ends the open uploads of a drop link in the transaction that ends the link: their rows
 // and reservations go with it. The uploads it returns still have their files; the caller removes them with
-// discardUploadFile once the transaction has committed (slice o3, item 4).
+// discardUploadFile once the transaction has committed (slice o3).
 func (s *Server) releaseDropUploads(r *http.Request, tx *store.Tx, l *store.ShareLink) ([]*store.Upload, error) {
 	if !l.UploadOnly {
 		return nil, nil
@@ -237,7 +237,7 @@ func (s *Server) endDroppedUploadOnDeadLink(r *http.Request) {
 }
 
 // dropNodeOwner is the owner a completed drop upload's node reports. It is the owner InsertNode gives the node:
-// a personal folder's user, else the creator (slice o3, item 6).
+// a personal folder's user, else the creator (slice o3).
 func dropNodeOwner(f *store.Folder, creator string) string {
 	if f.Kind == store.KindPersonal && f.OwnerUserID != "" {
 		return f.OwnerUserID
@@ -246,7 +246,7 @@ func dropNodeOwner(f *store.Folder, creator string) string {
 }
 
 // dropRefusal is the one answer a drop visitor gets when the account's quota or the disk cannot take what it
-// sends: no numbers and no scope, so the visitor learns nothing of the account's space or the disk (item 2).
+// sends: no numbers and no scope, so the visitor learns nothing of the account's space or the disk.
 // Any other error passes through, and so does every error for a principal that is not a drop visitor.
 func dropRefusal(p *auth.Principal, err error) error {
 	if !isDrop(p) || err == nil {
@@ -270,7 +270,7 @@ func pieceBytes(r *http.Request, chunkCap int64) int64 {
 
 // dropFlight counts the bytes of drop pieces whose bodies are still arriving, per account and in all. A piece is
 // checked against the quota and the disk with these counted, so pieces in flight cannot each pass on the same space
-// (slice o3, item 1). The count is kept under mu from the check to the release.
+// (slice o3). The count is kept under mu from the check to the release.
 type dropFlight struct {
 	mu        sync.Mutex
 	total     int64

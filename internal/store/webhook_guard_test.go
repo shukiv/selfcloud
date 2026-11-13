@@ -246,7 +246,7 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../store/webhook_quota.go SetQuotaWarningPercent UPDATE accounts": {1, lockFree, "the quota warning percent: no file changes"},
 	"../store/webhook_quota.go syncQuotaWatch UPDATE accounts":         {1, lockFree, "the quota warning mark: no file changes"},
 
-	// Round 6 reviewed the import's node writes (decision 92), one reason per site. Each one is limited to the import's
+	// The import's node writes (decision 92) each have one reason per site. Each one is limited to the import's
 	// staging folder, or creates a node in it, so a staged node is changed by its import only, and a live node is never
 	// changed by one. The writes into the target folder are MoveStagedTree and SetStagedParent, at the publish only.
 	"../api/import_job.go InsertNodeNoIndex":                   {2, lockAdds, "importMakeDir's directory and importFileEntry's file: each is inserted in the import's staging folder, which no lock can hold; the parent is a placeholder in the same staging folder or the staging root, never a live directory, so no listing shows a staged entry"},

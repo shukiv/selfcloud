@@ -27,7 +27,7 @@ func ownerSessionOf(t *testing.T, fx *impFix) testSession {
 // TestCallersOfTheAdminWaysAreRefused is the caller matrix for the three ways in (decision 41). Each caller that is not
 // an installation admin's own session is refused on sign-in-as and on a typed password. The reset link is refused for
 // an installation admin's key and for an owner's session. An account key still makes a reset link, as it always has,
-// which the review round leaves to the owner (the deviation is in decision 41).
+// which is left to the owner (the deviation is in decision 41).
 func TestCallersOfTheAdminWaysAreRefused(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)

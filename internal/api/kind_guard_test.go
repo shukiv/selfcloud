@@ -38,7 +38,7 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // Slice x4 added two in playlists.go, each reviewed: the read marks an entry unavailable unless the node is a file (a
 // folder or a shortcut fails closed), and the add refuses a node that is not a file with the same not_found as a missing
 // one. Neither decides access; reachRoles runs first in both. Decision 58 records them.
-// Round 6 reviewed the import's node-kind comparisons (decision 92), one reason per site. Each one accepts only a directory
+// The import's node-kind comparisons (decision 92) each have one reason per site. Each one accepts only a directory
 // and refuses or skips anything else, so a kind added later fails closed. imports.go handleCreateImport: the parent an
 // import is aimed at must be a directory of the folder, else invalid_request; access is requireNodeRole, which runs first.
 // import_job.go importMakeDir: an earlier import's directory is reused only when it is a directory of the target folder

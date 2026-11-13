@@ -13,7 +13,7 @@ import (
 // The old Office formats are OLE2 compound files. The converter must be told which one a file is (.doc, .xls or .ppt), and
 // the file's first bytes do not say it: the type is in the names of its streams. The read is bounded: the header, the
 // DIFAT and FAT sectors it lists (at most oleMaxDIFAT sectors of DIFAT), and at most oleMaxDirSectors sectors of the
-// directory. A file whose type cannot be told is skipped and recorded, never sent as a guess (review, decision 46).
+// directory. A file whose type cannot be told is skipped and recorded, never sent as a guess (decision 46).
 
 const (
 	oleMaxDIFAT      = 64

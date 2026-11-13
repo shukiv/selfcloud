@@ -427,7 +427,7 @@ func (s *Server) endAccountImpersonations(ctx context.Context, tx *store.Tx, acc
 			return err
 		}
 		// The account's entries go with it at the job (decision 48), so the installation keeps this copy, named by
-		// the account as account.delete is (review fix 2, decision 74).
+		// the account as account.delete is (decision 74).
 		kept := impersonationEnd(sess, reason)
 		kept.AccountID, kept.Target = "", accountName
 		if err := tx.InsertAudit(ctx, kept); err != nil {

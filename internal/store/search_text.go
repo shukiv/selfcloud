@@ -167,7 +167,7 @@ func (s *Store) ClaimText(ctx context.Context, after string, now time.Time) (job
 	return scan(pick, "", millis(now))
 }
 
-// StartText counts an attempt in its own write, before a document is sent to the converter (review, decision 46). A
+// StartText counts an attempt in its own write, before a document is sent to the converter (decision 46). A
 // conversion cut off by a shutdown or a crash keeps the count, so a document that kills the converter runs out of tries.
 // The count is only for a row that is still pending.
 func (s *Store) StartText(ctx context.Context, id int64) error {
@@ -347,7 +347,7 @@ func (s *Store) checkText(ctx context.Context) (textCheck, error) {
 
 // clearText empties the content rows and their full-text table, for a rebuild, and starts the backfill again.
 func (tx *Tx) clearText(ctx context.Context) error {
-	// The usage goes with the text it counts, or a rebuild would double it and fill the cap (review, decision 46).
+	// The usage goes with the text it counts, or a rebuild would double it and fill the cap (decision 46).
 	for _, q := range []string{"DELETE FROM search_text_fts", "DELETE FROM search_texts", "DELETE FROM search_text_usage"} {
 		if _, err := tx.q.ExecContext(ctx, q); err != nil {
 			return err

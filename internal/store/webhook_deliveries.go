@@ -65,16 +65,16 @@ type WebhookOutcome struct {
 	// Disable, when set, disables the endpoint with that reason, in the same write.
 	Disable string
 	// Lease is the WebhookJob.Lease of the claim that made this outcome. An outcome whose lease has ended, because the
-	// delivery was claimed again since, changes nothing (review finding 5).
+	// delivery was claimed again since, changes nothing.
 	Lease int64
 }
 
 // claimWebhookJobs claims up to limit deliveries at now, in one write. A claimed delivery is the oldest pending delivery
 // of its endpoint in the endpoint's current generation, and only that one: a later delivery of the endpoint waits for
 // it, including while it waits on its backoff. An endpoint with any unexpired lease is not served, so an endpoint has
-// one request in flight at a time, whatever order its deliveries were queued in (review finding 4). Among the endpoints
+// one request in flight at a time, whatever order its deliveries were queued in. Among the endpoints
 // that are due, the claim ranks by account first, so one account's backlog cannot take every slot of another's
-// (review finding 1). endpointID "" serves every endpoint; a value serves that one endpoint only.
+// endpointID "" serves every endpoint; a value serves that one endpoint only.
 func (tx *Tx) claimWebhookJobs(ctx context.Context, at time.Time, lease time.Duration, limit int, endpointID string) ([]*WebhookJob, error) {
 	now := millis(at)
 	rows, err := tx.q.QueryContext(ctx, `WITH due AS (
@@ -168,7 +168,7 @@ func (s *Store) ClaimWebhookJobs(ctx context.Context, at time.Time, lease time.D
 // RecordWebhookOutcome records one attempt, in one write. A success marks the delivery delivered and clears the
 // endpoint's failure count. A failure schedules the retry at NextAt, or gives the delivery up with GiveUp. Disable
 // then disables the endpoint with its reason, in the same write. The outcome applies only to the claim it belongs to:
-// a delivery that is no longer pending, or whose lease is no longer o.Lease, records nothing (review finding 5).
+// a delivery that is no longer pending, or whose lease is no longer o.Lease, records nothing.
 func (s *Store) RecordWebhookOutcome(ctx context.Context, o WebhookOutcome) error {
 	return s.Write(ctx, func(tx *Tx) error {
 		at := millis(o.At)
@@ -354,7 +354,7 @@ func (s *Store) PruneWebhookDeliveries(ctx context.Context, delivered, failed ti
 // PruneWebhookEvents removes the events that no delivery refers to, among the next batch events after the event row
 // after. It returns the row to continue from (0 when the walk has reached the end of the table, so the caller starts
 // again from 0), and how many events it removed. The write reads and deletes only one batch of rows by ID, so the
-// writer is held for a bounded time however many events are retained (review finding 8).
+// writer is held for a bounded time however many events are retained.
 func (s *Store) PruneWebhookEvents(ctx context.Context, after int64, batch int) (int64, int, error) {
 	var next int64
 	var total int
@@ -494,7 +494,7 @@ func scanDeliveryOf(row *sql.Row) (*WebhookDelivery, error) {
 }
 
 // RequeueWebhookDelivery makes a failed delivery pending again, due now, with a fresh 24-hour window and its attempts
-// reset (review finding 4). It joins the endpoint's current generation, so the retry is sent under the endpoint's
+// reset. It joins the endpoint's current generation, so the retry is sent under the endpoint's
 // present configuration. It returns ErrNotFound for a delivery that is not failed. The caller checks the endpoint's
 // state and room.
 func (tx *Tx) RequeueWebhookDelivery(ctx context.Context, accountID, endpointID, deliveryID string, at time.Time) error {

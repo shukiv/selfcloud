@@ -60,7 +60,7 @@ func oleFile(names ...string) []byte {
 	return out
 }
 
-// TestOldOfficeFileIsSentAsItsOwnType (review, decision 46): an OLE2 file is sent to the converter as the type its streams
+// TestOldOfficeFileIsSentAsItsOwnType (decision 46): an OLE2 file is sent to the converter as the type its streams
 // name (here an Excel file), not as .doc for every compound file.
 func TestOldOfficeFileIsSentAsItsOwnType(t *testing.T) {
 	t.Parallel()
@@ -77,7 +77,7 @@ func TestOldOfficeFileIsSentAsItsOwnType(t *testing.T) {
 	}
 }
 
-// TestOldOfficeFileWhoseTypeIsUnknownIsSkipped (review, decision 46): a compound file whose structure cannot be followed
+// TestOldOfficeFileWhoseTypeIsUnknownIsSkipped (decision 46): a compound file whose structure cannot be followed
 // is skipped with a fixed reason, and no request is made.
 func TestOldOfficeFileWhoseTypeIsUnknownIsSkipped(t *testing.T) {
 	t.Parallel()

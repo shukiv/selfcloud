@@ -31,7 +31,7 @@ func TestDecodeUTF7(t *testing.T) {
 			t.Errorf("DecodeUTF7(%q) = %q, want %q", in, got, want)
 		}
 	}
-	// The refused shapes (review of decision 73): a non-ASCII byte; a lone surrogate; padding bits that are not zero
+	// The refused shapes (decision 73): a non-ASCII byte; a lone surrogate; padding bits that are not zero
 	// ("+ZeX-": 日 and two set bits); a whole character more than the padding ("+ZeUA-"); a shift with no 16-bit unit
 	// ("+" at the end, "+!x", "+AG-").
 	for _, in := range []string{"café", "+ZeVnLIqé-", "+2D3e-", "+3AA-", "+ZeX-", "+ZeUA-", "+", "+!x", "+AG-"} {

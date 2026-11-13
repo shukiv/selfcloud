@@ -15,7 +15,7 @@ type sendFunc func(ctx context.Context, m mail.Message) error
 
 func (f sendFunc) Send(ctx context.Context, m mail.Message) error { return f(ctx, m) }
 
-// fu2 item 4 (decision 74), review fix 1. The audit log is append-only (InsertAudit only appends), so one mail is two rows:
+// fu2 (decision 74). The audit log is append-only (InsertAudit only appends), so one mail is two rows:
 // an "attempted" row written before the send, and a result row after it, "ok" or "failed". The attempted row is never
 // "ok", so a crash between the two leaves a record of an attempt, not of a mail that was sent.
 func TestVerificationMailIsAuditedBeforeItIsSent(t *testing.T) {
