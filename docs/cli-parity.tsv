@@ -97,8 +97,8 @@ fn	lib/files/playlists.ts:removeEntry	-	cli12	browser session only: a playlist r
 fn	lib/files/playlists.ts:renamePlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/playlists.ts:reorderEntries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/playlists.ts:replaceEntries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
-fn	lib/files/tags.ts:getMediaTags	-	cli11	planned, cli11
-fn	lib/files/tags.ts:getNodeTags	-	cli11	planned, cli11
+fn	lib/files/tags.ts:getMediaTags	tag ls	cli11e	built in cli11e
+fn	lib/files/tags.ts:getNodeTags	tag ls	cli11e	built in cli11e
 fn	lib/files/templates.ts:createFromTemplate	-	cli11	planned, cli11
 fn	lib/files/templates.ts:getTemplatesFolder	-	cli11	planned, cli11
 fn	lib/files/templates.ts:listTemplatesPage	-	cli11	planned, cli11
@@ -163,7 +163,7 @@ fn	lib/notifications/api.ts:listNotices	-	-	browser session only: the server ref
 fn	lib/notifications/api.ts:markRead	-	-	browser session only: the server refuses every token on this route
 fn	lib/notifications/api.ts:setEmailSwitch	-	-	browser session only: the server refuses every token on this route
 fn	lib/notifications/api.ts:unreadCount	-	-	browser session only: the server refuses every token on this route
-fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
+fn	lib/search/api.ts:searchNodes	search	cli11e	built in cli11e
 fn	lib/settings/api.ts:changeSettings	settings set	se4	built in se4; settings reset calls it too
 fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove calls it too
 fn	lib/settings/api.ts:getSettings	settings get	se4	built in se4
@@ -182,7 +182,7 @@ fn	lib/sharing/api.ts:openShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:removePermission	share revoke	cli7	built in cli7
 fn	lib/sharing/api.ts:renewShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:resetShareLink	link reset	cli7	built in cli7
-fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
+fn	lib/sharing/api.ts:searchDirectory	people find	cli11e	built in cli11e
 fn	lib/sharing/api.ts:setHidden	folder hide	cli8	built in cli8 (folder show-again is the other direction)
 fn	lib/sharing/api.ts:setPermission	share grant	cli7	built in cli7
 fn	lib/sharing/api.ts:setSharingPolicy	sharing policy set	cli9b4	built in cli9b4
@@ -267,7 +267,7 @@ route	GET /api/v1/accounts/{acc}/webhooks/{hook}	webhook show	cli10	built in cli
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	webhook deliveries	cli10	built in cli10
 route	GET /api/v1/admins	admin ls	cli9a3	built in cli9a3
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
-route	GET /api/v1/directory	-	cli11	planned, cli11
+route	GET /api/v1/directory	people find	cli11e	built in cli11e
 route	GET /api/v1/folders	whoami	cli4	whoami reads it (decision 125); folder ls --mine (cli8) lists the same route
 route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5
 route	GET /api/v1/imports/sources	import sources	cli10	built in cli10
@@ -279,7 +279,7 @@ route	GET /api/v1/label-fields	label field update	cli9b4	built in cli9b4; label 
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
-route	GET /api/v1/media/tags	-	cli11	planned, cli11
+route	GET /api/v1/media/tags	tag ls	cli11e	built in cli11e
 route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/activity	activity	cli11c	built in cli11c
@@ -295,7 +295,7 @@ route	GET /api/v1/nodes/{nod}/preview	-	-	rendered preview for the browser viewe
 route	GET /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
 route	GET /api/v1/nodes/{nod}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/subtitles	-	-	playback subtitles: a player feature
-route	GET /api/v1/nodes/{nod}/tags	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/tags	tag ls	cli11e	built in cli11e
 route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/versions	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/versions/{ver}/content	-	cli11	planned, cli11
@@ -308,7 +308,7 @@ route	GET /api/v1/openapi.yaml	api spec	cli3	public route; api spec writes it
 route	GET /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	GET /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	GET /api/v1/recent	recent	cli11a	built in cli11a
-route	GET /api/v1/search	-	cli11	planned, cli11
+route	GET /api/v1/search	search	cli11e	built in cli11e
 route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	shared	cli7	built in cli7

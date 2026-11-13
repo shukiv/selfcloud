@@ -1179,6 +1179,45 @@ selfcloud activity nod_… --kind label --all --json
 Editing, deleting or resolving a comment, and searching for people to name in one, are the browser's: the server refuses
 every token on those routes.
 
+## Search, people and tags
+
+`search` finds nodes by name, or by their text with `--in content`. A query is optional when a filter is given. Filters are
+`--kind` (`file`, `dir` or `shortcut`), `--type` (a file group, `folder` or `shortcut`), `--ext` (repeatable, or joined with
+commas), `--modified-after` and `--modified-before` (RFC 3339 times), `--size-min` and `--size-max` (sizes with units such
+as `64MiB`), `--label FIELD:VALUE` (up to four) and `--scope NODE` (one directory and what is below it). `--limit` is 1 to 50
+and `--all` follows the cursor.
+
+| Command | What it does |
+|---|---|
+| `search [QUERY] [flags]` | finds nodes by name or content |
+| `people find [QUERY] [--kind user\|group\|all]` | finds the account's people and groups |
+| `tag ls NODE...` | reads an audio file's title, artist, album and duration |
+
+`search` prints `ID`, `KIND`, `SIZE`, `MODIFIED`, `PLACE` and `NAME`, and adds `MATCH` for a content search. A snippet is
+shown as one safe line, at most 80 characters. `--json` prints the items as the API wrote them. Without `--all`, a note on
+standard error says that more items exist.
+
+`people find` needs an account key; a signed-in device's token is refused and the command says so. Its table is `ID`, `KIND`,
+`NAME` and `EMAIL`; `--json` prints `items` and `more`. More than 20 matches are not shown, and a note says to narrow the
+query.
+
+`tag ls` answers the tags of one audio file, or of up to 100 in one batch. A read the server has not made yet is `pending`;
+the command asks again, honouring `Retry-After` up to five seconds, and stops asking after six tries. A node that is not an
+audio file is named on standard error and left out; the exit is 4 when none answered, and 7 when only some did. The table is
+`NODE`, `STATE`, `TITLE`, `ARTIST`, `ALBUM` and `DURATION`, with the duration as `m:ss`. `--json` is an object keyed by node
+id.
+
+Exit codes follow the errors: 2 for a usage error, 3 when the server refuses a credential, 4 when a node has no tags, and 7
+when only some nodes did.
+
+```
+selfcloud search invoice --type pdf --modified-after 2026-11-01T00:00:00Z
+selfcloud search "quarterly report" --in content --all
+selfcloud search --label fld_status:open --scope fld_…
+selfcloud people find ada --kind user
+selfcloud tag ls nod_… nod_…
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
