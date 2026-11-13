@@ -230,6 +230,17 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 		nodeID := valueOf(p.t, p.do("put", p.local("get.bin", "bytes for get"), "--folder", p.folder, "/"), "id=")
 		return []string{nodeID, p.t.TempDir()}
 	},
+	// edit opens an editor; the probe gives it a script that writes new text, and the terminal its check needs.
+	"edit": func(p *fileProbe) []string {
+		nodeID := valueOf(p.t, p.do("put", p.local("edit.txt", "old text\n"), "--folder", p.folder, "/"), "id=")
+		script := filepath.Join(p.t.TempDir(), "editor.sh")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'new text\\n' > \"$1\"\n"), 0o700); err != nil {
+			p.t.Fatal(err)
+		}
+		p.t.Setenv("VISUAL", "")
+		p.t.Setenv("EDITOR", script)
+		return []string{nodeID}
+	},
 	"upload cancel": func(p *fileProbe) []string { return []string{p.openUpload("cancel.bin", 10)} },
 	// zip create waits for its zip, which the job runner makes, so the probe also reaches the poll route it declares as a read.
 	"zip create": func(p *fileProbe) []string {

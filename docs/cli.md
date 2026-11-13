@@ -151,9 +151,11 @@ The codes are the API's where the server answered. Otherwise the CLI uses one of
 | 5 | a check failed after a transfer (a checksum did not match); used by the file commands |
 | 6 | an upload expired on the server; the file must be sent again from the start; used by the file commands |
 | 7 | partial success: some of several targets were done and some failed; used by the commands that take several targets |
+| 8 | the file changed on the server after `edit` read it; the edited text is kept in a temporary file and its path is printed |
 
 `get` exits 5 when the bytes do not match the server's SHA-256; `put` and `upload cancel` exit 6 for an expired upload
-(section "Large files"); the commands that take several targets exit 7.
+(section "Large files"); the commands that take several targets exit 7; `edit` exits 8 when the file moved on since it
+was opened.
 
 ## Commands
 
@@ -320,6 +322,7 @@ starts with `-`, because a path always starts with `/`.
 |---|---|
 | `ls [--folder F] [--all] [PATH \| NODE]` | the children of a path (default `/`, the folder's root), or of a directory node; `--all` follows every page |
 | `stat NODE` | one node: id, folder, parent, name, kind, size, MIME type, modified time, role |
+| `edit NODE`, `edit --folder F PATH` | opens a small text file in the person's editor (`$VISUAL`, `$EDITOR` or `vi`) and saves the change, only if the server's copy is still the one that was read |
 | `mkdir --folder F [--parents] PATH` | a directory; `--parents` makes the missing ones on the way; an existing one is a conflict unless `--parents` |
 | `touch --folder F [--parents] PATH` | a new, empty file; a name in use is a conflict. The API cannot change a file's time, so `touch` never changes an existing one |
 | `mv NODE DEST [--folder F] [--name N] [--replace --yes]` | moves a node into the directory DEST (a node id, or a path walked in `--folder`), under its own name or `--name` |
@@ -336,6 +339,16 @@ starts with `-`, because a path always starts with `/`.
 `--json` prints the API's document for `stat`, `mkdir`, `touch`, `mv` and `cp`, and the items of a list for `ls` and
 `trash ls`. `rm`, `trash restore`, `trash rm` and `unlock` print one object per target (`target`, `status`, and `error`
 when it failed), not the API's document. `trash empty` prints `{"purged": N}`.
+
+**Editing.** `edit` needs a terminal on standard input and standard output, since it hands both to the editor. It reads
+the node, refuses a directory or a file over 2 MiB, and then reads the whole text into a private temporary file named
+after the node (isolated from the directory, so a name such as `../x` stays there). After the editor exits it compares
+the text: an unchanged file is reported and nothing is sent. Text that is not UTF-8, holds a NUL byte, or is over
+2 MiB is refused (exit 2) and kept in the temporary file, whose path the error names. A change is sent to the node's
+content route with the stored MIME type and `If-Match` set to the etag that was read. A 412 means the file moved on:
+the command exits 8 and keeps the edited text, naming its path; any other failed save (a lock, for example) keeps it
+too. The temporary file is removed after a save, or after an unchanged edit, and is never left behind otherwise
+without its path being printed. Plain output is `size` and `etag`; `--json` prints `{"size":N,"etag":"…"}`.
 
 `--folder` is required for a path, and the path is walked in that folder. A node id needs no `--folder`: the node names
 its own folder, which `stat` and `ls --json` print as `folder_id`. `mv` and `cp` send the folder with a node-id

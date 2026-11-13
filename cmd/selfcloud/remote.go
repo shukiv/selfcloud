@@ -140,6 +140,13 @@ var remoteCommands = []remoteCommand{
 		help: `  get NODE | --folder FOLDER PATH | SHARE-LINK | - | --link-file FILE [DEST] [--overwrite] [--password-stdin] [--piece-size SIZE]
                                  read a file in ranges into DEST.part, resume after a cut, check it, then name it
 `, run: files.Get},
+	// edit reads the file's node, its text (get owns that read), and a path's directory (ls owns that read).
+	{name: "edit", route: "PUT /api/v1/nodes/{nod}/content",
+		reads: []string{"GET /api/v1/nodes/{nod}", "GET /api/v1/nodes/{nod}/content", "GET /api/v1/folders/{fld}/children"},
+		help: `  edit NODE | --folder FOLDER PATH
+                                 open a text file in $VISUAL, $EDITOR or vi and save the change; a file that changed on
+                                 the server is not overwritten: the text is kept and named (exit 8)
+`, run: files.Edit},
 	{name: "settings get", route: "GET /api/v1/settings",
 		help: `  settings get [KEY] [--json]    the server's live settings and pictures, or one of them (needs an admin key)
 `, run: settings.Get},

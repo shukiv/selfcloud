@@ -76,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "fsck":
 		return fsckCommand(args[1:], stdout, stderr)
 	case "info", "api", "profile", "login", "logout", "whoami",
-		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "upload", "settings",
+		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "edit", "upload", "settings",
 		"folder", "group", "user", "share", "link", "access", "shared", "webhook", "import", "job", "zip",
 		"account", "storage", "label", "sharing",
 		"star", "unstar", "starred", "recent", "comment", "activity", "search", "people", "tag", "doc", "template", "thumbnail", "export":
