@@ -164,10 +164,10 @@ fn	lib/notifications/api.ts:markRead	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:setEmailSwitch	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:unreadCount	-	cli11	planned, cli11
 fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
-fn	lib/settings/api.ts:changeSettings	-	se4	planned, se4 (settings set and settings reset)
-fn	lib/settings/api.ts:deletePicture	-	se4	planned, se4 (settings logo remove and settings icon remove)
-fn	lib/settings/api.ts:getSettings	-	se4	planned, se4 (settings get)
-fn	lib/settings/api.ts:putPicture	-	se4	planned, se4 (settings logo set and settings icon set)
+fn	lib/settings/api.ts:changeSettings	settings set	se4	built in se4; settings reset calls it too
+fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove calls it too
+fn	lib/settings/api.ts:getSettings	settings get	se4	built in se4
+fn	lib/settings/api.ts:putPicture	settings logo set	se4	built in se4; settings icon set calls it too
 fn	lib/sharing/api.ts:approveAccessRequest	access approve	cli7	built in cli7
 fn	lib/sharing/api.ts:createAccessRequest	-	-	a viewer asks for access in the browser
 fn	lib/sharing/api.ts:createDropLink	link create	cli7	built in cli7
