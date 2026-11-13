@@ -77,7 +77,8 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 	switch method {
 	case methodEmail:
 		if s.mailer == nil {
-			return apierr.New(apierr.InvalidRequest, "mail is not configured; an API key may use the method \"link\" or \"none\"")
+			return apierr.New(apierr.InvalidRequest, "mail is not configured; an API key may use the method \"link\" or \"none\"").
+				With("reason", "mail_not_configured")
 		}
 	case methodLink:
 		// An installation admin's key is never handed a link to a user that already exists: the key reaches every

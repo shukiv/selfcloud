@@ -256,6 +256,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Account" }
+        "400":
+          description: |
+            `invalid_request` for a malformed field, or for the owner's `email` verification when the server has no
+            mail: `details.reason` is `mail_not_configured`, and neither the account nor its owner is created.
         default: { $ref: "#/components/responses/Error" }
     get:
       tags: [Accounts]
@@ -1920,6 +1924,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UserWithVerification" }
+        "400":
+          description: |
+            `invalid_request` for a verification method that is not `email` or `link`, or for `email` when the server
+            has no mail: `details.reason` is `mail_not_configured`, and nothing is created or sent.
         default: { $ref: "#/components/responses/Error" }
     get:
       tags: [Admins]
@@ -2140,8 +2148,9 @@ paths:
         Account key, admin key, or an owner session. The `verification` method decides how the
         user proves the address:
 
-        - `email`: SelfCloud mails a link. If mail is not configured, or the mail fails to send,
-          the user is still created and `verification.sent` says whether the mail went out.
+        - `email`: SelfCloud mails a link. Without mail configured the request is refused
+          (`400 invalid_request`, `details.reason` `mail_not_configured`) and nothing is created. If the
+          mail fails to send, the user is still created and `verification.sent` says whether it went out.
         - `link`: SelfCloud returns the link and token in `verification`, for the client to
           deliver.
         - `none`: the user is verified at once. Only an account or admin key may do this.
@@ -2168,6 +2177,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "400":
+          description: |
+            `invalid_request` for a malformed field, or for `email` verification when the server has no mail:
+            `details.reason` is `mail_not_configured`, and nothing is created. The `link` and `none` methods still
+            work without mail.
         default: { $ref: "#/components/responses/Error" }
     get:
       tags: [Users]
@@ -2249,6 +2263,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UserDetailWithVerification" }
+        "400":
+          description: |
+            `invalid_request` for a malformed field, or for a change of email with `verification` `email` when the
+            server has no mail: `details.reason` is `mail_not_configured`, and the user is unchanged.
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [Users]
@@ -2309,6 +2327,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UserWithVerification" }
+        "400":
+          description: |
+            `invalid_request` for a method that is not `email`, `link` or `none`, or for `email` when the server has
+            no mail: `details.reason` is `mail_not_configured`, and nothing is sent or changed.
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/accounts/{acc}/users/{usr}/password:
@@ -2512,6 +2534,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Verification" }
+        "400":
+          description: |
+            `invalid_request` for a method that is not `email` or `link`, or for `email` when the server has no mail:
+            `details.reason` is `mail_not_configured`, and nothing is sent or changed.
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/auth/verify:
