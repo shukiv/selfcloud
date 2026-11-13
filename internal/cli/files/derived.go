@@ -2,7 +2,7 @@
 
 package files
 
-// The derived commands (design-cli.md section 8): thumbnail waits for the server's preview of a node and writes it,
+// The derived commands: thumbnail waits for the server's preview of a node and writes it,
 // and export asks the server to convert a file to another format, waits for the conversion, and downloads it. Both
 // waits follow the server's Retry-After, and neither command asks the server for the same thing twice.
 
@@ -35,6 +35,8 @@ const (
 	thumbWaitTimeout = time.Minute
 	// exportWaitTimeout is how long export follows a conversion that is still being made.
 	exportWaitTimeout = 10 * time.Minute
+	// thumbLimit is the largest thumbnail the command accepts.
+	thumbLimit int64 = 16 << 20
 	// derivedRetryMax is the longest wait between two polls.
 	derivedRetryMax = 30 * time.Second
 	// derivedRetryDefault is the wait when the server gives no usable Retry-After.
@@ -139,14 +141,27 @@ func Thumbnail(args []string, stdout, stderr io.Writer) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 		defer cancel()
-		body, err := thumbBody(ctx, c.Client, nodeID, size, given, waitTimeout)
+		body, err := thumbBody(ctx, c.Client, nodeID, size, given)
 		if err != nil {
 			return fail(stderr, g, err)
 		}
-		n, err := io.Copy(stdout, body)
+		n, err := io.Copy(stdout, io.LimitReader(body, thumbLimit))
+		more := false
+		var readErr error
+		if err == nil && n == thumbLimit {
+			var extra int64
+			extra, readErr = io.CopyN(io.Discard, body, 1)
+			more = extra > 0
+		}
 		cerr := body.Close()
 		if err != nil {
 			return fail(stderr, g, fmt.Errorf("cannot write the thumbnail: %w", err))
+		}
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return fail(stderr, g, fmt.Errorf("cannot read the thumbnail: %w", readErr))
+		}
+		if more {
+			return fail(stderr, g, errThumbTooLarge)
 		}
 		if cerr != nil {
 			return fail(stderr, g, fmt.Errorf("cannot finish the thumbnail: %w", cerr))
@@ -171,7 +186,7 @@ func Thumbnail(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
-	body, err := thumbBody(ctx, c.Client, nodeID, size, given, waitTimeout)
+	body, err := thumbBody(ctx, c.Client, nodeID, size, given)
 	if err != nil {
 		return fail(stderr, g, err)
 	}
@@ -188,8 +203,7 @@ func Thumbnail(args []string, stdout, stderr io.Writer) int {
 
 // thumbBody asks for the thumbnail, follows a pending answer, and returns the ready body. The caller closes it. A
 // signed link, which the command line does not follow, and a wait that ends are reported here.
-func thumbBody(ctx context.Context, cl *client.Client, nodeID string, size int, sizeGiven bool,
-	limit time.Duration) (io.ReadCloser, error) {
+func thumbBody(ctx context.Context, cl *client.Client, nodeID string, size int, sizeGiven bool) (io.ReadCloser, error) {
 	for {
 		if ctx.Err() != nil {
 			return nil, thumbTimeout()
@@ -236,6 +250,10 @@ func thumbSignedLink() error {
 		"through signed links, which the command line does not follow"}
 }
 
+// errThumbTooLarge is the error of a body over the limit.
+var errThumbTooLarge = &exitcode.Error{Exit: exitcode.Failed, Name: "too_large",
+	Message: "the server's thumbnail is larger than 16 MiB; it was not saved"}
+
 // thumbTimeout is the error of a wait that ran out.
 func thumbTimeout() error {
 	return &exitcode.Error{Exit: exitcode.Failed, Name: "timeout", Message: "the thumbnail is not ready yet"}
@@ -250,7 +268,10 @@ func thumbWrite(dst localDest, body io.Reader, force bool) (int64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("cannot write the thumbnail: %w", err)
 		}
-		n, err := thumbCopy(f, body)
+		n, err := io.Copy(f, io.LimitReader(body, thumbLimit+1))
+		if err == nil && n > thumbLimit {
+			err = errThumbTooLarge
+		}
 		if err == nil {
 			err = f.Chmod(newFileMode())
 		}
@@ -262,6 +283,9 @@ func thumbWrite(dst localDest, body io.Reader, force bool) (int64, error) {
 		}
 		if err != nil {
 			_ = dst.root.Remove(dst.name)
+			if errors.Is(err, errThumbTooLarge) {
+				return n, err
+			}
 			return n, fmt.Errorf("cannot write the thumbnail: %w", err)
 		}
 		return n, nil
@@ -274,7 +298,10 @@ func thumbWrite(dst localDest, body io.Reader, force bool) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("cannot write the thumbnail: %w", err)
 	}
-	n, err := thumbCopy(f, body)
+	n, err := io.Copy(f, io.LimitReader(body, thumbLimit+1))
+	if err == nil && n > thumbLimit {
+		err = errThumbTooLarge
+	}
 	if err == nil {
 		err = f.Chmod(newFileMode())
 	}
@@ -292,16 +319,10 @@ func thumbWrite(dst localDest, body io.Reader, force bool) (int64, error) {
 	}
 	if err != nil {
 		_ = dst.root.Remove(tmp)
+		if errors.Is(err, errThumbTooLarge) {
+			return n, err
+		}
 		return n, fmt.Errorf("cannot write the thumbnail: %w", err)
-	}
-	return n, nil
-}
-
-// thumbCopy copies the answer to the file.
-func thumbCopy(f *os.File, body io.Reader) (int64, error) {
-	n, err := io.Copy(f, body)
-	if err != nil {
-		return n, err
 	}
 	return n, nil
 }
@@ -357,6 +378,8 @@ func Export(args []string, stdout, stderr io.Writer) int {
 	set := conn.NewFlagSet("export")
 	var g conn.Global
 	g.Register(set)
+	var tf transferFlags
+	tf.register(set)
 	var format string
 	var waitTimeout time.Duration
 	var force bool
@@ -380,6 +403,10 @@ func Export(args []string, stdout, stderr io.Writer) int {
 	}
 	if waitTimeout <= 0 {
 		return fail(stderr, g, exitcode.Usagef("--wait-timeout must be longer than zero"))
+	}
+	piece, _, err := tf.pieceSize()
+	if err != nil {
+		return fail(stderr, g, err)
 	}
 	dest := ""
 	if len(pos) == 2 {
@@ -410,7 +437,7 @@ func Export(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
-	info, err := waitForExport(ctx, c.Client, nodeID, job.ID, waitTimeout)
+	info, err := waitForExport(ctx, c.Client, nodeID, job.ID)
 	if err != nil {
 		return fail(stderr, g, err)
 	}
@@ -424,12 +451,12 @@ func Export(args []string, stdout, stderr io.Writer) int {
 			again, err := readyExport(ctx, c.Client, nodeID, job.ID)
 			return version{etag: again.etag, size: again.size, sha: again.sha}, err
 		}}
-	got, err := downloadSubject(ctx, signedIn{c.Client}, subj, dst, dlOptions{piece: defaultPieceSize,
-		stall: defaultStall, overwrite: force}, stderr)
+	got, err := downloadSubject(context.Background(), signedIn{c.Client}, subj, dst, dlOptions{piece: piece,
+		stall: tf.stall, overwrite: force}, stderr)
 	if err != nil {
 		return fail(stderr, g, err)
 	}
-	return exportReport(stdout, g, got.Path, got.Size)
+	return exportReport(stdout, stderr, g, got.Path, got.Size)
 }
 
 // exportProbe asks for the export's first byte, so the answer carries its state and, when it is ready, its version.
@@ -480,7 +507,7 @@ func exportProbe(ctx context.Context, cl *client.Client, nodeID, export string) 
 
 // waitForExport polls the export until it is ready. A 404 after the request was accepted is reported as an export that
 // is gone; a refusal that may pass is polled again, with the server's Retry-After.
-func waitForExport(ctx context.Context, cl *client.Client, nodeID, export string, limit time.Duration) (exportInfo, error) {
+func waitForExport(ctx context.Context, cl *client.Client, nodeID, export string) (exportInfo, error) {
 	failures := 0
 	for {
 		info, err := exportProbe(ctx, cl, nodeID, export)
@@ -570,16 +597,16 @@ func exportTimeout() error {
 }
 
 // exportReport writes where the export went and its size.
-func exportReport(stdout io.Writer, g conn.Global, path string, size int64) int {
+func exportReport(stdout, stderr io.Writer, g conn.Global, path string, size int64) int {
 	if g.JSON {
 		if err := output.JSON(stdout, map[string]any{"saved": path, "size": size}); err != nil {
-			return fail(stdout, g, err)
+			return fail(stderr, g, err)
 		}
 		return exitcode.OK
 	}
 	if err := output.KeyValues(stdout, []output.KV{{Key: "saved", Value: path},
 		{Key: "size", Value: strconv.FormatInt(size, 10)}}); err != nil {
-		return fail(stdout, g, err)
+		return fail(stderr, g, err)
 	}
 	return exitcode.OK
 }

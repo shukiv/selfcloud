@@ -628,7 +628,8 @@ var remoteCommands = []remoteCommand{
 `, run: files.Thumbnail},
 	{name: "export", route: "POST /api/v1/nodes/{nod}/exports",
 		more: []string{"GET /api/v1/nodes/{nod}/exports/{drv}"},
-		help: `  export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force]
+		help: `  export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force] [--piece-size SIZE]
+                                 [--stall-timeout DURATION]
                                  convert a file to another format and download it
 `, run: files.Export},
 }
