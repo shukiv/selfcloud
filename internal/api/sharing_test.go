@@ -50,11 +50,12 @@ func newSharingFixture(t *testing.T) *sharingFixture {
 	return fx
 }
 
-// setPerm gives a subject a role on a node, as the account key.
+// setPerm gives a subject a role on a node, as the account key. It is silent: a test uses it to set up reach, not to
+// send a share mail or write a share notice, so those belong only to the change a test makes on purpose.
 func (fx *sharingFixture) setPerm(t *testing.T, nodeID, subject, role string) {
 	t.Helper()
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+nodeID+"/permissions/"+subject, fx.key,
-		map[string]any{"role": role}), 200)
+		map[string]any{"role": role, "notify": false}), 200)
 }
 
 // rootOf returns the root node of a folder, read from the store.

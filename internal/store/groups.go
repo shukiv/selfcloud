@@ -177,6 +177,16 @@ func (tx *Tx) GroupMemberOf(ctx context.Context, groupID, userID string) (*Group
 
 // GroupMembers lists the members of a group, earliest first, one page at a time.
 func (s *Store) GroupMembers(ctx context.Context, groupID string, p Page) ([]*GroupMember, string, error) {
+	return groupMembersIn(ctx, s.r, groupID, p)
+}
+
+// GroupMembers lists the members of a group in the caller's write, earliest first, one page at a time.
+func (tx *Tx) GroupMembers(ctx context.Context, groupID string, p Page) ([]*GroupMember, string, error) {
+	return groupMembersIn(ctx, tx.q, groupID, p)
+}
+
+// groupMembersIn lists the members of a group, earliest first, one page at a time, from q.
+func groupMembersIn(ctx context.Context, q querier, groupID string, p Page) ([]*GroupMember, string, error) {
 	where := "group_id = ?"
 	args := []any{groupID}
 	if p.Cursor != "" {
@@ -192,7 +202,7 @@ func (s *Store) GroupMembers(ctx context.Context, groupID string, p Page) ([]*Gr
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT group_id, user_id, created_at FROM group_members WHERE "+where+
+	rows, err := q.QueryContext(ctx, "SELECT group_id, user_id, created_at FROM group_members WHERE "+where+
 		" ORDER BY created_at, user_id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err

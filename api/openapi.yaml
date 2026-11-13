@@ -5553,11 +5553,13 @@ paths:
       operationId: listNotifications
       summary: List the caller's notifications, newest first
       description: |
-        The mentions and replies that named or answered the caller, newest first, one page at a time. Each carries the
-        kind, the item's name, the actor's name and the times. No comment text is in it. A notification whose item the
-        caller no longer reaches is left out of the page, and kept in the store: it shows again if the reach returns. A
-        notification of a deleted comment is left out too. A signed-in user only: an account key and a delegated token,
-        whatever its scope, are refused.
+        The notifications that named the caller: mentions and replies to their comments, shares of items with them, and
+        access requests on items they manage, newest first, one page at a time. Each carries the kind, the item's name, the
+        actor's name and the times. No comment text is in it. A notification whose item the caller no longer reaches is left
+        out of the page, and kept in the store: it shows again if the reach returns. A notification of a deleted comment is
+        left out too; a share or an access request names no comment. While the account's comments are off, mentions and
+        replies are hidden but shares and access requests still show. An access request shows only to a manager of the item.
+        A signed-in user only: an account key and a delegated token, whatever its scope, are refused.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
@@ -7629,11 +7631,12 @@ components:
       type: object
       description: |
         One notification. It holds no comment text. `actor_name` is the actor's display name; `actor_gone` is set when the
-        actor's user was deleted, and then there is no name.
+        actor's user was deleted, and then there is no name. A `share` or `access_request` notification names no comment.
+        A client that does not know a kind shows it generically.
       required: [id, kind, node_id, item_name, created_at]
       properties:
         id: { type: string, example: "ntf_7k2m9q..." }
-        kind: { type: string, enum: [mention, reply] }
+        kind: { type: string, enum: [mention, reply, share, access_request] }
         node_id: { type: string, example: "nod_7k2m9q..." }
         item_name: { type: string }
         actor_name: { type: string }

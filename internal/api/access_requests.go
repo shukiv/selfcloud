@@ -200,6 +200,9 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 			details, n.FolderID)); err != nil {
 			return err
 		}
+		if err := s.requestNotices(ctx, tx, p, n, f, stored); err != nil {
+			return err
+		}
 		created, node, folder = stored, n, f
 		mute = recent
 		return nil
@@ -250,6 +253,36 @@ func (s *Server) mailManagers(ctx context.Context, p *auth.Principal, n *store.N
 		return s.templates.Render("access_request", u.Locale, shareData{Actor: actor, Item: item,
 			Role: mail.RoleLabel(u.Locale, req.Role), Link: link, Message: note})
 	})
+}
+
+// requestNotices writes an in-app notice of a new access request to the people the mail would go to: a
+// personal folder's owner, or a team space's managers, never the requester. It runs in the request's own
+// transaction and is not gated by the mail mute or the mail budget: the notice names the same people the
+// mail would, whether or not a mail is sent. No mail is queued for it.
+func (s *Server) requestNotices(ctx context.Context, tx *store.Tx, p *auth.Principal, n *store.Node,
+	f *store.Folder, req *store.AccessRequest) error {
+	var ids []string
+	if f.Kind == store.KindPersonal {
+		ids = []string{f.OwnerUserID}
+	} else {
+		var err error
+		if ids, err = tx.TeamManagerIDs(ctx, n.AccountID, f.ID); err != nil {
+			return err
+		}
+	}
+	var rows []store.NewShareNotification
+	for _, uid := range ids {
+		if uid == req.UserID {
+			continue
+		}
+		u, err := tx.User(ctx, n.AccountID, uid)
+		if err != nil || u.Status != store.UserActive {
+			continue
+		}
+		rows = append(rows, store.NewShareNotification{ID: id.New("ntf"), AccountID: n.AccountID, UserID: uid,
+			Kind: store.NotifyAccessRequest, NodeID: n.ID, RequestID: req.ID, ActorID: req.UserID, At: req.CreatedAt})
+	}
+	return tx.InsertShareNotifications(ctx, rows)
 }
 
 // handleListNodeAccessRequests lists the requests on a node. The caller needs to be allowed to share the
@@ -517,7 +550,7 @@ func (s *Server) mailDecision(ctx context.Context, p *auth.Principal, n *store.N
 	if s.mailer == nil {
 		return
 	}
-	users, reason := s.activeRecipients(ctx, n.AccountID, store.SubjectUser, req.UserID)
+	users, reason := s.activeRecipients(ctx, s.store, n.AccountID, store.SubjectUser, req.UserID)
 	if reason != "" {
 		return
 	}

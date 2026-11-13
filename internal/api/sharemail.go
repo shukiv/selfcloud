@@ -82,7 +82,7 @@ func (s *Server) shareMail(ctx context.Context, p *auth.Principal, n *store.Node
 	if s.mailer == nil {
 		return shareNotice{Reason: "mail_not_configured"}
 	}
-	users, reason := s.activeRecipients(ctx, n.AccountID, kind, subj)
+	users, reason := s.activeRecipients(ctx, s.store, n.AccountID, kind, subj)
 	if reason != "" {
 		return shareNotice{Reason: reason}
 	}
@@ -105,11 +105,19 @@ func (s *Server) shareBudget(accountID, address string) error {
 	return s.chargeAll(charge{"mail.share.account", accountID}, charge{"mail.share.target", emailKey(address)})
 }
 
+// recipientReader is what activeRecipients reads: a user by ID and the members of a group. The read pool
+// and a write transaction both offer it, so a notice can name the same people the mail would, in the
+// change's own transaction.
+type recipientReader interface {
+	User(ctx context.Context, accountID, id string) (*store.User, error)
+	GroupMembers(ctx context.Context, groupID string, p store.Page) ([]*store.GroupMember, string, error)
+}
+
 // activeRecipients returns the users a change reaches, and a reason when none can be mailed. Only
 // active users get mail: a pending user cannot sign in to see the item, and a disabled one may not.
-func (s *Server) activeRecipients(ctx context.Context, accountID, kind, subj string) ([]*store.User, string) {
+func (s *Server) activeRecipients(ctx context.Context, rd recipientReader, accountID, kind, subj string) ([]*store.User, string) {
 	if kind == store.SubjectUser {
-		u, err := s.store.User(ctx, accountID, subj)
+		u, err := rd.User(ctx, accountID, subj)
 		if err != nil {
 			return nil, "no_recipients"
 		}
@@ -118,7 +126,7 @@ func (s *Server) activeRecipients(ctx context.Context, accountID, kind, subj str
 		}
 		return []*store.User{u}, ""
 	}
-	members, _, err := s.store.GroupMembers(ctx, subj, store.Page{Limit: maxGroupMail + 1})
+	members, _, err := rd.GroupMembers(ctx, subj, store.Page{Limit: maxGroupMail + 1})
 	if err != nil {
 		return nil, "mail_failed"
 	}
@@ -127,7 +135,7 @@ func (s *Server) activeRecipients(ctx context.Context, accountID, kind, subj str
 	}
 	var out []*store.User
 	for _, m := range members {
-		u, err := s.store.User(ctx, accountID, m.UserID)
+		u, err := rd.User(ctx, accountID, m.UserID)
 		if err == nil && u.Status == store.UserActive {
 			out = append(out, u)
 		}

@@ -33,8 +33,10 @@ func newCommentFixture(t *testing.T) *commentFixture {
 	t.Helper()
 	sf := newSharingFixture(t)
 	root := sf.rootOf(t, sf.fld.ID)
-	sf.setPerm(t, root, sf.ann.ID, "commenter")
-	sf.setPerm(t, root, sf.bob.ID, "viewer")
+	// The setup grants are silent: they give ann and bob their reach without a share notice or mail of their own,
+	// so a test's inbox and mail hold only what the test itself does.
+	sf.grant(t, root, sf.ann.ID, "commenter")
+	sf.grant(t, root, sf.bob.ID, "viewer")
 	sf.s.limits[commentWriteRate] = newLimiter(1000)
 	carol, carolSess := verifiedUser(t, sf.s, sf.key, sf.acc.ID, "carol@example.com")
 	return &commentFixture{sharingFixture: sf, root: root, file: sf.deep.ID, carol: carol, carolSess: carolSess}

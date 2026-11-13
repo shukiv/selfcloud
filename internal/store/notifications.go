@@ -10,14 +10,19 @@ import (
 	"time"
 )
 
-// Notifications (design section 14, slice r, decision 43). A notification tells a user that a comment named them or
-// replied to their comment. It holds IDs, a kind and times: no name and no text. The outbox row of a notification is
-// the mail queue of that notification. Both are written in the transaction that writes the comment.
+// Notifications (design section 14, slice r, decisions 43 and 171). A notification tells a user that a comment named them
+// or replied to their comment, that an item was shared with them, or that someone asked for access to an item they manage.
+// It holds IDs, a kind and times: no name and no text. Comment notifications (mention, reply) live in notifications and may
+// be mailed through the outbox; share and access-request notifications live in share_notifications and are in-app only
+// (decision 171 keeps them in a second table so decision 120's additive rule holds). The reads union the two. Each is
+// written in the transaction that writes the comment, the permission or the request.
 
 // Kinds of notification.
 const (
-	NotifyMention = "mention"
-	NotifyReply   = "reply"
+	NotifyMention       = "mention"
+	NotifyReply         = "reply"
+	NotifyShare         = "share"
+	NotifyAccessRequest = "access_request"
 )
 
 // States of an outbox row.
@@ -54,6 +59,19 @@ type NewNotification struct {
 	Kind      string
 	NodeID    string
 	CommentID string
+	ActorID   string // "" when the actor is unknown; the reader sees "former member" for a deleted actor
+	At        time.Time
+}
+
+// NewShareNotification is one share or access-request notification to write. It names no comment and queues no mail;
+// RequestID names the access request it is about, and is "" for a share.
+type NewShareNotification struct {
+	ID        string
+	AccountID string
+	UserID    string
+	Kind      string
+	NodeID    string
+	RequestID string
 	ActorID   string // "" when the actor is unknown; the reader sees "former member" for a deleted actor
 	At        time.Time
 }
@@ -110,6 +128,26 @@ func (tx *Tx) InsertNotifications(ctx context.Context, rows []NewNotification, m
 	return nil
 }
 
+// InsertShareNotifications writes share and access-request notifications in the caller's write. They queue no mail. Each
+// user keeps at most NotifyPerUser notifications over the two tables, the oldest removed in the same write.
+func (tx *Tx) InsertShareNotifications(ctx context.Context, rows []NewShareNotification) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	for _, n := range rows {
+		if _, err := tx.q.ExecContext(ctx, `INSERT INTO share_notifications
+			(id, account_id, user_id, kind, node_id, request_id, actor_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			n.ID, n.AccountID, n.UserID, n.Kind, n.NodeID, nullString(n.RequestID), nullString(n.ActorID), millis(n.At)); err != nil {
+			return err
+		}
+		if err := tx.capNotifications(ctx, n.UserID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // countOutboxPending counts the pending outbox rows, reading at most limit of them.
 func (tx *Tx) countOutboxPending(ctx context.Context, limit int) (int, error) {
 	var n int
@@ -124,18 +162,44 @@ func (tx *Tx) countAccountPending(ctx context.Context, accountID string, limit i
 	return n, err
 }
 
-// capNotifications removes the notifications of a user beyond NotifyPerUser, the oldest first. It reads at most one row
-// past the cap, so its cost does not grow with the user's history.
+// capNotifications removes the notifications of a user beyond NotifyPerUser, the oldest first, over the two tables. It
+// reads at most one row past the cap, so its cost does not grow with the user's history. The oldest ids are read once and
+// removed from whichever table holds them, so the two tables share one cap.
 func (tx *Tx) capNotifications(ctx context.Context, userID string) error {
 	var n int
-	if err := tx.q.QueryRowContext(ctx, countUserNotifySQL, userID, NotifyPerUser+1).Scan(&n); err != nil {
+	if err := tx.q.QueryRowContext(ctx, countUserNotifySQL, userID, userID, NotifyPerUser+1).Scan(&n); err != nil {
 		return err
 	}
 	if n <= NotifyPerUser {
 		return nil
 	}
-	_, err := tx.q.ExecContext(ctx, capDeleteSQL, userID, n-NotifyPerUser)
-	return err
+	rows, err := tx.q.QueryContext(ctx, oldestUserNotifySQL, userID, userID, n-NotifyPerUser)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := tx.q.ExecContext(ctx, "DELETE FROM notifications WHERE id = ?", id); err != nil {
+			return err
+		}
+		if _, err := tx.q.ExecContext(ctx, "DELETE FROM share_notifications WHERE id = ?", id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // The statements that more than one function uses, or that the plan test reads. Each is a constant, so the plan test reads
@@ -144,10 +208,17 @@ const (
 	countOutboxPendingSQL = `SELECT COUNT(*) FROM (SELECT 1 FROM notify_outbox WHERE state = 'pending' LIMIT ?)`
 	// countAccountPendingSQL reads one account's pending rows through notify_outbox_account (account_id, state).
 	countAccountPendingSQL = `SELECT COUNT(*) FROM (SELECT 1 FROM notify_outbox WHERE account_id = ? AND state = 'pending' LIMIT ?)`
-	countUserNotifySQL     = `SELECT COUNT(*) FROM (SELECT 1 FROM notifications WHERE user_id = ? LIMIT ?)`
-	// oldestOverCapSQL names the oldest notifications of a user, and capDeleteSQL removes them.
-	oldestOverCapSQL = `SELECT id FROM notifications WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT ?`
-	capDeleteSQL     = `DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE user_id = ?
+	countUserNotifySQL     = `SELECT COUNT(*) FROM (
+		SELECT 1 FROM notifications WHERE user_id = ?
+		UNION ALL
+		SELECT 1 FROM share_notifications WHERE user_id = ?
+		LIMIT ?)`
+	// oldestUserNotifySQL names the oldest notifications of a user over the two tables, and capNotifications removes
+	// them. The ids are read once, then deleted, so the two deletes share one oldest set.
+	oldestUserNotifySQL = `SELECT id FROM (
+		SELECT id, created_at FROM notifications WHERE user_id = ?
+		UNION ALL
+		SELECT id, created_at FROM share_notifications WHERE user_id = ?
 		ORDER BY created_at ASC, id ASC LIMIT ?)`
 	// accountHourSQL counts the users of an account charged since a time, reading at most a cap of them.
 	accountHourSQL = `SELECT COUNT(*) FROM (SELECT 1 FROM notify_prefs WHERE account_id = ? AND last_mail_at > ? LIMIT ?)`
@@ -160,6 +231,8 @@ const (
 		ORDER BY o.next_attempt_at, o.id LIMIT ?`
 	pruneNotifySQL = `DELETE FROM notifications WHERE id IN (
 		SELECT id FROM notifications WHERE created_at < ? LIMIT ?)`
+	pruneShareSQL = `DELETE FROM share_notifications WHERE id IN (
+		SELECT id FROM share_notifications WHERE created_at < ? LIMIT ?)`
 	expireMailSQL = `UPDATE notify_outbox SET state = 'skipped', last_error = 'expired',
 		finished_at = ?, lease_until = NULL WHERE id IN (
 		SELECT id FROM notify_outbox WHERE state = 'pending' AND created_at < ?
@@ -187,22 +260,27 @@ func scanNotify(rows interface{ Scan(...any) error }) (NotifyRow, error) {
 	return r, nil
 }
 
-// notificationsSQL is the query of NotificationsPage, with the cursor clause when cursored. A notification of a comment
-// that is a tombstone is left out: the comment is gone for its readers.
+// notificationsSQL is the query of NotificationsPage, with the cursor clause when cursored. It unions the comment
+// notifications with the share and access-request notifications, so the page and its cursor treat the two tables as one.
+// A notification of a comment that is a tombstone is left out: the comment is gone for its readers.
 func notificationsSQL(cursored bool) string {
-	q := `SELECT ` + notifyCols + ` FROM notifications n
-		JOIN comments c ON c.id = n.comment_id
-		WHERE n.account_id = ? AND n.user_id = ? AND c.deleted_at IS NULL`
+	cursor := ""
 	if cursored {
-		q += ` AND (n.created_at < ? OR (n.created_at = ? AND n.id < ?))`
+		cursor = ` AND (n.created_at < ? OR (n.created_at = ? AND n.id < ?))`
 	}
-	return q + ` ORDER BY n.created_at DESC, n.id DESC LIMIT ?`
+	return `SELECT ` + notifyCols + ` FROM notifications n
+		JOIN comments c ON c.id = n.comment_id
+		WHERE n.account_id = ? AND n.user_id = ? AND c.deleted_at IS NULL` + cursor + `
+		UNION ALL
+		SELECT ` + notifyCols + ` FROM share_notifications n
+		WHERE n.account_id = ? AND n.user_id = ?` + cursor + `
+		ORDER BY created_at DESC, id DESC LIMIT ?`
 }
 
 // NotificationsPage lists a user's notifications, newest first, p.Limit at a time. The rows carry no name and no text;
 // the caller checks reach to each node before it shows one.
 func (s *Store) NotificationsPage(ctx context.Context, accountID, userID string, p Page) ([]NotifyRow, error) {
-	args := []any{accountID, userID}
+	var cursorArgs []any
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
 		if err != nil {
@@ -212,8 +290,13 @@ func (s *Store) NotificationsPage(ctx context.Context, accountID, userID string,
 		if err != nil {
 			return nil, ErrBadCursor
 		}
-		args = append(args, at, at, parts[1])
+		cursorArgs = []any{at, at, parts[1]}
 	}
+	// The account and user filter each branch of the union, and the cursor clause does too.
+	args := []any{accountID, userID}
+	args = append(args, cursorArgs...)
+	args = append(args, accountID, userID)
+	args = append(args, cursorArgs...)
 	args = append(args, p.Limit)
 	return s.queryNotify(ctx, notificationsSQL(p.Cursor != ""), args...)
 }
@@ -223,16 +306,20 @@ func NotificationCursor(r NotifyRow) string {
 	return encodeCursor(strconv.FormatInt(millis(r.CreatedAt), 10), r.ID)
 }
 
-// unreadSQL is the query of UnreadNewest. The partial index notifications_unread answers it.
+// unreadSQL is the query of UnreadNewest. It unions the two tables; the partial indexes notifications_unread and
+// share_notifications_unread answer it.
 const unreadSQL = `SELECT ` + notifyCols + ` FROM notifications n
 	JOIN comments c ON c.id = n.comment_id
 	WHERE n.account_id = ? AND n.user_id = ? AND n.read_at IS NULL AND c.deleted_at IS NULL
-	ORDER BY n.created_at DESC, n.id DESC LIMIT ?`
+	UNION ALL
+	SELECT ` + notifyCols + ` FROM share_notifications n
+	WHERE n.account_id = ? AND n.user_id = ? AND n.read_at IS NULL
+	ORDER BY created_at DESC, id DESC LIMIT ?`
 
 // UnreadNewest returns up to limit unread notifications of a user, newest first. The count the bell shows is made from
 // these, after the reach check, so it reads at most limit rows whatever the user's history.
 func (s *Store) UnreadNewest(ctx context.Context, accountID, userID string, limit int) ([]NotifyRow, error) {
-	return s.queryNotify(ctx, unreadSQL, accountID, userID, limit)
+	return s.queryNotify(ctx, unreadSQL, accountID, userID, accountID, userID, limit)
 }
 
 // queryNotify runs a notification query and reads its rows.
@@ -253,10 +340,21 @@ func (s *Store) queryNotify(ctx context.Context, query string, args ...any) ([]N
 	return out, rows.Err()
 }
 
-// MarkNotificationRead sets the read time of a notification of the user in the account. Another user's notification, and
-// one of another account, are ErrNotFound: the write touches the caller's own rows only.
+// MarkNotificationRead sets the read time of a notification of the user in the account. The id lives in one of the two
+// tables, so the write tries each. Another user's notification, and one of another account, are ErrNotFound: the write
+// touches the caller's own rows only.
 func (tx *Tx) MarkNotificationRead(ctx context.Context, accountID, userID, id string, at time.Time) error {
-	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE notifications SET read_at = COALESCE(read_at, ?)
+	res, err := tx.q.ExecContext(ctx, `UPDATE notifications SET read_at = COALESCE(read_at, ?)
+		WHERE account_id = ? AND user_id = ? AND id = ?`, millis(at), accountID, userID, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n > 0 {
+		return nil
+	}
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_notifications SET read_at = COALESCE(read_at, ?)
 		WHERE account_id = ? AND user_id = ? AND id = ?`, millis(at), accountID, userID, id))
 }
 
@@ -471,7 +569,8 @@ func (s *Store) FinishMail(ctx context.Context, o NotifyOutcome) error {
 	})
 }
 
-// PruneNotifications removes the notifications created before cutoff, batch at a time, with their outbox rows.
+// PruneNotifications removes the notifications created before cutoff, batch at a time from each of the two tables, with
+// their outbox rows. It returns how many rows both tables lost together.
 func (s *Store) PruneNotifications(ctx context.Context, cutoff time.Time, batch int) (int64, error) {
 	var n int64
 	err := s.Write(ctx, func(tx *Tx) error {
@@ -480,6 +579,15 @@ func (s *Store) PruneNotifications(ctx context.Context, cutoff time.Time, batch 
 			return err
 		}
 		n, err = res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		res, err = tx.q.ExecContext(ctx, pruneShareSQL, millis(cutoff), batch)
+		if err != nil {
+			return err
+		}
+		m, err := res.RowsAffected()
+		n += m
 		return err
 	})
 	return n, err

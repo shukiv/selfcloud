@@ -2,9 +2,11 @@
 
 package api
 
-// Notifications for mentions and replies (design section 14, slice r, decision 43). A comment writes its notifications
-// and their outbox rows in its own write (commentNotices). One worker sends the mail, a minute at a time (runNotifications),
-// and the in-app routes read the notifications of the signed-in user, with the reach of each item checked at read time.
+// Notifications for mentions, replies, shares and access requests (design section 14, slice r, decisions 43 and 171). A
+// comment writes its notifications and their outbox rows in its own write (commentNotices); a share or an access request
+// writes its notifications in the change's write too, but queues no mail for them (shareNotices, requestNotices). One
+// worker sends the comment mail, a minute at a time (runNotifications), and the in-app routes read the notifications of the
+// signed-in user, with the reach of each item checked at read time.
 //
 // The rules the worker keeps: a user gets at most one mail an hour and NotifyDayCap in a rolling day, charged in the
 // database; an account sends at most NotifyAccountHourCap users' mail an hour; every row is checked again at send time
@@ -433,17 +435,31 @@ func (s *Server) notifyActor(ctx context.Context, pass *notifyPass, accountID, a
 	return a, nil
 }
 
-// visibleNotices keeps the notifications whose item the reader reaches, and gives each one its item's name, read now. A
-// notification whose item the reader lost reach to is left out: it is kept in the store, and shows again if reach returns.
-// The actors' names are read for the kept rows only, and only when the reader may learn names.
+// visibleNotices keeps the notifications whose item the reader reaches and whose kind the reader may see, and gives each
+// one its item's name, read now. A notification whose item the reader lost reach to is left out: it is kept in the store,
+// and shows again if reach returns. The actors' names are read for the kept rows only, and only when the reader may learn
+// names.
 func (s *Server) visibleNotices(ctx context.Context, p *auth.Principal, rows []store.NotifyRow) ([]notifyJSON, error) {
-	// While the account's comments are off the list and the bell show nothing; the rows are kept.
 	on, err := s.store.CommentsOn(ctx, p.AccountID)
 	if err != nil {
 		return nil, err
 	}
-	if !on {
-		return []notifyJSON{}, nil
+	// visible reports whether a kind is shown to a reader who reaches the item with role. A mention or a reply is a
+	// comment notice, so it is kept but hidden while the account's comments are off. A share shows whenever its item is
+	// reached. An access request shows only to a manager of the item. A kind this build does not know shows whenever its
+	// item is reached, so a newer server's notice is never lost on an older page.
+	visible := func(kind, role string) bool {
+		if role == "" {
+			return false
+		}
+		switch kind {
+		case store.NotifyMention, store.NotifyReply:
+			return on
+		case store.NotifyAccessRequest:
+			return store.RoleRank(role) >= store.RoleRank(store.RoleManager)
+		default:
+			return true
+		}
 	}
 	nodeIDs := make([]string, 0, len(rows))
 	seen := map[string]bool{}
@@ -458,9 +474,11 @@ func (s *Server) visibleNotices(ctx context.Context, p *auth.Principal, rows []s
 		return nil, err
 	}
 	var kept []string
-	for _, nid := range nodeIDs {
-		if reach[nid] != "" {
-			kept = append(kept, nid)
+	keptSeen := map[string]bool{}
+	for _, r := range rows {
+		if visible(r.Kind, reach[r.NodeID]) && !keptSeen[r.NodeID] {
+			keptSeen[r.NodeID] = true
+			kept = append(kept, r.NodeID)
 		}
 	}
 	nodes, err := s.store.NodesByID(ctx, p.AccountID, kept)
@@ -470,7 +488,7 @@ func (s *Server) visibleNotices(ctx context.Context, p *auth.Principal, rows []s
 	folders := map[string]*store.Folder{}
 	var actorIDs []string
 	for _, r := range rows {
-		if nodes[r.NodeID] != nil && reach[r.NodeID] != "" && r.ActorID != "" {
+		if nodes[r.NodeID] != nil && visible(r.Kind, reach[r.NodeID]) && r.ActorID != "" {
 			actorIDs = append(actorIDs, r.ActorID)
 		}
 	}
@@ -483,7 +501,7 @@ func (s *Server) visibleNotices(ctx context.Context, p *auth.Principal, rows []s
 	out := []notifyJSON{}
 	for _, r := range rows {
 		n := nodes[r.NodeID]
-		if n == nil || reach[r.NodeID] == "" {
+		if n == nil || !visible(r.Kind, reach[r.NodeID]) {
 			continue
 		}
 		f := folders[n.FolderID]

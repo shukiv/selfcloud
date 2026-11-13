@@ -12,6 +12,7 @@ import (
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -321,7 +322,13 @@ func (s *Server) handleSetNodePermission(w http.ResponseWriter, r *http.Request)
 		if in.ExpiresAt != nil {
 			details["expires_at"] = in.ExpiresAt.UTC().Format(time.RFC3339)
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "permission.set", n.ID, details, n.FolderID))
+		if err := tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "permission.set", n.ID, details, n.FolderID)); err != nil {
+			return err
+		}
+		if in.Notify == nil || *in.Notify {
+			return s.shareNotices(ctx, tx, p, n, kind, subj, created)
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -335,6 +342,26 @@ func (s *Server) handleSetNodePermission(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, setPermissionJSON{permissionJSON: out, Notified: notice.Notified, Reason: notice.Reason})
 	return nil
+}
+
+// shareNotices writes an in-app notice of a share to the people the share mail would go to, never the sharer. It runs in
+// the permission's own transaction and is gated by the same notify flag as the mail, so a share made without notification
+// notifies no one. No mail is queued for it.
+func (s *Server) shareNotices(ctx context.Context, tx *store.Tx, p *auth.Principal, n *store.Node,
+	kind, subj string, at time.Time) error {
+	users, reason := s.activeRecipients(ctx, tx, n.AccountID, kind, subj)
+	if reason != "" {
+		return nil
+	}
+	var rows []store.NewShareNotification
+	for _, u := range users {
+		if p.Kind == auth.KindUser && u.ID == p.UserID {
+			continue
+		}
+		rows = append(rows, store.NewShareNotification{ID: id.New("ntf"), AccountID: n.AccountID, UserID: u.ID,
+			Kind: store.NotifyShare, NodeID: n.ID, ActorID: p.UserID, At: at})
+	}
+	return tx.InsertShareNotifications(ctx, rows)
 }
 
 // handleRemoveNodePermission removes a permission that sits on the node itself. A permission above

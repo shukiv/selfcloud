@@ -178,8 +178,18 @@ func (tx *Tx) DeleteUserAccessRequests(ctx context.Context, accountID, userID st
 // users who hold manager on the space's root, directly or through a group. They are the people an
 // access request on one of its nodes is mailed to.
 func (s *Store) TeamManagerIDs(ctx context.Context, accountID, folderID string) ([]string, error) {
+	return teamManagerIDsIn(ctx, s.r, accountID, folderID)
+}
+
+// TeamManagerIDs returns the team space's managers in the caller's write, for the access-request notice.
+func (tx *Tx) TeamManagerIDs(ctx context.Context, accountID, folderID string) ([]string, error) {
+	return teamManagerIDsIn(ctx, tx.q, accountID, folderID)
+}
+
+// teamManagerIDsIn returns the active users who manage a team space, from q.
+func teamManagerIDsIn(ctx context.Context, q querier, accountID, folderID string) ([]string, error) {
 	now := nowMillis()
-	rows, err := s.r.QueryContext(ctx, `SELECT u.id FROM users u WHERE u.account_id = ? AND u.status = 'active'
+	rows, err := q.QueryContext(ctx, `SELECT u.id FROM users u WHERE u.account_id = ? AND u.status = 'active'
 		AND (u.role = 'owner'
 			OR u.id IN (SELECT pm.subject_id FROM permissions pm JOIN nodes r ON r.id = pm.node_id
 				WHERE r.folder_id = ? AND r.parent_id IS NULL AND pm.subject_kind = 'user' AND pm.role = 'manager'

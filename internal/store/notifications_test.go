@@ -427,18 +427,20 @@ func TestNotificationSQLDoesNotScan(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{"list, first page", notificationsSQL(false), []any{"acc_n", "usr_b", 50}},
-		{"list, after a cursor", notificationsSQL(true), []any{"acc_n", "usr_b", 5, 5, "ntf_x", 50}},
-		{"unread, newest", unreadSQL, []any{"acc_n", "usr_b", 100}},
+		{"list, first page", notificationsSQL(false), []any{"acc_n", "usr_b", "acc_n", "usr_b", 50}},
+		{"list, after a cursor", notificationsSQL(true),
+			[]any{"acc_n", "usr_b", 5, 5, "ntf_x", "acc_n", "usr_b", 5, 5, "ntf_x", 50}},
+		{"unread, newest", unreadSQL, []any{"acc_n", "usr_b", "acc_n", "usr_b", 100}},
 		{"claim, users", claimUsersSQL, []any{5, 5, 5, 5, NotifyDayCap, 50}},
 		{"claim, rows of a user", claimUserRowsSQL, []any{"usr_b", 5, 5, 20}},
 		{"pending cap count", countOutboxPendingSQL, []any{NotifyPendingLimit}},
-		{"per-user cap count", countUserNotifySQL, []any{"usr_b", NotifyPerUser + 1}},
-		{"per-user cap, oldest", oldestOverCapSQL, []any{"usr_b", 1}},
+		{"per-user cap count", countUserNotifySQL, []any{"usr_b", "usr_b", NotifyPerUser + 1}},
+		{"per-user cap, oldest", oldestUserNotifySQL, []any{"usr_b", "usr_b", 1}},
 		{"account hour count", accountHourSQL, []any{"acc_n", 5, NotifyAccountHourCap}},
 		{"prefs of a user", "SELECT last_mail_at, mail_day_start, mail_day_count FROM notify_prefs WHERE user_id = ?",
 			[]any{"usr_b"}},
 		{"prune by age", pruneNotifySQL, []any{5, 500}},
+		{"prune share by age", pruneShareSQL, []any{5, 500}},
 		{"expire pending", expireMailSQL, []any{5, 5, 5, 500}},
 		{"prune finished", pruneMailSQL, []any{5, 500}},
 	}
@@ -458,7 +460,8 @@ func TestNotificationSQLDoesNotScan(t *testing.T) {
 					t.Fatal(err)
 				}
 				plan = append(plan, detail)
-				for _, bad := range []string{"SCAN notifications", "SCAN notify_outbox", "SCAN notify_prefs", "SCAN n ", "SCAN o ", "SCAN p "} {
+				for _, bad := range []string{"SCAN notifications", "SCAN share_notifications", "SCAN notify_outbox",
+					"SCAN notify_prefs", "SCAN n ", "SCAN o ", "SCAN p "} {
 					if detail == bad || len(detail) >= len(bad) && detail[:len(bad)] == bad {
 						t.Errorf("%s scans a table: %q\nplan: %v", c.name, detail, plan)
 					}
