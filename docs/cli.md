@@ -1061,6 +1061,40 @@ follows `next_cursor`. `--json` prints one view per file with every field the AP
 A bad account or folder id, a size the server cannot use, a users limit outside 1 to 200, or an extra argument exits 2
 before a request. A refusal from the server keeps its code: for example a 403 exits 3 and a 404 exits 4.
 
+## Label fields and the sharing policy
+
+An account's label fields are the fields the web interface offers on a file; the sharing policy is the account's
+switches for public links, comments and who viewed. Defining a field and changing the policy are the account owner's or
+its account key's work: a signed-in device cannot do either, and an installation admin key does not reach an account's
+labels. The values on files are the file commands' (slice cli11, not this one).
+
+| Command | What it does |
+|---|---|
+| `label field add [--account ACC] --type TYPE [--restricted] [--choice NAME]... NAME` | defines a field (`TYPE`: `text`, `number`, `date`, `user` or `choice`); prints `id`, `name`, `type`, `restricted` and each `choice` |
+| `label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true\|false] [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...` | changes only what is given |
+| `label field rm [--account ACC] FIELD [--yes]` | removes a field and every value it holds on files; asks first |
+| `sharing policy show [--account ACC]` | prints `public_links`, `anyone_links`, `comments` and `who_viewed` |
+| `sharing policy set [--account ACC] [--public-links true\|false] [--comments true\|false] [--who-viewed true\|false] [--yes]` | changes only the switches given |
+
+A choice is added, renamed, archived or restored by its id: `label field update` lists the field's choices on the server
+so that an archive or a restore can send the choice's name, which the update route requires. A field's type cannot change
+once a file holds a value of it; the server refuses that, and a name another field of the account has. Archiving a choice
+keeps the values that use it, and `label field rm` does not. A choice id in the table is the one to give an update.
+
+`sharing policy set --public-links false` asks first, because every anyone link of the account stops working at once; the
+person types the account's id, or gives `--yes`. `anyone_links` counts the account's anyone links, and the server decides
+whether a switch can change: for example, turning public links on may be refused. `--json` prints the field or the policy,
+with only the keys named in the table.
+
+```sh
+selfcloud label field add --type choice --choice High --choice Low Priority
+selfcloud label field update lbf_… --archive-choice lbc_…
+selfcloud label field update lbf_… --restricted true --add-choice Later
+selfcloud label field rm lbf_… --yes
+selfcloud sharing policy show
+selfcloud sharing policy set --comments false --who-viewed true
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be

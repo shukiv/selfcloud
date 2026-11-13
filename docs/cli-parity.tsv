@@ -113,12 +113,12 @@ fn	lib/files/zips.ts:zipStatus	zip get	cli12	built in cli12; the first byte of t
 fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
 fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 fn	lib/labels/api.ts:clearNodeLabel	-	cli11	planned, cli11
-fn	lib/labels/api.ts:createLabelField	-	cli9	planned, cli9
-fn	lib/labels/api.ts:deleteLabelField	-	cli9	planned, cli9
+fn	lib/labels/api.ts:createLabelField	label field add	cli9b4	built in cli9b4
+fn	lib/labels/api.ts:deleteLabelField	label field rm	cli9b4	built in cli9b4
 fn	lib/labels/api.ts:listLabelFields	-	cli11	planned, cli11
 fn	lib/labels/api.ts:listNodeLabels	-	cli11	planned, cli11
 fn	lib/labels/api.ts:setNodeLabel	-	cli11	planned, cli11
-fn	lib/labels/api.ts:updateLabelField	-	cli9	planned, cli9
+fn	lib/labels/api.ts:updateLabelField	label field update	cli9b4	built in cli9b4
 fn	lib/manage/api.ts:addGroupMember	group add-member	cli8	built in cli8
 fn	lib/manage/api.ts:auditLog	account audit	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:createAccount	account create	cli9a2	built in cli9a2
@@ -174,7 +174,7 @@ fn	lib/sharing/api.ts:createDropLink	link create	cli7	built in cli7
 fn	lib/sharing/api.ts:createShareLink	link create	cli7	built in cli7
 fn	lib/sharing/api.ts:deleteShareLink	link rm	cli7	built in cli7
 fn	lib/sharing/api.ts:denyAccessRequest	access deny	cli7	built in cli7
-fn	lib/sharing/api.ts:getSharingPolicy	-	cli9	planned, cli9
+fn	lib/sharing/api.ts:getSharingPolicy	sharing policy show	cli9b4	built in cli9b4
 fn	lib/sharing/api.ts:listAccessRequests	access ls	cli7	built in cli7
 fn	lib/sharing/api.ts:listPermissions	share ls	cli7	built in cli7
 fn	lib/sharing/api.ts:listShareLinks	link ls	cli7	built in cli7
@@ -185,8 +185,8 @@ fn	lib/sharing/api.ts:resetShareLink	link reset	cli7	built in cli7
 fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
 fn	lib/sharing/api.ts:setHidden	folder hide	cli8	built in cli8 (folder show-again is the other direction)
 fn	lib/sharing/api.ts:setPermission	share grant	cli7	built in cli7
-fn	lib/sharing/api.ts:setSharingPolicy	-	cli9	planned, cli9
-fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
+fn	lib/sharing/api.ts:setSharingPolicy	sharing policy set	cli9b4	built in cli9b4
+fn	lib/sharing/api.ts:setSharingSwitches	sharing policy set	cli9b4	built in cli9b4
 fn	lib/sharing/api.ts:sharedWithMe	shared	cli7	built in cli7
 fn	lib/sharing/api.ts:transferOwnership	share transfer-ownership	cli7	built in cli7
 fn	lib/sharing/api.ts:updateDropLink	link update	cli7	built in cli7
@@ -217,7 +217,7 @@ route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share revoke	cli7
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}	group rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group remove-member	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/keys/{key}	account key revoke	cli9a1	built in cli9a1
-route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	label field rm	cli9b4	built in cli9b4
 route	DELETE /api/v1/accounts/{acc}/quota-warning	account quota-warning clear	cli9a1	built in cli9a1
 route	DELETE /api/v1/accounts/{acc}/users/{usr}	user rm	cli9b1	built in cli9b1
 route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
@@ -253,7 +253,7 @@ route	GET /api/v1/accounts/{acc}/groups/{grp}/members	group members	cli8	built i
 route	GET /api/v1/accounts/{acc}/keys	account key ls	cli9a1	built in cli9a1
 route	GET /api/v1/accounts/{acc}/quota-warning	account quota-warning show	cli9a1	built in cli9a1
 route	GET /api/v1/accounts/{acc}/share-links	link ls	cli7	built in cli7
-route	GET /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/sharing-policy	sharing policy show	cli9b4	built in cli9b4
 route	GET /api/v1/accounts/{acc}/storage	storage usage	cli9b3	built in cli9b3
 route	GET /api/v1/accounts/{acc}/storage-policy	storage policy show	cli9b3	built in cli9b3
 route	GET /api/v1/accounts/{acc}/storage/largest	storage largest	cli9b3	built in cli9b3
@@ -275,7 +275,7 @@ route	GET /api/v1/imports/{imp}	import show	cli10	built in cli10
 route	GET /api/v1/imports/{imp}/items	import items	cli10	built in cli10
 route	GET /api/v1/info	info	cli3	public route; info prints it
 route	GET /api/v1/jobs/{job}	job show	cli10	built in cli10
-route	GET /api/v1/label-fields	-	cli11	planned, cli11
+route	GET /api/v1/label-fields	label field update	cli9b4	built in cli9b4; label field update reads it to send a choice's name when archiving or restoring it, and cli11's label ls will share the row
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
@@ -334,8 +334,8 @@ route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
 route	PATCH /api/v1/accounts/{acc}	account update	cli9a2	built in cli9a2
 route	PATCH /api/v1/accounts/{acc}/folders/{fld}	folder rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/groups/{grp}	group rename	cli8	built in cli8
-route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
-route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	label field update	cli9b4	built in cli9b4
+route	PATCH /api/v1/accounts/{acc}/sharing-policy	sharing policy set	cli9b4	built in cli9b4
 route	PATCH /api/v1/accounts/{acc}/storage-policy	storage policy set	cli9b3	built in cli9b3
 route	PATCH /api/v1/accounts/{acc}/users/{usr}	user update	cli9b1	built in cli9b1
 route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in cli10
@@ -355,7 +355,7 @@ route	POST /api/v1/accounts	account create	cli9a2	built in cli9a2
 route	POST /api/v1/accounts/{acc}/folders	folder create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/groups	group create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/keys	account key create	cli9a1	built in cli9a1
-route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/label-fields	label field add	cli9b4	built in cli9b4
 route	POST /api/v1/accounts/{acc}/share-links/delete-public	link rm	cli7	built in cli7
 route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
