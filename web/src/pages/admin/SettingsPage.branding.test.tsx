@@ -3,8 +3,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { brand, brandLoaded } from "../../lib/brand";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { brand, brandLoaded, resolveBrand } from "../../lib/brand";
+import { PREF_THEME } from "../../lib/prefs";
+import { ThemeProvider } from "../../theme/theme";
 import { session } from "../../lib/session";
 import { get } from "../../lib/store";
 import type { Picture, Setting, SettingsAnswer } from "../../lib/settings/api";
@@ -65,12 +67,14 @@ function server(o: Options = {}) {
 const valueOf = (a: SettingsAnswer, key: string) => String(a.settings.find((s) => s.key === key)?.value);
 const nameOf = (a: SettingsAnswer) => valueOf(a, "ui.brand.name");
 
-function renderPage() {
+function renderPage(themed = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const router = createMemoryRouter([{ path: "/admin/settings", element: <QueryClientProvider client={qc}><SettingsPage /></QueryClientProvider> }], {
     initialEntries: ["/admin/settings"],
   });
-  render(<RouterProvider router={router} />);
+  const tree = <RouterProvider router={router} />;
+  render(themed ? <ThemeProvider>{tree}</ThemeProvider> : tree);
+  return qc;
 }
 
 const region = (name: string) => screen.getByRole("region", { name });
@@ -143,6 +147,15 @@ describe("the Branding card", () => {
     expect([...keys].sort()).toEqual(served);
     expect(within(row("ui.brand.palette.light.accent_fill")).getByText("Light theme: accent fill")).toBeTruthy();
     expect(within(row("ui.brand.palette.dark.accent_soft")).getByText("Dark theme: soft accent")).toBeTruthy();
+  });
+
+  it("counts the characters of the name against the server's limit", async () => {
+    server();
+    renderPage();
+    await ready();
+    expect(row("ui.brand.name").querySelector(".ant-input-show-count-suffix")?.textContent).toBe("9 / 64");
+    fireEvent.change(text("ui.brand.name"), { target: { value: "Acme" } });
+    await waitFor(() => expect(row("ui.brand.name").querySelector(".ant-input-show-count-suffix")?.textContent).toBe("4 / 64"));
   });
 
   it("marks a value set here with Reset naming the default, and a colour token's default as taken from the accent", async () => {
@@ -258,18 +271,61 @@ describe("the preview", () => {
     await pick("ui.brand.sidebar.active", "ffffff");
     const side = preview("sidebar");
     await waitFor(() => expect(side.style.background).toBe("rgb(17, 34, 51)"));
-    const current = side.querySelector("[aria-current='page']") as HTMLElement;
+    const current = side.querySelector("[data-current]") as HTMLElement;
     expect(current.style.background).toBe("rgb(255, 255, 255)");
     // The text on a white highlight is black, the one that reads on it.
     expect(current.style.color).toBe("rgb(0, 0, 0)");
   });
 
-  it("draws the picture being used, and the artwork when there is none", async () => {
-    server({ pictures: [{ key: "ui.brand.icon", state: "uploaded", type: "image/png", sha256: "b".repeat(64), locked: false }, uploaded("ui.brand.logo")] });
+  it("draws the tab from /favicon.svg and the app icons from /brand/icon-512.png, as the server serves them", async () => {
+    server({ pictures: [{ key: "ui.brand.icon", state: "uploaded", type: "image/svg+xml", sha256: "b".repeat(64), locked: false }, uploaded("ui.brand.logo")] });
     renderPage();
     await ready();
     expect(preview("sidebar").querySelector("img")?.getAttribute("src")).toBe(`/brand/logo?v=${SHA}`);
-    expect(preview("icons").querySelector("img")?.getAttribute("src")).toBe(`/brand/icon-512.png?v=${"b".repeat(64)}`);
+    const srcs = [...preview("icons").querySelectorAll("img")].map((i) => i.getAttribute("src"));
+    expect(srcs).toEqual([`/favicon.svg?v=${"b".repeat(64)}`, `/brand/icon-512.png?v=${"b".repeat(64)}`, `/brand/icon-512.png?v=${"b".repeat(64)}`]);
+  });
+
+  it("draws the logo for the icons when there is a logo and no icon", async () => {
+    server({ pictures: [{ key: "ui.brand.icon", state: "none", locked: false }, uploaded("ui.brand.logo")] });
+    renderPage();
+    await ready();
+    const srcs = [...preview("icons").querySelectorAll("img")].map((i) => i.getAttribute("src"));
+    expect(srcs).toEqual([`/favicon.svg?v=${SHA}`, `/brand/icon-512.png?v=${SHA}`, `/brand/icon-512.png?v=${SHA}`]);
+    expect(preview("icons").querySelector("[data-preview-tile]")).toBeNull();
+  });
+
+  it("draws the mark on the accent for the icons when there is neither picture", async () => {
+    server();
+    renderPage();
+    await ready();
+    expect(preview("icons").querySelectorAll("img")).toHaveLength(0);
+    expect(preview("icons").querySelectorAll("[data-preview-tile]")).toHaveLength(3);
+  });
+
+  it("does not mark a sample row of the preview as the current page", async () => {
+    server();
+    renderPage();
+    await ready();
+    expect(preview("sidebar").querySelector("[aria-current]")).toBeNull();
+    expect(preview("sidebar").querySelector("[data-current]")).toBeTruthy();
+  });
+
+  it("draws the sign-in button in the dark theme's fill when the page is dark", async () => {
+    localStorage.setItem(PREF_THEME, "dark");
+    try {
+      server();
+      renderPage(true);
+      await ready();
+      const want = resolveBrand({ name: "SelfCloud", accent: "#053D8E", logo_url: null, artwork: true });
+      expect(want.dark.accentFill).not.toBe(want.light.accentFill);
+      const button = preview("signin").querySelector("[data-preview-button]") as HTMLElement;
+      const probe = document.createElement("div");
+      probe.style.background = want.dark.accentFill;
+      expect(button.style.background).toBe(probe.style.background);
+    } finally {
+      localStorage.removeItem(PREF_THEME);
+    }
   });
 
   it("warns when the accent is too light for the light theme, or too dark for the dark one", async () => {
@@ -371,30 +427,123 @@ describe("the pictures", () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it("shows the server's refusal of a picture as it comes, and leaves the picture as it was", async () => {
-    server({
-      put: () => ({ status: 400, body: { error: { code: "invalid_request", message: "the icon must be square, 512 to 2048 pixels a side", details: { reason: "invalid_picture" } } } }),
-    });
+  const refused = async (answer: Answer, kind: "logo" | "icon" = "logo") => {
+    server({ put: () => answer });
     renderPage();
     await ready();
-    fireEvent.change(fileBox("icon"), { target: { files: [png()] } });
-    expect((await within(pictureRow("icon")).findByRole("alert")).textContent).toBe("the icon must be square, 512 to 2048 pixels a side");
-    expect(within(pictureRow("icon")).getByRole("button", { name: "Upload icon" })).toBeTruthy();
-    // A new choice clears the refusal.
-    fireEvent.change(fileBox("icon"), { target: { files: [png()] } });
-    await waitFor(() => expect(within(pictureRow("icon")).getByRole("alert")).toBeTruthy());
+    fireEvent.change(fileBox(kind), { target: { files: [png()] } });
+    return (await within(pictureRow(kind)).findByRole("alert")).textContent;
+  };
+
+  it.each<[string, Answer, "logo" | "icon", string]>([
+    ["a 403", fail(403, "forbidden"), "logo", "You are not allowed to do that."],
+    ["a 409 locked", fail(409, "conflict", { reason: "setting_locked", keys: ["ui.brand.logo"] }), "logo", "The server's config file sets this picture now."],
+    ["a 413 with its limit", fail(413, "too_large", { limit_bytes: 131072 }), "logo", "A picture is at most 128 KB."],
+    ["a 415", fail(415, "unsupported_media_type"), "icon", "A picture is a PNG or an SVG file."],
+    [
+      "a 400 for a logo",
+      { status: 400, body: { error: { code: "invalid_request", message: "the logo is not an SVG file", details: { reason: "invalid_picture" } } } },
+      "logo",
+      "The file is not a PNG or an SVG the server can use. A PNG logo is at most 4096 pixels on a side and about four megapixels in all.",
+    ],
+    [
+      "a 400 for an icon",
+      { status: 400, body: { error: { code: "invalid_request", message: "the icon must be square, 512 to 2048 pixels a side", details: { reason: "invalid_picture" } } } },
+      "icon",
+      "The icon must be an SVG, or a square PNG of 512 to 2048 pixels.",
+    ],
+    ["a server error", fail(500, "internal"), "logo", "The server had a problem. Try again in a moment."],
+  ])("says %s in the page's own words, never the server's", async (_label, answer, kind, sentence) => {
+    expect(await refused(answer, kind)).toBe(sentence);
+    expect(within(pictureRow(kind)).getByRole("button", { name: kind === "logo" ? "Upload logo" : "Upload icon" })).toBeTruthy();
   });
 
-  it("shows a refusal that carries no message as the page's own sentence for the code", async () => {
-    server({ put: () => fail(413, "too_large", { limit_bytes: 262144 }) });
+  it("clears a refusal when the next choice is sent", async () => {
+    let n = 0;
+    server({ put: () => (n++ === 0 ? fail(415, "unsupported_media_type") : undefined) });
     renderPage();
     await ready();
     fireEvent.change(fileBox("logo"), { target: { files: [png()] } });
-    expect((await within(pictureRow("logo")).findByRole("alert")).textContent).toBeTruthy();
+    await within(pictureRow("logo")).findByRole("alert");
+    fireEvent.change(fileBox("logo"), { target: { files: [png()] } });
+    await waitFor(() => expect(within(pictureRow("logo")).queryByRole("alert")).toBeNull());
+  });
+
+  it("sends an SVG the browser gives no type as image/svg+xml, from its name", async () => {
+    const { calls } = server();
+    renderPage();
+    await ready();
+    fireEvent.change(fileBox("logo"), { target: { files: [new File(["<svg/>"], "a.svg", { type: "" })] } });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].contentType).toBe("image/svg+xml");
+  });
+
+  it("sends a file of exactly 256 KB", async () => {
+    const { calls } = server();
+    renderPage();
+    await ready();
+    fireEvent.change(fileBox("logo"), { target: { files: [new File([new Uint8Array(256 * 1024)], "a.png", { type: "image/png" })] } });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+  });
+
+  it("puts the logo's hash on the page's own brand address, and keeps it when the name is saved after", async () => {
+    const { calls } = server();
+    renderPage();
+    await ready();
+    fireEvent.change(fileBox("logo"), { target: { files: [png()] } });
+    await waitFor(() => expect(get(brand).logo_url).toBe(`/brand/logo?v=${SHA}`));
+    fireEvent.change(text("ui.brand.name"), { target: { value: "Acme" } });
+    fireEvent.click(save());
+    await waitFor(() => expect(writes(calls).filter((c) => c.method === "PATCH")).toHaveLength(1));
+    await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/info").length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(get(brand).name).toBe("Acme"));
+    expect(get(brand).logo_url).toBe(`/brand/logo?v=${SHA}`);
+  });
+
+  it("is not overwritten by a settings read that was already on its way when the picture changed", async () => {
+    let release: () => void = () => {};
+    let held = false;
+    const stale = settingsAnswer();
+    const { calls } = server();
+    // The second read of the settings (the page's own refetch) is held until after the upload's answer.
+    const base = (globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>);
+    vi.stubGlobal("fetch", async (u: string, i?: RequestInit) => {
+      if (u === "/api/v1/settings" && (i?.method ?? "GET") === "GET" && calls.filter((c) => c.url === "/api/v1/settings").length >= 1 && !held) {
+        held = true;
+        await new Promise<void>((r) => (release = r));
+        return new Response(JSON.stringify(stale), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return base(u, i);
+    });
+    const qc = renderPage();
+    await ready();
+    // A read goes out and is held.
+    void qc.invalidateQueries({ predicate: (q) => q.queryKey.includes("settings") });
+    await waitFor(() => expect(held).toBe(true));
+    fireEvent.change(fileBox("logo"), { target: { files: [png()] } });
+    await waitFor(() => expect(within(pictureRow("logo")).getByRole("button", { name: "Replace logo" })).toBeTruthy());
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(pictureRow("logo")).getByRole("button", { name: "Replace logo" })).toBeTruthy();
+  });
+
+  it.each([
+    ["row_not_written", "its stored record is not one the server wrote"],
+    ["not_regular_file", "its file is not a regular file"],
+    ["hash_changed", "its file has changed since it was stored"],
+    ["file_missing", "its file is missing"],
+    ["unreadable", "its file cannot be read"],
+    ["invalid_picture", "its file is no longer a picture the server accepts"],
+    ["a_code_from_a_newer_server", "the server could not use it"],
+  ])("says the reason %s in the page's own words", async (code, words) => {
+    server({ pictures: [{ key: "ui.brand.icon", state: "none", locked: false }, { key: "ui.brand.logo", state: "unusable", reason: code, locked: false }] });
+    renderPage();
+    await ready();
+    expect(within(pictureRow("logo")).getByText(`The stored picture is not used: ${words}.`)).toBeTruthy();
   });
 
   it("shows a picture the start did not use with its reason, and offers Remove", async () => {
-    const { calls } = server({ pictures: [{ key: "ui.brand.icon", state: "none", locked: false }, { key: "ui.brand.logo", state: "unusable", reason: "its file is missing", locked: false }] });
+    const { calls } = server({ pictures: [{ key: "ui.brand.icon", state: "none", locked: false }, { key: "ui.brand.logo", state: "unusable", reason: "file_missing", locked: false }] });
     renderPage();
     await ready();
     const r = pictureRow("logo");
