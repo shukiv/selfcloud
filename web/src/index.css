@@ -1302,6 +1302,80 @@ tr[data-drop-state="refused"] > td {
   content: attr(data-hint);
 }
 
+/* The keyboard shortcuts list (ks1, decision 169): each row is its name and its keys, the keys at the row's end. The caps are
+   drawn from the theme's tokens (the variables are set on the list by ShortcutsDialog), with a heavier bottom edge as a key
+   has. A right-to-left page mirrors the rows; the caps themselves keep their Latin order (dir on each chord). */
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.shortcuts-heading {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.shortcuts-note {
+  margin-inline-start: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--sc-kbd-note);
+}
+.shortcuts-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.shortcuts-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.shortcuts-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.shortcuts-keys {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.shortcuts-chord {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.shortcuts-kbd {
+  box-sizing: border-box;
+  min-inline-size: 22px;
+  padding: 0 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--sc-kbd-font);
+  line-height: 1.5;
+  text-align: center;
+  color: var(--sc-kbd-text);
+  background: var(--sc-kbd-bg);
+  border: 1px solid var(--sc-kbd-border);
+  border-block-end-width: 2px;
+  border-radius: var(--sc-kbd-radius);
+}
+.shortcuts-plus,
+.shortcuts-or,
+.shortcuts-then {
+  font-size: var(--sc-kbd-font);
+  color: var(--sc-kbd-note);
+}
+.shortcuts-gap {
+  inline-size: 2px;
+}
+
 /* A list row's bands (decision 70, the selected row's edge lines taken away in decision 72). antd paints a row's cells, so the bands
    are on the cells: a selected row is a light accent band, with no edge line, and it keeps the band under the pointer. The colours come from the list's own variables (set by Listing from the
    theme tokens). antd paints a hovered row's cells with its own class (.ant-table-cell-row-hover), and a selected row's hovered cells

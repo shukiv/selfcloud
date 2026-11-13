@@ -36,10 +36,13 @@ import { useSidebar } from "../theme/theme";
 import { currentMark } from "../theme/currentMark";
 import { sidebarRow } from "../theme/sidebarRow";
 import { useCoarsePointer } from "../lib/pointer";
+import { readGlobalKey } from "../lib/shortcuts";
+import { chordBlocked } from "../lib/files/newShortcut";
+import { isMacPlatform, shortcutHint, shortcutKeys } from "../lib/files/shortcutHint";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
-import ShellSearch from "./search/ShellSearch";
+import ShellSearch, { SEARCH_PATH } from "./search/ShellSearch";
 import ThemeMenu from "./ThemeMenu";
 import UploadTrayHost from "./UploadTrayHost";
 import MediaHost from "./files/MediaHost";
@@ -57,6 +60,11 @@ const NotificationsBell = lazy(() => import("./notifications/Bell"));
 const IosInstallDialog = lazy(() => import("./pwa/IosInstallDialog"));
 // The folder tree is a lazy chunk: the sidebar loads it when a person who has a drive is signed in.
 const FolderTree = lazy(() => import("./files/FolderTree"));
+// The keyboard shortcuts list is a lazy chunk: it is loaded when the list is first opened (ks1, decision 169).
+const ShortcutsDialog = lazy(() => import("./ShortcutsDialog"));
+
+// The platform the key hints are drawn for: Apple's systems show the command sign (as the files page's menus do).
+const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
@@ -213,6 +221,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
   // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
   const [iosFor, setIosFor] = useState<string | null>(null);
+  // The keyboard shortcuts list (ks1, decision 169): opened by its keys or by the account menu, closed by Escape or its close.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const who = me?.user.id ?? null;
   const iosOpen = iosDialogOpen(iosFor, who);
   // The install entries (decision 65): the browser's offer where it made one, and the iPhone instructions where Safari has no offer.
@@ -233,7 +243,41 @@ export default function Shell({ children }: { children: ReactNode }) {
     setFolderWhere(null);
     setSettingsFor(null);
     setIosFor(null);
+    setShortcutsOpen(false);
   }, [location.pathname]);
+  // The shell's global keys (ks1, decision 169): "/" focuses the search box, "?" shows the keyboard shortcuts list, and
+  // Ctrl+/ (Command+/ on a Mac) toggles it. The reader is pure (lib/shortcuts.ts); the block is the New chord's own
+  // (chordBlocked: a text field or an open overlay). The list itself is an overlay, so the reader is told it is open: the
+  // toggle still closes it. A key another handler has already answered is left alone.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const accel = e.ctrlKey || e.metaKey;
+      // Only the keys the reader answers are worth the overlay read.
+      if (e.key !== "/" && e.key !== "?" && !(accel && (e.key === "/" || e.code === "Slash"))) return;
+      const action = readGlobalKey(e, chordBlocked(e.target), { search: !admin, shortcutsOpen });
+      if (!action) return;
+      e.preventDefault();
+      if (action === "shortcuts") {
+        setShortcutsOpen(true);
+        return;
+      }
+      if (action === "shortcutsToggle") {
+        setShortcutsOpen((open) => !open);
+        return;
+      }
+      // The search box: the top bar's on a wide window, the search page's own on a phone. Elsewhere the search page opens
+      // and takes the focus itself (its focusSearch state, as the phone's search button does). An antd select's own search
+      // input is not a search box.
+      const box =
+        document.querySelector<HTMLInputElement>('header input[type="search"]') ??
+        document.querySelector<HTMLInputElement>('#main input[type="search"]:not(.ant-select-selection-search-input)');
+      if (box) box.focus();
+      else navigate(SEARCH_PATH, { state: { focusSearch: true } });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [admin, shortcutsOpen, navigate]);
   // The sidebar's middle (the folder tree and the menu) scrolls inside the sider. When the address moves to a place below the
   // fold, its row is brought into view inside that scroll area alone, so the page does not move.
   // The last time the person scrolled the sidebar's area (a wheel, a touch or a key in it), in milliseconds.
@@ -551,12 +595,21 @@ export default function Shell({ children }: { children: ReactNode }) {
       </span>
     </span>
   );
+  // The keyboard shortcuts list's entry (ks1, decision 169), with its key at the right as the files page's menus draw theirs.
+  // A finger has no keyboard to speak of, so the entry is not shown there.
+  const shortcutsEntry = {
+    key: "shortcuts",
+    label: t("shell.shortcuts"),
+    extra: <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint("shortcuts", MAC_KEYS)} />,
+    "aria-keyshortcuts": shortcutKeys("shortcuts", MAC_KEYS),
+  };
   const accountEntries: NonNullable<MenuProps["items"]> = [
     { key: "password", label: t("user.changePassword") },
     // An installation admin holds no device sign-in, so the page is not theirs (App.tsx refuses it as a drive page).
     ...(me?.user.role === "admin" ? [] : [{ key: "devices", label: t("user.devices") }]),
     ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
     ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome") }] : []),
+    ...(coarse ? [] : [shortcutsEntry]),
     ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
   ];
   // One group, titled by the header: its title is not a stop for the keyboard, so the first stop is Change password.
@@ -713,6 +766,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                       if (key === "devices") navigate("/devices");
                       if (key === "install") void promptInstall();
                       if (key === "addHome") setIosFor(who);
+                      if (key === "shortcuts") setShortcutsOpen(true);
                       if (key === "signout") void logout();
                     },
                     "aria-labelledby": `${accountLabelId} ${accountEmailId}`,
@@ -793,6 +847,11 @@ export default function Shell({ children }: { children: ReactNode }) {
                   });
                 }}
               />
+            </Suspense>
+          )}
+          {shortcutsOpen && (
+            <Suspense fallback={null}>
+              <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />
             </Suspense>
           )}
         </Layout>

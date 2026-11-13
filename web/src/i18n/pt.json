@@ -1503,6 +1503,7 @@
   "files.tree.capped": "Há mais pastas do que as mostradas aqui.",
   "shell.search.placeholder": "Pesquisar nomes e texto nos ficheiros",
   "shell.search.open": "Pesquisar",
+  "shell.shortcuts": "Atalhos de teclado",
   "pwa.install": "Instalar a aplicação",
   "pwa.addToHome": "Adicionar ao ecrã principal",
   "pwa.updateReady": "Há uma versão nova",

@@ -1503,6 +1503,7 @@
   "files.tree.capped": "Папок больше, чем показано здесь.",
   "shell.search.placeholder": "Поиск по именам и тексту файлов",
   "shell.search.open": "Поиск",
+  "shell.shortcuts": "Горячие клавиши",
   "pwa.install": "Установить приложение",
   "pwa.addToHome": "Добавить на экран «Домой»",
   "pwa.updateReady": "Доступна новая версия",

@@ -16,8 +16,9 @@ export function isMacPlatform(nav: PlatformHints): boolean {
   return /Mac|iPhone|iPad|iPod/.test(nav.platform ?? "");
 }
 
-// Each action with a key, and the letter the key types with Ctrl (or the command sign on a Mac).
-const ACCEL: Record<string, string> = { cut: "X", copyClip: "C", paste: "V" };
+// Each action with a key, and the letter the key types with Ctrl (or the command sign on a Mac). The shortcuts list's own
+// key (ks1) is the slash, which the shell answers rather than the listing.
+const ACCEL: Record<string, string> = { cut: "X", copyClip: "C", paste: "V", shortcuts: "/" };
 const PLAIN: Record<string, string> = { rename: "F2", delete: "Delete", preview: "Enter", open: "Enter" };
 
 // shortcutHint returns the hint for an action on the given kind of platform, or undefined for an action with no key.

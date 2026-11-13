@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const src = fileURLToPath(new URL('../src/', import.meta.url));
 // The search page's own catalogue (lib/search/text.ts), the share page's (lib/share/text.ts) and the admin lists' (lib/manage/
-// adminText.ts) and the command-line sign-in strings' (lib/cli/cliText.ts, decision 125) are read with the main one: their keys
-// are translation keys too.
+// adminText.ts) and the command-line sign-in strings' (lib/cli/cliText.ts, decision 125) and the keyboard shortcuts list's
+// (lib/shortcutsText.ts, decision 169) are read with the main one: their keys are translation keys too.
 const en = {
   ...JSON.parse(await readFile(join(src, 'i18n', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'search', 'en.json'), 'utf8')),
@@ -19,6 +19,7 @@ const en = {
   ...JSON.parse(await readFile(join(src, 'i18n', 'cli', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'drive', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'requests', 'en.json'), 'utf8')),
+  ...JSON.parse(await readFile(join(src, 'i18n', 'shortcuts', 'en.json'), 'utf8')),
 };
 
 async function files(dir) {
