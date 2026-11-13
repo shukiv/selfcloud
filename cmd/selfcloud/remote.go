@@ -597,7 +597,7 @@ var remoteCommands = []remoteCommand{
                                  the folder whose files this account may use as templates
 `, run: manage.TemplateFolderShow},
 	{name: "template folder set", route: "PUT /api/v1/accounts/{acc}/templates",
-		help: `  template folder set [DIR | --clear] [--account ACC]
+		help: `  template folder set (DIR | --clear) [--account ACC]
                                  choose or clear the folder whose files an account may use as templates
 `, run: manage.TemplateFolderSet},
 }

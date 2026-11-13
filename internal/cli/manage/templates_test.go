@@ -43,15 +43,35 @@ func TestTemplateFolderShowPrintsTheFolder(t *testing.T) {
 func TestTemplateFolderShowJSON(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
-	f.on("GET", templatesFolderPath(), doc(http.StatusOK, map[string]any{"node_id": nil, "extra": true}))
+	f.on("GET", templatesFolderPath(), doc(http.StatusOK,
+		map[string]any{"node_id": nil, "token": "sck_secret_value", "hash": "hh"}))
 	res := f.runAcc(TemplateFolderShow, "--json")
 	wantCode(t, res, 0)
 	var got map[string]any
 	if err := json.Unmarshal([]byte(res.stdout), &got); err != nil {
 		t.Fatalf("stdout %q: %v", res.stdout, err)
 	}
-	if v, ok := got["node_id"]; !ok || v != nil {
-		t.Fatalf("stdout %q: want node_id null", res.stdout)
+	if want := map[string]any{"node_id": nil}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stdout %q: got %v, want %v", res.stdout, got, want)
+	}
+}
+
+func TestTemplateFolderSetJSON(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("PUT", templatesFolderPath(), doc(http.StatusOK,
+		map[string]any{"node_id": templateFolderNode, "token": "sck_secret_value", "hash": "hh"}))
+	res := f.runAcc(TemplateFolderSet, templateFolderNode, "--json")
+	wantCode(t, res, 0)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &got); err != nil {
+		t.Fatalf("stdout %q: %v", res.stdout, err)
+	}
+	if want := map[string]any{"node_id": templateFolderNode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stdout %q: got %v, want %v", res.stdout, got, want)
+	}
+	if strings.Contains(res.stdout, "sck_secret_value") || strings.Contains(res.stdout, "hash") {
+		t.Fatalf("stdout %q: a field the view does not name was printed", res.stdout)
 	}
 }
 

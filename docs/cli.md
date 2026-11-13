@@ -1275,7 +1275,8 @@ sent only when given. Without `--all` it prints one page and, when the server ha
 `template folder` names the account with `--account acc_...`, or with the `SELFCLOUD_ACCOUNT` variable, and needs an
 account key; a device token is answered as if the account were not there, and, in plain output only, a hint says that
 managing an account needs an account key. `show` prints `node_id=...`, or an empty value when there is none; `set` takes
-one directory's `nod_` id, and `--clear` sends a null folder. `--json` prints the server's `{node_id}` document.
+one directory's `nod_` id, and `--clear` sends a null folder. `--json` prints `{"node_id": ...}` and nothing else the
+server sends.
 
 Exit codes follow the errors: 2 for a usage error, 3 when the server refuses, and 4 for an unknown node or account, for
 office being off, or for a templates folder that the server cannot see.

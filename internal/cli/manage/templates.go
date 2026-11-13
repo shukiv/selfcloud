@@ -16,17 +16,20 @@ type templateFolderAnswer struct {
 	NodeID *string `json:"node_id"`
 }
 
-// templateFolderPairs prints the folder, or an empty value when there is none.
-func templateFolderPairs(body []byte) ([]output.KV, error) {
+// templateFolderPrint writes the folder: the view under --json, otherwise key=value lines.
+func templateFolderPrint(c *command, body []byte) error {
 	var v templateFolderAnswer
 	if err := decodeAs(body, &v, "the templates folder"); err != nil {
-		return nil, err
+		return err
+	}
+	if c.g.JSON {
+		return output.JSON(c.stdout, v)
 	}
 	id := ""
 	if v.NodeID != nil {
 		id = *v.NodeID
 	}
-	return []output.KV{{Key: "node_id", Value: id}}, nil
+	return output.KeyValues(c.stdout, []output.KV{{Key: "node_id", Value: id}})
 }
 
 // TemplateFolderShow is `selfcloud template folder show`: the account folder that holds its templates.
@@ -51,7 +54,7 @@ func TemplateFolderShow(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if err := printDocument(c, resp.Body, templateFolderPairs); err != nil {
+	if err := templateFolderPrint(c, resp.Body); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -94,7 +97,7 @@ func TemplateFolderSet(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if err := printDocument(c, resp.Body, templateFolderPairs); err != nil {
+	if err := templateFolderPrint(c, resp.Body); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
