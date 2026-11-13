@@ -1246,6 +1246,52 @@ selfcloud label clear nod_… lbf_… --yes
 selfcloud label field ls --json
 ```
 
+## Documents and templates
+
+A document is made in a directory, named by its `nod_` id, either from a type or from a template. A template is a
+built-in one, named `builtin:NAME`, or a file in the account's templates folder. The templates folder belongs to the
+account, and only a manager of the account may read or change which folder it is.
+
+| Command | What it does |
+|---|---|
+| `doc new DIR (--type TYPE \| --template TEMPLATE) [--name NAME]` | a new document in a directory, from a type or a template |
+| `template ls --kind KIND [--limit N] [--all]` | the built-in and account templates of a kind |
+| `template folder show [--account ACC]` | the folder whose files the account may use as templates |
+| `template folder set DIR [--account ACC]` | make that folder the templates folder |
+| `template folder set --clear [--account ACC]` | keep no templates folder |
+
+`doc new` sends one of `--type` and `--template`, never both and never neither. A type is `docx`, `xlsx`, `pptx`, `odt`,
+`ods`, `odp`, `odg` or `txt`; a template is `builtin:NAME` or a template file's `nod_` id. `--name` is checked with the
+API's name rules before the request. The command prints the new document as `stat` does, and `--json` prints the API's
+document. Office editing may be off on a server: then every office type and every template is refused, while `--type txt`
+still works. A 404 on an office type, in plain output only, adds the hint that office may be off and that `txt` needs no
+office.
+
+`template ls` needs `--kind` (`document`, `spreadsheet` or `presentation`). `--limit` is a page size from 1 to 100 and is
+sent only when given. Without `--all` it prints one page and, when the server has more, says so on standard error;
+`--all` follows the cursor to the end. The plain table is `ID`, `KIND`, `SOURCE`, `CATEGORY` and `NAME`, where `SOURCE` is
+`builtin` or `account`; `--json` prints the known template fields only, so a field the server adds is not shown.
+
+`template folder` names the account with `--account acc_...`, or with the `SELFCLOUD_ACCOUNT` variable, and needs an
+account key; a device token is answered as if the account were not there, and, in plain output only, a hint says that
+managing an account needs an account key. `show` prints `node_id=...`, or an empty value when there is none; `set` takes
+one directory's `nod_` id, and `--clear` sends a null folder. `--json` prints the server's `{node_id}` document.
+
+Exit codes follow the errors: 2 for a usage error, 3 when the server refuses, and 4 for an unknown node or account, for
+office being off, or for a templates folder that the server cannot see.
+
+```
+selfcloud doc new nod_… --type txt --name notes.txt
+selfcloud doc new nod_… --template builtin:letter --name Letter
+selfcloud template ls --kind document --all
+selfcloud template folder show
+selfcloud template folder set nod_…
+selfcloud template folder set --clear
+```
+
+The thumbnail of a built-in template is only a picture in the web interface; `template ls` lists the templates, and the
+picture is not a command.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be

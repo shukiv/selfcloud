@@ -56,7 +56,7 @@ fn	lib/files/api.ts:ancestors	-	-	browser only: the trail of parents the web rea
 fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
 fn	lib/files/api.ts:commitUpload	put	cli6	built in cli6
 fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5
-fn	lib/files/api.ts:createDocument	-	cli11	planned, cli11
+fn	lib/files/api.ts:createDocument	doc new	cli11g	built in cli11g
 fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
 fn	lib/files/api.ts:createZipJob	zip create	cli12	built in cli12
 fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
@@ -99,10 +99,10 @@ fn	lib/files/playlists.ts:reorderEntries	-	cli12	browser session only: a playlis
 fn	lib/files/playlists.ts:replaceEntries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/tags.ts:getMediaTags	tag ls	cli11e	built in cli11e
 fn	lib/files/tags.ts:getNodeTags	tag ls	cli11e	built in cli11e
-fn	lib/files/templates.ts:createFromTemplate	-	cli11	planned, cli11
-fn	lib/files/templates.ts:getTemplatesFolder	-	cli11	planned, cli11
-fn	lib/files/templates.ts:listTemplatesPage	-	cli11	planned, cli11
-fn	lib/files/templates.ts:setTemplatesFolder	-	cli11	planned, cli11
+fn	lib/files/templates.ts:createFromTemplate	doc new	cli11g	built in cli11g
+fn	lib/files/templates.ts:getTemplatesFolder	template folder show	cli11g	built in cli11g
+fn	lib/files/templates.ts:listTemplatesPage	template ls	cli11g	built in cli11g
+fn	lib/files/templates.ts:setTemplatesFolder	template folder set	cli11g	built in cli11g
 fn	lib/files/thumbnail.ts:liveDeps	-	cli11	planned, cli11
 fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
 fn	lib/files/tus.ts:createUpload	put	cli6	built in cli6
@@ -257,7 +257,7 @@ route	GET /api/v1/accounts/{acc}/sharing-policy	sharing policy show	cli9b4	built
 route	GET /api/v1/accounts/{acc}/storage	storage usage	cli9b3	built in cli9b3
 route	GET /api/v1/accounts/{acc}/storage-policy	storage policy show	cli9b3	built in cli9b3
 route	GET /api/v1/accounts/{acc}/storage/largest	storage largest	cli9b3	built in cli9b3
-route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
+route	GET /api/v1/accounts/{acc}/templates	template folder show	cli11g	built in cli11g
 route	GET /api/v1/accounts/{acc}/usage	account usage	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/users	user ls	cli9b1	built in cli9b1
 route	GET /api/v1/accounts/{acc}/users/{usr}	user show	cli9b1	built in cli9b1
@@ -313,8 +313,8 @@ route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	shared	cli7	built in cli7
 route	GET /api/v1/starred	starred	cli11a	built in cli11a
-route	GET /api/v1/templates	-	cli11	planned, cli11
-route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
+route	GET /api/v1/templates	template ls	cli11g	built in cli11g
+route	GET /api/v1/templates/{id}/thumbnail	-	-	display only: the New menu's picture of a built-in template; template ls lists them
 route	GET /api/v1/trash	trash ls	cli5	built in cli5
 route	GET /api/v1/zips/{zip}	zip get	cli12	built in cli12
 route	GET /brand/logo	-	-	static image for the web interface
@@ -396,7 +396,7 @@ route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
 route	POST /api/v1/nodes/{nod}/comments	comment add	cli11c	built in cli11c
 route	POST /api/v1/nodes/{nod}/copy	cp	cli5	built in cli5
-route	POST /api/v1/nodes/{nod}/documents	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/documents	doc new	cli11g	built in cli11g
 route	POST /api/v1/nodes/{nod}/exports	-	cli11	planned, cli11
 route	POST /api/v1/nodes/{nod}/links	link create	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/move	mv	cli5	built in cli5
@@ -424,7 +424,7 @@ route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	bui
 route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
 route	PUT /api/v1/accounts/{acc}/imports/archive	import archive set	cli10	built in cli10
 route	PUT /api/v1/accounts/{acc}/quota-warning	account quota-warning set	cli9a1	built in cli9a1
-route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
+route	PUT /api/v1/accounts/{acc}/templates	template folder set	cli11g	built in cli11g
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
 route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	label set	cli11f	built in cli11f
