@@ -62,6 +62,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "migrate":
 		return migrate(args[1:], stdout, stderr)
 	case "admin":
+		if len(args) > 1 {
+			switch args[1] {
+			case "ls", "add", "rm":
+				if code, ok := remote(args, stdout, stderr); ok {
+					return code
+				}
+			}
+		}
 		return admin(args[1:], stdout, stderr)
 	case "healthcheck":
 		return healthcheck(args[1:], stderr)

@@ -166,6 +166,16 @@ var remoteCommands = []remoteCommand{
 	{name: "settings icon remove", route: "DELETE /api/v1/settings/brand/icon",
 		help: `  settings icon remove [--json]  remove the uploaded icon
 `, run: settings.IconRemove},
+	{name: "admin ls", route: "GET /api/v1/admins",
+		help: `  admin ls [--all] [flags]       the installation admins: their email, name, status and sign-in times
+`, run: manage.AdminLs},
+	{name: "admin add", route: "POST /api/v1/admins",
+		help: `  admin add --verification email|link [--name NAME] EMAIL
+                                 make a pending installation admin, and show how it verifies (a link only now)
+`, run: manage.AdminAdd},
+	{name: "admin rm", route: "DELETE /api/v1/admins/{usr}",
+		help: `  admin rm USER [--yes]          remove an installation admin (asks first)
+`, run: manage.AdminRm},
 	// zip create reads the zip's first byte to follow it with --wait, and a path's directory to find its node; both
 	// reads belong to the commands that own those routes.
 	{name: "zip create", route: "POST /api/v1/zips",

@@ -122,13 +122,13 @@ fn	lib/labels/api.ts:updateLabelField	-	cli9	planned, cli9
 fn	lib/manage/api.ts:addGroupMember	group add-member	cli8	built in cli8
 fn	lib/manage/api.ts:auditLog	account audit	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:createAccount	account create	cli9a2	built in cli9a2
-fn	lib/manage/api.ts:createAdmin	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createAdmin	admin add	cli9a3	built in cli9a3
 fn	lib/manage/api.ts:createGroup	group create	cli8	built in cli8
 fn	lib/manage/api.ts:createKey	account key create	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
 fn	lib/manage/api.ts:deleteAccount	account rm	cli9a2	built in cli9a2
-fn	lib/manage/api.ts:deleteAdmin	-	cli9	planned, cli9
+fn	lib/manage/api.ts:deleteAdmin	admin rm	cli9a3	built in cli9a3
 fn	lib/manage/api.ts:deleteAllPublicLinks	link rm	cli7	built in cli7
 fn	lib/manage/api.ts:deleteGroup	group rm	cli8	built in cli8
 fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
@@ -139,7 +139,7 @@ fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
 fn	lib/manage/api.ts:listAccounts	account ls	cli9a2	built in cli9a2
-fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listAdmins	admin ls	cli9a3	built in cli9a3
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
 fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
 fn	lib/manage/api.ts:listKeys	account key ls	cli9a1	built in cli9a1
@@ -221,7 +221,7 @@ route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/quota-warning	account quota-warning clear	cli9a1	built in cli9a1
 route	DELETE /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
 route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
-route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
+route	DELETE /api/v1/admins/{usr}	admin rm	cli9a3	built in cli9a3
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
 route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
@@ -265,7 +265,7 @@ route	GET /api/v1/accounts/{acc}/users/{usr}/grants	user grants	cli8	built in cl
 route	GET /api/v1/accounts/{acc}/webhooks	webhook ls	cli10	built in cli10
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}	webhook show	cli10	built in cli10
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	webhook deliveries	cli10	built in cli10
-route	GET /api/v1/admins	-	cli9	planned, cli9
+route	GET /api/v1/admins	admin ls	cli9a3	built in cli9a3
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
 route	GET /api/v1/directory	-	cli11	planned, cli11
 route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); folder ls --mine (cli8) lists the same route
@@ -370,7 +370,7 @@ route	POST /api/v1/accounts/{acc}/webhooks	webhook add	cli10	built in cli10
 route	POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry	webhook retry	cli10	built in cli10
 route	POST /api/v1/accounts/{acc}/webhooks/{hook}/secret	webhook rotate-secret	cli10	built in cli10
 route	POST /api/v1/accounts/{acc}/webhooks/{hook}/test	webhook test	cli10	built in cli10
-route	POST /api/v1/admins	-	cli9	planned, cli9
+route	POST /api/v1/admins	admin add	cli9a3	built in cli9a3
 route	POST /api/v1/auth/cli/approve	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
 route	POST /api/v1/auth/cli/lookup	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
 route	POST /api/v1/auth/cli/poll	login	cli4	the device sign-in polls here until it is approved (design-cli 3.3)

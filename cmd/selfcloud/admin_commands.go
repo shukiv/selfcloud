@@ -99,6 +99,15 @@ var adminCommands = []adminCommand{
 `, run: adminAudit},
 }
 
+// adminRemoteUsageHead is the usage text of the admin commands that run against a server.
+const adminRemoteUsageHead = `
+Remote (a server's address and an installation admin key):
+  admin ls [--all] [flags]       the installation admins: their email, name, status and sign-in times
+  admin add --verification email|link [--name NAME] EMAIL
+                                 make a pending installation admin, and show how it verifies (a link only now)
+  admin rm USER [--yes]          remove an installation admin (asks first)
+`
+
 // adminUsage returns the usage text of the admin commands, built from adminCommands.
 func adminUsage() string {
 	var b strings.Builder
@@ -106,6 +115,7 @@ func adminUsage() string {
 	for _, c := range adminCommands {
 		b.WriteString(c.help)
 	}
+	b.WriteString(adminRemoteUsageHead)
 	return b.String()
 }
 

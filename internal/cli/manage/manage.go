@@ -63,6 +63,7 @@ func (c *command) connect() (*conn.Conn, error) {
 
 // fail reports err and returns its exit code. A device token that gets "not found" from a route of an account is told why,
 // in plain output only: the server never lets a token manage an account, and answers as if the account were not there.
+// A command whose routes need an installation admin key tells a refused key or token the same way.
 func (c *command) fail(err error) int {
 	code := output.Fail(c.stderr, c.g.JSON, err)
 	var ae *client.APIError
