@@ -354,3 +354,85 @@ func TestExportGoneDuringTheDownload(t *testing.T) {
 		t.Errorf("destination exists: %v", err)
 	}
 }
+
+// TestExportDownloadOutlivesTheWait: --wait-timeout limits the wait for the conversion, not the download. A ready
+// export whose download answers after the wait has ended is still saved.
+func TestExportDownloadOutlivesTheWait(t *testing.T) {
+	isolate(t, testAccountKey)
+	noDerivedWait(t)
+	data := []byte("the exported document")
+	etag := `"` + sha(data) + `"`
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == http.MethodPost {
+			writeDoc(w, http.StatusAccepted, map[string]any{"id": testExport, "state": "queued", "format": "pdf"})
+			return
+		}
+		if r.Header.Get("Range") == "bytes=0-0" {
+			serveExport(w, r, data, "report.pdf", etag)
+			return
+		}
+		time.Sleep(800 * time.Millisecond)
+		serveExport(w, r, data, "report.pdf", etag)
+	})
+	dest := filepath.Join(t.TempDir(), "out.pdf")
+	res := f.run(Export, testNode, "--format", "pdf", dest, "--wait-timeout", "500ms")
+	wantCode(t, res, 0)
+	if got, err := os.ReadFile(dest); err != nil || !bytes.Equal(got, data) {
+		t.Errorf("file %q, %v", got, err)
+	}
+}
+
+// TestExportPiecesTheDownload: export takes get's --piece-size, so a proxy that caps a request can be worked with.
+func TestExportPiecesTheDownload(t *testing.T) {
+	isolate(t, testAccountKey)
+	noDerivedWait(t)
+	data := randomBytes(t, 3*mib)
+	etag := `"` + sha(data) + `"`
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == http.MethodPost {
+			writeDoc(w, http.StatusAccepted, map[string]any{"id": testExport, "state": "queued", "format": "pdf"})
+			return
+		}
+		serveExport(w, r, data, "report.pdf", etag)
+	})
+	dest := filepath.Join(t.TempDir(), "out.pdf")
+	res := f.run(Export, testNode, "--format", "pdf", dest, "--piece-size", "1MiB")
+	wantCode(t, res, 0)
+	if got, err := os.ReadFile(dest); err != nil || sha(got) != sha(data) {
+		t.Errorf("the downloaded file differs: %v", err)
+	}
+	reqs := f.seen()
+	want := []string{"bytes=0-0", "bytes=0-1048575", "bytes=1048576-2097151", "bytes=2097152-3145727"}
+	if len(reqs) != 1+len(want) {
+		t.Fatalf("%d requests, want %d", len(reqs), 1+len(want))
+	}
+	for i, r := range want {
+		if got := reqs[i+1].rng; got != r {
+			t.Errorf("request %d: range %q, want %q", i+1, got, r)
+		}
+	}
+}
+
+// TestThumbnailRefusesALargeBody: a thumbnail over 16 MiB is refused and nothing is saved, and standard output gets no
+// more than the limit.
+func TestThumbnailRefusesALargeBody(t *testing.T) {
+	isolate(t, testAccountKey)
+	noDerivedWait(t)
+	const limit = 16 << 20
+	body := bytes.Repeat([]byte{0xff}, limit+1)
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) { serveThumb(w, body) })
+	dest := filepath.Join(t.TempDir(), "large.jpg")
+	res := f.run(Thumbnail, testNode, dest)
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "the server's thumbnail is larger than 16 MiB; it was not saved") {
+		t.Errorf("stderr %q", res.stderr)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("destination exists: %v", err)
+	}
+	res = f.run(Thumbnail, testNode, "-")
+	wantCode(t, res, 1)
+	if len(res.stdout) > limit {
+		t.Errorf("standard output has %d bytes, more than the limit", len(res.stdout))
+	}
+}
