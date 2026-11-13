@@ -158,9 +158,14 @@ func repositoryFiles(t *testing.T, root string) map[string]string {
 	t.Helper()
 	cmd := exec.Command("git", "ls-files", "-z")
 	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("git ls-files: %v\n%s", err, strings.TrimSpace(string(out)))
+		stderr := ""
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			stderr = strings.TrimSpace(string(exitErr.Stderr))
+		}
+		t.Fatalf("git ls-files: %v\n%s", err, stderr)
 	}
 
 	files := make(map[string]string)
