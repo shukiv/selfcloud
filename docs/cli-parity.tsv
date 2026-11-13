@@ -204,13 +204,13 @@ fn	lib/stars.ts:listStarred	-	cli11	planned, cli11
 fn	lib/stars.ts:removeRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:starNode	-	cli11	planned, cli11
 fn	lib/stars.ts:unstarNode	-	cli11	planned, cli11
-fn	lib/storage/api.ts:accountLargest	-	cli9	planned, cli9
-fn	lib/storage/api.ts:accountStorage	-	cli9	planned, cli9
+fn	lib/storage/api.ts:accountLargest	storage largest	cli9b3	built in cli9b3
+fn	lib/storage/api.ts:accountStorage	storage usage	cli9b3	built in cli9b3
 fn	lib/storage/api.ts:myLargest	-	-	browser session only; the account form is storage largest --account
 fn	lib/storage/api.ts:refreshMyBreakdown	-	-	browser session only; whoami reads GET /folders
 fn	lib/storage/api.ts:refreshMyStorage	-	-	browser session only; whoami reads GET /folders
 fn	lib/storage/api.ts:setPersonLimit	-	cli9	planned, cli9
-fn	lib/storage/api.ts:setPolicyDefault	-	cli9	planned, cli9
+fn	lib/storage/api.ts:setPolicyDefault	storage policy set	cli9b3	built in cli9b3
 route	DELETE /api/v1/accounts/{acc}	account rm	cli9a2	built in cli9a2
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}	folder rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share revoke	cli7	built in cli7
@@ -254,9 +254,9 @@ route	GET /api/v1/accounts/{acc}/keys	account key ls	cli9a1	built in cli9a1
 route	GET /api/v1/accounts/{acc}/quota-warning	account quota-warning show	cli9a1	built in cli9a1
 route	GET /api/v1/accounts/{acc}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/storage	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/storage/largest	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/storage	storage usage	cli9b3	built in cli9b3
+route	GET /api/v1/accounts/{acc}/storage-policy	storage policy show	cli9b3	built in cli9b3
+route	GET /api/v1/accounts/{acc}/storage/largest	storage largest	cli9b3	built in cli9b3
 route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	GET /api/v1/accounts/{acc}/usage	account usage	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/users	user ls	cli9b1	built in cli9b1
@@ -336,7 +336,7 @@ route	PATCH /api/v1/accounts/{acc}/folders/{fld}	folder rename	cli8	built in cli
 route	PATCH /api/v1/accounts/{acc}/groups/{grp}	group rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
-route	PATCH /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/storage-policy	storage policy set	cli9b3	built in cli9b3
 route	PATCH /api/v1/accounts/{acc}/users/{usr}	user update	cli9b1	built in cli9b1
 route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in cli10
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11

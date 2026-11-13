@@ -1016,6 +1016,51 @@ selfcloud user sign-in-link --account acc_… usr_… --next /files/report
 selfcloud user revoke-tokens --account acc_… usr_… --yes
 ```
 
+## Storage
+
+These commands read and change an account's default storage limit and show its usage and largest files. They need
+`--account acc_…` (or `SELFCLOUD_ACCOUNT`), which is checked before any request. An account key may use all of them. An
+installation admin key may use `storage policy show`, `storage policy set` and `storage usage`, with no folder or file
+names, but `storage largest` refuses it (403). A device token cannot manage an account. (An owner's browser session may
+read usage and list the largest files.)
+
+| Command | What it does |
+|---|---|
+| `storage policy show [--account ACC]` | prints the account's default limit for each user |
+| `storage policy set [--account ACC] --user-quota SIZE` | sets that default; `0` is no limit |
+| `storage usage [--account ACC] [--users-limit N] [--all]` | prints the account's usage, its folders and its users' totals |
+| `storage largest [--account ACC] [--folder FOLDER] [--all]` | prints the largest files the credential may see |
+
+```sh
+selfcloud storage policy show --account acc_…
+selfcloud storage policy set --account acc_… --user-quota 10GiB
+selfcloud storage usage --account acc_… --all
+selfcloud storage usage --account acc_… --users-limit 100 --json
+selfcloud storage largest --account acc_… --folder fld_…
+```
+
+`storage policy show` prints `user_quota_bytes=N`. `storage policy set` takes a number of bytes or a size such as
+`10GiB`; `0` means no limit, and a negative or unknown size is refused before any request (exit 2). The value applies to
+users who do not have their own limit. `--json` prints the API's `{"user_quota_bytes":N}` document.
+
+`storage usage` prints five `key=value` lines for the account (`used_bytes`, `reserved_bytes`, `quota_bytes`,
+`available_bytes`, `user_quota_bytes`; a missing limit is empty), then a table of folders with `FOLDER`, `NAME`, `KIND`,
+`USED`, `FILES` and `RESERVED`. When users are returned it prints a second table with `PERSON`, `EMAIL`, `NAME`, `STATUS`,
+`USED`, `RESERVED`, `QUOTA` and `EFFECTIVE QUOTA`; there is no blank line between a table and the one before it.
+`--users-limit N` sizes a page of users from 1 to 200 (the server's default is 50), and `--all` follows
+`users_next_cursor`. Without `--all`, a page with more users prints on standard error
+`selfcloud: more users exist; --all prints every page`. `--json` prints `account`, `folders` and `users`, with the API's
+field names and every user page read with `--all`; it does not print a cursor.
+
+`storage largest` prints a table with `NODE`, `NAME`, `SIZE`, `VERSIONS`, `FOLDER` and `PARENT`. `--folder FOLDER` limits
+the list to one folder, named by its `fld_…` id, which is checked before any request; without it, the account's list is
+read. The server answers 20 files to a page by default, and a page with more prints the usual `--all` note. `--all`
+follows `next_cursor`. `--json` prints one view per file with every field the API sends, including `folder_id`,
+`folder_name`, `mime_type`, `in_trash` and `modified_at`; a field the API does not send is not printed.
+
+A bad account or folder id, a size the server cannot use, a users limit outside 1 to 200, or an extra argument exits 2
+before a request. A refusal from the server keeps its code: for example a 403 exits 3 and a 404 exits 4.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
