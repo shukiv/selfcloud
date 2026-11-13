@@ -381,6 +381,29 @@ var remoteCommands = []remoteCommand{
 		help: `  job show JOB [--wait [--wait-timeout DURATION]]
                                  a job's state; --wait follows it to its end
 `, run: ops.JobShow},
+	{name: "account key create", route: "POST /api/v1/accounts/{acc}/keys",
+		help: `  account key create --account ACC [--expires TIME] NAME
+                                 make an account key and print it once (needs an admin key)
+`, run: ops.AccountKeyCreate},
+	{name: "account key ls", route: "GET /api/v1/accounts/{acc}/keys",
+		help: `  account key ls --account ACC   an account's keys (needs an admin key)
+`, run: ops.AccountKeyLs},
+	{name: "account key revoke", route: "DELETE /api/v1/accounts/{acc}/keys/{key}",
+		help: `  account key revoke --account ACC KEY [--yes]
+                                 revoke a key now (asks first; needs an admin key)
+`, run: ops.AccountKeyRevoke},
+	{name: "account quota-warning show", route: "GET /api/v1/accounts/{acc}/quota-warning",
+		help: `  account quota-warning show --account ACC
+                                 the share of the quota at which quota.warning is sent
+`, run: ops.AccountQuotaWarningShow},
+	{name: "account quota-warning set", route: "PUT /api/v1/accounts/{acc}/quota-warning",
+		help: `  account quota-warning set --account ACC PERCENT
+                                 warn at PERCENT, a whole number from 1 to 99
+`, run: ops.AccountQuotaWarningSet},
+	{name: "account quota-warning clear", route: "DELETE /api/v1/accounts/{acc}/quota-warning",
+		help: `  account quota-warning clear --account ACC
+                                 set the warning back to the default
+`, run: ops.AccountQuotaWarningClear},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.

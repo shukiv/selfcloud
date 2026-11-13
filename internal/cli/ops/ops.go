@@ -30,6 +30,8 @@ const (
 	accountHint = "this needs an account key; a signed-in device cannot manage an account"
 	// userHint is told to an account key or an admin key that the import routes refuse.
 	userHint = "imports belong to a signed-in person; an account key or an admin key cannot use them"
+	// adminHint is told to a credential that is not an installation admin key when an admin route refuses it.
+	adminHint = "this needs an installation admin key"
 )
 
 // command is one command's flags and streams. begin makes it; the command adds its own flags before parse.
@@ -38,10 +40,11 @@ type command struct {
 	set            *flag.FlagSet
 	account        string
 	stdout, stderr io.Writer
-	// kind is the credential's kind once connected. accountUsed says that the command named an account, and userRoutes that
-	// its routes are a signed-in person's.
+	// kind is the credential's kind once connected. accountUsed says that the command named an account, userRoutes that its
+	// routes are a signed-in person's, and adminRoutes that they need an installation admin key.
 	kind        string
 	accountUsed bool
+	adminRoutes bool
 	userRoutes  bool
 }
 
@@ -91,6 +94,8 @@ func (c *command) fail(err error) int {
 		_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+accountHint+"\n")
 	case c.userRoutes && ae.Status == http.StatusForbidden && (c.kind == profile.KindAccount || c.kind == profile.KindAdmin):
 		_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+userHint+"\n")
+	case c.adminRoutes && c.kind != profile.KindAdmin && ae.Status == http.StatusForbidden:
+		_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+adminHint+"\n")
 	}
 	return code
 }
