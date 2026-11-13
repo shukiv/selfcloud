@@ -16,6 +16,8 @@ const q = (v) => JSON.stringify(v);
 const LONG = `${'an exceptionally long file name for the tile view check '.repeat(3)}final.pdf`;
 const HEBREW = 'מסמך עבודה ארוך לבדיקת הקלפים בתצוגת הריבועים.txt';
 const MOVED = 'd1-moved.txt';
+const ONE_LINE_SHORT = 'd1 one line short.txt';
+const ONE_LINE_LONG = 'd1-' + 'long name '.repeat(19) + 'end.txt';
 
 // mouse sends one mouse event; held says the left button is down during a move (a drag).
 async function mouse(page, type, x, y, held = false) {
@@ -100,6 +102,17 @@ const measure = (page) =>
     const overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
     const wide = overflow > 0 ? [...document.querySelectorAll('body *')].filter((el) => el.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5).slice(0, 3).map((el) => el.tagName.toLowerCase() + (el.getAttribute('data-testid') ? '[' + el.getAttribute('data-testid') + ']' : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') + ' right=' + Math.round(el.getBoundingClientRect().right)) : [];
     return { side: side ? Math.round(side.width) : null, listing: section ? Math.round(section.width) : null, treeInSidebar: !!tree, overflow, wide };
+  })()`);
+
+// oneLineRow reads a list row's height, and its name's cut and marks, for the one-line checks (decision 168).
+const oneLineRow = (page, id) =>
+  page.evaluate(`(() => {
+    const row = document.querySelector('[role="row"][data-id="' + ${q(id)} + '"]');
+    const name = row?.querySelector('.row-name');
+    if (!row || !name) return null;
+    const n = name.getBoundingClientRect();
+    const marks = [...row.querySelectorAll('.row-marks > *')].map((m) => m.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+    return { height: row.getBoundingClientRect().height, width: name.clientWidth, scroll: name.scrollWidth, title: name.title, mid: n.top + n.height / 2, markMids: marks.map((r) => r.top + r.height / 2) };
   })()`);
 
 // targets returns the touch size of each control that a finger reaches on the tree and the tiles (the rest and the focus).
@@ -306,5 +319,71 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   // comes back. The toggle names the view it switches to.
   await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 10000);
   await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === 'list') b.click(); })()`);
+  await page.waitFor(`!!document.querySelector('section.browser [role="row"]')`, 15000);
+
+  // ---- The one-line list name (decision 168): a short row and a 200-character starred, publicly linked row.
+  await setPhone(page, false);
+  await size(1280, 800);
+  const oneLine = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: '/D1 One line', parents: false });
+  for (const [name, body] of [[ONE_LINE_SHORT, 'short\n'], [ONE_LINE_LONG, 'long\n']]) {
+    await rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent(`/D1 One line/${name}`)}`, accountKey, body);
+  }
+  const oneLineKids = await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent('/D1 One line')}`, accountKey);
+  const shortID = oneLineKids.items.find((n) => n.name === ONE_LINE_SHORT)?.id;
+  const longID = oneLineKids.items.find((n) => n.name === ONE_LINE_LONG)?.id;
+  check(!!shortID && !!longID, `the one-line fixtures are in the folder (${shortID}, ${longID})`);
+  if (!shortID || !longID) return;
+  const me = await page.evaluate(`fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.json())`);
+  const oneLineAccount = me.account?.id;
+  const oneLinePublicLinks = me.public_links === true;
+  check(!!oneLineAccount, 'the one-line checks know the account');
+  if (!oneLinePublicLinks) await api(base, 'PATCH', `/api/v1/accounts/${oneLineAccount}/sharing-policy`, accountKey, { public_links: true });
+  const oneLineAllowLinks = (await api(base, 'GET', `/api/v1/accounts/${oneLineAccount}/folders/${teamA}`, accountKey)).allow_links === true;
+  if (!oneLineAllowLinks) await api(base, 'PATCH', `/api/v1/folders/${teamA}/settings`, accountKey, { allow_links: true });
+  await api(base, 'POST', `/api/v1/nodes/${longID}/share-links`, accountKey, { audience: 'anyone', role: 'viewer' });
+
+  const listAt = async (w, hgt, phone) => {
+    await setPhone(page, phone);
+    await size(w, hgt);
+    await navigateTo(page, `/files/${teamA}/${oneLine.id}`);
+    await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 10000);
+    await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === 'list') b.click(); })()`);
+    await page.waitFor(`!!document.querySelector('[role="row"][data-id="${longID}"]') && !!document.querySelector('[role="row"][data-id="${shortID}"]')`, 15000);
+    await sleep(400);
+  };
+
+  const checkOneLine = async (where) => {
+    const long = await oneLineRow(page, longID);
+    const short = await oneLineRow(page, shortID);
+    check(!!long && !!short, `${where}: both one-line rows are in the list (${!!long}, ${!!short})`);
+    if (!long || !short) return;
+    console.log(`D1 one-line ${where}: long row ${long.height}px, short row ${short.height}px, name ${long.scroll}/${long.width} (scroll/client)`);
+    check(long.title === ONE_LINE_LONG, `${where}: the long name's title is the full 200-character name (${long.title.length} characters)`);
+    check(long.scroll > long.width, `${where}: the long name is cut (${long.scroll} > ${long.width})`);
+    const gaps = long.markMids.map((m) => Math.abs(m - long.mid));
+    check(long.markMids.length >= 2 && gaps.every((d) => d <= 2), `${where}: the marks are on the name's line (${long.markMids.length} marks; middles ${JSON.stringify(gaps.map((d) => Math.round(d * 10) / 10))} px from the name's)`);
+    check(Math.abs(long.height - short.height) <= 1, `${where}: the long and short rows are one height (${long.height} and ${short.height} px)`);
+  };
+
+  await listAt(1280, 800, false);
+  await h.selectRow(page, ONE_LINE_LONG);
+  const starClicked = await page.evaluate(`(() => { const b = document.querySelector('[role="row"][data-id="${longID}"] .row-acts button[aria-label^="Star"]'); if (!b) return false; b.click(); return true; })()`);
+  check(starClicked, 'the 200-character file is starred from its selected row');
+  await page.waitFor(`!!document.querySelector('[role="row"][data-id="${longID}"] .row-acts button[aria-label^="Unstar"]')`, 10000);
+  await page.waitFor(`document.querySelectorAll('[role="row"][data-id="${longID}"] .row-marks > *').length >= 2`, 10000);
+  await h.press(page, `[role="row"][data-id="${longID}"]`, 'Escape');
+  await page.waitFor(`!document.querySelector('[role="row"][data-id="${longID}"][aria-selected="true"]')`, 10000);
+  await sleep(300);
+  await checkOneLine('at 1280 with a mouse');
+  await listAt(390, 800, true);
+  await checkOneLine('at 390 on the phone');
+  await size(320, 700);
+  await sleep(400);
+  await checkOneLine('at 320 on the phone');
+  if (!oneLineAllowLinks) await api(base, 'PATCH', `/api/v1/folders/${teamA}/settings`, accountKey, { allow_links: false });
+  if (oneLineAccount && !oneLinePublicLinks) await api(base, 'PATCH', `/api/v1/accounts/${oneLineAccount}/sharing-policy`, accountKey, { public_links: false });
+  await setPhone(page, false);
+  await size(1920, 1000);
+  await navigateTo(page, `/files/${teamA}`);
   await page.waitFor(`!!document.querySelector('section.browser [role="row"]')`, 15000);
 }
