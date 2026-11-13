@@ -158,11 +158,11 @@ fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (d
 fn	lib/manage/api.ts:updateAccount	account update	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:updatePerson	user update	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:usage	account usage	cli9a2	built in cli9a2
-fn	lib/notifications/api.ts:getEmailSwitch	-	cli11	planned, cli11
-fn	lib/notifications/api.ts:listNotices	-	cli11	planned, cli11
-fn	lib/notifications/api.ts:markRead	-	cli11	planned, cli11
-fn	lib/notifications/api.ts:setEmailSwitch	-	cli11	planned, cli11
-fn	lib/notifications/api.ts:unreadCount	-	cli11	planned, cli11
+fn	lib/notifications/api.ts:getEmailSwitch	-	-	browser session only: the server refuses every token on this route
+fn	lib/notifications/api.ts:listNotices	-	-	browser session only: the server refuses every token on this route
+fn	lib/notifications/api.ts:markRead	-	-	browser session only: the server refuses every token on this route
+fn	lib/notifications/api.ts:setEmailSwitch	-	-	browser session only: the server refuses every token on this route
+fn	lib/notifications/api.ts:unreadCount	-	-	browser session only: the server refuses every token on this route
 fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
 fn	lib/settings/api.ts:changeSettings	settings set	se4	built in se4; settings reset calls it too
 fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove calls it too
@@ -197,13 +197,13 @@ fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory;
 fn	lib/sharing/api.ts:visitorInfo	-	-	a drop link's page; get refuses a drop link, which takes uploads only (decision 142)
 fn	lib/sharing/api.ts:visitorLink	-	-	a link visitor's preview address in the browser; link create --signed makes one for a signed-in credential
 fn	lib/sharing/api.ts:visitorNode	get	cli6	built in cli6
-fn	lib/stars.ts:clearRecent	-	cli11	planned, cli11
-fn	lib/stars.ts:listRecent	-	cli11	planned, cli11
+fn	lib/stars.ts:clearRecent	-	-	browser session only: the server refuses every token on this route
+fn	lib/stars.ts:listRecent	recent	cli11a	built in cli11a
 fn	lib/stars.ts:listSharedRecent	shared	cli7	built in cli7
-fn	lib/stars.ts:listStarred	-	cli11	planned, cli11
-fn	lib/stars.ts:removeRecent	-	cli11	planned, cli11
-fn	lib/stars.ts:starNode	-	cli11	planned, cli11
-fn	lib/stars.ts:unstarNode	-	cli11	planned, cli11
+fn	lib/stars.ts:listStarred	starred	cli11a	built in cli11a
+fn	lib/stars.ts:removeRecent	-	-	browser session only: the server refuses every token on this route
+fn	lib/stars.ts:starNode	star	cli11a	built in cli11a
+fn	lib/stars.ts:unstarNode	unstar	cli11a	built in cli11a
 fn	lib/storage/api.ts:accountLargest	storage largest	cli9b3	built in cli9b3
 fn	lib/storage/api.ts:accountStorage	storage usage	cli9b3	built in cli9b3
 fn	lib/storage/api.ts:myLargest	-	-	browser session only; the account form is storage largest --account
@@ -228,12 +228,12 @@ route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
-route	DELETE /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
+route	DELETE /api/v1/nodes/{nod}/star	unstar	cli11a	built in cli11a
 route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	DELETE /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
-route	DELETE /api/v1/recent	-	cli11	planned, cli11
-route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
+route	DELETE /api/v1/recent	-	-	browser session only: the server refuses every token on this route
+route	DELETE /api/v1/recent/{nod}	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/settings/brand/icon	settings icon remove	se4	built in se4
 route	DELETE /api/v1/settings/brand/logo	settings logo remove	se4	built in se4
 route	DELETE /api/v1/share-links/{shl}	link rm	cli7	built in cli7
@@ -300,19 +300,19 @@ route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/versions	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/versions/{ver}/content	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/viewers	-	-	live presence of other viewers: a browser feature
-route	GET /api/v1/notifications	-	cli11	planned, cli11
-route	GET /api/v1/notifications/settings	-	cli11	planned, cli11
-route	GET /api/v1/notifications/unread	-	cli11	planned, cli11
+route	GET /api/v1/notifications	-	-	browser session only: the server refuses every token on this route
+route	GET /api/v1/notifications/settings	-	-	browser session only: the server refuses every token on this route
+route	GET /api/v1/notifications/unread	-	-	browser session only: the server refuses every token on this route
 route	GET /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	GET /api/v1/openapi.yaml	api spec	cli3	public route; api spec writes it
 route	GET /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	GET /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
-route	GET /api/v1/recent	-	cli11	planned, cli11
+route	GET /api/v1/recent	recent	cli11a	built in cli11a
 route	GET /api/v1/search	-	cli11	planned, cli11
 route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	shared	cli7	built in cli7
-route	GET /api/v1/starred	-	cli11	planned, cli11
+route	GET /api/v1/starred	starred	cli11a	built in cli11a
 route	GET /api/v1/templates	-	cli11	planned, cli11
 route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
 route	GET /api/v1/trash	trash ls	cli5	built in cli5
@@ -344,7 +344,7 @@ route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
 route	PATCH /api/v1/nodes/{nod}	mv,share no-download,share editors-can-share	cli5	built in cli5 and cli7b
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
-route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
+route	PATCH /api/v1/notifications/settings	-	-	browser session only: the server refuses every token on this route
 route	PATCH /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PATCH /api/v1/settings	settings set,settings reset	se4	built in se4
 route	PATCH /api/v1/share-links/{shl}	link update	cli7	built in cli7
@@ -408,7 +408,7 @@ route	POST /api/v1/nodes/{nod}/transfer-ownership	share transfer-ownership	cli7	
 route	POST /api/v1/nodes/{nod}/unlock	unlock	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
-route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
+route	POST /api/v1/notifications/{ntf}/read	-	-	browser session only: the server refuses every token on this route
 route	POST /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	POST /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	POST /api/v1/share-links/{shl}/reset	link reset	cli7	built in cli7
@@ -430,7 +430,7 @@ route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	share grant	cli7	built in cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
-route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
+route	PUT /api/v1/nodes/{nod}/star	star	cli11a	built in cli11a
 route	PUT /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PUT /api/v1/playlists/{pls}/order	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PUT /api/v1/settings/brand/icon	settings icon set	se4	built in se4

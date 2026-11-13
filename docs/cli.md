@@ -1107,6 +1107,38 @@ selfcloud sharing policy show
 selfcloud sharing policy set --comments false --who-viewed true
 ```
 
+## Stars and recent
+
+Stars and the recent list belong to a person, so these commands take a signed-in device's token and an account key is
+refused. A node is named by its id.
+
+| Command | What it does |
+|---|---|
+| `star NODE...` | stars each node |
+| `unstar NODE...` | removes the star from each node |
+| `starred [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]` | the person's starred nodes, newest star first |
+| `recent [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]` | the nodes the person viewed or edited last, newest first |
+
+`star` and `unstar` make one request per node and print a row for each, as `rm` does for several targets. `--json` prints
+the rows as JSON. A star that the server would make more than 5000 stops with the server's message; the other nodes are
+still tried. `starred` prints `ID`, `KIND`, `SIZE`, `STARRED` and `NAME`, where `STARRED` is the star's time; `recent`
+prints `ID`, `KIND`, `SIZE`, `LAST` and `NAME`, where `LAST` is the later of the last view and the last edit. Each list
+prints one page unless `--all` is given, and says on standard error that more items exist. `--json` prints the items as
+the API wrote them. `--type` keeps one kind, and the two time flags keep items modified at or after and before an RFC 3339
+time, such as `2026-11-01T00:00:00Z`; a time that is not RFC 3339, or is before 1970, is refused before any request.
+
+Exit codes follow the errors: 2 for a usage error, 3 when the server refuses (a star beyond the limit, or an account key),
+4 for an unknown node, and 7 when `star` or `unstar` changed some nodes and not others.
+
+```
+selfcloud star nod_… nod_…
+selfcloud starred --type file --modified-after 2026-11-01T00:00:00Z
+selfcloud recent --all --json
+selfcloud unstar nod_…
+```
+
+The server lets only a browser session clear the recent list or read notifications, so neither is a command here.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
