@@ -285,18 +285,15 @@ func TestTagJSONUsesAView(t *testing.T) {
 func TestTagIDsAreCheckedAndDeduplicated(t *testing.T) {
 	isolate(t, testDeviceTok)
 	f := newFake(t)
-	f.on(http.MethodGet, nodePath(testNode, "/tags"), reply{status: http.StatusOK, body: `{"state":"ready"}`})
-	res := f.run(TagLs, "not-an-id", testNode, testNode)
-	wantCode(t, res, 0)
-	f.wantCalls("GET " + nodePath(testNode, "/tags"))
-	if strings.Contains(res.stdout, "not-an-id") {
-		t.Fatalf("stdout %q; want the invalid id dropped", res.stdout)
-	}
-
-	f = newFake(t)
-	res = f.run(TagLs, "not-an-id")
+	res := f.run(TagLs, "not-an-id", testNode)
 	wantCode(t, res, 2)
 	f.wantNoCalls()
+
+	f = newFake(t)
+	f.on(http.MethodGet, nodePath(testNode, "/tags"), reply{status: http.StatusOK, body: `{"state":"ready"}`})
+	res = f.run(TagLs, testNode, testNode)
+	wantCode(t, res, 0)
+	f.wantCalls("GET " + nodePath(testNode, "/tags"))
 }
 
 func TestTagTooManyIDs(t *testing.T) {

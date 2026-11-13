@@ -19,7 +19,6 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/output"
 	"github.com/shukiv/selfcloud/internal/config"
-	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // Search is `selfcloud search`: the nodes whose name matches a query, or whose text does, and whose filters match.
@@ -333,8 +332,8 @@ func TagLs(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// tagNodeIDs checks the node ids, drops a repeat, and keeps the first spelling. A node id that is not valid is dropped; a
-// list with none left, or with more than 100 distinct ids, is a usage error.
+// tagNodeIDs checks each node id, drops an exact repeat, and keeps the first spelling. A node id that is not valid is a
+// usage error, and so are no id and more than 100 distinct ids.
 func tagNodeIDs(args []string) ([]string, error) {
 	if len(args) == 0 {
 		return nil, exitcode.Usagef("tag ls takes at least one node id")
@@ -342,14 +341,15 @@ func tagNodeIDs(args []string) ([]string, error) {
 	seen := make(map[string]bool, len(args))
 	ids := make([]string, 0, len(args))
 	for _, arg := range args {
-		if !id.Valid("nod", arg) || seen[arg] {
+		nodeID, err := nodeArg(arg)
+		if err != nil {
+			return nil, err
+		}
+		if seen[nodeID] {
 			continue
 		}
-		seen[arg] = true
-		ids = append(ids, arg)
-	}
-	if len(ids) == 0 {
-		return nil, exitcode.Usagef("tag ls takes node ids (nod_...)")
+		seen[nodeID] = true
+		ids = append(ids, nodeID)
 	}
 	if len(ids) > 100 {
 		return nil, exitcode.Usagef("tag ls takes at most 100 node ids")
