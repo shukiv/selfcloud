@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 
@@ -128,7 +130,7 @@ func Edit(args []string, stdout, stderr io.Writer) int {
 	}
 	newText, err := os.ReadFile(path)
 	if err != nil {
-		return fail(stderr, g, fmt.Errorf("the editor's file cannot be read: %w", err))
+		return fail(stderr, g, fmt.Errorf("the editor's file cannot be read; your text is kept in %s: %w", path, err))
 	}
 	if bytes.Equal(newText, orig) {
 		_ = os.RemoveAll(dir)
@@ -206,6 +208,9 @@ func runEditor(path string) error {
 	}
 	cmd := exec.Command("sh", "-c", ed+` "$1"`, "selfcloud-edit", path)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGQUIT)
+	defer signal.Stop(ch)
 	err := cmd.Run()
 	if err == nil {
 		return nil
