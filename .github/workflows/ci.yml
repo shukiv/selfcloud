@@ -36,10 +36,7 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        # The race detector slows the API package's tests to many minutes on a hosted runner: 20m was passed on
-        # 2026-11-02 with no test stuck (the longest running test was 7s old), so the limit is 40m.
-        # The pointer checks that -race turns on stay on for this code, and off for the C-to-Go SQLite.
-        run: go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 40m ./...
+        run: scripts/ci-test.sh
       - name: build
         run: CGO_ENABLED=0 go build -o /dev/null ./cmd/selfcloud
 

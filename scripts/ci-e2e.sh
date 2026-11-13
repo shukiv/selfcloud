@@ -10,9 +10,15 @@
 #
 # The output goes to e2e-out/ in the checkout: one log per run, and the temporary folders the runs keep
 # (SELFCLOUD_E2E_KEEP=1). The CI job uploads that folder when the script fails.
+#
+# When a run fails, its last passes, its failure, its last lines and the diagnostics files are printed as annotations
+# (::error workflow commands), which anyone who can read the run can see without signing in. scripts/ci-annotate.sh
+# holds the escaping those notes share with scripts/ci-test.sh.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=ci-annotate.sh
+. "$root/scripts/ci-annotate.sh"
 out="$root/e2e-out"
 mkdir -p "$out/tmp"
 export TMPDIR="$out/tmp"
@@ -31,9 +37,9 @@ cd "$root/web"
 echo "== the e2e helpers' unit tests"
 node --test e2e/diag.test.mjs
 echo "== run.mjs"
-node e2e/run.mjs 2>&1 | tee "$out/run.log"
+node e2e/run.mjs 2>&1 | tee "$out/run.log" || { annotate_e2e "$out/run.log" "$out"; exit 1; }
 echo "== adminAccess en"
-node e2e/adminAccess.mjs en 2>&1 | tee "$out/adminAccess-en.log"
+node e2e/adminAccess.mjs en 2>&1 | tee "$out/adminAccess-en.log" || { annotate_e2e "$out/adminAccess-en.log" "$out"; exit 1; }
 echo "== adminAccess he"
-node e2e/adminAccess.mjs he 2>&1 | tee "$out/adminAccess-he.log"
+node e2e/adminAccess.mjs he 2>&1 | tee "$out/adminAccess-he.log" || { annotate_e2e "$out/adminAccess-he.log" "$out"; exit 1; }
 echo "e2e: run.mjs and both adminAccess runs passed"
