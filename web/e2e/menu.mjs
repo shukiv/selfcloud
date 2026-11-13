@@ -3,7 +3,13 @@
 // The file menus' submenus (decision 70): Share, Organize and Information hold the entries named here, and the menu is opened
 // on the entry by a hover on its submenu's title, as a person does. The entries are read by their labels (the shortcut at the
 // right is not part of a label).
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 const q = (v) => JSON.stringify(v);
+
+// A row's icon and its label are centred when their centres are within this many pixels of the row's centre.
+const ROW_CENTRE_TOLERANCE = 1;
 
 export const SUBMENU_OF = {
   'Share…': 'Share',
@@ -73,3 +79,63 @@ export async function hoverMenuTitle(page, title) {
 // The menu is the open one that carries a name: a language or theme menu that is open at the same time has none, and is skipped.
 export const menuHeaderText = (page) =>
   page.evaluate(`(() => { const named = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"][aria-labelledby]')]; if (named.length === 0) return ''; const m = named[named.length - 1]; return (m.getAttribute('aria-labelledby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' ').trim(); })()`);
+
+// MENU_ROWS is every row of the dropdowns and submenu popups that are open now: a plain item's row is its li, a submenu's row is
+// its title (the title is where the row is drawn; the li around it carries the styling but not the height). For each row it gives
+// the centre of the row's box, of the icon's box and of the box the label's text is drawn in, in CSS pixels from the viewport top.
+export const MENU_ROWS = `(() => {
+  const hidden = (el) => !!el.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]');
+  const shown = (el) => {
+    if (hidden(el)) return false;
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+  };
+  const middle = (r) => r.top + r.height / 2;
+  const rows = [];
+  for (const row of document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item, .ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-item, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-submenu-title')) {
+    if (!shown(row)) continue;
+    const tc = row.querySelector(':scope > .ant-dropdown-menu-title-content') ?? row.querySelector('.ant-dropdown-menu-title-content');
+    const icon = row.querySelector(':scope > .ant-dropdown-menu-item-icon') ?? row.querySelector('.ant-dropdown-menu-item-icon');
+    const name = (tc ?? row).textContent.trim().replace(/\\s+/g, ' ');
+    let text = null;
+    if (tc) {
+      const range = document.createRange();
+      range.selectNodeContents(tc);
+      const r = range.getBoundingClientRect();
+      if (r.height > 0) text = middle(r);
+    }
+    rows.push({ name, row: middle(row.getBoundingClientRect()), icon: icon && shown(icon) ? middle(icon.getBoundingClientRect()) : null, text });
+  }
+  return rows;
+})()`;
+
+// menuRowChecks measures every row of the menus that are open now and checks that each icon and each label sits on the row's
+// middle, as the row is seen: within one pixel. It returns the measurements, so a caller can print them.
+export async function menuRowChecks(page, check, where) {
+  const rows = await page.evaluate(MENU_ROWS);
+  check(rows.length > 0, `${where}: the open menu has rows to measure (${rows.length})`);
+  const off = [];
+  for (const r of rows) {
+    const moved = [];
+    if (r.icon !== null && Math.abs(r.icon - r.row) > ROW_CENTRE_TOLERANCE) moved.push(`icon ${(r.icon - r.row).toFixed(1)} px`);
+    if (r.text !== null && Math.abs(r.text - r.row) > ROW_CENTRE_TOLERANCE) moved.push(`label ${(r.text - r.row).toFixed(1)} px`);
+    if (moved.length > 0) off.push(`${q(r.name)} ${moved.join(', ')}`);
+  }
+  check(off.length === 0, `${where}: every row's icon and label is centred on the row (${rows.length} rows; off: ${off.join('; ') || 'none'})`);
+  return rows;
+}
+
+// menuShot saves a menu's picture at device scale 2, as the chain's pictures are: the CSS viewport stays the same. The caller
+// saves it only when SELFCLOUD_E2E_SHOTS names a folder.
+export async function menuShot(page, dir, name) {
+  await mkdir(dir, { recursive: true });
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
+  try {
+    await new Promise((r) => setTimeout(r, 300));
+    const { data } = await page.send('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(dir, name), Buffer.from(data, 'base64'));
+  } finally {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  }
+}

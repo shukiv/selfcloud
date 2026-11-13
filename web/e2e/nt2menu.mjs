@@ -6,7 +6,8 @@
 // under Document makes a blank file and opens it in the editor (the fake converter's tab). The folder is removed in a finally.
 import { join } from 'node:path';
 import { launchBrowser, openedTab, Page, tabIds } from './cdp.mjs';
-import { sleep } from './media.mjs';
+import { setLanguage, sleep } from './media.mjs';
+import { hoverMenuTitle, menuRowChecks, menuShot } from './menu.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -39,7 +40,7 @@ async function key(page, { code, key: name, vk, alt = false }) {
 }
 
 // openSubmenu opens a kind's submenu in the open New menu with the keyboard (ArrowRight on its title).
-async function openSubmenu(page, kind) {
+async function openSubmenu(page, kind, child = 'Blank') {
   const title = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(kind)})`;
   await page.waitFor(`!!${title}`, 10000);
   // The keyboard opens it, as ArrowRight does in a menu (antd): the title is focused, then the key is sent to it.
@@ -54,7 +55,7 @@ async function openSubmenu(page, kind) {
     await new Promise((r) => setTimeout(r, 800));
     if (await page.evaluate(`${title}.getAttribute('aria-expanded') === 'true'`)) break;
   }
-  await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
+  await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === ${q(child)})`, 10000);
 }
 
 // clickItem clicks the open menu's entry with this text, with a user gesture (a new tab needs one).
@@ -69,6 +70,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
   const { check, api } = h;
   const suffix = Date.now().toString(36);
   const folderName = `NT2 menu ${suffix}`;
+  const shotsDir = process.env.SELFCLOUD_E2E_SHOTS || null;
   let folderID = null;
   let newID = null;
   const launch = await launchBrowser(browserBinary, join(dir, 'nt2menu-profile'));
@@ -99,9 +101,14 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const heights = await page.evaluate(`[...(${NEW_MENU})?.querySelectorAll(':scope > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)') ?? []].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
     check(!/:(?!40\b)-?\d+/.test(heights) && !heights.includes('?'), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
     check(size.w >= 320 && size.w <= 400, `the menu is 320 to 400 px wide (${size.w})`);
+    // The rows are one line, and a menu row's icon and label sit on its middle: the title's own row is measured too, before its
+    // popup is open.
+    await menuRowChecks(page, check, 'the New menu with a mouse');
 
     // From a template, under Document, goes to the gallery at this folder, with the kind.
     await openSubmenu(page, 'Document');
+    if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-document.png');
+    await menuRowChecks(page, check, 'the New menu, Document submenu open');
     await clickItem(page, 'From a template');
     await page.waitFor(`location.pathname === ${q(`/new/${teamA}/${folderID}`)} && location.search === '?kind=document'`, 15000);
     check(true, 'From a template goes to the gallery for this directory, with kind=document');
@@ -147,6 +154,8 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     // The title is scaled by the open animation (about 40.5 px at first, then 44 px): the wait returns the height once it is 44.
     const finger = await page.waitFor(`(() => { const h = ${TITLE_HEIGHT}; return h === 44 ? h : null; })()`, 5000);
     check(finger === 44, `a submenu title on a coarse pointer is 44 px (${finger})`);
+    if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-coarse.png');
+    await menuRowChecks(page, check, 'the New menu on a coarse pointer');
     await page.send('Emulation.setEmulatedMedia', { features: [] });
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await reopenNew();
@@ -154,6 +163,20 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(mouse === 40, `a submenu title with a mouse is 40 px (${mouse})`);
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await waitNoDropdown(page);
+
+    // Hebrew runs right to left: the rows are laid out from the other side, and the same middle holds. The kind's label is the
+    // translated one, and so is a child's.
+    await setLanguage(page, 'עברית');
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
+    await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
+    await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+    await hoverMenuTitle(page, 'מסמך');
+    await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'ריק')`, 10000);
+    if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-hebrew.png');
+    await menuRowChecks(page, check, 'the New menu in Hebrew, Document submenu open');
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
+    await waitNoDropdown(page);
+    await setLanguage(page, 'English');
 
     // The chord, with the menu closed: Alt+C then F opens the New folder dialog, and it opens nothing else.
     // The listing was in the background while the editor opened, so the Blank menu's close animation had not run: a closing

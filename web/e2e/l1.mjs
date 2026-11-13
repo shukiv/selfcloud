@@ -11,7 +11,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clearSelection, hoverOver, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
-import { LABELS, hoverMenuTitle, pickMenuEntry } from './menu.mjs';
+import { LABELS, hoverMenuTitle, menuRowChecks, menuShot, pickMenuEntry } from './menu.mjs';
 
 const q = (v) => JSON.stringify(v);
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
@@ -188,7 +188,7 @@ async function reviewDesktop(page, { check, alpha, beta, snap, selectRow }) {
 
 // hebrewMenuAnchor opens a row's ⋮ in Hebrew, with the mouse, and checks the menu is next to the button: its nearest edge is at the
 // button's start edge, which in Hebrew is the right.
-async function hebrewMenuAnchor(page, { check, beta }) {
+async function hebrewMenuAnchor(page, { check, beta, shotsDir }) {
   const more = `${rowSel(beta)} button[aria-haspopup="menu"]`;
   await page.evaluate(`document.querySelector(${q(more)}).click(), true`);
   await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu')`, 10000);
@@ -197,6 +197,10 @@ async function hebrewMenuAnchor(page, { check, beta }) {
   // The distance between the button's start edge (its right, in Hebrew) and the menu's nearest edge.
   const gap = Math.min(Math.abs(box.mr - box.br), Math.abs(box.ml - box.br));
   check(box.dir === 'rtl' && gap <= 12, `in Hebrew the menu opens next to the ⋮, at its start edge (gap ${gap.toFixed(1)} px, button ${box.bl.toFixed(0)}-${box.br.toFixed(0)}, menu ${box.ml.toFixed(0)}-${box.mr.toFixed(0)})`);
+  // The same middle holds right to left, on the rows of a submenu too.
+  await hoverMenuTitle(page, 'שיתוף');
+  if (shotsDir) await menuShot(page, shotsDir, 'l1-menu-hebrew.png');
+  await menuRowChecks(page, check, 'the file menu in Hebrew, Share submenu open');
   await closeMenus(page);
   await clearHover(page);
 }
@@ -304,6 +308,10 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     check(JSON.stringify(top) === JSON.stringify(want), `the menu's top level reads ${want.join(' / ')} (${top.join(' / ')})`);
     const dividers = await page.evaluate(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item-divider').length`);
     check(dividers >= 4, `the groups are divided (${dividers} dividers)`);
+    // Share's submenu rows are measured first: the first group has no submenu, so this is the first submenu a mouse opens.
+    await hoverMenuTitle(page, 'Share');
+    if (shotsDir) await menuShot(page, shotsDir, 'l1-menu-share.png');
+    await menuRowChecks(page, check, 'the file menu, Share submenu open');
     await pickMenuEntry(page, 'Copy to…');
     await sleep(300);
     // The Copy to dialog is cancelled, so the next menu is shown on its own.
@@ -317,7 +325,8 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await hoverMenuTitle(page, 'Organize');
     const hints = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === 'Cut'); return t ? t.closest('[role="menuitem"]').querySelector('.menu-hint')?.getAttribute('data-hint') ?? null : null; })()`);
     check(hints === 'Ctrl+X' || hints === '⌘X', `Cut shows its shortcut at the right (${hints})`);
-    await snap('l1-menu-submenu.png');
+    if (shotsDir) await menuShot(page, shotsDir, 'l1-menu-submenu.png');
+    await menuRowChecks(page, check, 'the file menu, Organize submenu open');
     await closeMenus(page);
 
     // Rename from the menu opens the name field; Escape leaves it.
@@ -359,7 +368,7 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     const he = await rowState(page, beta);
     check(he && he.moreX !== null && he.nameX !== null && he.moreX < he.nameX, `in Hebrew the More button is at the start of the row (more ${he?.moreX}, name ${he?.nameX})`);
     await snap('l1-list-hebrew.png');
-    await hebrewMenuAnchor(page, { check, beta });
+    await hebrewMenuAnchor(page, { check, beta, shotsDir });
     await setLanguage(page, 'English');
 
     // ---- Tiles: the star is a mark after the name and the More button is there; the bands stay out of the tiles.
