@@ -311,11 +311,12 @@ function parentBranches(nodes: Node[]): Branch[] {
 }
 
 // leaveAfterTrash says where the page goes when items went to the Trash and the place shown is one of them or is below one: the
-// parent of the topmost trashed folder in the chain (top, the folder above the chain, when that is the chain's first). undefined: the
-// page stays.
+// parent of the topmost trashed folder in the chain (top, the folder above the chain, when that is the chain's first), or the space's
+// root (null) when no folder of the chain was trashed but the top folder was, since the place is then below a trashed folder whose
+// parent is not known. undefined: the page stays.
 function leaveAfterTrash(chain: string[], trashed: string[], top: string | null): string | null | undefined {
   const at = chain.findIndex((id) => trashed.includes(id));
-  if (at < 0) return undefined;
+  if (at < 0) return top !== null && trashed.includes(top) ? null : undefined;
   return at === 0 ? top : chain[at - 1];
 }
 
@@ -481,10 +482,18 @@ export default function FilesPage() {
   const personalID = place?.kind === "ready" ? place.personalID : null;
   // The sidebar's folder tree reads the place shown (treePlace). It is written each time the place changes, and it is kept
   // when the page is left, so the tree still knows a space's top folder on the other pages.
-  // A truncated trail (decision 140) is given as a chain below the space's root, with no top folder: a top folder would take the
-  // space's own row in the tree. The tree opens the way as far as its rows go, from the space's root, and marks the nearest one.
+  // A place below a grant (the space's root is not the person's) is given its first reachable folder as the top, so the tree
+  // starts there instead of at the space's root. A truncated trail (decision 140) is a chain below the space's root: when the
+  // space is listed, the trail is the chain and there is no top, so the tree opens the way from the space's own row; when the
+  // space is not listed, the trail's first folder is the top, so the tree has a row for the place.
+  const spaceListed = here ? folderList.some((f) => f.id === here.folder) || hiddenList.some((f) => f.id === here.folder) : false;
   const treeChain = here ? (here.rootReachable || here.truncated ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)) : [];
-  const treeTop = here && !here.rootReachable && !here.truncated && here.reach.length > 0 ? { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role } : undefined;
+  const treeTop =
+    here && !here.rootReachable && !here.truncated && here.reach.length > 0
+      ? { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role }
+      : here && here.truncated && !spaceListed && here.trail.length > 0
+        ? { id: here.trail[0].id, name: here.trail[0].name, role: here.trail[0].role }
+        : undefined;
   const treeKeyText = here ? [here.folder, ...treeChain, treeTop?.id ?? ""].join("|") : "";
   useEffect(() => {
     if (!here) return;
