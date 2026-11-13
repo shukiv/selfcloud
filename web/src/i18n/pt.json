@@ -715,6 +715,7 @@
   "spaces.flag.noDownload": "Sem transferência para leitores",
   "audit.filter": "Ação",
   "audit.allActions": "Todas as ações",
+  "audit.exported": "{actor} exportou o registro de auditoria.",
   "audit.empty": "Ainda não há nada registado",
   "audit.col.when": "Quando",
   "audit.namesPartial": "A conta tem demasiadas pessoas para procurar todos os nomes aqui, por isso algumas entradas mostram uma palavra geral.",

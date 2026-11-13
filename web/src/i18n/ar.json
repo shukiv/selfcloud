@@ -715,6 +715,7 @@
   "spaces.flag.noDownload": "لا تنزيل للمشاهدين",
   "audit.filter": "الإجراء",
   "audit.allActions": "كل الإجراءات",
+  "audit.exported": "قام {actor} بتصدير سجل التدقيق.",
   "audit.empty": "لم يُسجَّل شيء بعد",
   "audit.col.when": "متى",
   "audit.namesPartial": "عدد الأشخاص في الحساب أكبر من أن تُعرض كل الأسماء هنا، لذلك تظهر بعض الإدخالات بكلمات عامة.",

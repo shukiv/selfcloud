@@ -715,6 +715,7 @@
   "spaces.flag.noDownload": "No download for viewers",
   "audit.filter": "Action",
   "audit.allActions": "All actions",
+  "audit.exported": "{actor} exported the audit log.",
   "audit.empty": "Nothing recorded yet",
   "audit.col.when": "When",
   "audit.namesPartial": "The account has too many people to look up every name here, so some entries show a general word.",

@@ -715,6 +715,7 @@
   "spaces.flag.noDownload": "ללא הורדה לצופים",
   "audit.filter": "פעולה",
   "audit.allActions": "כל הפעולות",
+  "audit.exported": "{actor} ייצא את יומן הביקורת.",
   "audit.empty": "עדיין לא נרשם דבר",
   "audit.col.when": "מתי",
   "audit.namesPartial": "בחשבון יש יותר מדי אנשים כדי להציג כאן את כל השמות, ולכן חלק מהרשומות מוצגות במילים כלליות.",

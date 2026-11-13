@@ -170,6 +170,9 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'group.delete':
       if (groupName === '') return { key: 'audit.group.delete.plain', params: { actor } };
       return { key: 'audit.group.delete', params: { actor, name: group } };
+    // An export reads the log; the row records that it happened (decision 169).
+    case 'audit.exported':
+      return { key: 'audit.exported', params: { actor } };
     case 'account.create':
       if (tenantName === '') return { key: 'audit.account.create.plain', params: { actor } };
       return { key: 'audit.account.create', params: { actor, name: tenant } };

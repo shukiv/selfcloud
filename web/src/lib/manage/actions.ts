@@ -6,6 +6,7 @@ export const AUDIT_ACTIONS: string[] = [
   'account.create',
   'account.update',
   'account.delete',
+  'audit.exported',
   'admin.create',
   'admin.delete',
   'user.create',
