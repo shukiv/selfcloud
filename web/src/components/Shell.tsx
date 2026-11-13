@@ -58,6 +58,8 @@ const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
 // The bell is a chunk of its own: the first screen does not carry it (decision 55 measures the first-load budget).
 const NotificationsBell = lazy(() => import("./notifications/Bell"));
 const IosInstallDialog = lazy(() => import("./pwa/IosInstallDialog"));
+// The phone's install card (decision 171) is a chunk of its own, mounted only on a finger: a mouse never loads it.
+const InstallPrompt = lazy(() => import("./InstallPrompt"));
 // The folder tree is a lazy chunk: the sidebar loads it when a person who has a drive is signed in.
 const FolderTree = lazy(() => import("./files/FolderTree"));
 // The keyboard shortcuts list is a lazy chunk: it is loaded when the list is first opened (ks1, decision 174).
@@ -837,6 +839,12 @@ export default function Shell({ children }: { children: ReactNode }) {
           )}
           {/* The media session (a video or audio player, or the mini player bar) lives across pages; nothing draws without one. */}
           <MediaHost />
+          {/* The install card offers itself on a phone (decision 171); its own gate reads the person, the pointer and the choice kept. */}
+          {coarse && (
+            <Suspense fallback={null}>
+              <InstallPrompt />
+            </Suspense>
+          )}
           {settingsFor && (
             <Suspense fallback={null}>
               <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => {

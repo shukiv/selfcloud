@@ -1,0 +1,7 @@
+{
+  "pwaPrompt.title": "התקנת {name}",
+  "pwaPrompt.line": "התקינו את {name} לגישה בלחיצה אחת.",
+  "pwaPrompt.notNow": "לא עכשיו",
+  "pwaPrompt.install": "התקנה",
+  "pwaPrompt.never": "אל תזכירו לי שוב"
+}

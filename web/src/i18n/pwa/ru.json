@@ -1,0 +1,7 @@
+{
+  "pwaPrompt.title": "Установить {name}",
+  "pwaPrompt.line": "Установите {name} для доступа в одно касание.",
+  "pwaPrompt.notNow": "Не сейчас",
+  "pwaPrompt.install": "Установить",
+  "pwaPrompt.never": "Больше не напоминать"
+}

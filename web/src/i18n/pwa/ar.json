@@ -1,0 +1,7 @@
+{
+  "pwaPrompt.title": "تثبيت {name}",
+  "pwaPrompt.line": "ثبّت {name} للوصول بلمسة واحدة.",
+  "pwaPrompt.notNow": "ليس الآن",
+  "pwaPrompt.install": "تثبيت",
+  "pwaPrompt.never": "لا تذكّرني مجددًا"
+}

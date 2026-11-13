@@ -1,0 +1,7 @@
+{
+  "pwaPrompt.title": "Instalar {name}",
+  "pwaPrompt.line": "Instale {name} para aceder com um toque.",
+  "pwaPrompt.notNow": "Agora não",
+  "pwaPrompt.install": "Instalar",
+  "pwaPrompt.never": "Não voltar a lembrar-me"
+}
