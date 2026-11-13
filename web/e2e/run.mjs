@@ -41,6 +41,7 @@ import { x3Checks } from './x3.mjs';
 import { x4Checks } from './x4.mjs';
 import { x6Checks } from './x6.mjs';
 import { d1Checks } from './d1.mjs';
+import { vr1Checks } from './vr1.mjs';
 import { d2Checks } from './d2.mjs';
 import { i1Checks } from './i1.mjs';
 import { d3Checks } from './d3.mjs';
@@ -952,7 +953,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1003,6 +1004,25 @@ async function main() {
         l1Page.close();
         l1Browser.kill();
         l1Browser = null;
+      }
+    }
+    // Slice vr1 (decision 162): above 150 loaded rows the list draws only the rows near the screen. Its own browser with a
+    // mouse, signed in as the member.
+    if (!only || onlySet.has('vr1')) {
+      const vr1Launch = await launchBrowser(await findBrowser(), join(dir, 'vr1-profile'), { mouse: true });
+      const vr1Page = new Page(vr1Launch.wsUrl);
+      vr1Page.base = base;
+      try {
+        await vr1Page.start(EXPECTED);
+        await vr1Page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await signIn(vr1Page, MEMBER);
+        await vr1Checks(h, { page: vr1Page, base, accountKey, teamA });
+        check(vr1Page.errors.length === 0, `the windowed list's browser has no console errors or policy violations (${vr1Page.errors.join(' | ') || 'none'})`);
+        const vr1Foreign = vr1Page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/'));
+        check(vr1Foreign.length === 0, `the windowed list's browser made no request to another origin (${vr1Foreign.length} foreign)`);
+      } finally {
+        vr1Page.close();
+        vr1Launch.proc.kill();
       }
     }
     // Slice fu5 (decision 85, the hover fault): the list's rows do not move on hover. Its own browser with a mouse, signed in as the member.

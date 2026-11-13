@@ -86,7 +86,7 @@ async function perfCheck(h, { page, base, accountKey, teamA }, suffix) {
     for (let k = 0; k < 200 && rowsNow < 500; k++) {
       await page.evaluate(`[document.scrollingElement, ...document.querySelectorAll('*')].forEach((e) => { if (e && e.scrollHeight > e.clientHeight + 10) e.scrollTop = e.scrollHeight; }), true`);
       await sleep(300);
-      rowsNow = await page.evaluate(`document.querySelectorAll('.files-list [role="row"][data-id]').length`);
+      rowsNow = await page.evaluate(`(() => { const n = Number(document.querySelector('.files-list table')?.getAttribute('aria-rowcount') ?? 0); return n > 0 ? n - 1 : document.querySelectorAll('.files-list [role="row"][data-id]').length; })()`);
     }
     if (rowsNow < 500) throw new Error(`only ${rowsNow} rows loaded`);
     const drawMs = Date.now() - t0;
@@ -95,7 +95,7 @@ async function perfCheck(h, { page, base, accountKey, teamA }, suffix) {
     const acts = await page.evaluate(`document.querySelectorAll('.files-list .row-acts .icon-btn').length`);
     const samples = [];
     for (let k = 0; k < 5; k++) {
-      await page.evaluate(`(() => { window.__selMs = null; const row = document.querySelectorAll('.files-list [role="row"][data-id]')[${k * 7}]; const t = performance.now(); row.click(); const tick = () => { if (row.getAttribute('aria-selected') === 'true') window.__selMs = performance.now() - t; else requestAnimationFrame(tick); }; tick(); return true; })()`);
+      await page.evaluate(`(() => { window.__selMs = null; const rows = document.querySelectorAll('.files-list [role="row"][data-id]'); const row = rows[(k * 7) % rows.length]; const t = performance.now(); row.click(); const tick = () => { if (row.getAttribute('aria-selected') === 'true') window.__selMs = performance.now() - t; else requestAnimationFrame(tick); }; tick(); return true; })()`);
       await page.waitFor(`window.__selMs !== null`, 20000);
       samples.push(await page.evaluate(`window.__selMs`));
       await page.evaluate(`document.querySelector('[data-testid="selection-clear"]')?.click(), true`);
