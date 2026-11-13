@@ -1060,16 +1060,75 @@ paths:
           in: query
           description: Only entries with this action, such as folder.create.
           schema: { type: string, maxLength: 100 }
-        - name: actor
+        - name: since
           in: query
-          description: Only entries by this actor ID (the actor's id, as the entry shows it).
-          schema: { type: string, maxLength: 100 }
+          description: Only entries at or after this RFC 3339 instant. The store keeps milliseconds, so a finer fraction is cut to its millisecond.
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: Only entries before this RFC 3339 instant. It must be after `since`, and a value equal to it is refused.
+          schema: { type: string, format: date-time }
       responses:
         "200":
           description: One page of entries.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuditList" }
+        "400": { description: "The action or actor is over 100 characters, a time is not RFC 3339, or `until` is not after `since` (`invalid_request`)." }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/audit/export:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: exportAuditLog
+      summary: The account's audit log as a CSV file
+      description: |
+        Admin key, or the account's own key. The same entries, filters and visibility rule as
+        `GET /api/v1/accounts/{acc}/audit`, streamed newest first as UTF-8 CSV with a BOM and CRLF
+        line endings. The columns are `time`, `actor_kind`, `actor_id`, `actor_name`, `action`,
+        `target`, `outcome`, `ip`, `user_agent` and `details`; `time` is UTC with milliseconds and
+        `details` is compact JSON. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage
+        return gets a leading `'`, so a spreadsheet does not run it as a formula.
+
+        The rows are read in pages of 1000 and written as they are found. The export writes an
+        `audit.exported` row naming only the filters it was given, and one export runs per account
+        at a time.
+      security: [{ bearer: [] }]
+      parameters:
+        - name: format
+          in: query
+          description: The only format is `csv`.
+          schema: { type: string, enum: [csv] }
+        - name: since
+          in: query
+          description: Only entries at or after this RFC 3339 instant.
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: Only entries before this RFC 3339 instant; it must be after `since`.
+          schema: { type: string, format: date-time }
+        - name: action
+          in: query
+          description: Only entries with this action, such as folder.create.
+          schema: { type: string, maxLength: 100 }
+        - name: actor
+          in: query
+          description: Only entries by this actor ID (the actor's id, as the entry shows it).
+          schema: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: The matching entries, newest first.
+          headers:
+            Content-Disposition: { schema: { type: string, description: "attachment, with the file's name." } }
+            Cache-Control: { schema: { type: string, description: "no-store" } }
+          content:
+            text/csv:
+              schema: { type: string }
+        "400": { description: "The format is not `csv`, a time is not RFC 3339, or `until` is not after `since` (`invalid_request`)." }
+        "404": { description: "Not found, or the caller may not manage the account." }
+        "429": { description: "An export of the account is already running (`rate_limited`), with `Retry-After: 5`." }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/nodes/{nod}/preview:
