@@ -17,7 +17,7 @@ let ids: string[] = [];
 let scrollY = 0;
 
 function rect(top: number, height: number): DOMRect {
-  return { top, bottom: top + height, height, left: 0, right: 800, width: 800, x: 0, y: top, toJSON() {} } as DOMRect;
+  return new DOMRect(0, top, 800, height);
 }
 
 function fakeRect(el: Element): DOMRect {
