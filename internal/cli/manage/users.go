@@ -47,9 +47,9 @@ type userDetailView struct {
 	EffectiveQuotaBytes *int64 `json:"effective_quota_bytes"`
 }
 
-// verificationView is the verification of a create or an email change. The token is never part of it, so no command can
+// userVerificationView is the verification of a create or an email change. The token is never part of it, so no command can
 // print it.
-type verificationView struct {
+type userVerificationView struct {
 	Method    string  `json:"method"`
 	URL       string  `json:"url,omitempty"`
 	ExpiresAt *string `json:"expires_at,omitempty"`
@@ -58,12 +58,12 @@ type verificationView struct {
 
 // userShown is a person just added: the user view, and the verification made for it.
 type userShown struct {
-	ID           string            `json:"id"`
-	Email        string            `json:"email"`
-	DisplayName  string            `json:"display_name"`
-	Role         string            `json:"role"`
-	Status       string            `json:"status"`
-	Verification *verificationView `json:"verification,omitempty"`
+	ID           string                `json:"id"`
+	Email        string                `json:"email"`
+	DisplayName  string                `json:"display_name"`
+	Role         string                `json:"role"`
+	Status       string                `json:"status"`
+	Verification *userVerificationView `json:"verification,omitempty"`
 }
 
 func usersRoute(acc string) string { return "/api/v1/accounts/" + acc + "/users" }
@@ -103,7 +103,7 @@ func userDetailKV(v userDetailView) []output.KV {
 
 // verificationKV writes the verification's method, and then what the person needs: whether the mail was sent, or the
 // link and when it ends. The link is printed once, here.
-func verificationKV(v *verificationView, method string, stderr io.Writer) []output.KV {
+func verificationKV(v *userVerificationView, method string, stderr io.Writer) []output.KV {
 	kv := []output.KV{{Key: "verification", Value: method}}
 	if v == nil {
 		return kv
@@ -181,7 +181,7 @@ func UserAdd(args []string, stdout, stderr io.Writer) int {
 	}
 	created := resp.Status == http.StatusCreated
 	if created && v.Verification == nil {
-		v.Verification = &verificationView{Method: verification}
+		v.Verification = &userVerificationView{Method: verification}
 	}
 	if err := printUserShown(c, v, created); err != nil {
 		return c.fail(err)
@@ -406,7 +406,7 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var doc struct {
-		Verification *verificationView `json:"verification"`
+		Verification *userVerificationView `json:"verification"`
 	}
 	if err := decodeAs(resp.Body, &doc, "a person"); err != nil {
 		return c.fail(err)
@@ -414,7 +414,7 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 	if c.g.JSON {
 		shown := struct {
 			userDetailView
-			Verification *verificationView `json:"verification,omitempty"`
+			Verification *userVerificationView `json:"verification,omitempty"`
 		}{userDetailView: v, Verification: doc.Verification}
 		if err := output.JSON(c.stdout, shown); err != nil {
 			return c.fail(err)
