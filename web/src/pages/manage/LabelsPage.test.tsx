@@ -80,10 +80,11 @@ describe("labels page", () => {
     stubFetch(() => ({ status: 200, body: { items: [NOTE, STATUS] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Labels" });
-    const status = within(region).getByRole("row", { name: "Status" });
+    const status = await within(region).findByRole("row", { name: "Status" });
     expect(within(status).getByText("Restricted").className).toContain("ant-tag");
     expect(status.querySelectorAll("td")[3]?.textContent).toBe("3");
-    expect(within(region).getByRole("row", { name: "Note" }).querySelectorAll("td")[1]?.textContent).toBe("Text");
+    const note = await within(region).findByRole("row", { name: "Note" });
+    expect(note.querySelectorAll("td")[1]?.textContent).toBe("Text");
   });
 
   // design-tl 5: the list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
@@ -92,7 +93,7 @@ describe("labels page", () => {
     renderPage();
     const region = await screen.findByRole("region", { name: "Labels" });
     await waitFor(() => expect(rowIDs(region)).toEqual(["lbf_note", "lbf_status"]));
-    const head = within(region).getAllByRole("columnheader")[0];
+    const head = (await within(region).findAllByRole("columnheader"))[0];
     expect(head.getAttribute("aria-sort")).toBe("ascending");
     fireEvent.click(within(head).getByRole("button", { name: "Name" }));
     await waitFor(() => expect(rowIDs(region)).toEqual(["lbf_status", "lbf_note"]));
@@ -104,7 +105,7 @@ describe("labels page", () => {
     stubFetch(() => ({ status: 200, body: { items: [NOTE] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Labels" });
-    const heads = within(region).getAllByRole("columnheader");
+    const heads = await within(region).findAllByRole("columnheader");
     expect(heads.slice(1).every((h) => within(h).queryByRole("button") === null)).toBe(true);
   });
 
@@ -115,7 +116,7 @@ describe("labels page", () => {
     stubFetch(() => ({ status: 200, body: { items: [STATUS] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Labels" });
-    const row = within(region).getByRole("row", { name: "Status" });
+    const row = await within(region).findByRole("row", { name: "Status" });
     expect(row.querySelector(".row-second")?.textContent).toBe("Choice · Restricted · 3");
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Status"]);
   });
