@@ -381,6 +381,35 @@ var remoteCommands = []remoteCommand{
 		help: `  job show JOB [--wait [--wait-timeout DURATION]]
                                  a job's state; --wait follows it to its end
 `, run: ops.JobShow},
+	{name: "account create", route: "POST /api/v1/accounts",
+		help: `  account create [--external-id ID] [--quota SIZE] NAME
+  account create --owner-email EMAIL --owner-verification email|link|none [--owner-name NAME] [--owner-locale TAG] NAME
+                                 make an account, and with the owner flags its first owner
+`, run: manage.AccountCreate},
+	{name: "account ls", route: "GET /api/v1/accounts",
+		help: `  account ls [--all] [--status active|suspended] [--external-id ID] [--search TEXT]
+                                 the accounts
+`, run: manage.AccountLs},
+	{name: "account show", route: "GET /api/v1/accounts/{acc}",
+		help: `  account show [--account ACCOUNT]
+                                 one account
+`, run: manage.AccountShow},
+	{name: "account update", route: "PATCH /api/v1/accounts/{acc}", reads: []string{"GET /api/v1/accounts/{acc}"},
+		help: `  account update [--account ACCOUNT] [--name NAME] [--external-id ID] [--quota SIZE] [--status active|suspended] [--yes]
+                                 change what is given; suspending asks first
+`, run: manage.AccountUpdate},
+	{name: "account rm", route: "DELETE /api/v1/accounts/{acc}", reads: []string{"GET /api/v1/accounts/{acc}"},
+		help: `  account rm [--account ACCOUNT] [--yes]
+                                 remove an account and everything in it (asks first)
+`, run: manage.AccountRm},
+	{name: "account usage", route: "GET /api/v1/accounts/{acc}/usage",
+		help: `  account usage [--account ACCOUNT]
+                                 an account's usage and limits
+`, run: manage.AccountUsage},
+	{name: "account audit", route: "GET /api/v1/accounts/{acc}/audit",
+		help: `  account audit [--account ACCOUNT] [--all] [--action ACTION] [--actor ID]
+                                 an account's audit log, newest first
+`, run: manage.AccountAudit},
 	{name: "account key create", route: "POST /api/v1/accounts/{acc}/keys",
 		help: `  account key create --account ACC [--expires TIME] NAME
                                  make an account key and print it once (needs an admin key)

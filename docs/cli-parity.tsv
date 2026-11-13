@@ -120,25 +120,25 @@ fn	lib/labels/api.ts:listNodeLabels	-	cli11	planned, cli11
 fn	lib/labels/api.ts:setNodeLabel	-	cli11	planned, cli11
 fn	lib/labels/api.ts:updateLabelField	-	cli9	planned, cli9
 fn	lib/manage/api.ts:addGroupMember	group add-member	cli8	built in cli8
-fn	lib/manage/api.ts:auditLog	-	cli9	planned, cli9
-fn	lib/manage/api.ts:createAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:auditLog	account audit	cli9a2	built in cli9a2
+fn	lib/manage/api.ts:createAccount	account create	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:createAdmin	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createGroup	group create	cli8	built in cli8
 fn	lib/manage/api.ts:createKey	account key create	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:createSpace	folder create	cli8	built in cli8
-fn	lib/manage/api.ts:deleteAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:deleteAccount	account rm	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:deleteAdmin	-	cli9	planned, cli9
 fn	lib/manage/api.ts:deleteAllPublicLinks	link rm	cli7	built in cli7
 fn	lib/manage/api.ts:deleteGroup	group rm	cli8	built in cli8
 fn	lib/manage/api.ts:deleteSpace	folder rm	cli8	built in cli8
-fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:getAccount	account show	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
 fn	lib/manage/api.ts:getJob	job show	cli10	built in cli10
 fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
-fn	lib/manage/api.ts:listAccounts	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listAccounts	account ls	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
 fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
@@ -155,9 +155,9 @@ fn	lib/manage/api.ts:revokeKey	account key revoke	cli9a1	built in cli9a1
 fn	lib/manage/api.ts:sendPasswordReset	-	cli9	planned, cli9
 fn	lib/manage/api.ts:setUserPassword	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (decision 41)
-fn	lib/manage/api.ts:updateAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:updateAccount	account update	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:updatePerson	-	cli9	planned, cli9
-fn	lib/manage/api.ts:usage	-	cli9	planned, cli9
+fn	lib/manage/api.ts:usage	account usage	cli9a2	built in cli9a2
 fn	lib/notifications/api.ts:getEmailSwitch	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:listNotices	-	cli11	planned, cli11
 fn	lib/notifications/api.ts:markRead	-	cli11	planned, cli11
@@ -211,7 +211,7 @@ fn	lib/storage/api.ts:refreshMyBreakdown	-	-	browser session only; whoami reads 
 fn	lib/storage/api.ts:refreshMyStorage	-	-	browser session only; whoami reads GET /folders
 fn	lib/storage/api.ts:setPersonLimit	-	cli9	planned, cli9
 fn	lib/storage/api.ts:setPolicyDefault	-	cli9	planned, cli9
-route	DELETE /api/v1/accounts/{acc}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}	account rm	cli9a2	built in cli9a2
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}	folder rm	cli8	built in cli8
 route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/accounts/{acc}/groups/{grp}	group rm	cli8	built in cli8
@@ -241,9 +241,9 @@ route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	upload cancel	cli6	built in cli6
 route	DELETE /api/v1/zips/{zip}	zip rm	cli12	built in cli12
 route	GET /api/v1/access-requests	access ls	cli7	built in cli7
-route	GET /api/v1/accounts	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}	-	cli9	planned, cli9
-route	GET /api/v1/accounts/{acc}/audit	-	cli9	planned, cli9
+route	GET /api/v1/accounts	account ls	cli9a2	built in cli9a2
+route	GET /api/v1/accounts/{acc}	account show	cli9a2	built in cli9a2
+route	GET /api/v1/accounts/{acc}/audit	account audit	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/folders	folder ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}	folder show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	share ls	cli7	built in cli7
@@ -258,7 +258,7 @@ route	GET /api/v1/accounts/{acc}/storage	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/storage/largest	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
-route	GET /api/v1/accounts/{acc}/usage	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/usage	account usage	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
 route	GET /api/v1/accounts/{acc}/users/{usr}/grants	user grants	cli8	built in cli8
@@ -331,7 +331,7 @@ route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumb
 route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD, used inside version get
 route	HEAD /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
-route	PATCH /api/v1/accounts/{acc}	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}	account update	cli9a2	built in cli9a2
 route	PATCH /api/v1/accounts/{acc}/folders/{fld}	folder rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/groups/{grp}	group rename	cli8	built in cli8
 route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
@@ -351,7 +351,7 @@ route	PATCH /api/v1/share-links/{shl}	link update	cli7	built in cli7
 route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	POST /api/v1/access-requests/{arq}/approve	access approve	cli7	built in cli7
 route	POST /api/v1/access-requests/{arq}/deny	access deny	cli7	built in cli7
-route	POST /api/v1/accounts	-	cli9	planned, cli9
+route	POST /api/v1/accounts	account create	cli9a2	built in cli9a2
 route	POST /api/v1/accounts/{acc}/folders	folder create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/groups	group create	cli8	built in cli8
 route	POST /api/v1/accounts/{acc}/keys	account key create	cli9a1	built in cli9a1

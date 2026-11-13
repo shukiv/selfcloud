@@ -2,6 +2,6 @@
 
 package main
 
-// adminProbes gives, for each command that needs an installation admin key, the arguments that make it call its route on
-// the real server. They run with the probe's admin key (useAdminKey).
+// adminProbes are the probes of the commands that need the installation admin key. TestRemoteCommandsCallTheirRoute
+// runs them with that key, as it runs settingsProbes. Each command's probe file adds its entries in an init.
 var adminProbes = map[string]func(p *fileProbe) []string{}
