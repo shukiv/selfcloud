@@ -32,8 +32,7 @@ type command struct {
 	// kind is the credential's kind once connected, and accountUsed says that the command named an account.
 	kind        string
 	accountUsed bool
-	// adminRoutes says that the command's routes need an installation admin key, so a 403 gets a hint.
-	adminRoutes bool
+	adminRoutes bool // the command's routes need an installation admin key; a 403 then gets a hint
 }
 
 // begin starts a command with the global flags. withAccount adds --account, which the command then needs.
