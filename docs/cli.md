@@ -850,7 +850,7 @@ account route adds the hint that the command needs an account key.
 | Command | What it does |
 |---|---|
 | `account create [--external-id ID] [--quota SIZE] [--owner-email EMAIL --owner-verification email\|link\|none [--owner-name NAME] [--owner-locale TAG]] NAME` | makes an account, and with the owner flags its first owner; prints it |
-| `account ls [--all] [--status active\|suspended] [--external-id ID] [--search TEXT]` | lists accounts, newest first |
+| `account ls [--all] [--status active\|suspended] [--external-id ID] [--search TEXT]` | lists accounts, oldest first |
 | `account show [--account ACC]` | prints one account |
 | `account update [--account ACC] [--name NAME] [--external-id ID] [--quota SIZE] [--status active\|suspended] [--yes]` | changes only what is given |
 | `account rm [--account ACC] [--yes]` | removes an account and everything in it, in the background; asks first |
@@ -867,10 +867,12 @@ with an `--external-id` that exists is answered 200, changed not at all, and the
 `--json` prints an allow-listed account object: `id`, `external_id`, `name`, `status`, `quota_bytes`, `used_bytes`,
 `used_files`, `created_at`, `updated_at` and, when one was made, `owner` with its `verification`. Every other `--json`
 answer comes from its own allow list too: the same account object where one is printed, the twelve usage fields as an
-object, the job's `job_id` and `status`, and audit entries with only the fields the table shows. A token, a secret, or a
-field the API adds beyond that list is never printed, in either output.
+object, the job's `job_id` and `status`, and audit entries with the plain fields (`id`, `time`, `actor`, `action`,
+`target`, `outcome`, `ip`, `user_agent`); their `details` is left out, a free-form map that cannot be allow-listed. A
+token, a secret, or a field the API adds beyond that list is never printed, in either output.
 
-`ls` prints `ID NAME STATUS QUOTA USED FILES CREATED`; `--status` takes `active` or `suspended`, `--external-id` selects one
+`ls` prints `ID NAME STATUS QUOTA USED FILES CREATED` in the store's order, `created_at` then `id`, so oldest first;
+`--status` takes `active` or `suspended`, `--external-id` selects one
 external id, and `--search` matches the name or external id. `--all` follows every page, otherwise a note says more exist.
 `usage` prints `quota_bytes`, `used_bytes`, `reserved_bytes`, `available_bytes`, `files`, `folders`, `used_files`,
 `users_active`, `users_pending`, `search_text_bytes`, `search_text_cap` and `search_text_skipped` as `key=value` lines; a
