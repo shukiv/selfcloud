@@ -264,7 +264,7 @@ describe("Shell", () => {
     expect(document.querySelector(".ant-drawer-left")).toBeNull();
   });
 
-  it("folds the sidebar to the 88px rail and remembers the choice", async () => {
+  it("folds the sidebar to the 88px rail and remembers the choice, from the top bar's toggle (decision 171)", async () => {
     // A wide screen: the sidebar is the sider, not the drawer.
     const original = window.matchMedia;
     window.matchMedia = (query: string) => ({ ...original(query), matches: true }) as MediaQueryList;
@@ -273,10 +273,17 @@ describe("Shell", () => {
       renderShell("/files");
       // The upload tray has a "Hide" button of its own, so the rail toggle is found by its test id.
       // Its name says what it does, before and after the press.
-      expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Hide the sidebar");
+      const toggle = screen.getByTestId("rail-toggle");
+      expect(toggle.getAttribute("aria-label")).toBe("Hide the sidebar");
+      // Decision 171: the toggle starts the top bar, just before the search box, and is not in the sidebar.
+      const header = document.querySelector("header") as HTMLElement;
+      expect(toggle.closest("header")).toBe(header);
+      expect(document.querySelector(".shell-sider")?.contains(toggle)).toBe(false);
+      const search = screen.getByPlaceholderText("Search names and text in files");
+      expect(toggle.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       // The chevrons point along the reading direction, so they mirror in a right-to-left page (index.css .icon-dir).
-      expect(screen.getByTestId("rail-toggle").querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
-      fireEvent.click(screen.getByTestId("rail-toggle"));
+      expect(toggle.querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
+      fireEvent.click(toggle);
       expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Show the sidebar");
       expect(screen.getByTestId("rail-toggle").querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
       expect(window.localStorage.getItem("selfcloud.navRail")).toBe("1");
@@ -286,9 +293,23 @@ describe("Shell", () => {
         return el;
       });
       expect(sider.style.width).toBe("88px");
+      // Folding again puts the choice back, and the toggle keeps its place in the top bar.
+      fireEvent.click(screen.getByTestId("rail-toggle"));
+      expect(window.localStorage.getItem("selfcloud.navRail")).toBe("0");
+      expect(screen.getByTestId("rail-toggle").closest("header")).toBe(header);
     } finally {
       window.matchMedia = original;
     }
+  });
+
+  // Decision 171: a phone keeps its menu button and drawer; the rail toggle is a wide window's control only.
+  it("on a phone there is no rail toggle: the menu button opens the drawer", async () => {
+    signIn("member");
+    renderShell("/files");
+    expect(screen.queryByTestId("rail-toggle")).toBeNull();
+    expect(screen.getByTestId("nav-open")).toBeTruthy();
+    const nav = await openNav();
+    expect(within(nav).queryByTestId("rail-toggle")).toBeNull();
   });
 
   describe("team spaces and hidden spaces", () => {
@@ -860,20 +881,129 @@ describe("the sidebar's New (decision 66)", () => {
     await waitFor(() => expect(mocks.mkdir).toHaveBeenCalledWith("fld_mine", "/Plans"));
   });
 
-  it("the Storage entry is a row with its title, and a line with the figures, in the menu", async () => {
+});
+
+// Decision 171: the storage meter is a card pinned at the bottom of the sidebar, one link to /storage; the Storage entry
+// leaves the menu (the owner's Manage entry stays). The card is outside the scroll region, so it stays while the menu scrolls.
+describe("the sidebar's storage card (decision 171)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+    myStorage.set(null);
+  });
+
+  it("the card is pinned below the menu: the caption, the bar and the figures, one link to /storage", async () => {
     signIn("member");
     folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
     myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
     renderShell("/starred");
     const nav = await openNav();
-    const entry = await waitFor(() => {
-      const el = within(nav).getAllByRole("menuitem").find((m) => m.textContent?.startsWith("Storage"));
-      if (!el) throw new Error("no storage entry");
-      return el;
+    const card = await within(nav).findByTestId("storage-card");
+    expect(card.textContent).toContain("Storage");
+    expect(card.textContent).toContain(`${formatBytes(610, "en")} of ${formatBytes(1000, "en")} used`);
+    expect(card.querySelector('[data-testid="sidebar-meter"]')).not.toBeNull();
+    expect(card.getAttribute("href")).toBe("/storage");
+    expect(card.getAttribute("aria-current")).toBeNull();
+    // The card is the sidebar body's last child, outside the region that scrolls: the menu scrolls, the card does not move.
+    const body = nav.querySelector(".shell-sider-body");
+    expect(card.parentElement).toBe(body);
+    expect(body?.lastElementChild).toBe(card);
+    expect(card.closest(".shell-scroll")).toBeNull();
+    expect(nav.querySelector(".shell-scroll")).not.toBeNull();
+  });
+
+  it("with no limit the card has no bar, and the line says what is used", async () => {
+    signIn("member");
+    myStorage.set({ used_bytes: 162 * 1024 ** 2, reserved_bytes: 0, quota_bytes: null, available_bytes: null });
+    renderShell("/starred");
+    const nav = await openNav();
+    const card = await within(nav).findByTestId("storage-card");
+    await waitFor(() => expect(card.textContent).toContain(`${formatBytes(162 * 1024 ** 2, "en")} used`));
+    expect(card.querySelector('[data-testid="sidebar-meter"]')).toBeNull();
+    expect(card.textContent).not.toContain("%");
+  });
+
+  it("the menu has no Storage entry for a member; the owner keeps Manage's Storage entry only", async () => {
+    signIn("member");
+    const { unmount } = renderShell("/starred");
+    const nav = await openNav();
+    await waitFor(() => expect(within(nav).getAllByRole("menuitem").length).toBeGreaterThan(0));
+    expect(within(nav).getAllByRole("menuitem").some((m) => (m.getAttribute("data-menu-id") ?? "").endsWith("/storage"))).toBe(false);
+    unmount();
+    signIn("owner");
+    renderShell("/starred");
+    const ownNav = await openNav();
+    await waitFor(() => expect(within(ownNav).getAllByRole("menuitem").length).toBeGreaterThan(0));
+    const storageEntries = within(ownNav).getAllByRole("menuitem").filter((m) => (m.getAttribute("data-menu-id") ?? "").endsWith("/storage"));
+    expect(storageEntries.length).toBe(1);
+    expect(storageEntries[0].getAttribute("data-menu-id")).toContain("/manage/storage");
+  });
+
+  it("an installation admin has no storage card", async () => {
+    signIn("admin");
+    renderShell("/admin/tenants");
+    const nav = await openNav();
+    await waitFor(() => expect(within(nav).getAllByRole("menuitem").length).toBeGreaterThan(0));
+    expect(within(nav).queryByTestId("storage-card")).toBeNull();
+    expect(within(nav).queryByTestId("storage-rail")).toBeNull();
+  });
+
+  it("on the Storage page the card is the current place: aria-current page and the mark border", async () => {
+    signIn("member");
+    myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+    renderShell("/storage");
+    const nav = await openNav();
+    const card = await within(nav).findByTestId("storage-card");
+    expect(card.getAttribute("aria-current")).toBe("page");
+    expect(card.style.borderColor).toBe("rgb(254, 204, 0)");
+  });
+
+  it("clicking the card opens the Storage page", async () => {
+    signIn("member");
+    myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+    renderShell("/starred");
+    const nav = await openNav();
+    const card = await within(nav).findByTestId("storage-card");
+    fireEvent.click(card);
+    // The drawer closes on the move, as a menu entry's click closes it.
+    await waitFor(() => expect(document.querySelector(".ant-drawer-open")).toBeNull());
+    // The address is the Storage page's: the card there is the current place.
+    const again = await openNav();
+    const there = await within(again).findByTestId("storage-card");
+    expect(there.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("folded to the rail, the card is one icon link with the storage title as its name and tooltip", async () => {
+    await wideScreen(async () => {
+      window.localStorage.setItem("selfcloud.navRail", "1");
+      signIn("member");
+      myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+      renderShell("/starred");
+      const rail = await screen.findByTestId("storage-rail");
+      expect(rail.getAttribute("href")).toBe("/storage");
+      expect(rail.getAttribute("aria-label")).toBe("Storage (61% full)");
+      expect(rail.querySelector("svg")).not.toBeNull();
+      expect(screen.queryByTestId("storage-card")).toBeNull();
+      // The icon link is the sider's last child, below the menu, as the card is.
+      const sider = document.querySelector(".shell-sider") as HTMLElement;
+      expect(rail.closest(".shell-sider")).toBe(sider);
+      expect(rail.closest(".shell-scroll")).toBeNull();
+      fireEvent.mouseEnter(rail);
+      expect(await tooltipText()).toBe("Storage (61% full)");
     });
-    expect(entry.textContent).toContain("Storage (61% full)");
-    expect(entry.textContent).toContain(`${formatBytes(610, "en")} of ${formatBytes(1000, "en")} used`);
-    expect(entry.querySelector('[data-testid="sidebar-meter"]')).not.toBeNull();
+  });
+
+  it("folded on the Storage page, the icon link is the current place", async () => {
+    await wideScreen(async () => {
+      window.localStorage.setItem("selfcloud.navRail", "1");
+      signIn("member");
+      myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+      renderShell("/storage");
+      const rail = await screen.findByTestId("storage-rail");
+      expect(rail.getAttribute("aria-current")).toBe("page");
+    });
   });
 });
 
