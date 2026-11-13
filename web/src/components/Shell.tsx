@@ -49,7 +49,7 @@ import MediaHost from "./files/MediaHost";
 import BellBoundary from "./notifications/BellBoundary";
 import SidebarNew from "./files/SidebarNew";
 import SidebarBrand from "./SidebarBrand";
-import SidebarStorage, { storageTitle } from "./storage/SidebarStorage";
+import SidebarStorage, { StorageRail } from "./storage/SidebarStorage";
 
 // The new folder dialog is a lazy chunk: the sidebar's New opens it, and the first screen does not carry it (decision 66).
 const NewFolderDialog = lazy(() => import("./files/NewFolderDialog"));
@@ -78,8 +78,6 @@ interface NavItem {
   key: string;
   label: ReactNode;
   icon: ReactNode;
-  // className marks an entry whose label is more than one line (the Storage entry's bar), so its row is not held to one line.
-  className?: string;
   // drop holds the attributes that make the entry a drop target for the files' drag gesture (decision 104), such as the Trash's.
   drop?: Record<string, string>;
 }
@@ -94,9 +92,8 @@ interface NavSection {
 }
 
 // My files is the folder tree's first row, so it is an entry here only when the sidebar is folded to its icons (no tree).
-// storage is the Storage entry's label for a person (the bar and figures, or the title alone when the sidebar is folded); null for an
-// admin, who has no storage of its own.
-function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean, storage: ReactNode | null): NavSection[] {
+// The Storage entry is not a menu row (decision 171): it is the card pinned at the bottom of the sidebar, drawn by renderSidebar.
+function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean): NavSection[] {
   if (admin) {
     return [
       {
@@ -115,8 +112,6 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },
     // The Trash takes a drop from the files: an item dragged onto it is deleted (decision 104). Its name is the drop's ghost text.
     { key: "/trash", label: t("nav.trash"), icon: icon(Trash2), drop: { "data-drop-trash": "", "data-drop-name": t("nav.trash") } },
-    // Storage is the last entry of the person's list, and it is a block with its meter (decision 66), not a plain row.
-    ...(storage !== null ? [{ key: "/storage", label: storage, icon: icon(HardDrive), className: "shell-storage-item" }] : []),
   ];
   // The access requests entry shows to an owner, and to anyone who has a request waiting to be decided, with its count.
   if (owner || (pending ?? 0) > 0) {
@@ -152,7 +147,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
 
 // menuLeaves turns nav entries into antd menu items; the icon is passed through with the label.
 function menuLeaves(items: NavItem[]): NonNullable<MenuProps["items"]> {
-  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, className: it.className, ...it.drop }));
+  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, ...it.drop }));
 }
 
 // Shell is the signed-in frame: the top bar with the account menu, and the sidebar. The sidebar
@@ -204,6 +199,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   // The place the browser shows (written by the files page). It is marked only on the files pages.
   const place = useStore(treePlace);
   const onFiles = location.pathname.startsWith("/files");
+  // The Storage page is the current place for the storage card and the folded rail's icon link (decision 171).
+  const onStorage = location.pathname === "/storage" || location.pathname.startsWith("/storage/");
   // The sidebar's New acts on the folder shown on a files page, and on My files everywhere else (decision 66). The pickers and the
   // new-folder dialog belong here, not to the sidebar, so a click opens the picker in the same gesture.
   const shownPlace = useStore(newPlace);
@@ -366,13 +363,10 @@ export default function Shell({ children }: { children: ReactNode }) {
     if (where && files.length > 0 && queueInto(where, files) > 0) void message.warning(t("files.upload.noPath"));
   };
   // The menu's entries and its current one. My files is the tree's first row, so it is a menu entry only when the sidebar is
-  // folded to icons; then it is current on the files pages where the place is the person's own space.
+  // folded to icons; then it is current on the files pages where the place is the person's own space. The Storage entry is not
+  // here (decision 171): it is the card pinned at the bottom, drawn by renderSidebar.
   const menuFor = (filesEntry: boolean) => {
-    // The Storage entry is its bar and figures; folded to icons, it is its title alone, which the tooltip shows.
-    // On the Storage page its row is the current place: the block's title takes the mark colour (decision 69, option B).
-    const onStorage = location.pathname === "/storage" || location.pathname.startsWith("/storage/");
-    const storageLabel = admin ? null : filesEntry ? storageTitle(storage, t) : <SidebarStorage my={storage} sidebar={sidebar} selected={onStorage} />;
-    const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry, storageLabel);
+    const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry);
     const items: MenuProps["items"] = sections.flatMap((s, i) =>
       s.section
         ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
@@ -473,7 +467,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
 
   // The sidebar in its two forms: the tree of My files and the teams (not when folded to icons, and not for an admin, who has
-  // no drive), then the menu. Each part that scrolls is in one region, so the rail toggle at the bottom stays in reach.
+  // no drive), then the menu. Each part that scrolls is in one region; the storage card is pinned below it (decision 171).
   const renderSidebar = (collapsedNow: boolean) => {
     const { items, selected } = menuFor(collapsedNow);
     const newShown = (onFiles || newWhere !== null) && !admin;
@@ -565,6 +559,14 @@ export default function Shell({ children }: { children: ReactNode }) {
             />
           </ConfigProvider>
         </div>
+        {/* The storage card is pinned below the scroll region (decision 171): the menu and the tree scroll, the card stays. Folded
+            to the rail it is one icon link. An installation admin has no storage of its own, so it has neither. */}
+        {!admin &&
+          (collapsedNow ? (
+            <StorageRail my={storage} sidebar={sidebar} selected={onStorage} onNavigate={() => setNavOpen(false)} />
+          ) : (
+            <SidebarStorage my={storage} sidebar={sidebar} selected={onStorage} onNavigate={() => setNavOpen(false)} />
+          ))}
       </div>
     );
   };
@@ -684,19 +686,6 @@ export default function Shell({ children }: { children: ReactNode }) {
             }}
           >
             {renderSidebar(collapsed)}
-            <IconButton
-              onClick={toggleRail}
-              label={collapsed ? t("nav.showSidebar") : t("nav.hideSidebar")}
-              data-testid="rail-toggle"
-              icon={
-                collapsed ? (
-                  <ChevronsRight className="icon-dir" size={18} aria-hidden="true" focusable="false" />
-                ) : (
-                  <ChevronsLeft className="icon-dir" size={18} aria-hidden="true" focusable="false" />
-                )
-              }
-              style={{ color: sidebar.text, marginTop: 8 }}
-            />
           </Layout.Sider>
         )}
         {/* On a phone the sidebar is this drawer, and it holds the folder tree too. It is mounted only there, so the tree is
@@ -738,6 +727,23 @@ export default function Shell({ children }: { children: ReactNode }) {
           >
             {isMobile && (
               <IconButton data-testid="nav-open" label={t("nav.openMenu")} onClick={() => setNavOpen(true)} icon={<MenuIcon size={18} aria-hidden="true" focusable="false" />} />
+            )}
+            {/* The rail toggle starts the top bar on a wide window, just before the search box (decision 171). A phone keeps its
+                menu button and drawer, so it has no rail toggle. An installation admin folds the rail too. */}
+            {!isMobile && (
+              <IconButton
+                onClick={toggleRail}
+                label={collapsed ? t("nav.showSidebar") : t("nav.hideSidebar")}
+                data-testid="rail-toggle"
+                icon={
+                  collapsed ? (
+                    <ChevronsRight className="icon-dir" size={18} aria-hidden="true" focusable="false" />
+                  ) : (
+                    <ChevronsLeft className="icon-dir" size={18} aria-hidden="true" focusable="false" />
+                  )
+                }
+                style={{ flex: "none" }}
+              />
             )}
             {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
             {!admin && <ShellSearch wide={!!screens.md} />}

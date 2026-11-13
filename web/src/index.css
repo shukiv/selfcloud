@@ -187,7 +187,7 @@ a {
 }
 
 /* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
-   colours. The brand stays at the top and the rail toggle stays at the bottom. */
+   colours. The brand stays at the top and the storage card stays pinned at the bottom (decision 171). */
 .shell-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -303,17 +303,52 @@ a {
 .shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
   margin-inline-start: 10px;
 }
-/* The Storage entry is a block (its row, the bar and the figures): it is not held to the menu's one line. */
-.shell-menu.ant-menu .shell-storage-item.ant-menu-item {
-  block-size: auto;
-  min-block-size: 40px;
-  line-height: 1.4;
-  padding-block: 8px;
-  white-space: normal;
+/* The storage card pinned at the bottom of the sidebar (decision 171): one link to the Storage page, the caption, the bar and the
+   figures. Its layout, its colours and the current place's border are set inline by SidebarStorage; the stylesheet paints the
+   background from the card's variable, lightens it on hover, and draws the keyboard focus ring. */
+.shell-storage-card {
+  flex: none;
+  box-sizing: border-box;
+  background: var(--sc-card-bg, rgba(255, 255, 255, 0.08));
+  transition: background-color 120ms ease;
 }
-.shell-menu.ant-menu .shell-storage-item.ant-menu-item .ant-menu-item-icon {
-  align-self: flex-start;
-  margin-block-start: 1px;
+.shell-storage-card:hover {
+  background: var(--sc-card-hover);
+}
+.shell-storage-card:focus-visible {
+  outline: 2px solid var(--sc-side-mark, #fecc00);
+  outline-offset: 2px;
+}
+
+/* The folded rail's storage icon link (decision 171): one centred HardDrive at the bottom of the rail. On the Storage page it is
+   filled with the active colour as the rail's menu rows are (decision 72); the hover is the rows' own tint. */
+.shell-storage-rail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  margin-inline: auto;
+  margin-block-start: 8px;
+  border-radius: 4px;
+  color: var(--sc-side-text, #ffffff);
+  transition: background-color 120ms ease;
+}
+.shell-storage-rail:hover {
+  background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
+}
+.shell-storage-rail[aria-current="page"] {
+  background: var(--sc-side-active, #fecc00);
+  color: var(--sc-side-on-active, #0d2142);
+}
+.shell-storage-rail[aria-current="page"]:hover {
+  background: var(--sc-side-active, #fecc00);
+  color: var(--sc-side-on-active, #0d2142);
+}
+.shell-storage-rail:focus-visible {
+  outline: 2px solid var(--sc-side-text, #ffffff);
+  outline-offset: 2px;
 }
 /* The sign-in page's "Keep me signed in" box: a finger gets the 44 px target the other controls have. */
 @media (pointer: coarse) {
@@ -323,9 +358,10 @@ a {
   }
 }
 
-/* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer). */
+/* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer):
+   the storage card is at least 44 px tall, and the rail's icon link already is (decision 171). */
 @media (pointer: coarse) {
-  .shell-menu.ant-menu .shell-storage-item.ant-menu-item {
+  .shell-storage-card {
     min-block-size: 44px;
   }
 }
@@ -342,8 +378,8 @@ a {
   box-sizing: border-box;
 }
 
-/* The desktop sidebar is a column: the brand and menu take the height that is left, and the rail
-   toggle at the bottom keeps its place. */
+/* The desktop sidebar is a column: the brand and New at the top, the tree and menu scroll in the middle, and the storage card
+   pinned at the bottom (decision 171). The rail toggle is in the top bar, not here. */
 .shell-sider {
   box-sizing: border-box;
 }
