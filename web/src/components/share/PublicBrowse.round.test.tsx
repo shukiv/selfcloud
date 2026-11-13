@@ -4,7 +4,7 @@
 // Download button; and the heading names the file the playlist is playing, not the file the visitor opened.
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
 import type { Node } from "../../lib/files/types";
 
@@ -36,6 +36,18 @@ function clip(id: string, extra: Partial<Node> = {}): Node {
     ...extra,
   } as unknown as Node;
 }
+
+// The page loads its player as a lazy chunk, and the first render of the player is the slowest. Playing one clip here, once,
+// keeps the first test from paying for both inside its own waits, which a busy machine stretches past them.
+beforeAll(async () => {
+  api.visitorNode.mockResolvedValue(clip("nod_warm"));
+  api.visitorLink.mockResolvedValue({ url: "https://content.example/nod_warm", expires_at: live });
+  const warm = render(<PublicBrowse token="tok_v" root="nod_warm" onlost={vi.fn()} />);
+  await vi.waitFor(() => expect(document.querySelector("video")).not.toBeNull(), { timeout: 60_000 });
+  warm.unmount();
+  api.visitorNode.mockReset();
+  api.visitorLink.mockReset();
+}, 120_000);
 
 afterEach(() => vi.clearAllMocks());
 
