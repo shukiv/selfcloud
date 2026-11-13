@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// fileGroup is one type group of the file lists (decision 110, design ff1 section 3). The extensions decide first; the
+// fileGroup is one type group of the file lists (decision 110). The extensions decide first; the
 // media types (lower case, parameters dropped) decide when no extension is known; the prefixes come last.
 type fileGroup struct {
 	id       string

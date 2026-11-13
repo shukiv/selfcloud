@@ -29,7 +29,7 @@ func explainPlan(t *testing.T, s *Store, query string, args ...any) string {
 }
 
 // TestFilteredLargestAndTrashPlansUseTheListIndexes: with a file group, the Largest page searches the size-and-group
-// index and the trash searches the trash-and-group index (design ff1 Appendix B: B9, B11). The statements are the ones
+// index and the trash searches the trash-and-group index (decision 110). The statements are the ones
 // the builders return, so the test runs what the lists run.
 func TestFilteredLargestAndTrashPlansUseTheListIndexes(t *testing.T) {
 	s, _ := searchFixture(t)
@@ -41,7 +41,7 @@ func TestFilteredLargestAndTrashPlansUseTheListIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := ListFilter{Group: "pdf"}
-	// The folder-scoped page is the measured shape (Appendix B, B9).
+	// The folder-scoped page is the measured shape.
 	query, args := largestPageSQL("acc_a", "fld_a", "", "", f, nil, 26)
 	if p := explainPlan(t, s, query, args...); !strings.Contains(p, "nodes_size_group") {
 		t.Errorf("largest in a folder with group pdf: plan %q does not use nodes_size_group", p)
@@ -59,7 +59,7 @@ func TestFilteredLargestAndTrashPlansUseTheListIndexes(t *testing.T) {
 }
 
 // TestFilteredChildrenPlansUseTheListIndexes: with a file group, each sorted walk of a folder's children is an index
-// search on the group's index (design ff1 Appendix B: B1, B6, B8). The statement is the one ChildrenFiltered runs.
+// search on the group's index (decision 110). The statement is the one ChildrenFiltered runs.
 func TestFilteredChildrenPlansUseTheListIndexes(t *testing.T) {
 	ctx := context.Background()
 	s, _ := searchFixture(t)

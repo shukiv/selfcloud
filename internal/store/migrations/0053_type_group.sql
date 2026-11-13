@@ -50,7 +50,7 @@ UPDATE nodes SET type_group = CASE
             'application/x-7z-compressed', 'application/x-rar-compressed') THEN 'archive'
     ELSE '' END;
 
--- The list and trash indexes (design ff1 section 2 and Appendix B). Built after the backfill, so the build reads the
+-- The list and trash indexes (decision 110). Built after the backfill, so the build reads the
 -- finished column. Their build times on the measuring machine are in the decision entry.
 CREATE INDEX nodes_list_name_group ON nodes (parent_id, kind, type_group, name COLLATE selfcloud_name, id) WHERE trashed_at IS NULL;
 CREATE INDEX nodes_list_modified_group ON nodes (parent_id, kind, type_group, modified_at, id) WHERE trashed_at IS NULL;
