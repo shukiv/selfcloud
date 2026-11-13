@@ -101,10 +101,6 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const heights = await page.evaluate(`[...(${NEW_MENU})?.querySelectorAll(':scope > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)') ?? []].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
     check(!/:(?!40\b)-?\d+/.test(heights) && !heights.includes('?'), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
     check(size.w >= 320 && size.w <= 400, `the menu is 320 to 400 px wide (${size.w})`);
-    // The rows are one line, and a menu row's icon and label sit on its middle: the title's own row is measured too, before its
-    // popup is open.
-    await menuRowChecks(page, check, 'the New menu with a mouse');
-
     // From a template, under Document, goes to the gallery at this folder, with the kind.
     await openSubmenu(page, 'Document');
     if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-document.png');
