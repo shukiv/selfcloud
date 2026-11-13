@@ -498,6 +498,32 @@ var remoteCommands = []remoteCommand{
 		help: `  storage largest [--account ACC] [--folder FOLDER] [--all] [--json]
                                  the largest files in the account's team spaces
 `, run: manage.StorageLargest},
+	// The label field commands (cli9b4). A field is defined by the account's owner or key. Archiving or restoring a
+	// choice by its id reads the field's choices first, to send each choice's name, which the update route requires.
+	{name: "label field add", route: "POST /api/v1/accounts/{acc}/label-fields",
+		help: `  label field add [--account ACC] --type TYPE [--restricted] [--choice NAME]... NAME
+                                 define a label field (TYPE: text, number, date, user or choice)
+`, run: manage.LabelFieldAdd},
+	{name: "label field update", route: "PATCH /api/v1/accounts/{acc}/label-fields/{lbf}",
+		more: []string{"GET /api/v1/label-fields"},
+		help: `  label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true|false]
+                     [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...
+                                 change what is given; an archived choice keeps the values that use it
+`, run: manage.LabelFieldUpdate},
+	{name: "label field rm", route: "DELETE /api/v1/accounts/{acc}/label-fields/{lbf}",
+		help: `  label field rm [--account ACC] FIELD [--yes]
+                                 remove a label field and every value it holds on files (asks first)
+`, run: manage.LabelFieldRm},
+	// The sharing policy commands (cli9b4).
+	{name: "sharing policy show", route: "GET /api/v1/accounts/{acc}/sharing-policy",
+		help: `  sharing policy show [--account ACC]
+                                 the account's switches for public links, comments and who viewed
+`, run: manage.SharingPolicyShow},
+	{name: "sharing policy set", route: "PATCH /api/v1/accounts/{acc}/sharing-policy",
+		help: `  sharing policy set [--account ACC] [--public-links true|false] [--comments true|false]
+                     [--who-viewed true|false] [--yes]
+                                 change the switches given; turning public links off asks first
+`, run: manage.SharingPolicySet},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
