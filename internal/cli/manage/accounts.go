@@ -542,18 +542,21 @@ func AccountUsage(args []string, stdout, stderr io.Writer) int {
 
 // auditView is the part of an audit entry that account audit prints.
 type auditView struct {
+	ID    string `json:"id"`
 	Time  string `json:"time"`
 	Actor struct {
 		Kind string `json:"kind"`
 		ID   string `json:"id"`
 	} `json:"actor"`
-	Action  string `json:"action"`
-	Target  string `json:"target"`
-	Outcome string `json:"outcome"`
-	IP      string `json:"ip"`
+	Action    string `json:"action"`
+	Target    string `json:"target"`
+	Outcome   string `json:"outcome"`
+	IP        string `json:"ip"`
+	UserAgent string `json:"user_agent"`
+	// details is left out: it is a free-form map and cannot be allow-listed.
 }
 
-// auditViews decodes a page of audit entries into the allow-list views, so --json prints only the fields the table shows.
+// auditViews decodes a page of audit entries into the allow-list views, so --json prints only the fields the view has.
 func auditViews(items []json.RawMessage) ([]auditView, error) {
 	views := make([]auditView, 0, len(items))
 	for _, raw := range items {

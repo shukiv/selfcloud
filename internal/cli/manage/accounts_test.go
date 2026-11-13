@@ -471,7 +471,12 @@ func TestAccountAuditSendsFiltersAndPrintsRows(t *testing.T) {
 	if !strings.HasPrefix(res.stdout, "[") || !strings.Contains(res.stdout, `"action": "file.read"`) {
 		t.Fatalf("stdout %q", res.stdout)
 	}
-	for _, notWant := range []string{"user_agent", "not shown", "sck_secret_value", "hh"} {
+	for _, want := range []string{`"id": "1"`, `"user_agent": "cli"`} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout %q lacks %q", res.stdout, want)
+		}
+	}
+	for _, notWant := range []string{"details", "not shown", "sck_secret_value", "hh"} {
 		if strings.Contains(res.stdout, notWant) {
 			t.Fatalf("stdout %q contains %q", res.stdout, notWant)
 		}
