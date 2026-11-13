@@ -1141,6 +1141,44 @@ selfcloud unstar nod_…
 
 The server lets only a browser session clear the recent list or read notifications, so neither is a command here.
 
+## Comments and activity
+
+A node is named by its id. Comments and the activity trail belong to the account's people: `comment ls` and `activity`
+take a signed-in device's token or an account key, and `comment add` writes as a person, so it refuses an account key.
+An installation admin is refused on all three.
+
+| Command | What it does |
+|---|---|
+| `comment ls NODE [--all] [--replies CMT]` | the node's top-level comments, newest first; with `--replies`, one top-level comment's replies, oldest first |
+| `comment add NODE (--text TEXT \| --text-file FILE) [--reply-to CMT]` | comment on a node, or reply to a top-level comment; `FILE` may be `-` for standard input |
+| `activity NODE [--all] [--kind KIND]` | the node's audit trail, newest first; `KIND` is `content`, `comment`, `access` or `label` |
+
+`comment ls` prints `ID`, `AUTHOR`, `CREATED`, `REPLIES`, `RESOLVED` and `TEXT`. `TEXT` is the first line, cut at 80
+characters with `…` when the comment is longer or has more lines; a deleted comment shows `(deleted)`, a removed author
+`(gone)`, and `REPLIES` ends in `+` while more replies exist. Replies are listed with `--replies`, not as extra rows.
+`comment add` prints `id`, `parent_id`, `created_at`, `author_name` and `body`. The text is taken as given and is refused
+before any request when it is empty or only white space; the server then refuses one over 2000 characters or 50 lines,
+and `--reply-to` must name a top-level comment. `activity` prints `TIME`, `ACTOR`, `ACTION` and `DETAILS`; `DETAILS` is
+`key=value` pairs for the fields the API documents for that action, such as `role`, `subject_name` or `field_name`.
+
+Each list prints one page unless `--all` is given, and says on standard error that more items exist. `--json` prints the
+entries as JSON with the documented fields only, so a field a newer server adds is not passed through by an older
+client.
+
+Exit codes follow the errors: 2 for a usage error or a bad id, 3 when the server refuses (comments turned off, an
+account key for `comment add`, an admin key, or a rate limit), and 4 for an unknown node or comment.
+
+```
+selfcloud comment ls nod_…
+selfcloud comment ls nod_… --replies cmt_… --all
+selfcloud comment add nod_… --text "Looks good to me"
+selfcloud comment add nod_… --reply-to cmt_… --text-file notes.txt
+selfcloud activity nod_… --kind label --all --json
+```
+
+Editing, deleting or resolving a comment, and searching for people to name in one, are the browser's: the server refuses
+every token on those routes.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
