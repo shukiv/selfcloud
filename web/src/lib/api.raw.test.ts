@@ -32,18 +32,13 @@ describe("a raw body", () => {
 });
 
 describe("a refused request", () => {
-  it("keeps the message the server gave, apart from the code the page acts on", async () => {
+  it("carries the code and the details the page acts on, and never the server's words", async () => {
     answer(400, { error: { code: "invalid_request", message: "the logo is not an SVG file", details: { reason: "invalid_picture" } } });
     const err = await api("PUT", "/x").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).code).toBe("invalid_request");
-    expect((err as ApiError).serverMessage).toBe("the logo is not an SVG file");
+    expect((err as ApiError).details).toEqual({ reason: "invalid_picture" });
     expect((err as ApiError).message).toBe("invalid_request");
-  });
-
-  it("has no message when the answer gave none", async () => {
-    answer(500, { error: { code: "internal" } });
-    const err = await api("GET", "/x").catch((e: unknown) => e);
-    expect((err as ApiError).serverMessage).toBe("");
+    expect(JSON.stringify(err)).not.toContain("not an SVG");
   });
 });

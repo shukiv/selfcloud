@@ -36,8 +36,15 @@ export interface Picture {
   state: "none" | "file" | "uploaded" | "unusable";
   type?: "image/png" | "image/svg+xml";
   sha256?: string;
+  // reason is a code (row_not_written, not_regular_file, hash_changed, file_missing, unreadable, invalid_picture) for unusable only.
   reason?: string;
   locked: boolean;
+}
+
+// logoHash is the hash of the logo in use (an upload or the config file's), or undefined when the artwork shows.
+export function logoHash(a: SettingsAnswer): string | undefined {
+  const p = a.pictures.find((x) => x.key === "ui.brand.logo");
+  return p !== undefined && (p.state === "uploaded" || p.state === "file") ? p.sha256 : undefined;
 }
 
 export interface SettingsAnswer {
@@ -51,6 +58,9 @@ export interface SettingsChange {
   reset?: string[];
 }
 
+// The two picture routes are written out, so the route table and the command-line parity check find them by their text.
+const PICTURE_PATH = { logo: "/api/v1/settings/brand/logo", icon: "/api/v1/settings/brand/icon" } as const;
+
 export function getSettings(): Promise<SettingsAnswer> {
   return api<SettingsAnswer>("GET", "/api/v1/settings");
 }
@@ -63,10 +73,10 @@ export function changeSettings(change: SettingsChange): Promise<SettingsAnswer> 
 // putPicture uploads a logo or an icon as the raw body, typed as the file is. The answer is the settings after the change. The server
 // checks the type and the size and says why when it refuses.
 export function putPicture(kind: PictureKind, file: Blob, type: string): Promise<SettingsAnswer> {
-  return api<SettingsAnswer>("PUT", `/api/v1/settings/brand/${kind}`, { raw: { body: file, type } });
+  return api<SettingsAnswer>("PUT", PICTURE_PATH[kind], { raw: { body: file, type } });
 }
 
 // deletePicture removes the upload of a logo or an icon, and what a start could not use.
 export function deletePicture(kind: PictureKind): Promise<SettingsAnswer> {
-  return api<SettingsAnswer>("DELETE", `/api/v1/settings/brand/${kind}`);
+  return api<SettingsAnswer>("DELETE", PICTURE_PATH[kind]);
 }

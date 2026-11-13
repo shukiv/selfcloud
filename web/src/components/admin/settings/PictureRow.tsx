@@ -11,6 +11,8 @@ import { deletePicture, putPicture, type Picture, type PictureKind, type Setting
 // The server's own limit, which the card states ahead of sending as a hint only: the server decides and its refusal is shown.
 const MAX_BYTES = 256 * 1024;
 const TYPES = ["image/png", "image/svg+xml"];
+// The reasons the server gives for a picture it did not use. A code this page does not know is told as "other".
+const REASONS = ["row_not_written", "not_regular_file", "hash_changed", "file_missing", "unreadable", "invalid_picture"];
 
 // typeOf is the type a file is sent as: the type the browser gives, or for a file it gives none (an SVG often has none) the type its
 // name says.
@@ -51,6 +53,17 @@ export default function PictureRow({ kind, picture, wide, onAnswer, onLocked }: 
   const upload = t(used ? `settings.picture.replace.${kind}` : `settings.picture.upload.${kind}`);
   const remove = t(`settings.picture.remove.${kind}`);
 
+  // A refusal is told in the page's own words: the rule the picture broke for a 400, the cap for a 413, and the failure text for the rest.
+  const refusalText = (e: unknown): string => {
+    if (e instanceof ApiError) {
+      if (e.status === 409 && e.details.reason === "setting_locked") return t("settings.picture.locked");
+      if (e.status === 413) return t("settings.picture.tooLarge", { max: typeof e.details.limit_bytes === "number" ? Math.floor(e.details.limit_bytes / 1024) : MAX_BYTES / 1024 });
+      if (e.status === 415) return t("settings.picture.type");
+      if (e.status === 400 && e.details.reason === "invalid_picture") return t(`settings.picture.invalid.${kind}`);
+    }
+    return failureText(e, lang);
+  };
+
   const run = async (change: () => Promise<SettingsAnswer>) => {
     setBusy(true);
     setProblem(null);
@@ -58,8 +71,7 @@ export default function PictureRow({ kind, picture, wide, onAnswer, onLocked }: 
       onAnswer(await change());
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.details.reason === "setting_locked") onLocked();
-      // The server's refusal says why a picture was not taken (its size, its shape), so it is shown as it comes.
-      setProblem(e instanceof ApiError && e.serverMessage !== "" ? e.serverMessage : failureText(e, lang));
+      setProblem(refusalText(e));
     } finally {
       setBusy(false);
     }
@@ -128,7 +140,7 @@ export default function PictureRow({ kind, picture, wide, onAnswer, onLocked }: 
           )}
         </div>
         {picture.state === "unusable" && (
-          <Alert type="warning" showIcon style={{ marginBlockStart: 8 }} message={t("settings.picture.unusable", { reason: picture.reason ?? "" })} />
+          <Alert type="warning" showIcon style={{ marginBlockStart: 8 }} message={t("settings.picture.unusable", { reason: t(REASONS.includes(picture.reason ?? "") ? `settings.picture.reason.${picture.reason}` : "settings.picture.reason.other") })} />
         )}
         {problem !== null && (
           <div role="alert" style={{ marginBlockStart: 6, color: "var(--ant-color-error)", fontSize: 13, textAlign: wide ? "end" : "start" }}>

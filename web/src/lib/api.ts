@@ -117,9 +117,8 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   } finally {
     window.clearTimeout(timer);
   }
-  const env = data as { error?: { code?: unknown; message?: unknown; details?: unknown } } | null;
+  const env = data as { error?: { code?: unknown; details?: unknown } } | null;
   const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
-  const said = typeof env?.error?.message === 'string' ? env.error.message : '';
   const raw = env?.error?.details;
   const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
 
@@ -146,7 +145,7 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   }
   if (!res.ok) {
     const retry = Number(res.headers.get('Retry-After') ?? 0);
-    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0, said);
+    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0);
   }
   return data as T;
 }
