@@ -10,7 +10,7 @@ import { ApiError } from "../lib/apiError";
 import type { FolderAccess, Node, Role } from "../lib/files/types";
 import { session, type Session } from "../lib/session";
 import { writable } from "../lib/store";
-import { folders } from "../lib/files/folders";
+import { folders, hiddenFolders } from "../lib/files/folders";
 import { locate } from "../lib/files/location";
 import { clipboard, setClip } from "../lib/files/clipboard";
 import { get } from "../lib/store";
@@ -655,6 +655,8 @@ describe("a session change stops the work it started", () => {
 describe("a place more than 64 levels down", () => {
   const A = { folder_id: "fld_aaaaaaaa", kind: "dir" as const, mime_type: undefined };
   beforeEach(() => {
+    folders.set([]);
+    hiddenFolders.set([]);
     place.truncated = true;
     place.trail = [node("nod_top00001", "Top", { ...A, parent_id: "nod_above001" }), node("nod_mid00001", "Mid", { ...A, parent_id: "nod_top00001" })];
   });
@@ -675,7 +677,30 @@ describe("a place more than 64 levels down", () => {
     expect(items[items.length - 1].textContent).toBe("Reports");
   });
 
-  it("gives the folder tree the trail and the folder shown, and no top folder in place of the space", async () => {
+  it("gives the folder tree the trail and the folder shown, and no top folder when the space is listed", async () => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", role: "editor" } as never]);
+    renderAt(`${FOLDER}/nod_shown001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await waitFor(() => expect(get(treePlace)).toEqual({ folder: "fld_aaaaaaaa", chain: ["nod_top00001", "nod_mid00001", "nod_shown001"], top: undefined }));
+  });
+
+  it("gives the folder tree the trail's first folder as the top when the space is not listed", async () => {
+    folders.set([]);
+    hiddenFolders.set([]);
+    renderAt(`${FOLDER}/nod_shown001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await waitFor(() =>
+      expect(get(treePlace)).toEqual({
+        folder: "fld_aaaaaaaa",
+        chain: ["nod_top00001", "nod_mid00001", "nod_shown001"],
+        top: { id: "nod_top00001", name: "Top", role: "editor" },
+      }),
+    );
+  });
+
+  it("gives the folder tree no top folder when the space is hidden", async () => {
+    folders.set([]);
+    hiddenFolders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", role: "editor" } as never]);
     renderAt(`${FOLDER}/nod_shown001`);
     await screen.findByRole("row", { name: "alpha.txt" });
     await waitFor(() => expect(get(treePlace)).toEqual({ folder: "fld_aaaaaaaa", chain: ["nod_top00001", "nod_mid00001", "nod_shown001"], top: undefined }));
@@ -902,6 +927,23 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
     await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_top00001"));
     await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_above001`));
+  });
+
+  it("moving the folder above a trail cut at 64 to the Trash leaves the page on the space's root", async () => {
+    // The folder above the trail is the parent of Top, which the server said the caller reaches; it is not one of the folders the
+    // place shown is in, so the page cannot stay below it.
+    window.history.replaceState(null, "", "/");
+    place.truncated = true;
+    place.trail = [dirNode("nod_top00001", "Top", { ...A, parent_id: "nod_above001" }), dirNode("nod_mid00001", "Mid", { ...A, parent_id: "nod_top00001" })];
+    renderAt(`${FOLDER}/nod_pics0001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    dragFrom(treeRow("nod_above001", "Above", ""), trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_above001"));
+    await waitFor(() => expect(window.location.pathname).toBe(FOLDER));
   });
 
   it("a folder of the listing moved to the Trash leaves the page where it is, and so does its Undo", async () => {
