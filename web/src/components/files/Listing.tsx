@@ -1248,7 +1248,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const id = pendingFocus.current;
     const el = regionRef.current;
     if (id === null || !el) return;
-    const row = [...el.querySelectorAll<HTMLElement>("tbody tr[data-id]")].find((r) => r.dataset.id === id);
+    const row = [...el.querySelectorAll<HTMLElement>("[data-id]")].find((r) => r.dataset.id === id);
     if (row) {
       pendingFocus.current = null;
       row.focus();
@@ -1257,10 +1257,11 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const index = ids.indexOf(id);
     const g = winInputs.current;
     const rowH = rowHeights[g.coarse ? "coarse" : "fine"];
-    if (index < 0 || !(rowH > 0)) {
-      if (index < 0) pendingFocus.current = null;
+    if (!g.active || index < 0) {
+      pendingFocus.current = null;
       return;
     }
+    if (!(rowH > 0)) return;
     const top = el.getBoundingClientRect().top + headHeight(el) + index * rowH;
     const bottom = top + rowH;
     // The row's place under the pinned header, as a keyboard scroll to a row keeps it (scrollMarginTop).
@@ -1735,7 +1736,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const card = (n: Node) => tile(n, "card");
   return (
     // The padding is the gutter a rubber band starts in, as the grid had before the bands.
-    <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={p.containerRef} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
+    <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={setRegion} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
       {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
       {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
     </div>
