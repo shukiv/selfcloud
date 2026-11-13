@@ -13,6 +13,7 @@ import { getInfo } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { useAdminTextState } from "../../lib/manage/adminText";
 import { refreshBrand } from "../../lib/auth";
+import { logoHash } from "../../lib/settings/api";
 import { changeSettings, getSettings, type SettingsAnswer, type SettingsChange } from "../../lib/settings/api";
 import { fieldKeys, SECTIONS, type SectionId, type SectionSpec } from "../../lib/settings/fields";
 import { draftOf, isChanged, refusal, sectionChange, withoutSent, type Draft, type Edits } from "../../lib/settings/form";
@@ -214,7 +215,7 @@ function SettingsView() {
         qc.setQueryData(settingsKey, next);
         setEdits((cur) => withoutSent(cur, sent, keys));
         // The page's own sidebar, title and colours follow a change of the brand at once.
-        if (keys.some((k) => k.startsWith("ui.brand."))) void refreshBrand();
+        if (keys.some((k) => k.startsWith("ui.brand."))) void refreshBrand(logoHash(next));
         setNotice(section.id, { kind: "saved" });
         // What the rest of the page reads from the server follows the change: the answer is re-read, and so is About's.
         void qc.invalidateQueries({ queryKey: settingsKey });
@@ -240,9 +241,11 @@ function SettingsView() {
     });
 
   // A picture is changed at once and is not part of any Save: its answer replaces the settings, and the page's own brand is read again.
-  const picturesChanged = (next: SettingsAnswer) => {
+  // A settings read already on its way would land after this answer and show the picture as it was, so it is cancelled first.
+  const picturesChanged = async (next: SettingsAnswer) => {
+    await qc.cancelQueries({ queryKey: settingsKey });
     qc.setQueryData(settingsKey, next);
-    void refreshBrand(true);
+    void refreshBrand(logoHash(next));
   };
   const common = (s: SectionSpec) => ({
     section: s,
@@ -260,7 +263,7 @@ function SettingsView() {
   });
   const card = (s: SectionSpec): ReactNode =>
     s.id === "branding" ? (
-      <BrandingCard key={s.id} {...common(s)} pictures={answer?.pictures ?? []} onPictures={picturesChanged} onLocked={() => void qc.invalidateQueries({ queryKey: settingsKey })} />
+      <BrandingCard key={s.id} {...common(s)} pictures={answer?.pictures ?? []} onPictures={(a) => void picturesChanged(a)} onLocked={() => void qc.invalidateQueries({ queryKey: settingsKey })} />
     ) : (
       <SectionCard key={s.id} {...common(s)} />
     );

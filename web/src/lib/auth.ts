@@ -40,15 +40,21 @@ export async function loadInfo(): Promise<Info> {
   };
 }
 
+// The last refreshBrand call that started: an answer is applied only if no later call has started, so an older read never lands
+// after a newer one.
+let brandReads = 0;
+
 // refreshBrand reads the brand again and applies it, so a change made on the Settings page shows in this page's own sidebar and title
-// at once. bust is for a picture that changed: its address is the same, so a stamp makes the browser fetch it again. A failed read
-// leaves the brand as it is.
-export async function refreshBrand(bust = false): Promise<void> {
+// at once. logoHash is the logo's hash when one is in use: it stamps the logo's address, so a new logo is fetched again and the same
+// one is not, on every refresh. A failed read leaves the brand as it is.
+export async function refreshBrand(logoHash?: string): Promise<void> {
+  const mine = ++brandReads;
   try {
     const { brand } = await loadInfo();
-    if (brand === null) return;
+    if (brand === null || mine !== brandReads) return;
     const url = brand.logo_url;
-    applyBrand({ ...brand, logo_url: bust && url && url.startsWith('/') ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : url });
+    const stamped = logoHash && url && url.startsWith('/') ? `${url}${url.includes('?') ? '&' : '?'}v=${logoHash}` : url;
+    applyBrand({ ...brand, logo_url: stamped });
   } catch {
     // The page keeps the brand it has.
   }
