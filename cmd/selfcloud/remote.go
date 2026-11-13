@@ -286,6 +286,22 @@ var remoteCommands = []remoteCommand{
 		help: `  user rm [--account ACC] USER [--transfer-to USER2 | --delete-files] [--yes]
                                  remove a person; give their My files to another, or delete them (asks first)
 `, run: manage.UserRm},
+	{name: "user verify", route: "POST /api/v1/accounts/{acc}/users/{usr}/verification",
+		help: `  user verify [--account ACC] USER --method email|link|none
+                                 verify a pending person, or send their invitation again
+`, run: manage.UserVerify},
+	{name: "user reset-password", route: "POST /api/v1/accounts/{acc}/users/{usr}/password-reset",
+		help: `  user reset-password [--account ACC] USER --method email|link
+                                 start a password reset; the person chooses the new password
+`, run: manage.UserResetPassword},
+	{name: "user sign-in-link", route: "POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links",
+		help: `  user sign-in-link [--account ACC] USER [--next PATH]
+                                 make a one-time link that signs the person in
+`, run: manage.UserSignInLink},
+	{name: "user revoke-tokens", route: "POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke",
+		help: `  user revoke-tokens [--account ACC] USER [--yes]
+                                 end every sign-in of the person on every device (asks first)
+`, run: manage.UserRevokeTokens},
 	// The sharing commands (cli7). Each acts on a node, or on a team folder or an account with --folder and --account.
 	{name: "share ls", route: "GET /api/v1/nodes/{nod}/permissions",
 		more: []string{"GET /api/v1/accounts/{acc}/folders/{fld}/grants"},
