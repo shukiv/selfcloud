@@ -112,12 +112,12 @@ fn	lib/files/tus.ts:sendChunk	put	cli6	built in cli6
 fn	lib/files/zips.ts:zipStatus	zip get	cli12	built in cli12; the first byte of the zip (GET with a range, as the web does), which zip get reads for the version and zip create --wait polls
 fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
 fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
-fn	lib/labels/api.ts:clearNodeLabel	-	cli11	planned, cli11
+fn	lib/labels/api.ts:clearNodeLabel	label clear	cli11f	built in cli11f
 fn	lib/labels/api.ts:createLabelField	label field add	cli9b4	built in cli9b4
 fn	lib/labels/api.ts:deleteLabelField	label field rm	cli9b4	built in cli9b4
-fn	lib/labels/api.ts:listLabelFields	-	cli11	planned, cli11
-fn	lib/labels/api.ts:listNodeLabels	-	cli11	planned, cli11
-fn	lib/labels/api.ts:setNodeLabel	-	cli11	planned, cli11
+fn	lib/labels/api.ts:listLabelFields	label field ls	cli11f	built in cli11f
+fn	lib/labels/api.ts:listNodeLabels	label show	cli11f	built in cli11f
+fn	lib/labels/api.ts:setNodeLabel	label set	cli11f	built in cli11f
 fn	lib/labels/api.ts:updateLabelField	label field update	cli9b4	built in cli9b4
 fn	lib/manage/api.ts:addGroupMember	group add-member	cli8	built in cli8
 fn	lib/manage/api.ts:auditLog	account audit	cli9a2	built in cli9a2
@@ -226,7 +226,7 @@ route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's 
 route	DELETE /api/v1/comments/{cmt}	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
-route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
+route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	label clear	cli11f	built in cli11f
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/nodes/{nod}/star	unstar	cli11a	built in cli11a
 route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
@@ -275,7 +275,7 @@ route	GET /api/v1/imports/{imp}	import show	cli10	built in cli10
 route	GET /api/v1/imports/{imp}/items	import items	cli10	built in cli10
 route	GET /api/v1/info	info	cli3	public route; info prints it
 route	GET /api/v1/jobs/{job}	job show	cli10	built in cli10
-route	GET /api/v1/label-fields	label field update	cli9b4	built in cli9b4; label field update reads it to send a choice's name when archiving or restoring it, and cli11's label ls will share the row
+route	GET /api/v1/label-fields	label field ls	cli11f	built in cli11f
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
@@ -288,7 +288,7 @@ route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	comment ls	cli11c	built in cli11c
 route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
 route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/labels	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/labels	label show	cli11f	built in cli11f
 route	GET /api/v1/nodes/{nod}/people	-	-	browser session only: the server refuses every token on this route
 route	GET /api/v1/nodes/{nod}/permissions	share ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/preview	-	-	rendered preview for the browser viewer
@@ -427,7 +427,7 @@ route	PUT /api/v1/accounts/{acc}/quota-warning	account quota-warning set	cli9a1	
 route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
 route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
-route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
+route	PUT /api/v1/nodes/{nod}/labels/{lbf}	label set	cli11f	built in cli11f
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	share grant	cli7	built in cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
 route	PUT /api/v1/nodes/{nod}/star	star	cli11a	built in cli11a

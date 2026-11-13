@@ -1078,13 +1078,14 @@ before a request. A refusal from the server keeps its code: for example a 403 ex
 An account's label fields are the fields the web interface offers on a file; the sharing policy is the account's
 switches for public links, comments and who viewed. Defining a field and changing the policy are the account owner's or
 its account key's work: a signed-in device cannot do either, and an installation admin key does not reach an account's
-labels. The values on files are the file commands' (slice cli11, not this one).
+labels. The values on files have their own commands, in Labels on files below.
 
 | Command | What it does |
 |---|---|
 | `label field add [--account ACC] --type TYPE [--restricted] [--choice NAME]... NAME` | defines a field (`TYPE`: `text`, `number`, `date`, `user` or `choice`); prints `id`, `name`, `type`, `restricted` and each `choice` |
 | `label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true\|false] [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...` | changes only what is given |
 | `label field rm [--account ACC] FIELD [--yes]` | removes a field and every value it holds on files; asks first |
+| `label field ls [--json]` | prints `ID`, `NAME`, `TYPE`, `RESTRICTED`, `CHOICES` and `VALUES`; the values count needs an account key or the owner's sign-in |
 | `sharing policy show [--account ACC]` | prints `public_links`, `anyone_links`, `comments` and `who_viewed` |
 | `sharing policy set [--account ACC] [--public-links true\|false] [--comments true\|false] [--who-viewed true\|false] [--yes]` | changes only the switches given |
 
@@ -1216,6 +1217,32 @@ selfcloud search "quarterly report" --in content --all
 selfcloud search --label lbf_…:open --scope nod_…
 selfcloud people find ada --kind user
 selfcloud tag ls nod_… nod_…
+
+## Labels on files
+
+A label field's value on a file is read, set and cleared by the `label` commands; the fields themselves are defined by
+`label field` above. A file is named by its `nod_…` id and a field by its `lbf_…` id, both checked before any request.
+These routes need a credential that manages the file: an account key or a signed-in person's token.
+
+| Command | What it does |
+|---|---|
+| `label show NODE [--json]` | prints `FIELD`, `NAME`, `TYPE` and `VALUE` for every field the caller may see; `--json` prints only `field_id`, `name`, `type`, `restricted` and `value` |
+| `label set NODE FIELD VALUE` | sets one value in the shape the field's type takes; prints `field` and `value` |
+| `label clear NODE FIELD [--yes]` | removes the value; asks first, by the field's id, or takes `--yes` |
+
+`label set` reads the file's labels first to learn the field's type, so the value is sent in the shape the API expects:
+a text value is at most 500 characters and cannot be empty, a number is finite, a date is `YYYY-MM-DD`, a user is a
+`usr_…` id, and a choice is sent as it was typed. A value the command cannot send exits 2; a field the file does not show
+the caller exits 4 before the change. A restricted field's refusal exits 3 and says that only a manager of the item may
+set it. `label clear` succeeds when the field had no value, and prints `cleared` and the field's id. `label show` writes a number without a trailing zero, a person
+or choice as `Name (id)`, and an archived choice with `[archived]`; the value is empty when the field is unset.
+
+```sh
+selfcloud label show nod_…
+selfcloud label set nod_… lbf_… high
+selfcloud label set nod_… lbf_… 2026-11-03
+selfcloud label clear nod_… lbf_… --yes
+selfcloud label field ls --json
 ```
 
 ## Docker
