@@ -73,6 +73,22 @@ const reply = {
   created_at: "2026-10-31T09:00:00Z",
   read_at: "2026-10-31T10:00:00Z",
 };
+const share = {
+  id: "ntf_qrstuvwx",
+  kind: "share",
+  node_id: "nod_qrstuvwx",
+  item_name: "budget.xlsx",
+  actor_name: "Ann",
+  created_at: "2026-11-02T10:00:00Z",
+};
+const request = {
+  id: "ntf_yzabcdef",
+  kind: "access_request",
+  node_id: "nod_yzabcdef",
+  item_name: "report.docx",
+  actor_name: "Bob",
+  created_at: "2026-11-02T11:00:00Z",
+};
 
 describe("the notifications page: the list", () => {
   it("shows an error when the first load fails", async () => {
@@ -135,6 +151,28 @@ describe("the notifications page: opening an item", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Ann mentioned you in plan\.txt/ }));
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/n/nod_abcdefgh?details=comments"));
     expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/notifications/ntf_abcdefgh/read")).toBe(true);
+  });
+
+  it("opens a share on its file, without the comments panel", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === "/api/v1/notifications/ntf_qrstuvwx/read") return { status: 204 };
+      if (isList(c)) return ok({ items: [share] });
+      return isSettings(c) ? ok({ email: true }) : fail(404, "not_found");
+    });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Ann shared budget\.xlsx with you/ }));
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/n/nod_qrstuvwx"));
+  });
+
+  it("opens an access request on the requests page", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === "/api/v1/notifications/ntf_yzabcdef/read") return { status: 204 };
+      if (isList(c)) return ok({ items: [request] });
+      return isSettings(c) ? ok({ email: true }) : fail(404, "not_found");
+    });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Bob asked for access to report\.docx/ }));
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/requests"));
   });
 
   it("does not open an item whose address is not valid, and says so", async () => {

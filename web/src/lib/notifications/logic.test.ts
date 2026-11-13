@@ -59,13 +59,25 @@ describe("the unread count", () => {
 });
 
 describe("the sentence of a notification", () => {
-  it("maps the two kinds the server sends", () => {
+  it("maps the kinds the server sends", () => {
     expect(sentenceKey("mention")).toBe("notifications.mention");
     expect(sentenceKey("reply")).toBe("notifications.reply");
+    expect(sentenceKey("share")).toBe("notifications.share");
+    expect(sentenceKey("access_request")).toBe("notifications.accessRequest");
   });
 
   it("gives a mention the actor and the item", () => {
     expect(noticeSentence(base, t)).toBe('notifications.mention {"actor":"Ann","item":"plan.txt"}');
+  });
+
+  it("gives a share the actor and the item", () => {
+    expect(noticeSentence({ ...base, kind: "share" }, t)).toBe('notifications.share {"actor":"Ann","item":"plan.txt"}');
+  });
+
+  it("gives an access request the actor and the item", () => {
+    expect(noticeSentence({ ...base, kind: "access_request" }, t)).toBe(
+      'notifications.accessRequest {"actor":"Ann","item":"plan.txt"}',
+    );
   });
 
   it("names a former member, and never a raw ID, when the actor is gone", () => {
@@ -79,7 +91,7 @@ describe("the sentence of a notification", () => {
   });
 
   it("uses a generic sentence for a kind this page does not know, never the kind itself", () => {
-    const other = { ...base, kind: "share" };
+    const other = { ...base, kind: "reaction" };
     expect(noticeSentence(other, t)).toBe('notifications.generic {"actor":"Ann","item":"plan.txt"}');
   });
 
