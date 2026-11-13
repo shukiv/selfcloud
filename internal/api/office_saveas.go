@@ -376,7 +376,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 			return errSaveAsNotAuthorized
 		}
 		// The name comes from the source as this write reads it, not from the name it had before the body arrived, so a
-		// source renamed during the upload gives a copy named from its new name .
+		// source renamed during the upload gives a copy named from its new name.
 		inWrite, inWriteSuggested, err := saveAsNames(src.node.Name, rel, sug)
 		if err != nil {
 			return err
