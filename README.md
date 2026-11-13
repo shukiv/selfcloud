@@ -29,6 +29,9 @@ Open `http://localhost:8080/` for the web interface, or `curl localhost:8080/api
 A checkout with no Node can still build the Go binary: the web interface then shows a page saying it is
 not built, because the committed placeholder is what gets embedded.
 
+`make release VERSION=1.2.3` builds both Linux binaries (amd64 and arm64) into `dist/`, with
+`dist/SHA256SUMS`; builds are Linux only for now.
+
 The build also writes compressed copies (`.br` and `.gz`) beside each compressible file under `assets/`, and
 the server sends the copy a browser asks for. A proxy in front of the server must honour `Vary: Accept-Encoding`,
 or pass the app's assets through without caching them: a cache that ignores `Vary` could serve the brotli copy
@@ -167,6 +170,29 @@ server's address and key in a private file. `selfcloud login` signs a terminal i
 browser, with no password, and `logout` and `whoami` end and check that sign-in. `selfcloud put` and `get` move very
 large files in checked pieces that resume after a cut connection, and `get` also reads a share link with no sign-in.
 See [docs/cli.md](docs/cli.md).
+
+Releases are built for Linux on amd64 and arm64, for now. Download the binary for the machine's architecture and the
+release's `SHA256SUMS` into one folder, then check and install it:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+chmod +x selfcloud_<VERSION>_linux_<arch>
+mv selfcloud_<VERSION>_linux_<arch> ~/.local/bin/selfcloud
+```
+
+A folder on `PATH` may be a different one. The same binary is the server (`selfcloud serve`), so server and client are
+one download.
+
+The Docker image holds the same binary. Give the client its address and key in `SELFCLOUD_URL` and
+`SELFCLOUD_TOKEN`; the flags, then the environment, then the profile order, and the rule that a key is sent only to its
+own address, are in "Where the address and the key come from" in [docs/cli.md](docs/cli.md):
+
+```sh
+docker run --rm -e SELFCLOUD_URL=https://selfcloud.example -e SELFCLOUD_TOKEN="$KEY" selfcloud info
+```
+
+The image has no persistent home, so a profile written with `profile add` does not survive `--rm`; the environment
+variables are the way to give a container its address and key.
 
 ## Configuration
 

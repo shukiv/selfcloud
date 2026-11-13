@@ -3,10 +3,21 @@
 `selfcloud` has two kinds of command. The local ones (`selfcloud admin …`) read the data folder directly and need no key;
 they are described in the README. The remote ones call a server's HTTP API with a key, and they are described here.
 
-This document covers what exists now: the profiles, the connection rules, output and exit codes, and the commands
-`info`, `api spec`, `profile add|use|ls|rm`, the sign-in at a terminal (`login`, `logout`, `whoami`), the file commands
-and the large files (`put`, `get`, `upload ls|cancel`). Later groups (sharing and the rest) are added to this document
-as they land.
+This document covers every remote command. It describes the profiles and the rules of connecting, the output and the
+exit codes, and then each command, with a section for every group that names its commands.
+
+## Install
+
+Releases are built for Linux on amd64 and arm64, for now. Download the binary for the machine's architecture and the
+release's `SHA256SUMS` into one folder, then check and install it:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+chmod +x selfcloud_<VERSION>_linux_<arch>
+mv selfcloud_<VERSION>_linux_<arch> ~/.local/bin/selfcloud
+```
+
+A folder on `PATH` may be a different one. The same binary is the server.
 
 ## Profiles
 
