@@ -79,3 +79,35 @@ jobs:
             !e2e-out/tmp/**/*-profile
             !e2e-out/tmp/com.google.Chrome.*
           retention-days: 3
+
+  # The release build: both Linux architectures, their checksums, and the image for both. Nothing is
+  # published; the job checks that the targets build and that the binaries are what they claim to be.
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node 22 for the web interface
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: release build
+        run: make release VERSION=ci-${{ github.sha }}
+      - name: check the binaries
+        run: |
+          amd64="dist/selfcloud_ci-${{ github.sha }}_linux_amd64"
+          arm64="dist/selfcloud_ci-${{ github.sha }}_linux_arm64"
+          file "$amd64" "$arm64"
+          file "$amd64" | grep -q 'x86-64'
+          file "$amd64" | grep -q 'statically linked'
+          file "$arm64" | grep -q 'ARM aarch64'
+          file "$arm64" | grep -q 'statically linked'
+          (cd dist && sha256sum -c SHA256SUMS)
+          "$amd64" version | grep -qx 'ci-${{ github.sha }}'
+      - uses: docker/setup-buildx-action@v3
+      - name: build the image for both architectures
+        run: docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=ci .
