@@ -38,22 +38,33 @@ check 'a passing log has no failures' "$expected" "$actual"
 
 failing="$work/failing.log"
 printf '%s\n' \
-  '=== RUN   TestA' \
-  '    a_test.go:10: first' \
   '--- FAIL: TestA (0.00s)' \
-  '    a_test.go:11: detail A' \
-  '=== RUN   TestB' \
-  '    b_test.go:20: second' \
+  '    p_test.go:3: before' \
+  '    p_test.go:3: boom A' \
   '--- FAIL: TestB (0.00s)' \
-  '    b_test.go:21: detail B' \
+  '    --- FAIL: TestB/sub (0.00s)' \
+  '        p_test.go:4: boom sub' \
   'FAIL' \
-  $'FAIL\texample.com/pkg\t0.012s' > "$failing"
+  $'FAIL\texample.com/p\t0.005s' > "$failing"
 expected=$(printf '%s\n' \
-  $'::error title=failed tests::=== RUN   TestA%0A    a_test.go:10: first%0A--- FAIL: TestA (0.00s)%0A    a_test.go:11: detail A%0A=== RUN   TestB%0A    b_test.go:20: second%0A--- FAIL: TestB (0.00s)' \
-  $'::error title=failed packages::FAIL\texample.com/pkg\t0.012s' \
+  $'::error title=failed tests::--- FAIL: TestA (0.00s)%0A    p_test.go:3: before%0A    p_test.go:3: boom A%0A--- FAIL: TestB (0.00s)%0A    --- FAIL: TestB/sub (0.00s)%0A        p_test.go:4: boom sub' \
+  $'::error title=failed packages::FAIL\texample.com/p\t0.005s' \
   '::error title=panic::(none)')
 actual=$(annotate_tests "$failing")
-check 'two failed tests keep the lines before them, and the failed package is named' "$expected" "$actual"
+check 'failed tests keep their indented messages, and the failed package is named' "$expected" "$actual"
+
+lastmessage="$work/lastmessage.log"
+printf '%s\n' \
+  '--- FAIL: TestFirst (0.00s)' \
+  '    p_test.go:1: boom first' \
+  '--- FAIL: TestSecond (0.00s)' \
+  '    p_test.go:2: last message' > "$lastmessage"
+expected=$(printf '%s\n' \
+  $'::error title=failed tests::--- FAIL: TestFirst (0.00s)%0A    p_test.go:1: boom first%0A--- FAIL: TestSecond (0.00s)%0A    p_test.go:2: last message' \
+  '::error title=failed packages::(none)' \
+  '::error title=panic::(none)')
+actual=$(annotate_tests "$lastmessage")
+check 'the last failed test keeps its message at the end of the log' "$expected" "$actual"
 
 panicking="$work/panic.log"
 printf '%s\n' \
@@ -68,6 +79,24 @@ expected=$(printf '%s\n' \
   $'::error title=panic::panic: boom%0Agoroutine 1 [running]:%0Amain.TestX()%0A\t/tmp/x_test.go:10 +0x1')
 actual=$(annotate_tests "$panicking")
 check 'a panic carries the lines after it' "$expected" "$actual"
+
+race="$work/race.log"
+printf '%s\n' \
+  '==================' \
+  'WARNING: DATA RACE' \
+  'Write at 0x00c000014120 by goroutine 7:' \
+  '  main.TestX()' \
+  '      /tmp/x_test.go:10 +0x1' \
+  '==================' \
+  '--- FAIL: TestX (0.00s)' \
+  'FAIL' \
+  $'FAIL\texample.com/p\t0.010s' > "$race"
+expected=$(printf '%s\n' \
+  '::error title=failed tests::--- FAIL: TestX (0.00s)' \
+  $'::error title=failed packages::FAIL\texample.com/p\t0.010s' \
+  $'::error title=panic::WARNING: DATA RACE%0AWrite at 0x00c000014120 by goroutine 7:%0A  main.TestX()%0A      /tmp/x_test.go:10 +0x1%0A==================%0A--- FAIL: TestX (0.00s)%0AFAIL%0AFAIL\texample.com/p\t0.010s')
+actual=$(annotate_tests "$race")
+check 'a data race report starts the panic note' "$expected" "$actual"
 
 e2e="$work/e2e.log"
 printf '%s\n' \
