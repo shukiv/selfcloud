@@ -76,7 +76,7 @@ type listOptions struct {
 // register adds the list flags to set.
 func (o *listOptions) register(set *flag.FlagSet) {
 	set.BoolVar(&o.all, "all", false, "follow the cursor and print every page")
-	set.StringVar(&o.kind, "type", "", "only items of this `kind`")
+	set.StringVar(&o.kind, "type", "", "only folder, shortcut or a file group such as `image`")
 	set.StringVar(&o.after, "modified-after", "", "only items modified at or after this RFC 3339 `time`")
 	set.StringVar(&o.before, "modified-before", "", "only items modified before this RFC 3339 `time`")
 }
