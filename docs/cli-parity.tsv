@@ -44,14 +44,14 @@ fn	lib/code/read.ts:readHead	-	-	the browser viewer's range read of a file's fir
 fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with If-Match set to the node's etag (decision 135); the CLI's `edit` (planned) reads the same way
 fn	lib/code/save.ts:saveText	-	ce3c	the browser editor's save: a PUT with If-Match and the stored type unchanged; the CLI's `put --if-match` and `edit` (planned, ce3c) save the same way
 fn	lib/comments/api.ts:createComment	comment add	cli11c	built in cli11c
-fn	lib/comments/api.ts:deleteComment	-	cli11c	browser session only: the server refuses every token on this route
-fn	lib/comments/api.ts:editComment	-	cli11c	browser session only: the server refuses every token on this route
+fn	lib/comments/api.ts:deleteComment	-	-	browser session only: the server refuses every token on this route
+fn	lib/comments/api.ts:editComment	-	-	browser session only: the server refuses every token on this route
 fn	lib/comments/api.ts:listActivity	activity	cli11c	built in cli11c
 fn	lib/comments/api.ts:listComments	comment ls	cli11c	built in cli11c
-fn	lib/comments/api.ts:listPeople	-	cli11c	browser session only: the server refuses every token on this route
+fn	lib/comments/api.ts:listPeople	-	-	browser session only: the server refuses every token on this route
 fn	lib/comments/api.ts:listReplies	comment ls	cli11c	built in cli11c
 fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser feature
-fn	lib/comments/api.ts:resolveComment	-	cli11c	browser session only: the server refuses every token on this route
+fn	lib/comments/api.ts:resolveComment	-	-	browser session only: the server refuses every token on this route
 fn	lib/files/api.ts:ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132)
 fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
 fn	lib/files/api.ts:commitUpload	put	cli6	built in cli6
@@ -223,7 +223,7 @@ route	DELETE /api/v1/accounts/{acc}/users/{usr}	user rm	cli9b1	built in cli9b1
 route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	webhook rm	cli10	built in cli10
 route	DELETE /api/v1/admins/{usr}	admin rm	cli9a3	built in cli9a3
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
-route	DELETE /api/v1/comments/{cmt}	-	cli11c	browser session only: the server refuses every token on this route
+route	DELETE /api/v1/comments/{cmt}	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
@@ -289,7 +289,7 @@ route	GET /api/v1/nodes/{nod}/comments	comment ls	cli11c	built in cli11c
 route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
 route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/labels	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/people	-	cli11c	browser session only: the server refuses every token on this route
+route	GET /api/v1/nodes/{nod}/people	-	-	browser session only: the server refuses every token on this route
 route	GET /api/v1/nodes/{nod}/permissions	share ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/preview	-	-	rendered preview for the browser viewer
 route	GET /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
@@ -339,7 +339,7 @@ route	PATCH /api/v1/accounts/{acc}/sharing-policy	sharing policy set	cli9b4	buil
 route	PATCH /api/v1/accounts/{acc}/storage-policy	storage policy set	cli9b3	built in cli9b3
 route	PATCH /api/v1/accounts/{acc}/users/{usr}	user update	cli9b1	built in cli9b1
 route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in cli10
-route	PATCH /api/v1/comments/{cmt}	-	cli11c	browser session only: the server refuses every token on this route
+route	PATCH /api/v1/comments/{cmt}	-	-	browser session only: the server refuses every token on this route
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
 route	PATCH /api/v1/nodes/{nod}	mv,share no-download,share editors-can-share	cli5	built in cli5 and cli7b
@@ -385,7 +385,7 @@ route	POST /api/v1/auth/password/forgot	-	-	email reset from the sign-in page, r
 route	POST /api/v1/auth/password/reset	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
 route	POST /api/v1/auth/sign-in-link	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 route	POST /api/v1/auth/verify	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
-route	POST /api/v1/comments/{cmt}/resolve	-	cli11c	browser session only: the server refuses every token on this route
+route	POST /api/v1/comments/{cmt}/resolve	-	-	browser session only: the server refuses every token on this route
 route	POST /api/v1/folders/{fld}/directories	mkdir	cli5	built in cli5
 route	POST /api/v1/folders/{fld}/files	touch	cli5	built in cli5
 route	POST /api/v1/imports	-	cli10	no CLI credential reaches it (decision 125: device tokens refused; imports refuse keys)
