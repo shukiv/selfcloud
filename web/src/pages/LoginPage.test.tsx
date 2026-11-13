@@ -18,8 +18,9 @@ describe("LoginPage", () => {
         <LoginPage />
       </ThemeProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(screen.getByText("Enter your email address.")).toBeTruthy());
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    // 5 s: the message follows a click, and a loaded CI machine can take longer than the 1 s default.
+    await waitFor(() => expect(screen.getByText("Enter your email address.")).toBeTruthy(), { timeout: 5000 });
     expect(document.getElementById("login-email")?.getAttribute("aria-invalid")).toBeNull();
   });
 
@@ -29,19 +30,20 @@ describe("LoginPage", () => {
         <LoginPage />
       </ThemeProvider>,
     );
+    const signIn = await screen.findByRole("button", { name: "Sign in" });
     const email = document.getElementById("login-email") as HTMLInputElement;
     fireEvent.change(email, { target: { value: "olivia@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(signIn);
     await waitFor(() => expect(screen.getByText("Enter your password.")).toBeTruthy());
   });
 
-  it("draws the forgot-password link in the theme's link colour, not the browser's", () => {
+  it("draws the forgot-password link in the theme's link colour, not the browser's", async () => {
     render(
       <ThemeProvider>
         <LoginPage />
       </ThemeProvider>,
     );
-    const link = screen.getByRole("link", { name: "Forgot password?" });
+    const link = await screen.findByRole("link", { name: "Forgot password?" });
     expect(link.classList.contains("ant-typography")).toBe(true);
     expect(link.getAttribute("href")).toBe("/forgot");
   });
