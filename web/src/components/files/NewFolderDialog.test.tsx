@@ -48,7 +48,7 @@ describe("the new folder dialog", () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
-  // Slice fu3b (decision 77, item 4): the files page's own dialog is this one. A folder made re-reads the branch it is in, which is
+  // Slice fu3b (decision 77): the files page's own dialog is this one. A folder made re-reads the branch it is in, which is
   // where the page's listing comes from, so the page shows it without a reload of its own.
   it("re-reads the branch the folder was made in, and closes (fu3b)", async () => {
     mocks.mkdir.mockResolvedValue({ id: "nod_new", name: "Plans", kind: "dir" });

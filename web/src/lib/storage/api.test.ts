@@ -152,7 +152,7 @@ describe("the breakdown and the meter racing (wf1)", () => {
     expect(get(myBreakdown)).toEqual(breakdown(10));
   });
 
-  // Review item 1 (wf1): a newer call that never settles hides nothing. An answer shows when it is newer than the one shown.
+  // A newer call that never settles hides nothing. An answer shows when it is newer than the one shown.
   it("shows an older answer while a newer call has not settled", async () => {
     const older = held<unknown>();
     const newer = held<unknown>();
@@ -165,7 +165,7 @@ describe("the breakdown and the meter racing (wf1)", () => {
     expect(get(myStorage)?.used_bytes).toBe(100);
   });
 
-  // Review item 4 (wf1): a failed breakdown read must not drop an older plain refresh's figures.
+  // A failed breakdown read must not drop an older plain refresh's figures.
   it("a failed breakdown read does not drop an older plain refresh's figures", async () => {
     const plain = held<unknown>();
     const failing = held<unknown>();

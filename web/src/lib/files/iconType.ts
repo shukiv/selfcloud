@@ -7,7 +7,7 @@ import type { Node } from './types';
 // at least 3:1 against the page, the card and the selected fill of both modes, and against the tile's preview on those
 // (iconType.test.ts), and the white glyph on it is at least 3:1. They sit at one luminance, about 0.236: a darker square
 // fails 3:1 on the dark selected tile's preview, and a lighter one fails 3:1 on the light selected tile's preview
-// (review fix, decision 68).
+// (decision 68).
 export const TYPE_COLOURS = {
   red: '#E15950',
   blue: '#3785EB',

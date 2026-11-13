@@ -134,7 +134,7 @@ describe("UploadTray", () => {
     expect(within(screen.getByRole("list")).getByText("report.pdf")).toBeTruthy();
   });
 
-  it("a name-taken row offers Cancel, and its count is not called running (fu4, item 3)", () => {
+  it("a name-taken row offers Cancel, and its count is not called running (fu4)", () => {
     uploads.set([item({ id: 8, status: "conflict" })]);
     conflictAsk.set("report.pdf");
     render(<UploadTray />);

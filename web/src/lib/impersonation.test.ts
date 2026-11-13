@@ -75,7 +75,7 @@ describe("an expired sign-in as", () => {
     expect(window.location.pathname).toBe("/admin/tenants");
   });
 
-  // Review of decision 71: an answer that left before the restore and arrives after it must not end the admin's own
+  // Decision 71: an answer that left before the restore and arrives after it must not end the admin's own
   // session (the end call would answer 409, and the page would sign out).
   it("ignores a late ended answer once the admin's session is back", async () => {
     session.set({ user: admin, account: null, csrf: "admin-csrf" } as unknown as Session);

@@ -40,7 +40,7 @@ export default function TemplatesFolderSetting({ account }: { account: string })
 
   if (!owner) return null;
 
-  // A space is picked at its root with dir null: the space's root node, from the folder list, is saved .
+  // A space is picked at its root with dir null: the space's root node, from the folder list, is saved.
   // The list is read at the pick (the cache when it is fresh), so the pick does not depend on the picker's own load.
   async function pickDestination(d: Destination) {
     const folders = await qc.fetchQuery({ queryKey: ["templatesFolder", "spaces"], queryFn: () => myFolders() });

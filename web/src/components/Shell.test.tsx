@@ -214,7 +214,7 @@ describe("Shell", () => {
     expect(await tooltipText()).toBe("Olivia");
   });
 
-  // Review fix (decision 68): the phone's menu button says what it does (its name and tooltip).
+  // The phone's menu button says what it does (its name and tooltip).
   it("names the phone's menu button Open the menu, and shows that tooltip", async () => {
     renderShell("/files");
     const button = screen.getByTestId("nav-open");
@@ -223,7 +223,7 @@ describe("Shell", () => {
     expect(await tooltipText()).toBe("Open the menu");
   });
 
-  // Review fix (decision 68): with no name and no email the button shows a person icon, and is named "Account menu".
+  // With no name and no email the button shows a person icon, and is named "Account menu".
   it("shows a person icon, named Account menu, when there is no name and no email", async () => {
     session.set({
       user: { id: "u1", email: "", display_name: "", role: "member", locale: "en" } as Session["user"],
@@ -272,7 +272,7 @@ describe("Shell", () => {
       signIn("member");
       renderShell("/files");
       // The upload tray has a "Hide" button of its own, so the rail toggle is found by its test id.
-      // Review fix (decision 68): its name says what it does, before and after the press.
+      // Its name says what it does, before and after the press.
       expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Hide the sidebar");
       // The chevrons point along the reading direction, so they mirror in a right-to-left page (index.css .icon-dir).
       expect(screen.getByTestId("rail-toggle").querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
@@ -730,7 +730,7 @@ describe("the sidebar's New (decision 66)", () => {
     });
   });
 
-  // Round 3: the sidebar's New takes its place through placeForRoute, as the documents do. A place stored for another folder
+  // The sidebar's New takes its place through placeForRoute, as the documents do. A place stored for another folder
   // (FilesPage writes it after render) is not the place on screen, so the button waits, disabled, and no upload or New folder
   // can target it.
   const placeIn = (folder: string, dir: string): NewPlace => ({
@@ -978,7 +978,7 @@ describe("the sidebar's document entries follow the place, the role and the impe
   const readOnlyPlace = () => place({ canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false });
 
   // Opens the sidebar's New menu on the folder's page, and waits for its entries.
-  // Review item 2 (wf1): the failure the files page records reaches the sidebar's disabled New as its reason.
+  // The failure the files page records reaches the sidebar's disabled New as its reason.
   it("a folder that could not be read gives the sidebar's disabled New the error as its reason", async () => {
     await wideScreen(async () => {
       setUp("member", "contributor", myFilesPlace("fld_mine"));

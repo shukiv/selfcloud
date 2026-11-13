@@ -194,7 +194,7 @@ describe("people of a tenant", () => {
     expect(calls.filter((c) => c.method === "PATCH")[1].body).toEqual({ status: "active" });
   });
 
-  // Re-check item 2: the mockup's Remove from account, a danger entry of the ⋮ menu, through the route the owner's People
+  // The mockup's Remove from account, a danger entry of the ⋮ menu, through the route the owner's People
   // page uses (DELETE). Nothing is sent until the confirmation's danger button, in the dialog's footer, is pressed.
   it("the ⋮ menu removes a person after a confirmation, and the list is read again", async () => {
     const mateo = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active" });

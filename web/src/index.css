@@ -1021,7 +1021,7 @@ a {
   transition: none;
 }
 /* The handle's box is transparent, so on a phone its 44 px touch target paints nothing: the visible dot is the handle's
-::after, 14 px white with a yellow ring, in both sizes. */
+   ::after, 14 px white with a yellow ring, in both sizes. */
 .media-mini .media-mini-seek .ant-slider .ant-slider-handle {
   background-color: transparent;
   border-color: transparent;
@@ -1311,7 +1311,7 @@ tr[data-drop-state="refused"] > td {
 /* A list row's bands (decision 70, the selected row's edge lines taken away in decision 72). antd paints a row's cells, so the bands
    are on the cells: a selected row is a light accent band, with no edge line, and it keeps the band under the pointer. The colours come from the list's own variables (set by Listing from the
    theme tokens). antd paints a hovered row's cells with its own class (.ant-table-cell-row-hover), and a selected row's hovered cells
-   with a second one: both are matched here, with the row's selection read from aria-selected, so the list's bands win (review fix 3). */
+   with a second one: both are matched here, with the row's selection read from aria-selected, so the list's bands win. */
 .files-list .ant-table-tbody > tr[aria-selected="true"] > td,
 .files-list .ant-table-tbody > tr[aria-selected="true"]:hover > td,
 .files-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover,
@@ -1321,7 +1321,7 @@ tr[data-drop-state="refused"] > td {
   background: var(--sc-row-selected);
 }
 
-/* Hover is a mouse's (review fix 10): a finger's tap leaves no grey band and shows no icons or checkboxes. */
+/* Hover is a mouse's: a finger's tap leaves no grey band and shows no icons or checkboxes. */
 @media (hover: hover) {
   .files-list .ant-table-tbody > tr:not([aria-selected="true"]):hover > td,
   .files-list .ant-table-tbody > tr:not([aria-selected="true"]) > td.ant-table-cell-row-hover,
@@ -1336,7 +1336,7 @@ tr[data-drop-state="refused"] > td {
   }
 }
 
-/* The row end: the four icons show on a selected row, or on a row that has the focus (review fix 2): a focused icon stays shown
+/* The row end: the four icons show on a selected row, or on a row that has the focus: a focused icon stays shown
    when the selection is cleared. A focused icon is focusable, so it is never visibility: hidden. */
 .files-list .row-acts {
   visibility: hidden;
@@ -1397,8 +1397,7 @@ tr[data-drop-state="refused"] > td {
   }
 }
 
-/* A touch screen with a mouse (any pointer coarse, the primary one fine): the checkboxes stay visible, so a finger can select (review
-   fix 10). */
+/* A touch screen with a mouse (any pointer coarse, the primary one fine): the checkboxes stay visible, so a finger can select. */
 @media (any-pointer: coarse) {
   .files-list .row-check,
   .files-list .head-check,

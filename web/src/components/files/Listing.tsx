@@ -128,7 +128,7 @@ export interface ListAction {
   // pressed is the state of a toggle-like action, such as a group's Members while that group is open: the inline icon says it
   // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (the design, not in this repository, section 7).
   pressed?: boolean;
-  // href makes the action a real link : inline it is an anchor the browser follows, so a middle click opens a
+  // href makes the action a real link: inline it is an anchor the browser follows, so a middle click opens a
   // new tab and Copy link works; in the ⋮ menu it is the menu's link, and a plain click runs run.
   href?: string;
 }
@@ -229,7 +229,7 @@ function ariaSortOf(dir: "asc" | "desc" | null): AriaSort {
   return dir === "asc" ? "ascending" : "descending";
 }
 
-// RowActs draws a list row's icons only while the row is hovered by a mouse, or selected, or has the focus (review fix 7): the icons
+// RowActs draws a list row's icons only while the row is hovered by a mouse, or selected, or has the focus: the icons
 // are built by `children` only then, so a folder of 500 rows draws the few rows the person is on, not all of them.
 function RowActs({ id, show, children }: { id: string; show: boolean; children: () => ReactNode }) {
   const hovered = useSyncExternalStore(subscribeRowHover, () => getRowHover() === id);
@@ -482,8 +482,8 @@ const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H
         e.stopPropagation();
         H.settle(n.id);
         const r = e.currentTarget.getBoundingClientRect();
-        // The menu opens at the button's start edge: its left in English, its right in Hebrew (review fix 11). A key's click has
-        // no pointer, so its detail is 0: the menu then takes the focus (review fix 1).
+        // The menu opens at the button's start edge: its left in English, its right in Hebrew. A key's click has
+        // no pointer, so its detail is 0: the menu then takes the focus.
         // The start edge is the button's x in English and its x plus its width in Hebrew, where the start is on the right.
         const rtl = document.documentElement.dir === "rtl";
         const startX = rtl ? r.x + r.width : r.x;
@@ -971,7 +971,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       },
       onPointerUp: endPress,
       onPointerCancel: endPress,
-      // The row under a mouse is known to the icons that draw at its end (review fix 7); a touch does not hover.
+      // The row under a mouse is known to the icons that draw at its end; a touch does not hover.
       onPointerEnter: (e: ReactPointerEvent<HTMLElement>) => {
         if (e.pointerType === "mouse") setRowHover(idOf(e));
       },

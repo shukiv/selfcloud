@@ -232,8 +232,8 @@ describe("the comments panel for a commenter", () => {
     expect(await screen.findByText("No comments yet.")).toBeTruthy();
   });
 
-  // fu4, item 2: a delete that never answers is cancelled at once, and its request is aborted.
-  it("a delete that never answers: Cancel closes the confirm and aborts the request (fu4, item 2)", async () => {
+  // fu4: a delete that never answers is cancelled at once, and its request is aborted.
+  it("a delete that never answers: Cancel closes the confirm and aborts the request (fu4)", async () => {
     const calls: Call[] = [];
     stubFetch(async (c: Call): Promise<Answer> => {
       calls.push(c);

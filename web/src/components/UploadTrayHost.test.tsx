@@ -55,7 +55,7 @@ describe("the upload tray's host", () => {
     expect((await screen.findByRole("dialog")).textContent).toContain("report.pdf");
   });
 
-  it("a name taken at creation, through the real manager, puts the question on screen (fu4, item 3)", async () => {
+  it("a name taken at creation, through the real manager, puts the question on screen (fu4)", async () => {
     const taken = { error: { code: "conflict", message: "taken", details: {} } };
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify(taken), { status: 409 }));
     render(<UploadTrayHost />);

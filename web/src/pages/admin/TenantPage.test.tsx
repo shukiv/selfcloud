@@ -74,7 +74,7 @@ describe("a tenant page", () => {
     expect(screen.getByRole("tab", { name: "Audit log" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c: Call) => {
       if (c.method === "PATCH") return new Promise<Answer>(() => undefined);
       if (path(c) === "/api/v1/accounts/acc_1") return { status: 200, body: account() };

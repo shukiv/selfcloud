@@ -68,7 +68,7 @@ describe("IconButton (decision 68)", () => {
     expect(button.className).toMatch(/icon-btn/);
   });
 
-  // Review fix (decision 68): the border is in the stylesheet, not only the class, so the rule itself is read.
+  // The border is in the stylesheet, not only the class, so the rule itself is read.
   it("has no border in its CSS rule, and is 40 px (44 px on a coarse pointer)", () => {
     const base = rule(indexCss, ".icon-btn.ant-btn.ant-btn");
     expect(base).toMatch(/border:\s*0;/);
@@ -94,7 +94,7 @@ describe("IconButton (decision 68)", () => {
     expect(await tipText()).toBe("More");
   });
 
-  // Review fix: a tap on a finger fires compatibility mouse events with no click. Only a mouse opens the tooltip, so a tap
+  // A tap on a finger fires compatibility mouse events with no click. Only a mouse opens the tooltip, so a tap
   // neither leaves it open nor flashes it.
   it("does not open the tooltip for a touch, or for the compatibility mouse events a tap fires", async () => {
     wrap(<IconButton label="Next file" icon={<Star />} />);
@@ -119,7 +119,7 @@ describe("IconButton (decision 68)", () => {
     expect(button.className).toMatch(/icon-btn--pressed/);
   });
 
-  // Review fix: the pointer events arrive on the disabled button itself (a browser may drop them there), and the wrapper
+  // The pointer events arrive on the disabled button itself (a browser may drop them there), and the wrapper
   // still opens the tooltip. The stylesheet makes the button pass its events to the wrapper too.
   it("is disabled and still shows its tooltip, when the pointer is over the disabled button", async () => {
     wrap(<IconButton label="Next file" disabled icon={<Star />} />);
@@ -130,7 +130,7 @@ describe("IconButton (decision 68)", () => {
     expect(rule(indexCss, ".icon-btn-wrap > .icon-btn:disabled")).toMatch(/pointer-events:\s*none;/);
   });
 
-  // Review fix: a key press, then focus, opens the tooltip; a mouse press, then focus (a click on a button focuses it), does
+  // A key press, then focus, opens the tooltip; a mouse press, then focus (a click on a button focuses it), does
   // not. The decision is made from the last input, not from :focus-visible, so it does not depend on the engine.
   it("opens the tooltip on keyboard focus, after a key press", async () => {
     wrap(<IconButton label="Close" icon={<Star />} />);

@@ -119,7 +119,7 @@ describe("the largest files are one table (decision 122)", () => {
   });
 });
 
-// Round 2 (LOW): a row opens its file, as Enter and a click open a row of any list (decision 122).
+// A row opens its file, as Enter and a click open a row of any list (decision 122).
 describe("a file's row opens the file", () => {
   beforeEach(() => {
     officeEdit.set(true);

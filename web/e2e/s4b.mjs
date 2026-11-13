@@ -165,7 +165,7 @@ async function until(page, expr, what) {
 async function setCoarse(page, on) {
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: on, maxTouchPoints: 1 });
   await page.send('Emulation.setEmulatedMedia', { features: on ? [{ name: 'hover', value: 'none' }] : [] });
-  // The media change reaches the page on a later frame, under load too: the page's own query says when it has (fu3b, item 8: a
+  // The media change reaches the page on a later frame, under load too: the page's own query says when it has (fu3b: a
   // fixed wait let the first measure run before the change, at 9 px instead of 44).
   await until(page, `matchMedia('(pointer: coarse)').matches === ${on ? 'true' : 'false'}`, 'the coarse pointer media');
   // Two frames pass before anything is opened on top of the new pointer.

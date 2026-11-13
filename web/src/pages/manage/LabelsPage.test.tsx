@@ -87,7 +87,7 @@ describe("labels page", () => {
     expect(note.querySelectorAll("td")[1]?.textContent).toBe("Text");
   });
 
-  // the list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
+  // The list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
   it("sorts by name: A to Z first, then Z to A, with aria-sort on the Name header", async () => {
     stubFetch(() => ({ status: 200, body: { items: [STATUS, NOTE] } }));
     renderPage();
@@ -109,7 +109,7 @@ describe("labels page", () => {
     expect(heads.slice(1).every((h) => within(h).queryByRole("button") === null)).toBe(true);
   });
 
-  // on a phone the type, the restriction and the count are the name's second line, and the row's actions are ⋮.
+  // On a phone the type, the restriction and the count are the name's second line, and the row's actions are ⋮.
   it("on a phone the type, restriction and count are the name's second line, and the actions are one ⋮ menu", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);
@@ -121,7 +121,7 @@ describe("labels page", () => {
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Status"]);
   });
 
-  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c) => {
       if (isDelete(c)) return new Promise<Answer>(() => undefined);
       return { status: 200, body: { items: [NOTE, STATUS] } };

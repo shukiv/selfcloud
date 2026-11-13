@@ -65,7 +65,7 @@ describe("the New menu, one list for the sidebar and the files page", () => {
     ]);
   });
 
-  // With office editing off the server still makes the empty text file, so More holds Text file alone (nt2 review, LOW).
+  // With office editing off the server still makes the empty text file, so More holds Text file alone.
   it("with office editing off, More holds only Text file", () => {
     expect(shape(tree(writable, ["txt"]))).toEqual(["newFolder", "|", "upload", "uploadFolder", "|", "more>[blank:txt]"]);
   });

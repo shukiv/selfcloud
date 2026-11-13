@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The list row under the mouse, kept outside React's state (review fix 7). A row's four icons mount only while the row is hovered,
+// The list row under the mouse, kept outside React's state. A row's four icons mount only while the row is hovered,
 // selected or focused; a state in the listing would redraw all its rows on every move of the pointer, so each row subscribes to
 // this store and only the rows whose hover changed draw again.
 

@@ -76,7 +76,7 @@ describe("groups", () => {
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Members: Finance", "Rename: Finance", "Delete: Finance"]);
   });
 
-  // on a phone the three icons are the ⋮ menu, and the list keeps its one Name column.
+  // On a phone the three icons are the ⋮ menu, and the list keeps its one Name column.
   it("on a phone the group's actions are one ⋮ menu, with Members, Rename and Delete in it", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);
@@ -110,7 +110,7 @@ describe("groups", () => {
     release({ status: 204 });
   });
 
-  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c) => {
       if (isGroupDelete(c)) return new Promise<Answer>(() => undefined);
       if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP] } };
@@ -184,7 +184,7 @@ describe("the open group after a rename", () => {
     await waitFor(() => expect(document.getElementById("members-title")?.textContent).toBe("Accounts"));
   });
 
-  // a group's members are a table too; with no member the table keeps its Name header, and the body says so.
+  // A group's members are a table too; with no member the table keeps its Name header, and the body says so.
   it("a group with no members keeps its table and header, and the body's title says there are none", async () => {
     stubFetch((c) => {
       if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };

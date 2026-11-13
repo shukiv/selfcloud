@@ -21,7 +21,7 @@ export interface KeyLayout {
   grid: boolean;
   // rtl mirrors left and right.
   rtl: boolean;
-  // mac is true on Apple's systems, where Command+Backspace is the trash's key (review fix 8).
+  // mac is true on Apple's systems, where Command+Backspace is the trash's key.
   mac?: boolean;
   // count is how many items are listed; Home and End move by it.
   count: number;

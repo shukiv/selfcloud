@@ -556,7 +556,7 @@ export async function x6Checks(h, { page, base, accountKey, accountID, memberID 
       const n = await page.evaluate(COVER);
       check(n.icon && !n.img && n.name === 'a-plain.ogg', `a folder with no picture shows the music icon and the file's name (${JSON.stringify(n.name)})`);
       await shot(page, 'audio-without-1280');
-      // The box is one colour, and the icon another: no square or shade behind the icon (decision 63, fix 2).
+      // The box is one colour, and the icon another: no square or shade behind the icon (decision 63).
       const px = await boxPixels(page);
       check(px.boxColours.length === 1 && px.iconPixels > 0 && px.iconColours.some((c) => !px.boxColours.includes(c)), `the fallback box is one colour, and the icon is another (${px.boxColours.length} colour(s) in the box: ${JSON.stringify(px.boxColours)}; ${px.iconColours.length} in the icon)`);
     });

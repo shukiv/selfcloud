@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../session";
 import { mkdir, mkdirIn } from "./api";
 
-// fu2 item 6 (decision 74): a folder made in a directory names its parent by ID, and the root keeps the path form.
+// fu2 (decision 74): a folder made in a directory names its parent by ID, and the root keeps the path form.
 describe("making a folder", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {

@@ -321,7 +321,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await setPhone(page, false);
 
     // An installation admin's page has no New (decision 66), so the sidebar keeps the gap New leaves: the menu starts 10 px below
-    // the top bar's edge, not on it (decision 69, review fix 1). Back to the member afterwards.
+    // the top bar's edge, not on it (decision 69). Back to the member afterwards.
     await signOut(page);
     await signIn(page, ADMIN);
     await navigateTo(page, '/admin/tenants');

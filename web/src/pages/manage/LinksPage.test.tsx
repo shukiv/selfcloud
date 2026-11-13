@@ -242,7 +242,7 @@ describe("links", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("audience=anyone"))).toBe(true));
   });
 
-  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c) => {
       if (isLinkDelete(c)) return new Promise<Answer>(() => undefined);
       if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The queue panel's controls the review named: a row is reordered by its grip (a drag), by Alt with the arrow keys, and by
+// The queue panel's controls: a row is reordered by its grip (a drag), by Alt with the arrow keys, and by
 // its More menu; the row on screen is marked and is one line.
 
 import { act, fireEvent, render, screen } from "@testing-library/react";

@@ -244,7 +244,7 @@ function readFirstPage(qc: QueryClient, folder: string, dir: string | null, sort
 }
 
 // readMe reads the signed-in person's /me once for the query client, under the key the Trash page also uses, for five minutes:
-// the personal folder does not change in a session: /me was read four times for one page).
+// the personal folder does not change in a session: /me was read four times for one page.
 function readMe(qc: QueryClient): Promise<{ personal_folder_id: string | null }> {
   return qc.fetchQuery({ queryKey: queryKey("me"), queryFn: () => getMe(), staleTime: 5 * 60_000 });
 }
@@ -564,7 +564,7 @@ export default function FilesPage() {
   useEffect(() => {
     if (!menu || !menuFromKey.current) return;
     menuFromKey.current = false;
-    // The first item takes the focus, so an arrow key moves on from it (review fix 1); the menu's list is the fallback.
+    // The first item takes the focus, so an arrow key moves on from it; the menu's list is the fallback.
     const frame = requestAnimationFrame(() => {
       const first = document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menuitem']:not(.ant-dropdown-menu-item-disabled)");
       (first ?? document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menu']"))?.focus();
@@ -1688,8 +1688,7 @@ export default function FilesPage() {
       icon: <FolderOpen {...ic} />,
       group: 1,
       section: "first",
-      // Enter opens a folder, and a file with no preview (its details): the entry is there for either, so the key has a menu entry
-      // (review fix 12).
+      // Enter opens a folder, and a file with no preview (its details): the entry is there for either, so the key has a menu entry.
       hidden: !items.some((n) => n.kind === "dir") && !(single !== null && !viewable(single)),
       fits: single !== null && (single.kind === "dir" || !viewable(single)),
       enabled: single !== null,
@@ -2025,7 +2024,7 @@ export default function FilesPage() {
     danger: a.danger,
     disabled: !a.enabled,
     // The shortcut is drawn at the entry's right from its data-hint (index.css), so the entry's text is its name alone.
-    // The hint is hidden from a screen reader (review fix 9): the entry's name is its text alone, and the shortcut is named by
+    // The hint is hidden from a screen reader: the entry's name is its text alone, and the shortcut is named by
     // aria-keyshortcuts.
     extra: shortcutHint(a.key, MAC_KEYS) ? <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint(a.key, MAC_KEYS)} /> : undefined,
     "aria-keyshortcuts": shortcutKeys(a.key, MAC_KEYS),
@@ -2050,7 +2049,7 @@ export default function FilesPage() {
         label: t(GROUP_TITLE[piece.section]),
         icon: groupIcon[piece.section],
         style: touchItem,
-        // A submenu has the root menu's height limit and scroll, so a short window reaches its last entry (review fix 5).
+        // A submenu has the root menu's height limit and scroll, so a short window reaches its last entry.
         popupStyle: MENU_SCROLL,
         children: piece.acts.map(actItem),
       };

@@ -14,7 +14,7 @@ import type { FolderAccess, Node } from "../lib/files/types";
 import type { UploadItem } from "../lib/files/uploads";
 
 // The listing is replaced by a stub that counts its renders. FilesPage renders the listing on each of its own renders, so the
-// count is FilesPage's render count: every upload progress event used to redraw the whole page and its listing).
+// count is FilesPage's render count: every upload progress event used to redraw the whole page and its listing.
 const counts = vi.hoisted(() => ({ listing: 0 }));
 const uploads = vi.hoisted(() => ({ store: null as unknown as ReturnType<typeof writable<UploadItem[]>>, add: vi.fn() }));
 const api = vi.hoisted(() => ({

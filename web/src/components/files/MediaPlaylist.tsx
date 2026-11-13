@@ -175,7 +175,7 @@ export default function MediaPlaylist({
   // playing says whether the file on screen plays now; the queue's current row shows it.
   const [playing, setPlaying] = useState(false);
   // fromSaved is set when a saved playlist replaces the queue. Such a queue ends at its own end: the folder it came from
-  // is not read on, so the playlist never plays the folder's files after its own (review of slice x4).
+  // is not read on, so the playlist never plays the folder's files after its own (slice x4).
   const [fromSaved, setFromSaved] = useState(false);
   const paged = selection === undefined && !fromSaved;
   const [q, setQ] = useState<Queue>(() => {

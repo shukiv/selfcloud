@@ -328,7 +328,7 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  // Decision 69, review fix 1: with no New drawn (an admin page), the gap New leaves stays, 10 px (6 px on a finger), so the first item
+  // Decision 69: with no New drawn (an admin page), the gap New leaves stays, 10 px (6 px on a finger), so the first item
   // is not on the top bar's edge. On a files page New is drawn and there is no gap.
   it("keeps the gap New leaves on an admin page, 10 px, and 6 px on a finger; a files page has no gap", async () => {
     signIn("admin");
@@ -400,7 +400,7 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  // Decision 69, review fix 6: the phone drawer's dialog has a name (the sidebar's region name), read from its title.
+  // Decision 69: the phone drawer's dialog has a name (the sidebar's region name), read from its title.
   it("names the phone drawer's dialog with the sidebar's name", async () => {
     const plain = window.matchMedia;
     window.matchMedia = (query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }) as MediaQueryList;

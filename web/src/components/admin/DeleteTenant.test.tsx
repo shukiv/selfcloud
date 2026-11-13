@@ -11,7 +11,7 @@ import DeleteTenant from "./DeleteTenant";
 
 afterEach(() => session.set(null));
 
-// The deletion request that never answers is cancelled at once: the dialog closes and the request is aborted (fu4, item 2).
+// The deletion request that never answers is cancelled at once: the dialog closes and the request is aborted (fu4).
 describe("cancelling the tenant deletion while its request is out", () => {
   it("Cancel closes the dialog and aborts the request that asks for the deletion", async () => {
     session.set(signedAs("admin", "admin_1"));

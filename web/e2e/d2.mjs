@@ -381,8 +381,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(yEn.line !== null && yEn.line.text === onActive,`on the selected Storage row the figures take the on-active colour (${yEn.line?.text})`);
     check(storageBarNone === true, `on the selected Storage row there is no bar: its fill marks it (decision 72)`);
     // The track is not checked against the sidebar: a yellow fill keeps 3:1 against a track dark enough to read on the blue, and a track
-    // light enough to reach 3:1 against the blue leaves the yellow under 1.2:1 (computed for the default blue and the teal, review
-    // fix 3). The edge (the caption ring, below) is the bar's outline against the sidebar.
+    // light enough to reach 3:1 against the blue leaves the yellow under 1.2:1 (computed for the default blue and the teal). The edge (the caption
+    // ring, below) is the bar's outline against the sidebar.
     check(yEn.fill !== null && yEn.fill.ratio >= 3, `on the selected Storage row the bar's fill is 3:1 or more against its track (${showRatio(yEn.fill)})`);
     check(yEn.edge !== null && yEn.edge.ratio >= 3, `on the selected Storage row the bar's edge is 3:1 or more against the sidebar (${showRatio(yEn.edge)})`);
     await shotClip(page, shotsDir, 'c1-storage-en-light.png', await boxOf(page, '.ant-layout-sider', 0));

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // A disabled icon button passes its pointer events to its wrapper (IconButton.tsx), so the button itself no longer shows the
-// browser cursor for it. The wrapper must show antd's not-allowed cursor (ic2 item 10, from the ic1 review).
+// browser cursor for it. The wrapper must show antd's not-allowed cursor (ic2).
 const indexCss = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
 
 describe("disabled icon button cursor (decision 71)", () => {

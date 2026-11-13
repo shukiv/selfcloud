@@ -216,9 +216,9 @@ describe("Storage", () => {
   });
 });
 
-// Review fixes (decision 79): the row actions, their effect on the server and on the list, the focus after one, the stale
+// The row actions (decision 79): their effect on the server and on the list, the focus after one, the stale
 // answer of a chip, and the size bar of each row.
-describe("Storage row actions and the review fixes (decision 79)", () => {
+describe("Storage row actions (decision 79)", () => {
   let restoreView: () => void = () => undefined;
   beforeEach(async () => {
     // The language test above leaves Hebrew on; these tests name the English labels.

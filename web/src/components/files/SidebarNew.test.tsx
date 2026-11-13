@@ -103,7 +103,7 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByText("New")).toBeNull();
   });
 
-  // Review item 1 (wf1): the reason is the button's accessible description while it is disabled, with no hover needed, so a
+  // The reason is the button's accessible description while it is disabled, with no hover needed, so a
   // keyboard or screen-reader user hears why it waits. It is absent once the button is enabled.
   function description(button: HTMLElement): string | null {
     const id = button.getAttribute("aria-describedby");
@@ -120,7 +120,7 @@ describe("the sidebar's New button", () => {
     expect(description(screen.getByTestId("new-button"))).toBe("Loading the folder");
   });
 
-  // Review item 2 (wf1): the copy is hidden from the reading order, so browse mode does not read the reason twice; the button's
+  // The copy is hidden from the reading order, so browse mode does not read the reason twice; the button's
   // description still reads it.
   it("the reason copy is aria-hidden, so it is read once, as the button's description", () => {
     renderNew(null);
@@ -137,7 +137,7 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByText("Loading the folder")).toBeNull();
   });
 
-  // Review item 2 (wf1): a failed read names its error where the wait used to say "Loading the folder".
+  // A failed read names its error where the wait used to say "Loading the folder".
   it("when the folder could not be read, the reason is the error, as the tooltip and the accessible description", async () => {
     renderNew(null, false, false, [], "Something went wrong.");
     const button = screen.getByTestId("new-button");
@@ -163,7 +163,7 @@ describe("the sidebar's New button", () => {
     expect(tip.parentElement?.style.display).toBe("flex");
   });
 
-  // Decision 69, review fix 8: a long translation is cut with an ellipsis inside the cap, not pushed past the sidebar.
+  // Decision 69: a long translation is cut with an ellipsis inside the cap, not pushed past the sidebar.
   it("cuts a long word with an ellipsis, inside the sidebar's width", () => {
     renderNew(myFilesPlace("fld_mine"));
     const word = screen.getByTestId("new-button").querySelector<HTMLElement>("span");
@@ -173,7 +173,7 @@ describe("the sidebar's New button", () => {
     expect(screen.getByTestId("new-button").style.maxInlineSize).toBe("100%");
   });
 
-  // Decision 69, review fix 8: New's top edge is 10 px down with a mouse and 6 px on a finger (the search box's top edge).
+  // Decision 69: New's top edge is 10 px down with a mouse and 6 px on a finger (the search box's top edge).
   it("sits 10 px from the top with a mouse, and 6 px on a finger", () => {
     const mouse = renderNew(myFilesPlace("fld_mine"));
     expect(screen.getByTestId("new-button").closest("div")?.style.marginBlockStart).toBe("10px");
@@ -274,7 +274,7 @@ describe("Escape in the sidebar's New menu (decision 95)", () => {
   });
 });
 
-// The menu's groups, the submenus, the chord and the hints (decision 108: the menu shortcut rules).
+// The menu's groups, the submenus, the chord and the hints (decision 108).
 describe("the New menu's submenus, template link, and chord", () => {
   beforeEach(async () => {
     await setLang("en");

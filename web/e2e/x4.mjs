@@ -124,7 +124,7 @@ async function touchSizes(page, check, what) {
 }
 
 // rowGaps checks the buttons of the first saved playlist row sit apart: any two side by side (or on one line) have at least
-// GAP_MIN px between them, as the other button rows of the panel do (review of slice x4: Play, Edit, rename and Delete touched).
+// GAP_MIN px between them, as the other button rows of the panel do (slice x4: Play, Edit, rename and Delete touched).
 const GAP_MIN = 6;
 async function rowGaps(page, check, what) {
   const gaps = await page.evaluate(`(() => {
@@ -243,7 +243,7 @@ export async function x4Checks(h, { page, base, accountKey, accountID, memberID 
         const shownLang = await page.evaluate(`document.documentElement.lang + ' ' + document.documentElement.dir`);
         check(shownLang === `${lang} ${lang === 'he' ? 'rtl' : 'ltr'}`, `the page is shown in ${lang} for the saved list (${theme} ${width}): ${shownLang}`);
         await rowGaps(page, check, `${lang} ${theme} ${width}`);
-        // One file reads with the singular (review of slice x4: "1 files" and a plural in Hebrew that was wrong).
+        // One file reads with the singular (slice x4: "1 files" and a plural in Hebrew that was wrong).
         // The count is wrapped in isolate marks in Hebrew (decision 67); the check reads the text through them.
         const countText = (await page.evaluate(`document.querySelector('[data-testid="playlist-row"] .media-row-artist')?.textContent ?? ''`)).replace(/[\u2066-\u2069]/g, '');
         const wantCount = lang === 'he' ? '1 קובץ' : '1 file';

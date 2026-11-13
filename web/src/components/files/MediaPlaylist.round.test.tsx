@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The playlist's second review round: a pick or a Next made while a page is being read wins over the step that waits for
+// The playlist: a pick or a Next made while a page is being read wins over the step that waits for
 // it; a link the player cannot renew is asked of the share; shuffle pressed twice, or left by the viewer, reads no more;
 // a page that cannot be read says so and can be read again; and the add panel of a selection adds from the folder.
 

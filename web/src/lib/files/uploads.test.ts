@@ -279,7 +279,7 @@ describe('sending pieces', () => {
   });
 });
 
-describe('a name taken at creation (fu4, item 3)', () => {
+describe('a name taken at creation (fu4)', () => {
   const taken = { error: { code: 'conflict', message: 'taken', details: {} } };
 
   it('asks the question, and sends no piece', async () => {

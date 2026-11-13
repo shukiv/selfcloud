@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The share page's second review round: a no-download clip plays on a share (as it does on the owner's viewer), and shows no
+// The share page: a no-download clip plays on a share (as it does on the owner's viewer), and shows no
 // Download button; and the heading names the file the playlist is playing, not the file the visitor opened.
 
 import { fireEvent, render, screen } from "@testing-library/react";

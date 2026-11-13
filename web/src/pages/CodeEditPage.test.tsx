@@ -621,7 +621,7 @@ const MIXED = "This file mixes line break styles. Saving writes the first style 
 const MAYBE = "The last save may have reached the server before the connection failed.";
 const FAILED = "Save failed. The text stays here, so try again.";
 const MESSAGE = "This file changed since you opened it. Reload it to see the saved version.";
-// The new notices of the review fixes (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
+// The new notices (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
 const SIGNED_OUT = "Your sign-in has ended. The text stays here. Sign in again to save it.";
 const BAD_NAME = "This name is too long or not allowed in this folder. Rename the copy and try again.";
 const SIGNED_OUT_COPY = "Unsaved changes are not kept across sign-in. Copy the text first, then sign in.";
@@ -1083,7 +1083,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(content().classList.contains("cm-lineWrapping")).toBe(true));
   });
 
-  // ---- The review fixes (decision 130, the review's findings). Each test is red before its fix.
+  // ---- The fixes (decision 130). Each test is red before its fix.
 
   it("a double click on Keep as a copy sends one copy, not two", async () => {
     const s = server();
@@ -1308,7 +1308,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(content().textContent).not.toContain("{}");
   });
 
-  it("the app mark opens in a new tab with a modifier key, and leaves the page only on a plain click (LOW-A)", async () => {
+  it("the app mark opens in a new tab with a modifier key, and leaves the page only on a plain click", async () => {
     server();
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));

@@ -196,7 +196,7 @@ describe("the tenants table's Users column", () => {
 });
 
 describe("a change of person while a change is out", () => {
-  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c) => {
       if (c.method === "PATCH") return new Promise<Answer>(() => undefined);
       if (path(c).pathname === "/api/v1/accounts") return { status: 200, body: { items: [account()] } };

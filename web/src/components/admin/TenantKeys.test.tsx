@@ -175,7 +175,7 @@ describe("API keys of a tenant", () => {
     await waitFor(() => expect(screen.queryByDisplayValue(SECRET)).toBeNull());
   });
 
-  it("a revoke that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a revoke that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c: Call) => {
       if (c.method === "DELETE") return new Promise<Answer>(() => undefined);
       return { status: 200, body: { items: [key()] } };

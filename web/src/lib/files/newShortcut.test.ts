@@ -227,7 +227,7 @@ describe("overlayOpen: a stylesheet hides the overlay", () => {
 });
 
 // The sidebar's own menu is the .shell-menu; another antd menu, shown in a popover or a popup, is an open overlay. A popover
-// (Popover and Popconfirm) is open when it is shown and not when its ant-popover-hidden class is set (nt2 review, LOW).
+// (Popover and Popconfirm) is open when it is shown and not when its ant-popover-hidden class is set.
 describe("overlayOpen: which menus and popovers are overlays", () => {
   function shownMenu(className: string): HTMLElement {
     const ul = document.createElement("ul");

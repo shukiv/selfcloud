@@ -9,7 +9,7 @@ import { fail, stubFetch } from "../test/fetchStub";
 import VerifyPage from "./VerifyPage";
 import ResetPage from "./ResetPage";
 
-// fu2 item 5 (decision 74): the verify and reset pages ask a browser signed in as another person before they switch,
+// fu2 (decision 74): the verify and reset pages ask a browser signed in as another person before they switch,
 // with the same prompt the sign-in link shows, and send confirm only when the person answers yes.
 const ask = fail(409, "conflict", {
   reason: "signed_in_as_other",

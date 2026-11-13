@@ -184,8 +184,8 @@ export default function LargestFilesCard({
   );
 }
 
-// openFileTab opens an office file's editor in a new tab, when the rules of the editor's open say so (decision 102)
-// and the review: office editing on, a desktop pointer, an office file). The address is /n/{id}?tab=1: the /n/ page reaches the
+// openFileTab opens an office file's editor in a new tab, when the editor's rules for opening say so (decision 102)
+// and those rules read: office editing on, a desktop pointer, an office file. The address is /n/{id}?tab=1: the /n/ page reaches the
 // editor for the person's role, and the tab flag lets the editor's Close end the tab. It reports whether it opened one.
 function openFileTab(id: string, mime: string | undefined): boolean {
   if (!get(officeEdit) || coarsePointer() || kindOf({ kind: "file", mime_type: mime }) !== "office") return false;

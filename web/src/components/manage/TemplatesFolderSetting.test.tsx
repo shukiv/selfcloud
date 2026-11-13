@@ -90,7 +90,7 @@ describe("TemplatesFolderSetting", () => {
     await waitFor(() => expect(m.setTemplatesFolder).toHaveBeenCalledWith(ACC, "nod_abcdefgh"));
   });
 
-  // A space's root is picked with dir null: the folder list gives the root node, and that is what is saved .
+  // A space's root is picked with dir null: the folder list gives the root node, and that is what is saved.
   it("saves the root node of a space picked at its root", async () => {
     m.setTemplatesFolder.mockResolvedValue(null);
     m.myFolders.mockResolvedValue([{ id: "fld_abcdefgh", name: "Team", kind: "team", access: "write", role: "manager", root_node_id: "nod_rootroot" }]);

@@ -10,8 +10,7 @@
 // is none, and the worker has already let go of the files when it handed them over (decision 82).
 const ANSWER_LIMIT = 10_000;
 
-// PAGE_LIMIT is how long the page keeps its copy of a share's files after its last take of the share: sixty seconds (decision 82,
-//). A signed-in person who leaves the share page, by the sidebar or otherwise, and comes back later gets nothing.
+// PAGE_LIMIT is how long the page keeps its copy of a share's files after its last take of the share: sixty seconds (decision 82). A signed-in person who leaves the share page, by the sidebar or otherwise, and comes back later gets nothing.
 const PAGE_LIMIT = 60 * 1000;
 
 // SIGNED_OUT_LIMIT is how long the page keeps the files of a share it took while signed out: five minutes. Signing in with an

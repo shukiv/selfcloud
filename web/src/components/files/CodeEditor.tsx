@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// CodeEditor is the code area of the editor page (decision 115, decision 124): CodeMirror with the viewer's look, its
+// CodeEditor is the code area of the editor page (decisions 115 and 124): CodeMirror with the viewer's look, its
 // language pack and its find panel, and the editing keys: undo and redo, and Ctrl or Cmd+S, which asks the page to save and
 // takes the key from the browser (the browser's save dialog does not open). Tab leaves the area: no indent key is bound, so a
 // keyboard user is not held in it (Ctrl or Cmd+] indents). The page owns the text's saved state; this only reports changes.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The queue's second review round: a page added to a shuffled queue does not change the round the queue already holds.
+// The queue: a page added to a shuffled queue does not change the round the queue already holds.
 
 import { describe, expect, it } from "vitest";
 import type { Node } from "./types";

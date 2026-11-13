@@ -92,7 +92,7 @@ export default defineConfig({
             {
               name: "antd-shared",
               // The antd modal and skeleton and rc-util's useId, which the first load reached through the main i18n chunk, go
-              // into one shared chunk of their own, so the first load preloads one file for them and not five (r7b review).
+              // into one shared chunk of their own, so the first load preloads one file for them and not five.
               // The tooltip is in too (nt2, decision 108): the sidebar's New button puts it on the first-load path, and once a lazy
               // page (the template gallery) shares it, the bundler split it into a chunk of its own, which the first load then preloads.
               // The motion helpers move and slide (nt2) are files, not folders, so they are named by file (decision 108).

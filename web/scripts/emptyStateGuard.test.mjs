@@ -43,7 +43,7 @@ const bypass = {
     // The file name is FilesPage's own, where the old guard exempted the key for the whole file.
     { name: 'pages/FilesPage.tsx', src: page('      <p>{t("files.empty")}</p>') }
   ),
-  // Review 2 of em1: a name is not a binding. The text prop reads copy.empty, which is not the local empty.
+  // A name is not a binding. The text prop reads copy.empty, which is not the local empty.
   'a variable with the same name as a property passed to EmptyState': page(
     '      <p role="status">{empty}</p>\n      <EmptyState text={copy.empty} />',
     '  const empty = t("starred.empty");\n  const copy = { empty: "plain" };\n',

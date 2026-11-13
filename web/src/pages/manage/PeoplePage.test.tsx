@@ -105,7 +105,7 @@ describe("the people list", () => {
     expect(within(menu).getByText("Remove…")).toBeTruthy();
   });
 
-  // the "Open" text button goes; the row opens the person, by a click or by Enter on the focused row.
+  // The "Open" text button goes; the row opens the person, by a click or by Enter on the focused row.
   it("a row opens the person's details on Enter, and no row carries an Open button", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
@@ -131,7 +131,7 @@ describe("the people list", () => {
     expect(line.style.color).toMatch(/^rgba?\(/);
   });
 
-  // the owner's rule: the signed-in person's own row reads "You".
+  // The owner's rule: the signed-in person's own row reads "You".
   it("the signed-in person's own row reads You", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_owen", "active", "owner"), person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
@@ -140,7 +140,7 @@ describe("the people list", () => {
     expect(within(screen.getByRole("row", { name: "Name usr_a" })).queryByText("You")).toBeNull();
   });
 
-  // below md the role and the status are the name's second line, and the actions are the ⋮ menu alone.
+  // Below md the role and the status are the name's second line, and the actions are the ⋮ menu alone.
   it("on a phone, the role and the status are the name's second line, and the row has its ⋮ button alone", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);

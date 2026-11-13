@@ -220,7 +220,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
         throw new Error(`the folder's read failed: ${await page.evaluate(`document.querySelector('[role="alert"]')?.textContent ?? ''`)}`);
       }
     } catch (e) {
-      // Diagnostics (fu3b, item 8): what the page shows when the listing has not come, and which of its reads have answered.
+      // Diagnostics (fu3b): what the page shows when the listing has not come, and which of its reads have answered.
       const state = await page.evaluate(`JSON.stringify({ path: location.pathname, busy: !!document.querySelector('[aria-busy="true"]'), alert: document.querySelector('[role="alert"]')?.textContent?.slice(0, 160) ?? null, status: document.querySelector('[role="status"]')?.textContent?.slice(0, 80) ?? null, rows: document.querySelectorAll('[role="row"],[role="option"]').length, files: performance.getEntriesByType('resource').filter((r) => /\\/children|\\/me$|\\/places?/.test(r.name)).map((r) => r.name.replace(/.*\\/api/, '') + ' ' + r.responseStatus) })`);
       console.log(`DIAG open ${view} after ${Date.now() - started} ms: ${state}`);
       // What the page is waiting on (the stack gate fu3stackb found no rows, no alert and no finished read after 15 s): the
@@ -259,7 +259,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     for (const want of ['Download', 'Rename', 'Share', 'Organize', 'Information', 'Move to trash']) {
       check(items.includes(want), `the menu of a file offers ${want} (${items.join(' / ')})`);
     }
-    // Each entry the menu named before is still in its group (review fix 13): Share and Copy link, Organize's Move to and Copy to,
+    // Each entry the menu named before is still in its group: Share and Copy link, Organize's Move to and Copy to,
     // and Information's Details.
     await hoverMenuTitle(page, 'Share');
     const inShare = await menuItems(page);
@@ -356,7 +356,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     check(cleared, 'the pasted file is no longer dimmed: the clipboard was emptied by the move');
   });
 
-  // ---- 5b. a paste sent while the folder opens: the page says it is still opening, once, and moves nothing (fu4, item 1) ----
+  // ---- 5b. a paste sent while the folder opens: the page says it is still opening, once, and moves nothing (fu4) ----
   // The listing request of the folder is held (Fetch), so the folder stays busy until the keys have been sent. Only requests
   // paused after the hold starts are held; every other request is answered at once.
   await step('a paste while the folder opens says so once, and moves nothing', async () => {
@@ -779,7 +779,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
   });
 
   // ---- 22. a failed English catalogue shows a retry, not a blank page; the retry loads the page ----
-  // It stands on its own (fu3b, item 6): it runs in a browser of its own, with an empty profile, so the English chunk is its first
+  // It stands on its own (fu3b): it runs in a browser of its own, with an empty profile, so the English chunk is its first
   // load there and nothing is in a memory cache. Its paused requests are answered by its own listener. In the shared page the
   // listener was the media section's, so run alone the paused chunk was never answered, and the page stayed blank.
   await step('a failed English catalogue shows a retry, not a blank page, and the retry loads the page', async () => {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Slice fu3b (decision 77): the list's first frames and its place changes, in a browser that samples every frame.
-// Item 1: from a fresh mount of the list and from a folder change, no painted frame has the header's columns and the body's
-// first row's cells apart by more than 1 px. Item 2: from a click on a folder to the new listing, every frame holds a listing (the
+// From a fresh mount of the list and from a folder change, no painted frame has the header's columns and the body's
+// first row's cells apart by more than 1 px. From a click on a folder to the new listing, every frame holds a listing (the
 // previous one, marked busy, until the next is read). The sampler starts before the action, so each frame counts, and it stops
 // on the listing's own rows, not on a count of frames. Each case runs three times, so one lucky frame does not pass a flake.
 // The folder and its files are removed before the section ends.
@@ -164,11 +164,11 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
     await page.evaluate(`history.back(), true`);
     await page.waitFor(`location.pathname.startsWith('/files/${teamA}')`, 15000);
     await page.waitFor(`!document.getElementById('newfolder-name')`, 10000);
-    check(true, 'a New folder dialog the sidebar opened closes when Back goes to the folder before (fu3b, item 7)');
+    check(true, 'a New folder dialog the sidebar opened closes when Back goes to the folder before (fu3b)');
 
-    // Item 5: a finger's screen and a hybrid screen, each in its own browser. A finger has no hover and a coarse pointer: the 44 px
+    // A finger's screen and a hybrid screen, each in its own browser. A finger has no hover and a coarse pointer: the 44 px
     // targets and the list without its hover icons; the 200 px window's submenu scrolls and its last entry is reachable.
-    // Review fix 5, the pinned header: at phone width, with the selection bar shown, the header is pinned below the toolbar; in
+    // The pinned header: at phone width, with the selection bar shown, the header is pinned below the toolbar; in
     // Hebrew its columns sit over the body's.
     await layoutChecks(h, page, { base, teamA, aID, navigateTo, rowAppears, suffix });
 

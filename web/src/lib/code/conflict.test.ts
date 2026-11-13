@@ -97,7 +97,7 @@ describe("keepCopy", () => {
     expect(f.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(1);
   });
 
-  it("says whether a request was sent: a folder walk that fails sent none, a lost copy was sent (LOW-B)", async () => {
+  it("says whether a request was sent: a folder walk that fails sent none, a lost copy was sent", async () => {
     // The walk is a GET of the folder; the copy is a POST. A walk that fails before any POST has no copy in flight.
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit = {}) => {
       if ((init.method ?? "GET") === "GET") throw new TypeError("offline");

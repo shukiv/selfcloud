@@ -20,7 +20,7 @@ export type IconButtonProps = Omit<ButtonProps, 'icon' | 'children' | 'shape' | 
 
 // lastInputWasKey is true when the person's last input on the page was a key press, false after a pointer press. A button that
 // takes the focus after a key press (Tab, or a menu's Enter) shows its tooltip; one that takes it after a click does not. The
-// decision is made here, not by :focus-visible, so it is the same in every engine and can be tested (review fix, decision 68).
+// decision is made here, not by :focus-visible, so it is the same in every engine and can be tested (decision 68).
 let lastInputWasKey = false;
 if (typeof document !== 'undefined') {
   document.addEventListener('keydown', () => { lastInputWasKey = true; }, true);

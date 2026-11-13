@@ -23,7 +23,7 @@ describe("ThemeMenu (decision 68, the top bar's theme)", () => {
     await setLang("en");
   });
 
-  // Review fix (decision 68): the name and the tooltip say the current choice, so the icon says what it is set to.
+  // The name and the tooltip say the current choice, so the icon says what it is set to.
   it("is one icon button named for the current choice, with no words on the bar", () => {
     renderMenu();
     const button = screen.getByRole("button", { name: "Theme: System" });

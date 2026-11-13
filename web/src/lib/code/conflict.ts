@@ -55,7 +55,7 @@ async function dirsOf(parentId: string | null): Promise<string[]> {
   return names;
 }
 
-// A failed copy says whether a request was sent: only a sent copy can have reached the server, so only it can be a lost reply (LOW-B).
+// A failed copy says whether a request was sent: only a sent copy can have reached the server, so only it can be a lost reply.
 export type CopyResult = { ok: true; node: Node } | { ok: false; why: SaveFailure | "noName"; sent: boolean };
 
 // copyFailureOfStatus names a refused copy: a name the server will not take (400) and a folder that is gone (404) have words

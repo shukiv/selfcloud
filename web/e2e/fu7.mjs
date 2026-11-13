@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice fu7 (decision 93), the owner's notes on the dev run, and its review rounds. At 1280 wide, and on a 390 phone where it says so:
+// Slice fu7 (decision 93), the owner's notes on the dev run. At 1280 wide, and on a 390 phone where it says so:
 //  1. The breadcrumbs' separators sit on the centre of the crumb text, in English light, English dark, Hebrew and at 390 wide.
 //  2. The sidebar's group under a space's root has a tint; the rows' text and the current row's mark read 4.5:1 or more on it, at rest and
 //     on hover, in English light, English dark and Hebrew (the e2e brand is teal).

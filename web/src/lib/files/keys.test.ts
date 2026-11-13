@@ -100,7 +100,7 @@ describe("keyAction", () => {
   });
 });
 
-// Review fix 8 (decision 70): on a Mac, Command+Backspace moves the selection to the trash; Backspace alone still goes up a folder,
+// Decision 70: on a Mac, Command+Backspace moves the selection to the trash; Backspace alone still goes up a folder,
 // and elsewhere Backspace is unchanged.
 describe("keyAction: Mac Delete", () => {
   const mac: KeyLayout = { cols: 1, grid: false, rtl: false, count: 10, mac: true };

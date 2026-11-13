@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The rules the review of the player found: a file that is the only one left plays again under repeat, a file the person
+// The player's rules: a file that is the only one left plays again under repeat, a file the person
 // picks starts the failure run again, a file picked in a shuffled round leaves the round, and the queue holds at most
 // MAX_QUEUE files and says when it has left some out.
 

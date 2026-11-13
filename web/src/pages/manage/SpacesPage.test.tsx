@@ -107,7 +107,7 @@ describe("team spaces", () => {
     ]);
   });
 
-  // below md the flags are the name's second line, and the actions are the ⋮ menu alone.
+  // Below md the flags are the name's second line, and the actions are the ⋮ menu alone.
   it("on a phone the flags are the name's second line, and the actions are one ⋮ menu", async () => {
     restoreViewport();
     restoreViewport = setViewport(PHONE);
@@ -137,7 +137,7 @@ describe("team spaces", () => {
     expect(row.querySelector(".row-second")?.textContent).toBe("Members only");
   });
 
-  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4)", async () => {
     const { calls } = stubFetch((c) => (isSpaceDelete(c) ? new Promise<Answer>(() => undefined) : answerFor(() => null)(c)));
     renderPage();
     await openDelete();

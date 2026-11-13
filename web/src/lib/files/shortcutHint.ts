@@ -24,7 +24,7 @@ const PLAIN: Record<string, string> = { rename: "F2", delete: "Delete", preview:
 export function shortcutHint(key: string, mac: boolean): string | undefined {
   const letter = ACCEL[key];
   if (letter) return mac ? `⌘${letter}` : `Ctrl+${letter}`;
-  // Move to trash is Command+Backspace on a Mac (review fix 8).
+  // Move to trash is Command+Backspace on a Mac.
   if (key === "delete" && mac) return "⌘⌫";
   return PLAIN[key];
 }

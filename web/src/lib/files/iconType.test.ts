@@ -109,7 +109,7 @@ describe("fileTypeOf (decision 68, colour by type)", () => {
     }
   });
 
-  // Review fix (decision 68): a square also sits on the tile's preview area (antd's colorFillQuaternary, a translucent fill over
+  // A square also sits on the tile's preview area (antd's colorFillQuaternary, a translucent fill over
   // the card) and on a selected row or tile (colorPrimaryBg). Both are measured in both modes, as the fill is painted on the
   // ground under it: a selected tile's preview is its fill over the selected tint.
   it("keeps each colour at 3:1 on the tile preview and the selected fill, in both modes", () => {

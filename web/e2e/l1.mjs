@@ -63,7 +63,7 @@ async function closeMenus(page) {
   await sleep(300);
 }
 
-// perfCheck measures a 500-folder listing (review fix 7): how long the rows take to draw, how many elements the list holds, and how
+// perfCheck measures a 500-folder listing: how long the rows take to draw, how many elements the list holds, and how
 // long a click takes to select one row (the row's own re-render). Run only with SELFCLOUD_E2E_PERF set; the numbers are printed, not
 // checked. The folder is removed at the end.
 async function perfCheck(h, { page, base, accountKey, teamA }, suffix) {
@@ -109,7 +109,7 @@ async function perfCheck(h, { page, base, accountKey, teamA }, suffix) {
 }
 
 // probeBands reads the two band colours the list's variables hold, as the browser paints them: a probe element takes each variable,
-// so the colour is the token's own value, not a guess (review fix 3).
+// so the colour is the token's own value, not a guess.
 const probeBands = (page) =>
   page.evaluate(`(() => {
     const list = document.querySelector('.files-list');
@@ -123,7 +123,7 @@ const probeBands = (page) =>
     return { hover, selected };
   })()`);
 
-// reviewDesktop checks the review fixes the light desktop shows: the bands are the tokens' exact colours (3), a focused row keeps its
+// reviewDesktop checks the fixes the light desktop shows: the bands are the tokens' exact colours (3), a focused row keeps its
 // icons when the selection is cleared (2), and the keyboard opens a row's ⋮ menu with the focus in it (1). The finger rules (10) are not
 // checked here: a headless browser cannot switch its hover and pointer media after launch (see cdp.mjs).
 async function reviewDesktop(page, { check, alpha, beta, snap, selectRow }) {
@@ -187,7 +187,7 @@ async function reviewDesktop(page, { check, alpha, beta, snap, selectRow }) {
 }
 
 // hebrewMenuAnchor opens a row's ⋮ in Hebrew, with the mouse, and checks the menu is next to the button: its nearest edge is at the
-// button's start edge, which in Hebrew is the right (review fix 11).
+// button's start edge, which in Hebrew is the right.
 async function hebrewMenuAnchor(page, { check, beta }) {
   const more = `${rowSel(beta)} button[aria-haspopup="menu"]`;
   await page.evaluate(`document.querySelector(${q(more)}).click(), true`);
@@ -324,7 +324,7 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
     await pickMenuEntry(page, 'Rename');
     await page.waitFor(`!!document.querySelector('input[aria-label="New name"]')`, 10000);
-    // The field holds the file's own name, ready to be typed over (review fix 13: a real condition, not a bare check).
+    // The field holds the file's own name, ready to be typed over (a real condition, not a bare check).
     const field = await page.evaluate(`document.querySelector('input[aria-label="New name"]')?.value ?? null`);
     check(field === files.beta, `Rename from the menu opens the name field with the file's name (${field})`);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
@@ -336,7 +336,7 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await pickMenuEntry(page, 'Move to trash');
     await page.waitFor(`!!document.querySelector('.ant-modal-confirm, .ant-modal')`, 10000);
     await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Move to trash')?.click(), true`);
-    // The row is gone from the listing, and the menu has closed (review fix 13: a real condition, not a bare check).
+    // The row is gone from the listing, and the menu has closed (a real condition, not a bare check).
     await page.waitFor(`!document.querySelector(${q(rowSel(files.gamma))}) && !document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`, 10000).catch(() => undefined);
     const gone = await page.evaluate(`!document.querySelector(${q(rowSel(files.gamma))}) && !document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`);
     check(gone === true, `Move to trash from the menu removes the file from the listing once confirmed (${gone})`);

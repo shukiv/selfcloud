@@ -431,7 +431,7 @@ export default function CodeEditPage() {
       setConflict({ ...c, noName: true });
       return;
     }
-    // Only a copy that was sent can have reached the server, so only it is a lost reply (LOW-B).
+    // Only a copy that was sent can have reached the server, so only it is a lost reply.
     if (got.why === "failed" && got.sent) lostSave.current = true;
     setConflict(null);
     setSaveState("failed");
@@ -669,7 +669,7 @@ export default function CodeEditPage() {
         <a
           href={folderHref}
           onClick={(e) => {
-            // Only a plain left click leaves the page here. A modifier (a new tab, a new window) or another button goes to the browser (LOW-A).
+            // Only a plain left click leaves the page here. A modifier (a new tab, a new window) or another button goes to the browser.
             if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(folderHref);

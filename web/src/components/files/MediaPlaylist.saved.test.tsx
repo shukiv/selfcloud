@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // A saved playlist put in the queue ends at its own end. The folder the player started from has more pages, but the
-// playlist does not go on to them (review of slice x4): the next page is not asked for, and playback stops.
+// playlist does not go on to them (slice x4): the next page is not asked for, and playback stops.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

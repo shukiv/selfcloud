@@ -101,7 +101,7 @@ async function diag(page, label, point) {
 }
 
 // dialogsNow logs every dialog and modal wrap on the page, with its count, and for each its display and visibility, aria-hidden, title,
-// its first buttons, and whether its box is in the viewport. It changes nothing. Round 9's question is which dialog a confirm would use.
+// its first buttons, and whether its box is in the viewport. It changes nothing. The question is which dialog a confirm would use.
 async function dialogsNow(page, label) {
   const info = await page.evaluate(`(() => {
     const nodes = [...document.querySelectorAll('[role="dialog"], .ant-modal-wrap')];
@@ -128,7 +128,7 @@ async function dialogsNow(page, label) {
 // opens (ant-zoom-*), so a press read before the zoom ends lands where the button was mid-zoom: a press there can send no request. The
 // dialog and its wrap must carry no antd motion class and have no running animation, and the button's box must be the same on two
 // reads 100 ms apart. It also waits for the layer above the target to clear: no other visible .ant-modal-wrap may be over it, and
-// elementFromPoint at its centre must be the button or inside it (a close once: a closing Delete dialog covered the Undo notice, and a
+// elementFromPoint at its centre must be the button or inside it (a closing Delete dialog once covered the Undo notice, and a
 // press there reached the dialog, not Undo). It returns null if there is no such button (the caller fails without pressing), and
 // throws, naming the last read, if it is still not settled after 10 s.
 async function settledPoint(page, pick, what) {

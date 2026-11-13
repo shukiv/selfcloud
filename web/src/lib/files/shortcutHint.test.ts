@@ -46,7 +46,7 @@ describe("shortcutHint: the keys each action answers, as the menu shows them", (
   });
 });
 
-// Review fix 8 and 9: Move to trash shows the Mac's key, and each shortcut has the name a screen reader reads (aria-keyshortcuts).
+// Move to trash shows the Mac's key, and each shortcut has the name a screen reader reads (aria-keyshortcuts).
 describe("shortcutHint: Mac Delete, and the names for aria-keyshortcuts", () => {
   it("Move to trash shows Command+Backspace on a Mac, and Delete elsewhere", () => {
     expect(shortcutHint("delete", true)).toBe("⌘⌫");

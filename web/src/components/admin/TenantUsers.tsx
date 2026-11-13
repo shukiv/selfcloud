@@ -193,7 +193,7 @@ export default function TenantUsers({ account }: { account: string }) {
                     onSelect: () => void changeStatus(p),
                   },
                 ]),
-            // Remove from account (the mockup's ⋮, re-check item 2), for anyone, a pending person too. Its words are the admin
+            // Remove from account (the mockup's ⋮), for anyone, a pending person too. Its words are the admin
             // catalogue part's, which the page loads with its empty table; until they arrive, the People page's "Remove…".
             {
               key: "remove",

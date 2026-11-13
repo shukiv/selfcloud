@@ -134,7 +134,7 @@ describe("the editor page", () => {
     expect(form?.method.toLowerCase()).toBe("post");
     expect(form?.action).toBe(ACTION);
     expect(form?.querySelector<HTMLInputElement>('input[name="access_token"]')?.value).toBe(TOKEN);
-    // Once posted, the form leaves the page, so no script of the page can read the token from it (review of decision 73).
+    // Once posted, the form leaves the page, so no script of the page can read the token from it (decision 73).
     expect(document.querySelector('input[name="access_token"]')).toBeNull();
     expect(document.querySelector('form[target="selfcloud-office-editor"]')).toBeNull();
     expect(window.location.href).not.toContain(TOKEN);
@@ -498,7 +498,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(officePosts()).toHaveLength(1);
   });
 
-  // ef1 review (decision 107): a copy is bound only while a Save As this page started is pending, and only when it is the
+  // Decision 107: a copy is bound only while a Save As this page started is pending, and only when it is the
   // requested name or its free form, made after the request. Outside that, a title or a save answer never moves the page.
   it("no Save As pending: a title naming a sibling does not move the page, and a renewal renews the file the editor opened", async () => {
     nodesMock.children = [COPY];
@@ -773,7 +773,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  // Round 3 (decision 107): a window ends once, and only its own timer and busy flag are its to clear; a copy the page
+  // A window ends once, and only its own timer and busy flag are its to clear; a copy the page
   // could not bind stops the renewals for the original; a file's directory is its own parent; an answer before the request
   // does not consume the window; one title check runs at a time.
   const COPY_NOT_SHOWN = "The copy was saved, but it is not shown here. Open its folder to find it.";
@@ -904,7 +904,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(nodesMock.listed).toHaveLength(2);
   });
 
-  // Round 4 (decision 107): the newest title is always checked; a timed-out request leaves the copy note and no renewals;
+  // The newest title is always checked; a timed-out request leaves the copy note and no renewals;
   // a title checks against the window it belongs to.
   it(": A, B, A queued behind an A check ends with a check of the last A", async () => {
     nodesMock.children = [];
@@ -990,7 +990,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(window.location.pathname).toBe("/edit/nod_c2");
   });
 
-  // Round 5 (decision 107): a renewal already in flight when the copy is lost posts no token, and a refused one keeps the note.
+  // A renewal already in flight when the copy is lost posts no token, and a refused one keeps the note.
   async function renewalInFlightAtLoss(outcome: "ok" | "refused") {
     nodesMock.children = [];
     await openEditor();
@@ -1045,7 +1045,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await renewalInFlightAtLoss("refused");
   });
 
-  // Round 6 (decision 107): an answer that arrives near the end of the window binds, whatever the read costs; a renewal in
+  // An answer that arrives near the end of the window binds, whatever the read costs; a renewal in
   // flight when the page moves to a copy posts nothing; a window that ends during the folder's listing says the copy did not start.
   async function answerNearEnd(copyThere: boolean) {
     nodesMock.children = [];

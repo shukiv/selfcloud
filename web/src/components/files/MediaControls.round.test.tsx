@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The player's second review round, on the element: the iPhone's full screen where the page cannot take the stage full
+// The player, on the element: the iPhone's full screen where the page cannot take the stage full
 // screen, the playsInline attribute that keeps a video on its place on an iPhone, and the volume and the mute written to
 // the browser's storage only when they change (not on each time update).
 

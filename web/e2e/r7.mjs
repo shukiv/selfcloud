@@ -50,7 +50,7 @@ async function typeInto(page, field, text) {
 }
 
 // setThemeAt picks the theme at a place in the top bar's menu: 0 system, 1 light, 2 dark (the order the menu gives them). The
-// place is used, not the English words, so the pick works in every language (decision 68, review fix).
+// place is used, not the English words, so the pick works in every language (decision 68).
 async function setThemeAt(page, place, want) {
   await setThemeByPlace(page, place, want);
 }

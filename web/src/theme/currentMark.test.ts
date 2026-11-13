@@ -28,7 +28,7 @@ describe("the sidebar's current-place mark", () => {
   });
 });
 
-// Decision 69, review fix 10: the current row keeps its mark colour on hover, so the text is checked on the hover tint too.
+// Decision 69: the current row keeps its mark colour on hover, so the text is checked on the hover tint too.
 describe("the mark on the hover tint", () => {
   it("is the yellow on the default blue, light and dark (5.2:1 on the tint)", () => {
     const mark = currentMark(SIDEBAR);

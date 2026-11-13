@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The file count of a saved playlist is a plural in each catalogue, as the other counts are: one file reads with the
-// singular form, not "1 files" (review of slice x4).
+// singular form, not "1 files" (slice x4).
 import { describe, expect, it } from 'vitest';
 import { loadLang, translatePlural, type Lang } from '../i18n';
 

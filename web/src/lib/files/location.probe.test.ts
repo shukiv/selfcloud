@@ -23,7 +23,7 @@ describe('locate reads the root once', () => {
   });
 
   // The folder page reads its root listing anyway. A listing it hands to locate is the reachability check, so the root
-  // is not read a second time: locate's probe downloaded a full page and threw it away).
+  // is not read a second time: locate's probe downloaded a full page and threw it away.
   it('uses the listing the page reads as the reachability check, with no request of its own', async () => {
     const here = await locate('fld_a', null, [], Promise.resolve(page));
     expect(here).not.toBeNull();

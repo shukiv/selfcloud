@@ -84,8 +84,8 @@ describe("the lock in Details", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ editing: false })));
   });
 
-  // fu4, item 2: the end of a session that never answers is cancelled at once, and its request is aborted.
-  it("a session end that never answers: Cancel closes the confirmation and aborts the request (fu4, item 2)", async () => {
+  // fu4: the end of a session that never answers is cancelled at once, and its request is aborted.
+  it("a session end that never answers: Cancel closes the confirmation and aborts the request (fu4)", async () => {
     ended(() => new Promise(() => undefined));
     const onChanged = vi.fn();
     open(file(), onChanged);

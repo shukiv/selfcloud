@@ -156,7 +156,7 @@ describe("the folder tree", () => {
     expect(latest.expanded).toEqual(["fld_a", "nod_one"]);
   });
 
-  // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on its way opens, and a row is marked only
+  // Decision 69: the place changes after the tree is mounted: no folder on its way opens, and a row is marked only
   // when it is on screen.
   // Decision 88: a place changed after mount opens the way to it. A place whose folder is not in the tree (no space or top folder
   // is shown for it) opens nothing and marks nothing, so that rule of decision 69 is kept.

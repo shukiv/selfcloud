@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 
-// Question for the review of slice v3: when the query client is cleared while a mutation is in flight (the
+// Question for slice v3: when the query client is cleared while a mutation is in flight (the
 // sign-out case, lib/query.ts clearOnSessionChange), does the mutation's onSuccess still run?
 describe("a mutation in flight when the client is cleared", () => {
   it("still runs onSuccess when its answer arrives after the clear", async () => {

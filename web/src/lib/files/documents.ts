@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// New documents (decision 91, decision 102). The New menu's Document, Spreadsheet and Presentation: the click
+// New documents (decisions 91 and 102). The New menu's Document, Spreadsheet and Presentation: the click
 // opens the wait page in a new tab with a random key, and the opener makes the blank file and hands it over under that key
 // (newDocumentHandoff.ts). A GET never creates a file: the wait page and the editor's address make none. On a coarse pointer
 // the same wait page opens in this tab.

@@ -29,7 +29,7 @@ export const LABELS = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dro
 export async function pickMenuEntry(page, label) {
   const sub = SUBMENU_OF[label];
   if (sub) await hoverMenuTitle(page, sub);
-  // The entry must be there and enabled, as the older helpers waited for (review fix 13): a disabled entry does not run its action.
+  // The entry must be there and enabled, as the older helpers waited for: a disabled entry does not run its action.
   const enabled = `[...document.querySelectorAll(${q(TITLE_SEL)})].some((x) => x.textContent.trim() === ${q(label)} && !x.closest('[role="menuitem"]')?.classList.contains('ant-dropdown-menu-item-disabled'))`;
   await page.waitFor(enabled, 10000).catch(async (err) => {
     const seen = await page.evaluate(`JSON.stringify({ labels: ${LABELS}, open: document.querySelectorAll('.ant-dropdown-menu-submenu-open').length })`);

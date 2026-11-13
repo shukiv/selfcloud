@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The playlist's rules the review named: a pick clears a stop and starts the failure run again (the player mounts), a
+// The playlist's rules: a pick clears a stop and starts the failure run again (the player mounts), a
 // pending skip never moves past a file the person chose, a file that is the only one left plays again under repeat all,
 // and a file's 404 is that file's failure, not the share's end.
 

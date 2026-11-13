@@ -62,7 +62,7 @@ export interface CodeText {
   mixedBreaks: string;
   // A conflict after a save that got no answer: the draft may already be on the server (decision 124).
   maybeSaved: string;
-  // The review notices (decision 130): a sign-in that ended, its Sign in choice, a copy's name or folder refused, a full store.
+  // The notices (decision 130): a sign-in that ended, its Sign in choice, a copy's name or folder refused, a full store.
   signedOut: string;
   signIn: string;
   // The line under the signed-out notice: what a sign-in does to unsaved text.

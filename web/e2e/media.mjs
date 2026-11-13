@@ -450,7 +450,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const menuOpened = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].some((x) => x.textContent.trim() === 'Rename')`);
     const moreOpened = await openedName(page);
     check(menuOpened && moreOpened === null, `a tap on the More button opens the item's menu and opens nothing (menu ${menuOpened}; opened ${moreOpened ?? 'nothing'})`);
-    // The star is changed from the menu on a phone (review fix 13): Star in Organize stars the tile, and Unstar takes the mark away.
+    // The star is changed from the menu on a phone: Star in Organize stars the tile, and Unstar takes the mark away.
     await pickMenuEntry(page, 'Star');
     await sleep(800);
     const starredOn = await page.evaluate(`!!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`);
@@ -783,7 +783,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const pictureReady = (name) =>
       page.waitFor(`(() => { const r = document.querySelector('.lightbox'); const i = r?.querySelector('.lightbox-picture img'); return !!i && i.complete && i.naturalWidth > 0 && r.querySelector('.lightbox-name bdi')?.textContent === ${q(name)}; })()`, 20000);
     // Antd's own transitions move and size things for 0.2 seconds, so nothing is measured or pictured during them. The wait is for
-    // the viewer's own animations to end (fu3b, item 8: a fixed 400 ms could end before a slow transition did, under load).
+    // the viewer's own animations to end (fu3b: a fixed 400 ms could end before a slow transition did, under load).
     const settle = () =>
       page.waitFor(
         `document.getAnimations().every((a) => a.playState !== 'running' || !a.effect?.target?.closest?.('.ant-modal-root, .lightbox'))`,

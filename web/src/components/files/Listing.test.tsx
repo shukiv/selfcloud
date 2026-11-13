@@ -205,7 +205,7 @@ describe("the sort arrow on the list header", () => {
   });
 });
 
-describe("the list's column header (fu3b, item 1)", () => {
+describe("the list's column header (fu3b)", () => {
   // The header is in the same table as the rows, so the two share their columns in every frame. A second table (antd's sticky
   // holder) took its widths a frame later, and the first frame showed the header wrong.
   it("is one table with the rows: no sticky holder with a table of its own", () => {
@@ -513,7 +513,7 @@ describe("the row end: the ⋮ button and the hover icons", () => {
   it("with a mouse a row renders its four icons, and each is named", () => {
     withPointer(false);
     render(<Listing {...props({ rowActs })} />);
-    // The icons are drawn for a hovered row only (review fix 7): the mouse goes over n1 first.
+    // The icons are drawn for a hovered row only: the mouse goes over n1 first.
     fireEvent.pointerEnter(rowOf("n1"), { pointerType: "mouse" });
     const row = rowOf("n1");
     for (const name of ["Share", "Download", "Rename", "Star"]) expect(within(row).getByRole("button", { name })).toBeTruthy();
@@ -547,7 +547,7 @@ describe("the row end: the ⋮ button and the hover icons", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
-  // A star icon is named for the action it does (Unstar on a starred item), and is not a toggle: no aria-pressed (review fix 6).
+  // A star icon is named for the action it does (Unstar on a starred item), and is not a toggle: no aria-pressed.
   it("a starred item's star icon is named for its action, with no pressed state, and an item with no action list shows none", () => {
     withPointer(false);
     const starred = (n: Node) => (n.id === "n2" ? [rowAct("star", "Unstar")] : []);
@@ -558,9 +558,9 @@ describe("the row end: the ⋮ button and the hover icons", () => {
     expect(within(rowOf("n1")).queryByRole("button", { name: /Star/ })).toBeNull();
   });
 
-  // Review fix 7: a row's four icons are drawn only for the row the mouse is on, the selected rows and the row with the focus; the other
+  // A row's four icons are drawn only for the row the mouse is on, the selected rows and the row with the focus; the other
   // rows keep only their ⋮.
-  it("draws the icons only for a hovered, selected or focused row (review fix 7)", () => {
+  it("draws the icons only for a hovered, selected or focused row", () => {
     withPointer(false);
     render(<Listing {...props({ rowActs, focusID: null })} />);
     const iconsIn = (id: string) => within(rowOf(id)).queryAllByRole("button", { name: /^(Share|Download|Rename|Star|Unstar)$/ }).length;
@@ -580,7 +580,7 @@ describe("the row end: the ⋮ button and the hover icons", () => {
     expect(within(rowOf("n1")).getByRole("button", { name: "Download" }).tabIndex).toBe(0);
   });
 
-  // Review fix 11: the menu opens at the ⋮'s start edge: its left in English, its right in Hebrew.
+  // The menu opens at the ⋮'s start edge: its left in English, its right in Hebrew.
   it("the ⋮ menu opens at the button's start edge: its left in English and its right in Hebrew", () => {
     const onRowContext = vi.fn();
     render(<Listing {...props({ onRowContext })} />);
@@ -597,7 +597,7 @@ describe("the row end: the ⋮ button and the hover icons", () => {
     }
   });
 
-  // Review fix 1: a key's click on the ⋮ passes the button as the origin the menu gives the focus back to; a mouse click does not.
+  // A key's click on the ⋮ passes the button as the origin the menu gives the focus back to; a mouse click does not.
   it("a key's click on the ⋮ passes the button as its keyboard origin, and a mouse click passes none", () => {
     const onRowContext = vi.fn();
     render(<Listing {...props({ onRowContext })} />);

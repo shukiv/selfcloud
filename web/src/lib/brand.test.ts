@@ -41,7 +41,7 @@ describe('accentPlan: each theme on its own', () => {
 describe('resolveBrand', () => {
   const base = { name: 'Acme', logo_url: null };
 
-  // Decision 69, review fix 2: the caption is the sidebar's secondary text, so it reads on the sidebar at 4.5:1 or more.
+  // Decision 69: the caption is the sidebar's secondary text, so it reads on the sidebar at 4.5:1 or more.
   it('keeps the default caption on the default blue, which reads at 4.5:1', () => {
     const r = resolveBrand({ ...base, accent: '#053D8E' });
     expect(r.sidebar.caption).toBe('#A9C1E6');

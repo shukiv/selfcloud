@@ -32,7 +32,7 @@ const REFUSED = ['/api', '/wopi', '/s', '/brand', '/manifest'];
 const SHARE_PATH = '/share-target';
 const SHARE_PAGE = '/share';
 // SHARE_CAP is how many shares the worker holds at once. At the cap a new share drops the oldest one no page has taken, so a
-// share from another site cannot keep a real share out (decision 82, after the review).
+// share from another site cannot keep a real share out (decision 82).
 const SHARE_CAP = 4;
 // SHARE_FILE_CAP is how many files one share keeps. It counts files, not bytes: request.formData() reads the whole body before the
 // worker can count anything, so the cap does not limit what is read. It bounds the number of files kept, for a share sheet's

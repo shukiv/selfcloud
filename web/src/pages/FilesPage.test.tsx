@@ -1183,7 +1183,7 @@ describe("sharing from the browser", () => {
   });
 });
 
-// Review item 2 (wf1): a folder that cannot be read says why to the sidebar's New, instead of "Loading the folder" for ever.
+// A folder that cannot be read says why to the sidebar's New, instead of "Loading the folder" for ever.
 describe("a failed place read is named to the sidebar's New", () => {
   it("the page shows the error, and newPlaceFailure gives the sidebar the same text", async () => {
     const err = new ApiError(500, "internal", {}, 0);
@@ -1205,7 +1205,7 @@ describe("a failed place read is named to the sidebar's New", () => {
     expect(get(newPlaceFailure)).toBeNull();
   });
 
-  // Review item 3 (wf1): the failure is cleared when a later place reads fine, and when the page is left.
+  // The failure is cleared when a later place reads fine, and when the page is left.
   it("the failure is cleared when a later place reads fine", async () => {
     const err = new ApiError(500, "internal", {}, 0);
     const real = vi.mocked(locate).getMockImplementation()!;
@@ -1575,7 +1575,7 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
   });
 });
 
-describe("the review round: pastes, the clipboard's lifetime, the menus and the narrow toolbar", () => {
+describe("pastes, the clipboard's lifetime, the menus and the narrow toolbar", () => {
   beforeEach(() => {
     folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false } as never]);
     clipboard.set(null);
@@ -1797,7 +1797,7 @@ describe("slice w2: the five fixes from w1's notes", () => {
   it("pins the list's column header under the toolbar", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    // The header is pinned in the list's own table (fu3b, item 1): its cells are sticky, at the place the list sets (the variable).
+    // The header is pinned in the list's own table (fu3b): its cells are sticky, at the place the list sets (the variable).
     const region = document.querySelector<HTMLElement>(".files-list");
     expect(document.querySelector(".ant-table-sticky-holder")).toBeNull();
     // The shell's header (56) and the toolbar's row (56 with a mouse).
@@ -2526,11 +2526,11 @@ describe("the toolbar's New (decision 66)", () => {
 
 // The row end and the grouped menu (decision 70): the icons of a row are the menu's own actions, with the same permissions, and
 // the menu groups its entries as Drive does.
-// Review fixes 5, 8, 9, 12 and 13 (decision 70): a submenu scrolls like the root menu; a menu entry's name is its text alone, with the
+// The fixes (decision 70): a submenu scrolls like the root menu; a menu entry's name is its text alone, with the
 // shortcut named by aria-keyshortcuts; Open is in the first group for a file that Enter opens; Star and Unstar, from the hover icon and
 // from the menu, call the star functions.
-describe("review fixes: submenus, shortcut names, Open for Enter, and the star calls", () => {
-  it("a submenu has the root menu's height limit and scrolls (review fix 5)", async () => {
+describe("submenus, shortcut names, Open for Enter, and the star calls", () => {
+  it("a submenu has the root menu's height limit and scrolls", async () => {
     place.role = "editor";
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
@@ -2542,7 +2542,7 @@ describe("review fixes: submenus, shortcut names, Open for Enter, and the star c
     expect(popup?.style.maxBlockSize).toBe("calc(100dvh - 16px)");
   });
 
-  it("a menu entry's name is its text alone, its shortcut is hidden from a screen reader, and aria-keyshortcuts names it (review fix 9)", async () => {
+  it("a menu entry's name is its text alone, its shortcut is hidden from a screen reader, and aria-keyshortcuts names it", async () => {
     place.role = "editor";
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
@@ -2552,7 +2552,7 @@ describe("review fixes: submenus, shortcut names, Open for Enter, and the star c
     expect(cut.querySelector(".menu-hint")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("a file that Enter opens, and that has no preview, has Open in the first group with the Enter hint (review fix 12)", async () => {
+  it("a file that Enter opens, and that has no preview, has Open in the first group with the Enter hint", async () => {
     place.role = "editor";
     api.childrenPage.mockResolvedValue({ items: [node("n1", "archive.zip", { mime_type: "application/zip" })], next_cursor: undefined });
     renderAt(FOLDER);
@@ -2562,7 +2562,7 @@ describe("review fixes: submenus, shortcut names, Open for Enter, and the star c
     expect(open.querySelector(".menu-hint")?.getAttribute("data-hint")).toBe("Enter");
   });
 
-  it("the hover icon Star calls starNode, and the menu's Unstar on a starred file calls unstarNode (review fix 13)", async () => {
+  it("the hover icon Star calls starNode, and the menu's Unstar on a starred file calls unstarNode", async () => {
     place.role = "editor";
     api.childrenPage.mockResolvedValue({ items: [node("n1", "beta.txt", { starred: false }), node("n2", "gamma.txt", { starred: true })], next_cursor: undefined });
     renderAt(FOLDER);
@@ -2575,9 +2575,9 @@ describe("review fixes: submenus, shortcut names, Open for Enter, and the star c
   });
 });
 
-// Review fix 1 (decision 70): Enter or Space on a row's ⋮ opens the item's menu with the focus in it; the arrows move in the menu and
+// Decision 70: Enter or Space on a row's ⋮ opens the item's menu with the focus in it; the arrows move in the menu and
 // not the selection; Escape gives the focus back to the ⋮.
-describe("review fix 1: the keyboard opens a row's ⋮ menu", () => {
+describe("the keyboard opens a row's ⋮ menu", () => {
   it("Enter on a row's ⋮ opens its menu with the focus on the first item, arrows move in the menu and not the selection, and Escape gives the focus back to the ⋮", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
@@ -2672,7 +2672,7 @@ describe("the row end and the grouped menu (decision 70)", () => {
   });
 });
 
-// Slice fu3b (decision 77, item 2): the previous listing stays on screen, marked busy, until the next folder is read. A place's
+// Slice fu3b (decision 77): the previous listing stays on screen, marked busy, until the next folder is read. A place's
 // first read is the only one that shows nothing, and a failed read still shows its error.
 describe("the list while the next folder is read (fu3b)", () => {
   const SUB = `${FOLDER}/nod_bbbbbbbb`;
@@ -2774,7 +2774,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
   });
 
-  // Review fixes of fu3b (decision 77): while the rows on screen are the folder left behind, nothing acts on them.
+  // The fixes of fu3b (decision 77): while the rows on screen are the folder left behind, nothing acts on them.
   it("Ctrl+A and Ctrl+X during the load select and cut nothing of the folder left, and a paste after it moves nothing of that folder (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
@@ -2834,7 +2834,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
   });
 
-  it("Ctrl+V during the load says the folder is still opening, once, and moves nothing (fu4, item 1)", async () => {
+  it("Ctrl+V during the load says the folder is still opening, once, and moves nothing (fu4)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
@@ -2860,7 +2860,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  // fu4 review: the notice is read by assistive technology, and only a key that would have done something says it.
+  // fu4: the notice is read by assistive technology, and only a key that would have done something says it.
   const BUSY_TEXT = "The folder is still opening. Try again in a moment.";
   const busyNotices = () => [...document.querySelectorAll(".ant-message-notice")].filter((n) => n.textContent?.includes(BUSY_TEXT)).length;
   const liveHasNotice = () => [...document.querySelectorAll('[aria-live="polite"]')].some((n) => n.textContent?.includes(BUSY_TEXT));
@@ -3028,7 +3028,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(busyFrame()).toBeNull();
   }, 15000);
 
-  // Item 4: the page's New folder is the shared dialog; a folder made there is read again and shown, and the dialog closes.
+  // The page's New folder is the shared dialog; a folder made there is read again and shown, and the dialog closes.
   it("a folder made from the page is read again, shown, and its dialog closes (fu3b)", async () => {
     api.mkdir.mockResolvedValue({ id: "nod_new", name: "Plans", kind: "dir" });
     renderAt(FOLDER);

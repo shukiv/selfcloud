@@ -19,7 +19,7 @@ describe("initialOf (decision 68, the account avatar)", () => {
     expect(initialOf("שירה", "x@example.com")).toBe("ש");
   });
 
-  // Review fix (decision 68): the letter is the first grapheme, uppercased for display where that is one character.
+  // The letter is the first grapheme, uppercased for display where that is one character.
   it("uppercases a Latin or Cyrillic first letter, and keeps a letter whose capital is two characters (German sharp s)", () => {
     expect(initialOf("olivia", "")).toBe("O");
     expect(initialOf("жанна", "")).toBe("Ж");

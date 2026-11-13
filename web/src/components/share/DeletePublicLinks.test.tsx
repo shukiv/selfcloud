@@ -89,8 +89,8 @@ describe("delete all public links", () => {
     return modal === null || modal.classList.contains("ant-zoom-leave");
   };
 
-  // fu4, item 2: a busy dialog can be cancelled. Escape and Cancel close it at once and abort the request.
-  it("Escape and Cancel close the dialog while the delete is in flight, and abort it (fu4, item 2)", async () => {
+  // fu4: a busy dialog can be cancelled. Escape and Cancel close it at once and abort the request.
+  it("Escape and Cancel close the dialog while the delete is in flight, and abort it (fu4)", async () => {
     const user = userEvent.setup();
     api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));
     const ondone = vi.fn();
@@ -121,7 +121,7 @@ describe("delete all public links", () => {
     expect(onunsure).toHaveBeenCalledTimes(1);
   });
 
-  it("Cancel closes the dialog while the delete is in flight, and aborts it (fu4, item 2)", async () => {
+  it("Cancel closes the dialog while the delete is in flight, and aborts it (fu4)", async () => {
     const user = userEvent.setup();
     api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));
     render(<App><DeletePublicLinks account="acc_1" count={2} ondone={vi.fn()} /></App>);
