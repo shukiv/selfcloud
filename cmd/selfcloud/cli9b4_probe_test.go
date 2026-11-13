@@ -58,14 +58,10 @@ var labelSharingProbes = map[string]func(p *fileProbe) []string{
 		return []string{"--account", p.acc}
 	},
 	"sharing policy set": func(p *fileProbe) []string {
+		// Send the value the account already has: the command still calls PUT, and the probes that follow this one
+		// keep seeing the policy they expect (a change would be restored only after the whole test ends).
 		old := valueOf(p.t, p.do("sharing", "policy", "show", "--account", p.acc), "comments=")
-		want := "true"
-		if old == "true" {
-			want = "false"
-		}
-		// Leave the policy as the other probes expect it, after this test.
-		p.t.Cleanup(func() { p.do("sharing", "policy", "set", "--account", p.acc, "--comments", old) })
-		return []string{"--account", p.acc, "--comments", want}
+		return []string{"--account", p.acc, "--comments", old}
 	},
 }
 
