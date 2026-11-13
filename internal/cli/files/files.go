@@ -325,15 +325,15 @@ func phraseFor(targets []string) string {
 	return "yes"
 }
 
-// nameToType is the server's name for a node, as the phrase a person types to confirm. A name that names.Clean refuses
+// NameToType is the server's name for a node, as the phrase a person types to confirm. A name that names.Clean refuses
 // (a control character, an escape sequence, an invisible or line-separating character, a separator, a space at an end,
 // or no name at all) would reach the terminal in the question and could not be typed back, so it is not shown: the
 // command stops before anything is sent. The server's own rule already refuses these names; this is a second guard.
-func nameToType(name string) (string, error) {
+// message is the usage error to report for such a name.
+func NameToType(name, message string) (string, error) {
 	clean, _, err := names.Clean(name)
 	if err != nil {
-		return "", exitcode.Usagef("the node's name cannot be shown safely to confirm with; nothing was changed; give " +
-			"--yes to go on by its id")
+		return "", exitcode.Usagef("%s", message)
 	}
 	return clean, nil
 }

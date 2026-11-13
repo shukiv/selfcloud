@@ -42,7 +42,7 @@ func Rm(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return "", err
 		}
-		return nameToType(name)
+		return NameToType(name, "the node's name cannot be shown safely to confirm with; nothing was changed; give --yes to go on by its id")
 	}
 	if err := confirmWith(yes, phrase, "move the node or nodes to the Trash", stderr); err != nil {
 		return fail(stderr, g, err)
@@ -266,7 +266,7 @@ func TrashRm(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return "", err
 		}
-		return nameToType(name)
+		return NameToType(name, "the node's name cannot be shown safely to confirm with; nothing was changed; give --yes to go on by its id")
 	}
 	if err := confirmWith(yes, phrase, "purge the node or nodes for good; they cannot be restored", stderr); err != nil {
 		return fail(stderr, g, err)

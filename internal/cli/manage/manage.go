@@ -68,9 +68,9 @@ func confirmByName(cn *conn.Conn, route string, yes bool, what string, stderr io
 			return errors.New("the server's answer has no name to confirm with; nothing was changed")
 		}
 		// A name with a control character would reach the terminal in the question and cannot be typed back.
-		if _, _, err := names.Clean(v.Name); err != nil {
-			return exitcode.Usagef("the name cannot be shown safely to confirm with; nothing was changed; " +
-				"give --yes to remove it by its id")
+		if _, err := files.NameToType(v.Name, "the name cannot be shown safely to confirm with; nothing was changed; "+
+			"give --yes to remove it by its id"); err != nil {
+			return err
 		}
 		phrase = v.Name
 	}
