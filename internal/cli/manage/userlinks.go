@@ -5,6 +5,7 @@ package manage
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -53,7 +54,7 @@ func printVerification(c *command, v linkVerificationView) error {
 	pairs := []output.KV{{Key: "verification", Value: v.Method}}
 	switch {
 	case v.Sent != nil:
-		pairs = append(pairs, output.KV{Key: "sent", Value: boolText(*v.Sent)})
+		pairs = append(pairs, output.KV{Key: "sent", Value: strconv.FormatBool(*v.Sent)})
 	case v.URL != "":
 		pairs = append(pairs, output.KV{Key: "link", Value: v.URL})
 		if v.ExpiresAt != "" {
@@ -67,13 +68,6 @@ func printVerification(c *command, v linkVerificationView) error {
 		_, _ = io.WriteString(c.stderr, linkNote)
 	}
 	return nil
-}
-
-func boolText(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
 }
 
 // verify is `user verify` and `user reset-password`, whose delivery methods and output are the same.
