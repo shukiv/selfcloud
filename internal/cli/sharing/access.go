@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 )
@@ -28,7 +29,7 @@ func AccessLs(args []string, stdout, stderr io.Writer) int {
 	switch {
 	case pending && len(r.pos) == 0:
 	case !pending && len(r.pos) == 1:
-		nodeID, err := idArg("nod", "a node", r.pos[0])
+		nodeID, err := cmdkit.IDArg("nod", "a node", r.pos[0])
 		if err != nil {
 			return r.fail(err)
 		}
@@ -83,7 +84,7 @@ func (r *run) decide(verb string, body any) int {
 		return r.fail(exitcode.Usagef("access %s takes one or more request ids (arq_...)", verb))
 	}
 	for _, a := range r.pos {
-		if _, err := idArg("arq", "an access request", a); err != nil {
+		if _, err := cmdkit.IDArg("arq", "an access request", a); err != nil {
 			return r.fail(err)
 		}
 	}

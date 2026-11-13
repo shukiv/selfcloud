@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -64,7 +65,7 @@ func (v importView) pairs() []output.KV {
 		{Key: "job", Value: v.Job},
 		{Key: "created_at", Value: v.CreatedAt},
 		{Key: "updated_at", Value: v.UpdatedAt},
-		{Key: "finished_at", Value: str(v.FinishedAt)},
+		{Key: "finished_at", Value: cmdkit.Str(v.FinishedAt)},
 	}
 }
 
@@ -82,36 +83,36 @@ type itemView struct {
 // userCommand starts a command whose routes are a signed-in person's.
 func userCommand(name string, withAccount bool, stdout, stderr io.Writer) *command {
 	c := begin(name, withAccount, stdout, stderr)
-	c.userRoutes = true
+	c.UserRoutes = true
 	return c
 }
 
 // printImport reads an import answer and prints it.
 func (c *command) printImport(body []byte) error {
 	var v importView
-	if err := decodeAs(body, &v, "an import"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "an import"); err != nil {
 		return err
 	}
 	if v.ID == "" {
-		return errNotA("an import")
+		return cmdkit.ErrNotA("an import")
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 // ImportSources is `selfcloud import sources`: the import sources, and whether the account has each one on.
 func ImportSources(args []string, stdout, stderr io.Writer) int {
 	c := userCommand("import sources", false, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("import sources", pos); err != nil {
+	if err := cmdkit.NoArgs("import sources", pos); err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -126,14 +127,14 @@ func ImportSources(args []string, stdout, stderr io.Writer) int {
 	var v struct {
 		Sources []source `json:"sources"`
 	}
-	if err = decodeAs(resp.Body, &v, "a list of import sources"); err == nil {
+	if err = cmdkit.DecodeAs(resp.Body, &v, "a list of import sources"); err == nil {
 		if v.Sources == nil {
 			v.Sources = []source{}
 		}
-		if c.g.JSON {
-			err = output.JSON(c.stdout, v)
+		if c.G.JSON {
+			err = output.JSON(c.Stdout, v)
 		} else {
-			err = printList(c, v.Sources, false, []string{"SOURCE", "ENABLED"}, func(s source) []string {
+			err = cmdkit.PrintList(c.Command, v.Sources, false, []string{"SOURCE", "ENABLED"}, func(s source) []string {
 				return []string{s.Source, strconv.FormatBool(s.Enabled)}
 			})
 		}
@@ -146,14 +147,14 @@ func ImportSources(args []string, stdout, stderr io.Writer) int {
 
 // oneImport parses a command that takes one import id.
 func oneImport(c *command, name string, args []string) (imp string, code int, ok bool) {
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return "", code, false
 	}
 	if len(pos) != 1 {
 		return "", c.fail(exitcode.Usagef("%s takes one import id", name)), false
 	}
-	imp, err := idArg("imp", "import", pos[0])
+	imp, err := cmdkit.IDArg("imp", "a import", pos[0])
 	if err != nil {
 		return "", c.fail(err), false
 	}
@@ -167,7 +168,7 @@ func ImportShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -188,9 +189,9 @@ func ImportItems(args []string, stdout, stderr io.Writer) int {
 	var all bool
 	var after int64
 	var limit int
-	c.set.BoolVar(&all, "all", false, "follow the pages and print every item")
-	c.set.Int64Var(&after, "after", 0, "start after the item with this sequence `number`")
-	c.set.IntVar(&limit, "limit", 0, "the most items in a page, 1 to 500 (default: the server's, 100)")
+	c.Set.BoolVar(&all, "all", false, "follow the pages and print every item")
+	c.Set.Int64Var(&after, "after", 0, "start after the item with this sequence `number`")
+	c.Set.IntVar(&limit, "limit", 0, "the most items in a page, 1 to 500 (default: the server's, 100)")
 	imp, code, ok := oneImport(c, "import items", args)
 	if !ok {
 		return code
@@ -198,10 +199,10 @@ func ImportItems(args []string, stdout, stderr io.Writer) int {
 	if after < 0 {
 		return c.fail(exitcode.Usagef("--after is zero or more"))
 	}
-	if flagGiven(c.set, "limit") && (limit < 1 || limit > 500) {
+	if cmdkit.FlagGiven(c.Set, "limit") && (limit < 1 || limit > 500) {
 		return c.fail(exitcode.Usagef("--limit is from 1 to 500"))
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -221,7 +222,7 @@ func ImportItems(args []string, stdout, stderr io.Writer) int {
 			Next  *int64     `json:"next"`
 		}
 		if err == nil {
-			err = decodeAs(resp.Body, &pg, "a page of import items")
+			err = cmdkit.DecodeAs(resp.Body, &pg, "a page of import items")
 		}
 		if err != nil {
 			return c.fail(err)
@@ -256,14 +257,14 @@ func printItems(c *command, items []itemView, next *int64, asked int) error {
 		items = []itemView{}
 	}
 	if next != nil && len(items) >= asked {
-		_, _ = io.WriteString(c.stderr, "selfcloud: more items may exist; --after "+i64(*next)+" reads on, or --all prints every page\n")
+		_, _ = io.WriteString(c.Stderr, "selfcloud: more items may exist; --after "+i64(*next)+" reads on, or --all prints every page\n")
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, map[string]any{"items": items, "next": next})
+	if c.G.JSON {
+		return output.JSON(c.Stdout, map[string]any{"items": items, "next": next})
 	}
-	return printList(c, items, false, []string{"SEQ", "NAME", "KIND", "STATE", "BYTES", "NODE", "ERROR"},
+	return cmdkit.PrintList(c.Command, items, false, []string{"SEQ", "NAME", "KIND", "STATE", "BYTES", "NODE", "ERROR"},
 		func(it itemView) []string {
-			return []string{i64(it.Seq), it.Name, it.Kind, it.State, i64(it.Bytes), str(it.Node), str(it.ErrorCode)}
+			return []string{i64(it.Seq), it.Name, it.Kind, it.State, i64(it.Bytes), cmdkit.Str(it.Node), cmdkit.Str(it.ErrorCode)}
 		})
 }
 
@@ -275,7 +276,7 @@ func ImportPause(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -293,18 +294,18 @@ func ImportPause(args []string, stdout, stderr io.Writer) int {
 // account. It needs an account key or an admin key.
 func ImportArchiveSet(args []string, stdout, stderr io.Writer) int {
 	c := begin("import archive set", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 || (pos[0] != "on" && pos[0] != "off") {
 		return c.fail(exitcode.Usagef("import archive set takes on or off"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -314,13 +315,13 @@ func ImportArchiveSet(args []string, stdout, stderr io.Writer) int {
 		Enabled bool   `json:"enabled"`
 	}
 	if err == nil {
-		err = decodeAs(resp.Body, &v, "an import source")
+		err = cmdkit.DecodeAs(resp.Body, &v, "an import source")
 	}
 	if err == nil {
-		if c.g.JSON {
-			err = output.JSON(c.stdout, v)
+		if c.G.JSON {
+			err = output.JSON(c.Stdout, v)
 		} else {
-			err = output.KeyValues(c.stdout, []output.KV{
+			err = output.KeyValues(c.Stdout, []output.KV{
 				{Key: "source", Value: v.Source}, {Key: "enabled", Value: strconv.FormatBool(v.Enabled)}})
 		}
 	}

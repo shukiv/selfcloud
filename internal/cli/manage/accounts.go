@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -79,13 +80,13 @@ func (v accountView) pairs() []output.KV {
 
 func printAccountDocument(c *command, body []byte) error {
 	var v accountView
-	if err := decodeAs(body, &v, "an account"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "an account"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 // accountViews decodes a page of accounts into the allow-list views, so --json prints no field the view does not have.
@@ -93,7 +94,7 @@ func accountViews(items []json.RawMessage) ([]accountView, error) {
 	views := make([]accountView, 0, len(items))
 	for _, raw := range items {
 		var v accountView
-		if err := decodeAs(raw, &v, "an account"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "an account"); err != nil {
 			return nil, err
 		}
 		views = append(views, v)
@@ -157,18 +158,18 @@ func givenFlags(set *flag.FlagSet, only ...string) map[string]bool {
 // --owner-verification email|link|none [--owner-name NAME] [--owner-locale TAG]] NAME`.
 func AccountCreate(args []string, stdout, stderr io.Writer) int {
 	c := begin("account create", false, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var ext, ownerEmail, ownerVerification, ownerName, ownerLocale string
 	var quota config.ByteSize
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the account, kept with it")
-	c.set.Func("quota", "the account's storage limit, as `size` (0: no limit)", func(v string) error {
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the account, kept with it")
+	c.Set.Func("quota", "the account's storage limit, as `size` (0: no limit)", func(v string) error {
 		return quota.UnmarshalText([]byte(v))
 	})
-	c.set.StringVar(&ownerEmail, "owner-email", "", "the first owner's `email`")
-	c.set.StringVar(&ownerVerification, "owner-verification", "", "how the owner verifies: email, link or none")
-	c.set.StringVar(&ownerName, "owner-name", "", "the first owner's display `name`")
-	c.set.StringVar(&ownerLocale, "owner-locale", "", "the first owner's locale `tag`, such as en or pt-BR")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&ownerEmail, "owner-email", "", "the first owner's `email`")
+	c.Set.StringVar(&ownerVerification, "owner-verification", "", "how the owner verifies: email, link or none")
+	c.Set.StringVar(&ownerName, "owner-name", "", "the first owner's display `name`")
+	c.Set.StringVar(&ownerLocale, "owner-locale", "", "the first owner's locale `tag`, such as en or pt-BR")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -179,7 +180,7 @@ func AccountCreate(args []string, stdout, stderr io.Writer) int {
 	if name == "" {
 		return c.fail(exitcode.Usagef("the name is required"))
 	}
-	given := givenFlags(c.set, "external-id", "quota", "owner-email", "owner-verification", "owner-name", "owner-locale")
+	given := givenFlags(c.Set, "external-id", "quota", "owner-email", "owner-verification", "owner-name", "owner-locale")
 	ownerGiven := given["owner-email"] || given["owner-verification"] || given["owner-name"] || given["owner-locale"]
 	if ownerGiven {
 		if ownerEmail == "" {
@@ -209,7 +210,7 @@ func AccountCreate(args []string, stdout, stderr io.Writer) int {
 		}
 		body["owner"] = owner
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -218,22 +219,22 @@ func AccountCreate(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v accountCreateView
-	if err := decodeAs(resp.Body, &v, "an account"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "an account"); err != nil {
 		return c.fail(err)
 	}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, v); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, v); err != nil {
 			return c.fail(err)
 		}
 	} else {
-		if err := output.KeyValues(c.stdout, accountCreatePairs(v)); err != nil {
+		if err := output.KeyValues(c.Stdout, accountCreatePairs(v)); err != nil {
 			return c.fail(err)
 		}
 	}
 	if resp.Status == http.StatusOK {
 		_, _ = io.WriteString(stderr, "selfcloud: note: an account with this external id already exists; nothing was changed\n")
 	}
-	if !c.g.JSON && v.Owner != nil && v.Owner.Verification != nil && v.Owner.Verification.Method == "link" {
+	if !c.G.JSON && v.Owner != nil && v.Owner.Verification != nil && v.Owner.Verification.Method == "link" {
 		_, _ = io.WriteString(stderr, "selfcloud: note: the sign-in link is shown only now; give it to the owner\n")
 	}
 	return exitcode.OK
@@ -242,18 +243,18 @@ func AccountCreate(args []string, stdout, stderr io.Writer) int {
 // AccountLs is `selfcloud account ls [--all] [--status active|suspended] [--external-id ID] [--search TEXT]`.
 func AccountLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("account ls", false, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var all bool
 	var status, ext, search string
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	c.set.StringVar(&status, "status", "", "only accounts with this `status`: active or suspended")
-	c.set.StringVar(&ext, "external-id", "", "only the account with this external `id`")
-	c.set.StringVar(&search, "search", "", "accounts whose name or external id contains this `text`")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	c.Set.StringVar(&status, "status", "", "only accounts with this `status`: active or suspended")
+	c.Set.StringVar(&ext, "external-id", "", "only the account with this external `id`")
+	c.Set.StringVar(&search, "search", "", "accounts whose name or external id contains this `text`")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account ls", pos); err != nil {
+	if err := cmdkit.NoArgs("account ls", pos); err != nil {
 		return c.fail(err)
 	}
 	if status != "" && status != "active" && status != "suspended" {
@@ -269,7 +270,7 @@ func AccountLs(args []string, stdout, stderr io.Writer) int {
 	if search != "" {
 		q.Set("q", search)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -277,15 +278,15 @@ func AccountLs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		if next != "" {
-			_, _ = io.WriteString(c.stderr, "selfcloud: more items exist; --all prints every page\n")
+			_, _ = io.WriteString(c.Stderr, "selfcloud: more items exist; --all prints every page\n")
 		}
 		views, err := accountViews(items)
 		if err != nil {
 			return c.fail(err)
 		}
-		if err := output.JSON(c.stdout, views); err != nil {
+		if err := output.JSON(c.Stdout, views); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -293,7 +294,7 @@ func AccountLs(args []string, stdout, stderr io.Writer) int {
 	err = printList(c, items, next, []string{"ID", "NAME", "STATUS", "QUOTA", "USED", "FILES", "CREATED"},
 		func(raw []byte) ([]string, error) {
 			var v accountView
-			if err := decodeAs(raw, &v, "an account"); err != nil {
+			if err := cmdkit.DecodeAs(raw, &v, "an account"); err != nil {
 				return nil, err
 			}
 			return []string{v.ID, v.Name, v.Status, strconv.FormatInt(v.QuotaBytes, 10),
@@ -307,14 +308,14 @@ func AccountLs(args []string, stdout, stderr io.Writer) int {
 
 // accountOne is the shared start of the commands that take one account: --account, and no positional arguments.
 func accountOne(c *command, name string, args []string) (acc string, code int, ok bool) {
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return "", code, false
 	}
-	if err := noArgs(name, pos); err != nil {
+	if err := cmdkit.NoArgs(name, pos); err != nil {
 		return "", c.fail(err), false
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return "", c.fail(err), false
 	}
@@ -328,7 +329,7 @@ func AccountShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -346,25 +347,25 @@ func AccountShow(args []string, stdout, stderr io.Writer) int {
 // [--status active|suspended] [--yes]`.
 func AccountUpdate(args []string, stdout, stderr io.Writer) int {
 	c := begin("account update", true, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var name, ext, status string
 	var quota config.ByteSize
 	var yes bool
-	c.set.StringVar(&name, "name", "", "the account's new `name`")
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the account; an empty value clears it")
-	c.set.Func("quota", "the account's storage limit, as `size` (0: no limit)", func(v string) error {
+	c.Set.StringVar(&name, "name", "", "the account's new `name`")
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the account; an empty value clears it")
+	c.Set.Func("quota", "the account's storage limit, as `size` (0: no limit)", func(v string) error {
 		return quota.UnmarshalText([]byte(v))
 	})
-	c.set.StringVar(&status, "status", "", "the account's `status`: active or suspended")
-	c.set.BoolVar(&yes, "yes", false, "do not ask first when suspending")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&status, "status", "", "the account's `status`: active or suspended")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first when suspending")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account update", pos); err != nil {
+	if err := cmdkit.NoArgs("account update", pos); err != nil {
 		return c.fail(err)
 	}
-	given := givenFlags(c.set, "name", "external-id", "quota", "status")
+	given := givenFlags(c.Set, "name", "external-id", "quota", "status")
 	if len(given) == 0 {
 		return c.fail(exitcode.Usagef("account update needs a change to make"))
 	}
@@ -380,11 +381,11 @@ func AccountUpdate(args []string, stdout, stderr io.Writer) int {
 	if given["status"] && status != "active" && status != "suspended" {
 		return c.fail(exitcode.Usagef("--status must be active or suspended"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -421,14 +422,14 @@ func AccountUpdate(args []string, stdout, stderr io.Writer) int {
 // background. Asks first.
 func AccountRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("account rm", true, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
 	acc, code, ok := accountOne(c, "account rm", args)
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -445,19 +446,19 @@ func AccountRm(args []string, stdout, stderr io.Writer) int {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
-	if err := decodeAs(resp.Body, &job, "a job"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &job, "a job"); err != nil {
 		return c.fail(err)
 	}
 	view := struct {
 		JobID  string `json:"job_id"`
 		Status string `json:"status"`
 	}{job.ID, job.Status}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, view); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, view); err != nil {
 			return c.fail(err)
 		}
 	} else {
-		if err := output.KeyValues(c.stdout, []output.KV{
+		if err := output.KeyValues(c.Stdout, []output.KV{
 			{Key: "job_id", Value: view.JobID}, {Key: "status", Value: view.Status}}); err != nil {
 			return c.fail(err)
 		}
@@ -510,13 +511,13 @@ func (v usageView) pairs() []output.KV {
 
 func printUsageDocument(c *command, body []byte) error {
 	var v usageView
-	if err := decodeAs(body, &v, "an account's usage"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "an account's usage"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 // AccountUsage is `selfcloud account usage [--account ACC]`.
@@ -526,7 +527,7 @@ func AccountUsage(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -561,7 +562,7 @@ func auditViews(items []json.RawMessage) ([]auditView, error) {
 	views := make([]auditView, 0, len(items))
 	for _, raw := range items {
 		var v auditView
-		if err := decodeAs(raw, &v, "an audit entry"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "an audit entry"); err != nil {
 			return nil, err
 		}
 		views = append(views, v)
@@ -574,20 +575,20 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	c := begin("account audit", true, stdout, stderr)
 	var all bool
 	var action, actor string
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	c.set.StringVar(&action, "action", "", "only entries with this `action`")
-	c.set.StringVar(&actor, "actor", "", "only entries by this actor `id`")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	c.Set.StringVar(&action, "action", "", "only entries with this `action`")
+	c.Set.StringVar(&actor, "actor", "", "only entries by this actor `id`")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account audit", pos); err != nil {
+	if err := cmdkit.NoArgs("account audit", pos); err != nil {
 		return c.fail(err)
 	}
 	if utf8.RuneCountInString(action) > 100 || utf8.RuneCountInString(actor) > 100 {
 		return c.fail(exitcode.Usagef("--action and --actor may be at most 100 characters"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -598,7 +599,7 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	if actor != "" {
 		q.Set("actor", actor)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -606,15 +607,15 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		if next != "" {
-			_, _ = io.WriteString(c.stderr, "selfcloud: more items exist; --all prints every page\n")
+			_, _ = io.WriteString(c.Stderr, "selfcloud: more items exist; --all prints every page\n")
 		}
 		views, err := auditViews(items)
 		if err != nil {
 			return c.fail(err)
 		}
-		if err := output.JSON(c.stdout, views); err != nil {
+		if err := output.JSON(c.Stdout, views); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -622,7 +623,7 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	err = printList(c, items, next, []string{"TIME", "ACTOR", "ACTION", "TARGET", "OUTCOME", "IP"},
 		func(raw []byte) ([]string, error) {
 			var v auditView
-			if err := decodeAs(raw, &v, "an audit entry"); err != nil {
+			if err := cmdkit.DecodeAs(raw, &v, "an audit entry"); err != nil {
 				return nil, err
 			}
 			return []string{v.Time, v.Actor.Kind + ":" + v.Actor.ID, v.Action, v.Target, v.Outcome, v.IP}, nil

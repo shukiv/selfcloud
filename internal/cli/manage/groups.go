@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -22,7 +23,7 @@ type groupView struct {
 
 func groupPairs(body []byte) ([]output.KV, error) {
 	var v groupView
-	if err := decodeAs(body, &v, "a group"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a group"); err != nil {
 		return nil, err
 	}
 	ext := ""
@@ -45,8 +46,8 @@ func groupsRoute(acc string) string { return "/api/v1/accounts/" + acc + "/group
 func GroupCreate(args []string, stdout, stderr io.Writer) int {
 	c := begin("group create", true, stdout, stderr)
 	var ext string
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the group, kept with it")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the group, kept with it")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -57,7 +58,7 @@ func GroupCreate(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -65,7 +66,7 @@ func GroupCreate(args []string, stdout, stderr io.Writer) int {
 	if ext != "" {
 		body["external_id"] = ext
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -83,19 +84,19 @@ func GroupCreate(args []string, stdout, stderr io.Writer) int {
 func GroupLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("group ls", true, stdout, stderr)
 	var all bool
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("group ls", pos); err != nil {
+	if err := cmdkit.NoArgs("group ls", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -105,7 +106,7 @@ func GroupLs(args []string, stdout, stderr io.Writer) int {
 	}
 	err = printList(c, items, next, []string{"ID", "NAME"}, func(raw []byte) ([]string, error) {
 		var v groupView
-		if err := decodeAs(raw, &v, "a group"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a group"); err != nil {
 			return nil, err
 		}
 		return []string{v.ID, v.Name}, nil
@@ -118,7 +119,7 @@ func GroupLs(args []string, stdout, stderr io.Writer) int {
 
 // oneGroup is the shared start of the commands that take one group id after the account.
 func oneGroup(c *command, name string, args []string) (acc, group string, code int, ok bool) {
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return "", "", code, false
 	}
@@ -126,10 +127,10 @@ func oneGroup(c *command, name string, args []string) (acc, group string, code i
 		return "", "", c.fail(exitcode.Usagef("%s takes one group id", name)), false
 	}
 	var err error
-	if group, err = idArg("grp", "group", pos[0]); err != nil {
+	if group, err = cmdkit.IDArg("grp", "a group", pos[0]); err != nil {
 		return "", "", c.fail(err), false
 	}
-	if acc, err = c.accountID(); err != nil {
+	if acc, err = c.AccountID(); err != nil {
 		return "", "", c.fail(err), false
 	}
 	return acc, group, 0, true
@@ -142,7 +143,7 @@ func GroupShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -159,14 +160,14 @@ func GroupShow(args []string, stdout, stderr io.Writer) int {
 // GroupRename is `selfcloud group rename --account ACC GROUP NAME`.
 func GroupRename(args []string, stdout, stderr io.Writer) int {
 	c := begin("group rename", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 2 {
 		return c.fail(exitcode.Usagef("group rename takes a group id and a new name"))
 	}
-	group, err := idArg("grp", "group", pos[0])
+	group, err := cmdkit.IDArg("grp", "a group", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
@@ -174,11 +175,11 @@ func GroupRename(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -197,12 +198,12 @@ func GroupRename(args []string, stdout, stderr io.Writer) int {
 func GroupRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("group rm", true, stdout, stderr)
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
 	acc, group, code, ok := oneGroup(c, "group rm", args)
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -213,7 +214,7 @@ func GroupRm(args []string, stdout, stderr io.Writer) int {
 	if _, err := files.Send(cn, http.MethodDelete, route, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, group); err != nil {
+	if err := cmdkit.PrintDone(c.Command, group); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -223,12 +224,12 @@ func GroupRm(args []string, stdout, stderr io.Writer) int {
 func GroupMembers(args []string, stdout, stderr io.Writer) int {
 	c := begin("group members", true, stdout, stderr)
 	var all bool
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
 	acc, group, code, ok := oneGroup(c, "group members", args)
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -241,7 +242,7 @@ func GroupMembers(args []string, stdout, stderr io.Writer) int {
 			UserID    string `json:"user_id"`
 			CreatedAt string `json:"created_at"`
 		}
-		if err := decodeAs(raw, &v, "a group member"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a group member"); err != nil {
 			return nil, err
 		}
 		return []string{v.UserID, v.CreatedAt}, nil
@@ -255,26 +256,26 @@ func GroupMembers(args []string, stdout, stderr io.Writer) int {
 // member is GroupAddMember and GroupRemoveMember: they differ in the method only.
 func member(name, method string, args []string, stdout, stderr io.Writer) int {
 	c := begin(name, true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 2 {
 		return c.fail(exitcode.Usagef("%s takes a group id and a user id", name))
 	}
-	group, err := idArg("grp", "group", pos[0])
+	group, err := cmdkit.IDArg("grp", "a group", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	user, err := idArg("usr", "user", pos[1])
+	user, err := cmdkit.IDArg("usr", "a user", pos[1])
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -282,7 +283,7 @@ func member(name, method string, args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var werr error
-	if c.g.JSON {
+	if c.G.JSON {
 		werr = output.JSON(stdout, map[string]string{"group": group, "user": user, "status": "done"})
 	} else {
 		werr = output.KeyValues(stdout, []output.KV{
@@ -307,22 +308,22 @@ func GroupRemoveMember(args []string, stdout, stderr io.Writer) int {
 // UserGrants is `selfcloud user grants --account ACC USER`: the team spaces shared with a user, and at what level.
 func UserGrants(args []string, stdout, stderr io.Writer) int {
 	c := begin("user grants", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("user grants takes one user id"))
 	}
-	user, err := idArg("usr", "user", pos[0])
+	user, err := cmdkit.IDArg("usr", "a user", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -337,7 +338,7 @@ func UserGrants(args []string, stdout, stderr io.Writer) int {
 			Level     string `json:"level"`
 			CreatedAt string `json:"created_at"`
 		}
-		if err := decodeAs(raw, &v, "a grant"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a grant"); err != nil {
 			return nil, err
 		}
 		return []string{v.FolderID, v.Level, v.CreatedAt}, nil

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -39,13 +40,13 @@ func (v sharingPolicyView) pairs() []output.KV {
 // sharingPolicyView has it.
 func printSharingPolicy(c *command, body []byte) error {
 	var v sharingPolicyView
-	if err := decodeAs(body, &v, "a sharing policy"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a sharing policy"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 func sharingPolicyRoute(acc string) string { return "/api/v1/accounts/" + acc + "/sharing-policy" }
@@ -64,18 +65,18 @@ func sharingSwitchArg(flagName, value string) (bool, error) {
 // SharingPolicyShow is `selfcloud sharing policy show [--account ACC]`.
 func SharingPolicyShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("sharing policy show", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("sharing policy show", pos); err != nil {
+	if err := cmdkit.NoArgs("sharing policy show", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -96,17 +97,17 @@ func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 	c := begin("sharing policy set", true, stdout, stderr)
 	var yes bool
 	var publicLinks, comments, whoViewed string
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	c.set.StringVar(&publicLinks, "public-links", "", "links that anyone can open: true or false")
-	c.set.StringVar(&comments, "comments", "", "comments on files: true or false")
-	c.set.StringVar(&whoViewed, "who-viewed", "", "the who-viewed switch: true or false")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	c.Set.StringVar(&publicLinks, "public-links", "", "links that anyone can open: true or false")
+	c.Set.StringVar(&comments, "comments", "", "comments on files: true or false")
+	c.Set.StringVar(&whoViewed, "who-viewed", "", "the who-viewed switch: true or false")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	seen := map[string]bool{}
-	c.set.Visit(func(f *flag.Flag) { seen[f.Name] = true })
-	if err := noArgs("sharing policy set", pos); err != nil {
+	c.Set.Visit(func(f *flag.Flag) { seen[f.Name] = true })
+	if err := cmdkit.NoArgs("sharing policy set", pos); err != nil {
 		return c.fail(err)
 	}
 	if !seen["public-links"] && !seen["comments"] && !seen["who-viewed"] {
@@ -134,7 +135,7 @@ func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 		}
 		body["who_viewed"] = value
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -143,7 +144,7 @@ func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 			return c.fail(err)
 		}
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}

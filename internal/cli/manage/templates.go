@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -19,34 +20,34 @@ type templateFolderAnswer struct {
 // templateFolderPrint writes the folder: the view under --json, otherwise key=value lines.
 func templateFolderPrint(c *command, body []byte) error {
 	var v templateFolderAnswer
-	if err := decodeAs(body, &v, "the templates folder"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "the templates folder"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
 	id := ""
 	if v.NodeID != nil {
 		id = *v.NodeID
 	}
-	return output.KeyValues(c.stdout, []output.KV{{Key: "node_id", Value: id}})
+	return output.KeyValues(c.Stdout, []output.KV{{Key: "node_id", Value: id}})
 }
 
 // TemplateFolderShow is `selfcloud template folder show`: the account folder that holds its templates.
 func TemplateFolderShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("template folder show", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("template folder show", pos); err != nil {
+	if err := cmdkit.NoArgs("template folder show", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -64,8 +65,8 @@ func TemplateFolderShow(args []string, stdout, stderr io.Writer) int {
 func TemplateFolderSet(args []string, stdout, stderr io.Writer) int {
 	c := begin("template folder set", true, stdout, stderr)
 	var clear bool
-	c.set.BoolVar(&clear, "clear", false, "use no templates folder")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&clear, "clear", false, "use no templates folder")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -79,17 +80,17 @@ func TemplateFolderSet(args []string, stdout, stderr io.Writer) int {
 	if clear {
 		body = map[string]any{"node_id": nil}
 	} else {
-		folder, err := idArg("nod", "node", pos[0])
+		folder, err := cmdkit.IDArg("nod", "a node", pos[0])
 		if err != nil {
 			return c.fail(err)
 		}
 		body = map[string]any{"node_id": folder}
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}

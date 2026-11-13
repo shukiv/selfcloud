@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -53,35 +54,35 @@ func labelFieldListForbidden(err error) bool {
 // LabelFieldList is `selfcloud label field ls`: the account's label fields.
 func LabelFieldList(args []string, stdout, stderr io.Writer) int {
 	c := begin("label field ls", false, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("label field ls", pos); err != nil {
+	if err := cmdkit.NoArgs("label field ls", pos); err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	items, _, err := files.ListPages(cn, "/api/v1/label-fields", nil, false)
 	if err != nil {
 		code := c.fail(err)
-		if !c.g.JSON && c.kind == profile.KindAdmin && labelFieldListForbidden(err) {
-			_, _ = io.WriteString(c.stderr, "selfcloud: hint: "+labelFieldListAdminHint+"\n")
+		if !c.G.JSON && c.Kind == profile.KindAdmin && labelFieldListForbidden(err) {
+			_, _ = io.WriteString(c.Stderr, "selfcloud: hint: "+labelFieldListAdminHint+"\n")
 		}
 		return code
 	}
 	views := make([]labelFieldListView, 0, len(items))
 	for _, raw := range items {
 		var v labelFieldListView
-		if err := decodeAs(raw, &v, "a label field"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a label field"); err != nil {
 			return c.fail(err)
 		}
 		views = append(views, v)
 	}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, views); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, views); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -99,7 +100,7 @@ func LabelFieldList(args []string, stdout, stderr io.Writer) int {
 		rows = append(rows, []string{v.ID, v.Name, v.Type, restricted,
 			strconv.Itoa(v.activeChoices()), values})
 	}
-	if err := output.Table(c.stdout, []string{"ID", "NAME", "TYPE", "RESTRICTED", "CHOICES", "VALUES"}, rows); err != nil {
+	if err := output.Table(c.Stdout, []string{"ID", "NAME", "TYPE", "RESTRICTED", "CHOICES", "VALUES"}, rows); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

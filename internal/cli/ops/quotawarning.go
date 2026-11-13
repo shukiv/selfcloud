@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -28,30 +29,30 @@ type quotaWarningView struct {
 // printQuotaWarning reads a quota-warning answer and prints it as percent=N, or as the server's number under --json.
 func (c *command) printQuotaWarning(body []byte) error {
 	var v quotaWarningView
-	if err := decodeAs(body, &v, quotaWarningWhat); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, quotaWarningWhat); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, []output.KV{{Key: "percent", Value: strconv.FormatInt(v.Percent, 10)}})
+	return output.KeyValues(c.Stdout, []output.KV{{Key: "percent", Value: strconv.FormatInt(v.Percent, 10)}})
 }
 
 // AccountQuotaWarningShow is `selfcloud account quota-warning show --account ACC`.
 func AccountQuotaWarningShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("account quota-warning show", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account quota-warning show", pos); err != nil {
+	if err := cmdkit.NoArgs("account quota-warning show", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -68,7 +69,7 @@ func AccountQuotaWarningShow(args []string, stdout, stderr io.Writer) int {
 // AccountQuotaWarningSet is `selfcloud account quota-warning set --account ACC PERCENT`.
 func AccountQuotaWarningSet(args []string, stdout, stderr io.Writer) int {
 	c := begin("account quota-warning set", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -79,11 +80,11 @@ func AccountQuotaWarningSet(args []string, stdout, stderr io.Writer) int {
 	if err != nil || percent < 1 || percent > 99 {
 		return c.fail(exitcode.Usagef("PERCENT is a whole number from 1 to 99; quota.exceeded is at 100"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -101,18 +102,18 @@ func AccountQuotaWarningSet(args []string, stdout, stderr io.Writer) int {
 // default without asking, and prints the level now in force.
 func AccountQuotaWarningClear(args []string, stdout, stderr io.Writer) int {
 	c := begin("account quota-warning clear", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account quota-warning clear", pos); err != nil {
+	if err := cmdkit.NoArgs("account quota-warning clear", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}

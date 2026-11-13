@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -38,7 +39,7 @@ func validRole(role string, roles []string) bool {
 // is a node. rest is what follows the node.
 func scope(pos []string, folder, account string) (nodeID, folderID, accountID string, rest []string, err error) {
 	if folder != "" {
-		if folderID, err = idArg("fld", "a folder", folder); err != nil {
+		if folderID, err = cmdkit.IDArg("fld", "a folder", folder); err != nil {
 			return
 		}
 		if accountID, err = accountArg(account); err != nil {
@@ -54,7 +55,7 @@ func scope(pos []string, folder, account string) (nodeID, folderID, accountID st
 		err = exitcode.Usagef("name a node (nod_...), or a team folder with --folder")
 		return
 	}
-	if nodeID, err = idArg("nod", "a node", pos[0]); err != nil {
+	if nodeID, err = cmdkit.IDArg("nod", "a node", pos[0]); err != nil {
 		return
 	}
 	return nodeID, "", "", pos[1:], nil
@@ -68,7 +69,7 @@ func grantsPath(accountID, folderID, suffix string) string {
 
 // printDoc writes a document the server answered: indented under --json, otherwise key=value lines for the keys it holds.
 func (r *run) printDoc(body []byte, keys ...string) error {
-	if r.g.JSON {
+	if r.G.JSON {
 		return output.Indented(r.out, body)
 	}
 	var doc map[string]json.RawMessage
@@ -86,7 +87,7 @@ func (r *run) printDoc(body []byte, keys ...string) error {
 
 // printList writes a list: the items as the server wrote them under --json, otherwise a table of the columns.
 func (r *run) printList(items []json.RawMessage, headers []string, keys []string) int {
-	if r.g.JSON {
+	if r.G.JSON {
 		if err := output.JSON(r.out, items); err != nil {
 			return r.fail(err)
 		}
@@ -221,7 +222,7 @@ func (r *run) grantFolder(folderID, accountID, user, role, level, expires, expir
 	if level != "read" && level != "write" {
 		return r.fail(exitcode.Usagef("--level is read or write"))
 	}
-	user, err := idArg("usr", "a person (a team folder is shared with users, not groups)", user)
+	user, err := cmdkit.IDArg("usr", "a person (a team folder is shared with users, not groups)", user)
 	if err != nil {
 		return r.fail(err)
 	}
@@ -295,7 +296,7 @@ func ShareRevoke(args []string, stdout, stderr io.Writer) int {
 	}
 	for i := 0; err == nil && i < len(subjects); i++ {
 		if folderID != "" {
-			_, err = idArg("usr", "a person (a team folder is shared with users, not groups)", subjects[i])
+			_, err = cmdkit.IDArg("usr", "a person (a team folder is shared with users, not groups)", subjects[i])
 		} else {
 			_, err = subjectArg(subjects[i])
 		}
@@ -352,9 +353,9 @@ func TransferOwnership(args []string, stdout, stderr io.Writer) int {
 	if len(r.pos) != 1 {
 		return r.fail(exitcode.Usagef("share transfer-ownership takes one node id and --to"))
 	}
-	nodeID, err := idArg("nod", "a node", r.pos[0])
+	nodeID, err := cmdkit.IDArg("nod", "a node", r.pos[0])
 	if err == nil {
-		_, err = idArg("usr", "the new owner", to)
+		_, err = cmdkit.IDArg("usr", "the new owner", to)
 	}
 	if err != nil {
 		return r.fail(err)

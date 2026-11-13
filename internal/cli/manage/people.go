@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -35,8 +36,8 @@ type peoplePage struct {
 func PeopleFind(args []string, stdout, stderr io.Writer) int {
 	c := begin("people find", false, stdout, stderr)
 	var kind string
-	c.set.StringVar(&kind, "kind", "all", "only a `kind`: user, group or all")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&kind, "kind", "all", "only a `kind`: user, group or all")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -56,7 +57,7 @@ func PeopleFind(args []string, stdout, stderr io.Writer) int {
 		return c.fail(exitcode.Usagef("the query is at most 100 characters"))
 	}
 	query := url.Values{"q": {q}, "kind": {kind}}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -64,20 +65,20 @@ func PeopleFind(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		code := c.fail(err)
 		var ae *client.APIError
-		if !c.g.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) && ae.Status == http.StatusForbidden {
+		if !c.G.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) && ae.Status == http.StatusForbidden {
 			_, _ = io.WriteString(stderr, "selfcloud: hint: this needs an account key; a signed-in device cannot use it\n")
 		}
 		return code
 	}
 	var page peoplePage
-	if err := decodeAs(resp.Body, &page, "a directory answer"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &page, "a directory answer"); err != nil {
 		return c.fail(err)
 	}
 	if page.More {
 		_, _ = io.WriteString(stderr, "selfcloud: more matched; narrow the query (at most 20 are shown)\n")
 	}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, page); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, page); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -86,7 +87,7 @@ func PeopleFind(args []string, stdout, stderr io.Writer) int {
 	for _, v := range page.Items {
 		rows = append(rows, []string{v.ID, v.Kind, v.Name, v.Email})
 	}
-	if err := output.Table(c.stdout, []string{"ID", "KIND", "NAME", "EMAIL"}, rows); err != nil {
+	if err := output.Table(c.Stdout, []string{"ID", "KIND", "NAME", "EMAIL"}, rows); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

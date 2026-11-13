@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -48,7 +49,7 @@ func (v jobView) pairs() []output.KV {
 		{Key: "error_reason", Value: v.ErrorReason},
 		{Key: "created_at", Value: v.CreatedAt},
 		{Key: "updated_at", Value: v.UpdatedAt},
-		{Key: "finished_at", Value: str(v.FinishedAt)},
+		{Key: "finished_at", Value: cmdkit.Str(v.FinishedAt)},
 	}
 }
 
@@ -59,11 +60,11 @@ func readJob(c *command, cn *conn.Conn, job string) (jobView, error) {
 		return jobView{}, err
 	}
 	var v jobView
-	if err := decodeAs(resp.Body, &v, "a job"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "a job"); err != nil {
 		return v, err
 	}
 	if v.ID == "" {
-		return v, errNotA("a job")
+		return v, cmdkit.ErrNotA("a job")
 	}
 	return v, nil
 }
@@ -74,26 +75,26 @@ func JobShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("job show", false, stdout, stderr)
 	var wait bool
 	var timeout time.Duration
-	c.set.BoolVar(&wait, "wait", false, "follow the job until it has succeeded or failed")
-	c.set.DurationVar(&timeout, "wait-timeout", defaultJobWait, "with --wait, give up after this long; the job goes on running")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&wait, "wait", false, "follow the job until it has succeeded or failed")
+	c.Set.DurationVar(&timeout, "wait-timeout", defaultJobWait, "with --wait, give up after this long; the job goes on running")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("job show takes one job id"))
 	}
-	job, err := idArg("job", "job", pos[0])
+	job, err := cmdkit.IDArg("job", "a job", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
 	switch {
-	case flagGiven(c.set, "wait-timeout") && !wait:
+	case cmdkit.FlagGiven(c.Set, "wait-timeout") && !wait:
 		return c.fail(exitcode.Usagef("--wait-timeout goes with --wait"))
 	case timeout <= 0:
 		return c.fail(exitcode.Usagef("--wait-timeout must be longer than zero"))
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -114,10 +115,10 @@ func JobShow(args []string, stdout, stderr io.Writer) int {
 }
 
 func (c *command) printJob(v jobView) error {
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 // followJob polls the job, with a growing wait, until it has succeeded or failed. It returns the last state it read. A

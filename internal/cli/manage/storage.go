@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -33,30 +34,30 @@ func storageLargestRoute(acc string) string {
 // print.
 func printStoragePolicy(c *command, body []byte) error {
 	var v storagePolicyView
-	if err := decodeAs(body, &v, "a storage policy"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a storage policy"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, []output.KV{{Key: "user_quota_bytes", Value: number(v.UserQuotaBytes)}})
+	return output.KeyValues(c.Stdout, []output.KV{{Key: "user_quota_bytes", Value: number(v.UserQuotaBytes)}})
 }
 
 // StoragePolicyShow is `selfcloud storage policy show [--account ACC]`.
 func StoragePolicyShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("storage policy show", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("storage policy show", pos); err != nil {
+	if err := cmdkit.NoArgs("storage policy show", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -75,12 +76,12 @@ func StoragePolicyShow(args []string, stdout, stderr io.Writer) int {
 func StoragePolicySet(args []string, stdout, stderr io.Writer) int {
 	c := begin("storage policy set", true, stdout, stderr)
 	var quotaText string
-	c.set.StringVar(&quotaText, "user-quota", "", "each user's limit, a `size` such as 10GiB, or 0 for no limit")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&quotaText, "user-quota", "", "each user's limit, a `size` such as 10GiB, or 0 for no limit")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("storage policy set", pos); err != nil {
+	if err := cmdkit.NoArgs("storage policy set", pos); err != nil {
 		return c.fail(err)
 	}
 	if quotaText == "" {
@@ -90,11 +91,11 @@ func StoragePolicySet(args []string, stdout, stderr io.Writer) int {
 	if err := quota.UnmarshalText([]byte(quotaText)); err != nil {
 		return c.fail(exitcode.Usagef("--user-quota: %s", err))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -200,7 +201,7 @@ func fetchUsagePage(c *command, cn *conn.Conn, acc, cursor string, limit int) (*
 	var page storageUsagePage
 	page.Folders = []storageFolderView{}
 	page.Users = []storageUserView{}
-	if err := decodeAs(resp.Body, &page, "an account's storage"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &page, "an account's storage"); err != nil {
 		return nil, err
 	}
 	return &page, nil
@@ -211,13 +212,13 @@ func StorageUsage(args []string, stdout, stderr io.Writer) int {
 	c := begin("storage usage", true, stdout, stderr)
 	var usersLimitText string
 	var all bool
-	c.set.StringVar(&usersLimitText, "users-limit", "", "how many users to a page, from 1 to 200 (default 50)")
-	c.set.BoolVar(&all, "all", false, "follow the users cursor and print every user")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&usersLimitText, "users-limit", "", "how many users to a page, from 1 to 200 (default 50)")
+	c.Set.BoolVar(&all, "all", false, "follow the users cursor and print every user")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("storage usage", pos); err != nil {
+	if err := cmdkit.NoArgs("storage usage", pos); err != nil {
 		return c.fail(err)
 	}
 	limit := 0
@@ -228,11 +229,11 @@ func StorageUsage(args []string, stdout, stderr io.Writer) int {
 		}
 		limit = n
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -262,7 +263,7 @@ func StorageUsage(args []string, stdout, stderr io.Writer) int {
 			return c.fail(err)
 		}
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		if err := output.JSON(stdout, out); err != nil {
 			return c.fail(err)
 		}
@@ -311,27 +312,27 @@ func StorageLargest(args []string, stdout, stderr io.Writer) int {
 	c := begin("storage largest", true, stdout, stderr)
 	var folder string
 	var all bool
-	c.set.StringVar(&folder, "folder", "", "only this folder's files, by `id` (fld_...)")
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&folder, "folder", "", "only this folder's files, by `id` (fld_...)")
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("storage largest", pos); err != nil {
+	if err := cmdkit.NoArgs("storage largest", pos); err != nil {
 		return c.fail(err)
 	}
 	if folder != "" {
-		id, err := idArg("fld", "folder", folder)
+		id, err := cmdkit.IDArg("fld", "a folder", folder)
 		if err != nil {
 			return c.fail(err)
 		}
 		folder = id
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -351,12 +352,12 @@ func StorageLargest(args []string, stdout, stderr io.Writer) int {
 	views := make([]largeFileView, 0, len(items))
 	for _, raw := range items {
 		var v largeFileView
-		if err := decodeAs(raw, &v, "a file"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a file"); err != nil {
 			return c.fail(err)
 		}
 		views = append(views, v)
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		if err := output.JSON(stdout, views); err != nil {
 			return c.fail(err)
 		}

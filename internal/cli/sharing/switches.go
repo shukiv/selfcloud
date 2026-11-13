@@ -5,6 +5,7 @@ package sharing
 import (
 	"io"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 )
@@ -20,7 +21,7 @@ func shareSwitch(name, field string, args []string, stdout, stderr io.Writer) in
 	if len(r.pos) != 2 {
 		return r.fail(exitcode.Usagef("%s takes a node (nod_...) and on or off", name))
 	}
-	nodeID, err := idArg("nod", "a node", r.pos[0])
+	nodeID, err := cmdkit.IDArg("nod", "a node", r.pos[0])
 	if err != nil {
 		return r.fail(err)
 	}

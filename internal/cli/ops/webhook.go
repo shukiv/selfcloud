@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -81,14 +82,14 @@ func (v webhookView) pairs() []output.KV {
 	return []output.KV{
 		{Key: "id", Value: v.ID},
 		{Key: "url", Value: v.URL},
-		{Key: "description", Value: str(v.Description)},
+		{Key: "description", Value: cmdkit.Str(v.Description)},
 		{Key: "events", Value: strings.Join(v.Events, ",")},
 		{Key: "state", Value: v.State},
-		{Key: "disabled_reason", Value: str(v.DisabledReason)},
-		{Key: "consecutive_failures", Value: itoa(v.ConsecutiveFailures)},
-		{Key: "last_success_at", Value: str(v.LastSuccessAt)},
-		{Key: "last_failure_at", Value: str(v.LastFailureAt)},
-		{Key: "previous_secret_until", Value: str(v.PreviousSecretUntil)},
+		{Key: "disabled_reason", Value: cmdkit.Str(v.DisabledReason)},
+		{Key: "consecutive_failures", Value: cmdkit.Itoa(v.ConsecutiveFailures)},
+		{Key: "last_success_at", Value: cmdkit.Str(v.LastSuccessAt)},
+		{Key: "last_failure_at", Value: cmdkit.Str(v.LastFailureAt)},
+		{Key: "previous_secret_until", Value: cmdkit.Str(v.PreviousSecretUntil)},
 		{Key: "created_at", Value: v.CreatedAt},
 		{Key: "updated_at", Value: v.UpdatedAt},
 	}
@@ -97,19 +98,19 @@ func (v webhookView) pairs() []output.KV {
 func (d deliveryView) pairs() []output.KV {
 	code := ""
 	if d.LastCode != nil {
-		code = itoa(*d.LastCode)
+		code = cmdkit.Itoa(*d.LastCode)
 	}
 	return []output.KV{
 		{Key: "id", Value: d.ID},
 		{Key: "event_id", Value: d.EventID},
 		{Key: "type", Value: d.Type},
 		{Key: "state", Value: d.State},
-		{Key: "attempts", Value: itoa(d.Attempts)},
+		{Key: "attempts", Value: cmdkit.Itoa(d.Attempts)},
 		{Key: "last_code", Value: code},
-		{Key: "last_error", Value: str(d.LastError)},
+		{Key: "last_error", Value: cmdkit.Str(d.LastError)},
 		{Key: "next_attempt_at", Value: d.NextAttemptAt},
 		{Key: "created_at", Value: d.CreatedAt},
-		{Key: "finished_at", Value: str(d.FinishedAt)},
+		{Key: "finished_at", Value: cmdkit.Str(d.FinishedAt)},
 	}
 }
 
@@ -118,9 +119,9 @@ var deliveryHeaders = []string{"ID", "STATE", "TYPE", "ATTEMPTS", "CODE", "ERROR
 func (d deliveryView) row() []string {
 	code := ""
 	if d.LastCode != nil {
-		code = itoa(*d.LastCode)
+		code = cmdkit.Itoa(*d.LastCode)
 	}
-	return []string{d.ID, d.State, d.Type, itoa(d.Attempts), code, str(d.LastError), d.CreatedAt}
+	return []string{d.ID, d.State, d.Type, cmdkit.Itoa(d.Attempts), code, cmdkit.Str(d.LastError), d.CreatedAt}
 }
 
 // eventList is the repeatable --event flag. A value may hold several types, separated by commas.
@@ -201,17 +202,17 @@ func hookArg(pos []string, name string) (string, error) {
 	if len(pos) != 1 {
 		return "", exitcode.Usagef("%s takes one webhook id", name)
 	}
-	return idArg("whk", "webhook", pos[0])
+	return cmdkit.IDArg("whk", "a webhook", pos[0])
 }
 
 // decodeHook reads a webhook answer. An answer with no id is not one.
 func decodeHook[T interface{ identity() string }](body []byte) (T, error) {
 	var v T
-	if err := decodeAs(body, &v, "a webhook"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a webhook"); err != nil {
 		return v, err
 	}
 	if v.identity() == "" {
-		return v, errNotA("a webhook")
+		return v, cmdkit.ErrNotA("a webhook")
 	}
 	return v, nil
 }
@@ -221,24 +222,24 @@ func (v webhookShown) identity() string  { return v.ID }
 func (v webhookDetail) identity() string { return v.ID }
 
 func (c *command) printHook(pairs []output.KV, jsonDoc any) error {
-	if c.g.JSON {
-		return output.JSON(c.stdout, jsonDoc)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, jsonDoc)
 	}
-	return output.KeyValues(c.stdout, pairs)
+	return output.KeyValues(c.Stdout, pairs)
 }
 
 // printShown prints a webhook with its secret, once, and a note that it is not shown again.
 func (c *command) printShown(v webhookShown) error {
 	if v.Secret == "" {
-		return errNotA("a webhook with its secret (webhook " + v.ID + "); the secret is not shown again, so rotate it")
+		return cmdkit.ErrNotA("a webhook with its secret (webhook " + v.ID + "); the secret is not shown again, so rotate it")
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	if err := output.KeyValues(c.stdout, append(v.pairs(), output.KV{Key: "secret", Value: v.Secret})); err != nil {
+	if err := output.KeyValues(c.Stdout, append(v.pairs(), output.KV{Key: "secret", Value: v.Secret})); err != nil {
 		return err
 	}
-	_, _ = io.WriteString(c.stderr, secretNote)
+	_, _ = io.WriteString(c.Stderr, secretNote)
 	return nil
 }
 
@@ -248,14 +249,14 @@ func WebhookAdd(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook add", true, stdout, stderr)
 	var raw, desc string
 	var evs eventList
-	c.set.StringVar(&raw, "endpoint", "", "the endpoint's `address`: an absolute https (or http) address; the server decides which hosts it may reach")
-	c.set.Var(&evs, "event", "an event `type` to send; repeat it, or separate types with commas")
-	c.set.StringVar(&desc, "description", "", "a `note` of up to 200 characters")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&raw, "endpoint", "", "the endpoint's `address`: an absolute https (or http) address; the server decides which hosts it may reach")
+	c.Set.Var(&evs, "event", "an event `type` to send; repeat it, or separate types with commas")
+	c.Set.StringVar(&desc, "description", "", "a `note` of up to 200 characters")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("webhook add", pos); err != nil {
+	if err := cmdkit.NoArgs("webhook add", pos); err != nil {
 		return c.fail(err)
 	}
 	addr, err := cleanURL(raw)
@@ -272,7 +273,7 @@ func WebhookAdd(args []string, stdout, stderr io.Writer) int {
 	if err := cleanDescription(desc); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -280,7 +281,7 @@ func WebhookAdd(args []string, stdout, stderr io.Writer) int {
 	if desc != "" {
 		body["description"] = desc
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -302,29 +303,29 @@ func WebhookAdd(args []string, stdout, stderr io.Writer) int {
 func WebhookLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook ls", true, stdout, stderr)
 	var all bool
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("webhook ls", pos); err != nil {
+	if err := cmdkit.NoArgs("webhook ls", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	items, next, err := files.ListPages(cn, hooksRoute(acc), nil, all)
 	var hooks []webhookView
 	if err == nil {
-		hooks, err = decodeItems[webhookView](items, "a webhook")
+		hooks, err = cmdkit.DecodeItems[webhookView](items, "a webhook")
 	}
 	if err == nil {
-		err = printList(c, hooks, next != "", []string{"ID", "STATE", "EVENTS", "URL"}, func(v webhookView) []string {
+		err = cmdkit.PrintList(c.Command, hooks, next != "", []string{"ID", "STATE", "EVENTS", "URL"}, func(v webhookView) []string {
 			return []string{v.ID, v.State, strings.Join(v.Events, ","), v.URL}
 		})
 	}
@@ -338,7 +339,7 @@ func WebhookLs(args []string, stdout, stderr io.Writer) int {
 // shown.
 func WebhookShow(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook show", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -346,11 +347,11 @@ func WebhookShow(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -365,13 +366,13 @@ func WebhookShow(args []string, stdout, stderr io.Writer) int {
 		}
 		err = c.printHook(d.pairs(), d)
 	}
-	if err == nil && !c.g.JSON && len(d.RecentDeliveries) > 0 {
+	if err == nil && !c.G.JSON && len(d.RecentDeliveries) > 0 {
 		rows := make([][]string, 0, len(d.RecentDeliveries))
 		for _, dv := range d.RecentDeliveries {
 			rows = append(rows, dv.row())
 		}
-		_, _ = io.WriteString(c.stdout, "\n")
-		err = output.Table(c.stdout, deliveryHeaders, rows)
+		_, _ = io.WriteString(c.Stdout, "\n")
+		err = output.Table(c.Stdout, deliveryHeaders, rows)
 	}
 	if err != nil {
 		return c.fail(err)
@@ -385,11 +386,11 @@ func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook update", true, stdout, stderr)
 	var raw, desc, state string
 	var evs eventList
-	c.set.StringVar(&raw, "endpoint", "", "a new `address` for the endpoint")
-	c.set.Var(&evs, "event", "replace the events with these `types`; repeat it, or separate types with commas")
-	c.set.StringVar(&desc, "description", "", "a new `note`; an empty one clears it")
-	c.set.StringVar(&state, "state", "", "`active` or `paused`")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&raw, "endpoint", "", "a new `address` for the endpoint")
+	c.Set.Var(&evs, "event", "replace the events with these `types`; repeat it, or separate types with commas")
+	c.Set.StringVar(&desc, "description", "", "a new `note`; an empty one clears it")
+	c.Set.StringVar(&state, "state", "", "`active` or `paused`")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -398,12 +399,12 @@ func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	body := map[string]any{}
-	if flagGiven(c.set, "endpoint") {
+	if cmdkit.FlagGiven(c.Set, "endpoint") {
 		if body["url"], err = cleanURL(raw); err != nil {
 			return c.fail(err)
 		}
 	}
-	if flagGiven(c.set, "event") {
+	if cmdkit.FlagGiven(c.Set, "event") {
 		events, err := evs.events()
 		if err != nil {
 			return c.fail(err)
@@ -413,13 +414,13 @@ func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 		}
 		body["events"] = events
 	}
-	if flagGiven(c.set, "description") {
+	if cmdkit.FlagGiven(c.Set, "description") {
 		if err := cleanDescription(desc); err != nil {
 			return c.fail(err)
 		}
 		body["description"] = desc
 	}
-	if flagGiven(c.set, "state") {
+	if cmdkit.FlagGiven(c.Set, "state") {
 		if state != "active" && state != "paused" {
 			return c.fail(exitcode.Usagef("--state is active or paused"))
 		}
@@ -428,11 +429,11 @@ func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 	if len(body) == 0 {
 		return c.fail(exitcode.Usagef("webhook update changes nothing: give --endpoint, --event, --description or --state"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -454,8 +455,8 @@ func WebhookUpdate(args []string, stdout, stderr io.Writer) int {
 func WebhookRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook rm", true, stdout, stderr)
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -463,21 +464,21 @@ func WebhookRm(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
-	if err := confirmByID(yes, hook, "remove the webhook; its delivery log goes with it", stderr); err != nil {
+	if err := cmdkit.ConfirmByID(yes, hook, "remove the webhook; its delivery log goes with it", stderr); err != nil {
 		return c.fail(err)
 	}
 	if _, err := files.Send(cn, http.MethodDelete, hooksRoute(acc)+"/"+hook, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, hook); err != nil {
+	if err := cmdkit.PrintDone(c.Command, hook); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -488,8 +489,8 @@ func WebhookRm(args []string, stdout, stderr io.Writer) int {
 func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook rotate-secret", true, stdout, stderr)
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -497,15 +498,15 @@ func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
-	if err := confirmByID(yes, hook, "replace the webhook's signing secret; the receiver must be given the new one", stderr); err != nil {
+	if err := cmdkit.ConfirmByID(yes, hook, "replace the webhook's signing secret; the receiver must be given the new one", stderr); err != nil {
 		return c.fail(err)
 	}
 	resp, err := files.Send(cn, http.MethodPost, hooksRoute(acc)+"/"+hook+"/secret", nil, nil)
@@ -522,9 +523,9 @@ func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 	// The secret it replaces goes on signing for a while, so a receiver can switch without a gap. The server keeps only
 	// one old secret, so a second rotation ends that period at once.
 	// The end is the server's text on a terminal, so it is printed only as the time it parses to.
-	if !c.g.JSON && v.PreviousSecretUntil != nil {
+	if !c.G.JSON && v.PreviousSecretUntil != nil {
 		if until, err := time.Parse(time.RFC3339, *v.PreviousSecretUntil); err == nil {
-			_, _ = io.WriteString(c.stderr, "selfcloud: note: the old secret keeps signing until "+until.Format(time.RFC3339)+
+			_, _ = io.WriteString(c.Stderr, "selfcloud: note: the old secret keeps signing until "+until.Format(time.RFC3339)+
 				"; a second rotation ends that at once\n")
 		}
 	}
@@ -534,7 +535,7 @@ func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 // WebhookTest is `selfcloud webhook test --account ACC HOOK`: queues a test event for the endpoint.
 func WebhookTest(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook test", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -542,11 +543,11 @@ func WebhookTest(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -557,14 +558,14 @@ func WebhookTest(args []string, stdout, stderr io.Writer) int {
 	var v struct {
 		EventID string `json:"event_id"`
 	}
-	if err = decodeAs(resp.Body, &v, "a test event"); err == nil && v.EventID == "" {
-		err = errNotA("a test event")
+	if err = cmdkit.DecodeAs(resp.Body, &v, "a test event"); err == nil && v.EventID == "" {
+		err = cmdkit.ErrNotA("a test event")
 	}
 	if err == nil {
-		if c.g.JSON {
-			err = output.JSON(c.stdout, v)
+		if c.G.JSON {
+			err = output.JSON(c.Stdout, v)
 		} else {
-			err = output.KeyValues(c.stdout, []output.KV{{Key: "event_id", Value: v.EventID}})
+			err = output.KeyValues(c.Stdout, []output.KV{{Key: "event_id", Value: v.EventID}})
 		}
 	}
 	if err != nil {
@@ -577,8 +578,8 @@ func WebhookTest(args []string, stdout, stderr io.Writer) int {
 func WebhookDeliveries(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook deliveries", true, stdout, stderr)
 	var all bool
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -586,21 +587,21 @@ func WebhookDeliveries(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	items, next, err := files.ListPages(cn, hooksRoute(acc)+"/"+hook+"/deliveries", nil, all)
 	var list []deliveryView
 	if err == nil {
-		list, err = decodeItems[deliveryView](items, "a delivery")
+		list, err = cmdkit.DecodeItems[deliveryView](items, "a delivery")
 	}
 	if err == nil {
-		err = printList(c, list, next != "", deliveryHeaders, deliveryView.row)
+		err = cmdkit.PrintList(c.Command, list, next != "", deliveryHeaders, deliveryView.row)
 	}
 	if err != nil {
 		return c.fail(err)
@@ -611,26 +612,26 @@ func WebhookDeliveries(args []string, stdout, stderr io.Writer) int {
 // WebhookRetry is `selfcloud webhook retry --account ACC HOOK DELIVERY`: queues a failed delivery again.
 func WebhookRetry(args []string, stdout, stderr io.Writer) int {
 	c := begin("webhook retry", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 2 {
 		return c.fail(exitcode.Usagef("webhook retry takes a webhook id and a delivery id"))
 	}
-	hook, err := idArg("whk", "webhook", pos[0])
+	hook, err := cmdkit.IDArg("whk", "a webhook", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	dlv, err := idArg("dlv", "delivery", pos[1])
+	dlv, err := cmdkit.IDArg("dlv", "a delivery", pos[1])
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -639,14 +640,14 @@ func WebhookRetry(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v deliveryView
-	if err = decodeAs(resp.Body, &v, "a delivery"); err == nil && v.ID == "" {
-		err = errNotA("a delivery")
+	if err = cmdkit.DecodeAs(resp.Body, &v, "a delivery"); err == nil && v.ID == "" {
+		err = cmdkit.ErrNotA("a delivery")
 	}
 	if err == nil {
-		if c.g.JSON {
-			err = output.JSON(c.stdout, v)
+		if c.G.JSON {
+			err = output.JSON(c.Stdout, v)
 		} else {
-			err = output.KeyValues(c.stdout, v.pairs())
+			err = output.KeyValues(c.Stdout, v.pairs())
 		}
 	}
 	if err != nil {

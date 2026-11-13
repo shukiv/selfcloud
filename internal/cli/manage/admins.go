@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -56,19 +57,19 @@ func adminRow(v adminView) []string {
 // printAdminList writes the admins as views, not as the API's raw items, so a field the server adds is not shown.
 func printAdminList(c *command, items []adminView, next string) error {
 	if next != "" {
-		_, _ = io.WriteString(c.stderr, "selfcloud: more items exist; --all prints every page\n")
+		_, _ = io.WriteString(c.Stderr, "selfcloud: more items exist; --all prints every page\n")
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		if items == nil {
 			items = []adminView{}
 		}
-		return output.JSON(c.stdout, items)
+		return output.JSON(c.Stdout, items)
 	}
 	rows := make([][]string, 0, len(items))
 	for _, v := range items {
 		rows = append(rows, adminRow(v))
 	}
-	return output.Table(c.stdout, []string{"ID", "EMAIL", "NAME", "STATUS", "VERIFIED", "LAST SIGN-IN", "CREATED"}, rows)
+	return output.Table(c.Stdout, []string{"ID", "EMAIL", "NAME", "STATUS", "VERIFIED", "LAST SIGN-IN", "CREATED"}, rows)
 }
 
 // adminVerification is the verification an admin add shows. It has no field for the token, which is a secret.
@@ -97,17 +98,17 @@ func adminFlagGiven(set *flag.FlagSet, name string) bool {
 // AdminLs is `selfcloud admin ls [--all]`: the installation admins.
 func AdminLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("admin ls", false, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var all bool
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("admin ls", pos); err != nil {
+	if err := cmdkit.NoArgs("admin ls", pos); err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -118,7 +119,7 @@ func AdminLs(args []string, stdout, stderr io.Writer) int {
 	views := make([]adminView, 0, len(items))
 	for _, raw := range items {
 		var v adminView
-		if err := decodeAs(raw, &v, "an installation admin"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "an installation admin"); err != nil {
 			return c.fail(err)
 		}
 		views = append(views, v)
@@ -133,11 +134,11 @@ func AdminLs(args []string, stdout, stderr io.Writer) int {
 // and shows how it verifies. A link, which holds a secret, is shown once.
 func AdminAdd(args []string, stdout, stderr io.Writer) int {
 	c := begin("admin add", false, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var method, name string
-	c.set.StringVar(&method, "verification", "", "how the new admin verifies: `method`, email or link")
-	c.set.StringVar(&name, "name", "", "the new admin's display `name`")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&method, "verification", "", "how the new admin verifies: `method`, email or link")
+	c.Set.StringVar(&name, "name", "", "the new admin's display `name`")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -151,10 +152,10 @@ func AdminAdd(args []string, stdout, stderr io.Writer) int {
 		return c.fail(exitcode.Usagef("--verification must be email or link"))
 	}
 	body := map[string]string{"email": pos[0], "verification": method}
-	if adminFlagGiven(c.set, "name") {
+	if adminFlagGiven(c.Set, "name") {
 		body["display_name"] = name
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -163,7 +164,7 @@ func AdminAdd(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v adminShown
-	if err := decodeAs(resp.Body, &v, "an installation admin"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "an installation admin"); err != nil {
 		return c.fail(err)
 	}
 	if v.Verification.Method == "" {
@@ -176,8 +177,8 @@ func AdminAdd(args []string, stdout, stderr io.Writer) int {
 }
 
 func printAdminShown(c *command, v adminShown) error {
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
 	pairs := []output.KV{
 		{Key: "id", Value: v.ID},
@@ -193,11 +194,11 @@ func printAdminShown(c *command, v adminShown) error {
 	} else {
 		pairs = append(pairs, output.KV{Key: "sent", Value: strconv.FormatBool(v.Verification.Sent != nil && *v.Verification.Sent)})
 	}
-	if err := output.KeyValues(c.stdout, pairs); err != nil {
+	if err := output.KeyValues(c.Stdout, pairs); err != nil {
 		return err
 	}
 	if v.Verification.Method == "link" {
-		_, _ = io.WriteString(c.stderr, "selfcloud: note: the sign-in link is shown only now; give it to the new admin\n")
+		_, _ = io.WriteString(c.Stderr, "selfcloud: note: the sign-in link is shown only now; give it to the new admin\n")
 	}
 	return nil
 }
@@ -205,21 +206,21 @@ func printAdminShown(c *command, v adminShown) error {
 // AdminRm is `selfcloud admin rm USER [--yes]`: removes an installation admin. It asks first.
 func AdminRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("admin rm", false, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("admin rm takes one admin id"))
 	}
-	usr, err := idArg("usr", "admin", pos[0])
+	usr, err := cmdkit.IDArg("usr", "a admin", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -229,7 +230,7 @@ func AdminRm(args []string, stdout, stderr io.Writer) int {
 	if _, err := files.Send(cn, http.MethodDelete, adminsPath+"/"+usr, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, usr); err != nil {
+	if err := cmdkit.PrintDone(c.Command, usr); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

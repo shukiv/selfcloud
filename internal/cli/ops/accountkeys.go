@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -46,7 +47,7 @@ type keyShown struct {
 var keyHeaders = []string{"ID", "NAME", "PREFIX", "CREATED", "EXPIRES", "REVOKED", "LAST USED"}
 
 func (v keyView) row() []string {
-	return []string{v.ID, v.Name, v.Prefix, v.CreatedAt, str(v.ExpiresAt), str(v.RevokedAt), str(v.LastUsedAt)}
+	return []string{v.ID, v.Name, v.Prefix, v.CreatedAt, cmdkit.Str(v.ExpiresAt), cmdkit.Str(v.RevokedAt), cmdkit.Str(v.LastUsedAt)}
 }
 
 func (v keyShown) pairs() []output.KV {
@@ -55,7 +56,7 @@ func (v keyShown) pairs() []output.KV {
 		{Key: "name", Value: v.Name},
 		{Key: "prefix", Value: v.Prefix},
 		{Key: "created_at", Value: v.CreatedAt},
-		{Key: "expires_at", Value: str(v.ExpiresAt)},
+		{Key: "expires_at", Value: cmdkit.Str(v.ExpiresAt)},
 		{Key: "key", Value: v.Key},
 	}
 }
@@ -63,10 +64,10 @@ func (v keyShown) pairs() []output.KV {
 // AccountKeyCreate is `selfcloud account key create --account ACC [--expires TIME] NAME`. It prints the secret, once.
 func AccountKeyCreate(args []string, stdout, stderr io.Writer) int {
 	c := begin("account key create", true, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var expires string
-	c.set.StringVar(&expires, "expires", "", "when the key stops working, as an RFC 3339 `time` in the future")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&expires, "expires", "", "when the key stops working, as an RFC 3339 `time` in the future")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -88,11 +89,11 @@ func AccountKeyCreate(args []string, stdout, stderr io.Writer) int {
 		}
 		body["expires_at"] = t.UTC().Format(time.RFC3339)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -101,22 +102,22 @@ func AccountKeyCreate(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v keyShown
-	err = decodeAs(resp.Body, &v, "a key")
+	err = cmdkit.DecodeAs(resp.Body, &v, "a key")
 	if err == nil && (v.ID == "" || v.Key == "") {
-		err = errNotA("a key with its secret; the key is not shown again, so make another")
+		err = cmdkit.ErrNotA("a key with its secret; the key is not shown again, so make another")
 	}
 	if err == nil {
-		if c.g.JSON {
-			err = output.JSON(c.stdout, v)
+		if c.G.JSON {
+			err = output.JSON(c.Stdout, v)
 		} else {
-			err = output.KeyValues(c.stdout, v.pairs())
+			err = output.KeyValues(c.Stdout, v.pairs())
 		}
 	}
 	if err != nil {
 		return c.fail(err)
 	}
-	if !c.g.JSON {
-		_, _ = io.WriteString(c.stderr, keyNote)
+	if !c.G.JSON {
+		_, _ = io.WriteString(c.Stderr, keyNote)
 	}
 	return exitcode.OK
 }
@@ -124,29 +125,29 @@ func AccountKeyCreate(args []string, stdout, stderr io.Writer) int {
 // AccountKeyLs is `selfcloud account key ls --account ACC`: the account's keys, newest first as the API orders them.
 func AccountKeyLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("account key ls", true, stdout, stderr)
-	c.adminRoutes = true
-	pos, code, ok := c.parse(args)
+	c.AdminRoutes = true
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("account key ls", pos); err != nil {
+	if err := cmdkit.NoArgs("account key ls", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	items, _, err := files.ListPages(cn, keysRoute(acc), nil, false)
 	var keys []keyView
 	if err == nil {
-		keys, err = decodeItems[keyView](items, "a key")
+		keys, err = cmdkit.DecodeItems[keyView](items, "a key")
 	}
 	if err == nil {
-		err = printList(c, keys, false, keyHeaders, keyView.row)
+		err = cmdkit.PrintList(c.Command, keys, false, keyHeaders, keyView.row)
 	}
 	if err != nil {
 		return c.fail(err)
@@ -157,35 +158,35 @@ func AccountKeyLs(args []string, stdout, stderr io.Writer) int {
 // AccountKeyRevoke is `selfcloud account key revoke --account ACC KEY [--yes]`. Asks first, by the key's id.
 func AccountKeyRevoke(args []string, stdout, stderr io.Writer) int {
 	c := begin("account key revoke", true, stdout, stderr)
-	c.adminRoutes = true
+	c.AdminRoutes = true
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("account key revoke takes one key id"))
 	}
-	key, err := idArg("key", "key", pos[0])
+	key, err := cmdkit.IDArg("key", "a key", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
-	if err := confirmByID(yes, key, "revoke the key; every program that uses it stops working at once", stderr); err != nil {
+	if err := cmdkit.ConfirmByID(yes, key, "revoke the key; every program that uses it stops working at once", stderr); err != nil {
 		return c.fail(err)
 	}
 	if _, err := files.Send(cn, http.MethodDelete, keysRoute(acc)+"/"+key, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, key); err != nil {
+	if err := cmdkit.PrintDone(c.Command, key); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

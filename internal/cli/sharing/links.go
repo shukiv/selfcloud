@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -40,7 +41,7 @@ var linkKeys = []string{"id", "node_id", "audience", "role", "expires_at", "pass
 // is {link, url} with the known fields of the link, or the known fields alone when there is no address.
 func (r *run) printLink(link []byte, secretURL string) error {
 	fields := r.valueFields(link)
-	if r.g.JSON {
+	if r.G.JSON {
 		if secretURL != "" {
 			return output.JSON(r.raw, map[string]any{"link": fields, "url": secretURL})
 		}
@@ -115,7 +116,7 @@ func LinkCreate(args []string, stdout, stderr io.Writer) int {
 	if len(r.pos) != 1 {
 		return r.fail(exitcode.Usagef("link create takes one node id"))
 	}
-	nodeID, err := idArg("nod", "a node", r.pos[0])
+	nodeID, err := cmdkit.IDArg("nod", "a node", r.pos[0])
 	if err != nil {
 		return r.fail(err)
 	}
@@ -238,7 +239,7 @@ func (r *run) createSigned(nodeID, ttl string, inline, others bool) int {
 		}
 	}
 	kv = append(kv, output.KV{Key: "url", Value: doc.URL})
-	if r.g.JSON {
+	if r.G.JSON {
 		err = output.JSON(r.raw, known)
 	} else {
 		err = output.KeyValues(r.raw, kv)
@@ -268,7 +269,7 @@ func LinkLs(args []string, stdout, stderr io.Writer) int {
 	q := url.Values{}
 	switch {
 	case len(r.pos) == 1 && account == "":
-		nodeID, err := idArg("nod", "a node", r.pos[0])
+		nodeID, err := cmdkit.IDArg("nod", "a node", r.pos[0])
 		if err == nil && (audience != "" || kind != "") {
 			err = exitcode.Usagef("--audience and --kind go with the account's list")
 		}
@@ -310,7 +311,7 @@ func LinkLs(args []string, stdout, stderr io.Writer) int {
 	for _, raw := range items {
 		kept = append(kept, linkFields(raw))
 	}
-	if r.g.JSON {
+	if r.G.JSON {
 		if err := output.JSON(r.out, kept); err != nil {
 			return r.fail(err)
 		}
@@ -357,7 +358,7 @@ func LinkUpdate(args []string, stdout, stderr io.Writer) int {
 	if len(r.pos) != 1 {
 		return r.fail(exitcode.Usagef("link update takes one link id"))
 	}
-	linkID, err := idArg("shl", "a link", r.pos[0])
+	linkID, err := cmdkit.IDArg("shl", "a link", r.pos[0])
 	body := map[string]any{}
 	if err == nil && audience != "" {
 		if audience != "organisation" && audience != "anyone" {
@@ -440,7 +441,7 @@ func LinkReset(args []string, stdout, stderr io.Writer) int {
 	if len(r.pos) != 1 {
 		return r.fail(exitcode.Usagef("link reset takes one link id"))
 	}
-	linkID, err := idArg("shl", "a link", r.pos[0])
+	linkID, err := cmdkit.IDArg("shl", "a link", r.pos[0])
 	if err != nil {
 		return r.fail(err)
 	}
@@ -479,7 +480,7 @@ func LinkRm(args []string, stdout, stderr io.Writer) int {
 		err = exitcode.Usagef("link rm takes one or more link ids, or --public")
 	}
 	for i := 0; err == nil && i < len(r.pos); i++ {
-		_, err = idArg("shl", "a link", r.pos[i])
+		_, err = cmdkit.IDArg("shl", "a link", r.pos[i])
 	}
 	if err != nil {
 		return r.fail(err)

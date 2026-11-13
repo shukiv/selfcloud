@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -128,12 +129,12 @@ func verificationKV(v *userVerificationView, method string) []output.KV {
 func UserAdd(args []string, stdout, stderr io.Writer) int {
 	c := begin("user add", true, stdout, stderr)
 	var verification, name, locale, role, ext string
-	c.set.StringVar(&verification, "verification", "", "how the person proves the address: `email`, `link` or `none`")
-	c.set.StringVar(&name, "name", "", "the person's display `name`")
-	c.set.StringVar(&locale, "locale", "", "the person's locale, a `tag` such as en or pt-BR")
-	c.set.StringVar(&role, "role", "", "the person's `role`: member (the default) or owner")
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the person, kept with it")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&verification, "verification", "", "how the person proves the address: `email`, `link` or `none`")
+	c.Set.StringVar(&name, "name", "", "the person's display `name`")
+	c.Set.StringVar(&locale, "locale", "", "the person's locale, a `tag` such as en or pt-BR")
+	c.Set.StringVar(&role, "role", "", "the person's `role`: member (the default) or owner")
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the person, kept with it")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -149,12 +150,12 @@ func UserAdd(args []string, stdout, stderr io.Writer) int {
 	default:
 		return c.fail(exitcode.Usagef("--verification must be email, link or none"))
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
 	body := map[string]any{"email": email, "verification": verification}
-	c.set.Visit(func(f *flag.Flag) {
+	c.Set.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "name":
 			body["display_name"] = name
@@ -166,7 +167,7 @@ func UserAdd(args []string, stdout, stderr io.Writer) int {
 			body["external_id"] = ext
 		}
 	})
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -175,7 +176,7 @@ func UserAdd(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v userShown
-	if err := decodeAs(resp.Body, &v, "a person"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "a person"); err != nil {
 		return c.fail(err)
 	}
 	created := resp.Status == http.StatusCreated
@@ -192,8 +193,8 @@ func UserAdd(args []string, stdout, stderr io.Writer) int {
 }
 
 func printUserShown(c *command, v userShown, created bool) error {
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
 	kv := []output.KV{
 		{Key: "id", Value: v.ID},
@@ -205,11 +206,11 @@ func printUserShown(c *command, v userShown, created bool) error {
 	if created {
 		kv = append(kv, verificationKV(v.Verification, v.Verification.Method)...)
 	}
-	if err := output.KeyValues(c.stdout, kv); err != nil {
+	if err := output.KeyValues(c.Stdout, kv); err != nil {
 		return err
 	}
 	if created && v.Verification != nil && v.Verification.Method == "link" {
-		_, _ = io.WriteString(c.stderr, linkShownNote)
+		_, _ = io.WriteString(c.Stderr, linkShownNote)
 	}
 	return nil
 }
@@ -219,17 +220,17 @@ func UserLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("user ls", true, stdout, stderr)
 	var all bool
 	var email, ext string
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	c.set.StringVar(&email, "email", "", "only the person with this `email` address")
-	c.set.StringVar(&ext, "external-id", "", "only the person with this caller's `id`")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	c.Set.StringVar(&email, "email", "", "only the person with this `email` address")
+	c.Set.StringVar(&ext, "external-id", "", "only the person with this caller's `id`")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("user ls", pos); err != nil {
+	if err := cmdkit.NoArgs("user ls", pos); err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -240,7 +241,7 @@ func UserLs(args []string, stdout, stderr io.Writer) int {
 	if ext != "" {
 		q.Set("external_id", ext)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -249,18 +250,18 @@ func UserLs(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	if next != "" {
-		_, _ = io.WriteString(c.stderr, "selfcloud: more items exist; --all prints every page\n")
+		_, _ = io.WriteString(c.Stderr, "selfcloud: more items exist; --all prints every page\n")
 	}
 	views := make([]userView, 0, len(items))
 	for _, raw := range items {
 		var v userView
-		if err := decodeAs(raw, &v, "a person"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a person"); err != nil {
 			return c.fail(err)
 		}
 		views = append(views, v)
 	}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, views); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, views); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -269,7 +270,7 @@ func UserLs(args []string, stdout, stderr io.Writer) int {
 	for _, v := range views {
 		rows = append(rows, []string{v.ID, v.Email, v.DisplayName, v.Role, v.Status, textOf(v.VerifiedAt)})
 	}
-	if err := output.Table(c.stdout, []string{"ID", "EMAIL", "NAME", "ROLE", "STATUS", "VERIFIED"}, rows); err != nil {
+	if err := output.Table(c.Stdout, []string{"ID", "EMAIL", "NAME", "ROLE", "STATUS", "VERIFIED"}, rows); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -277,7 +278,7 @@ func UserLs(args []string, stdout, stderr io.Writer) int {
 
 // oneUser is the shared start of the commands that take one user id after the account.
 func oneUser(c *command, name string, args []string) (acc, user string, code int, ok bool) {
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return "", "", code, false
 	}
@@ -285,10 +286,10 @@ func oneUser(c *command, name string, args []string) (acc, user string, code int
 		return "", "", c.fail(exitcode.Usagef("%s takes one user id", name)), false
 	}
 	var err error
-	if user, err = idArg("usr", "user", pos[0]); err != nil {
+	if user, err = cmdkit.IDArg("usr", "a user", pos[0]); err != nil {
 		return "", "", c.fail(err), false
 	}
-	if acc, err = c.accountID(); err != nil {
+	if acc, err = c.AccountID(); err != nil {
 		return "", "", c.fail(err), false
 	}
 	return acc, user, 0, true
@@ -301,7 +302,7 @@ func UserShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -310,16 +311,16 @@ func UserShow(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v userDetailView
-	if err := decodeAs(resp.Body, &v, "a person"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "a person"); err != nil {
 		return c.fail(err)
 	}
-	if c.g.JSON {
-		if err := output.JSON(c.stdout, v); err != nil {
+	if c.G.JSON {
+		if err := output.JSON(c.Stdout, v); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
 	}
-	if err := output.KeyValues(c.stdout, userDetailKV(v)); err != nil {
+	if err := output.KeyValues(c.Stdout, userDetailKV(v)); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -332,22 +333,22 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 	c := begin("user update", true, stdout, stderr)
 	var name, locale, role, ext, status, quota, email, verification string
 	var yes bool
-	c.set.StringVar(&name, "name", "", "the person's new display `name`")
-	c.set.StringVar(&locale, "locale", "", "the person's new locale, a `tag` such as en or pt-BR")
-	c.set.StringVar(&role, "role", "", "the person's new `role`: member or owner")
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the person; \"\" clears it")
-	c.set.StringVar(&status, "status", "", "the person's `status`: active or disabled")
-	c.set.StringVar(&quota, "quota", "", "the person's My files limit, a `size` such as 10GiB or 0, or default")
-	c.set.StringVar(&email, "email", "", "the person's new `email` address, with --verification")
-	c.set.StringVar(&verification, "verification", "", "how the new email is proved: `email` or `link`")
-	c.set.BoolVar(&yes, "yes", false, "do not ask first when disabling (needed when standard input is not a terminal)")
+	c.Set.StringVar(&name, "name", "", "the person's new display `name`")
+	c.Set.StringVar(&locale, "locale", "", "the person's new locale, a `tag` such as en or pt-BR")
+	c.Set.StringVar(&role, "role", "", "the person's new `role`: member or owner")
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the person; \"\" clears it")
+	c.Set.StringVar(&status, "status", "", "the person's `status`: active or disabled")
+	c.Set.StringVar(&quota, "quota", "", "the person's My files limit, a `size` such as 10GiB or 0, or default")
+	c.Set.StringVar(&email, "email", "", "the person's new `email` address, with --verification")
+	c.Set.StringVar(&verification, "verification", "", "how the new email is proved: `email` or `link`")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first when disabling (needed when standard input is not a terminal)")
 	acc, user, code, ok := oneUser(c, "user update", args)
 	if !ok {
 		return code
 	}
 	body := map[string]any{}
 	var emailSet, verificationSet, statusSet, quotaSet bool
-	c.set.Visit(func(f *flag.Flag) {
+	c.Set.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "name":
 			body["display_name"] = name
@@ -401,7 +402,7 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 			return c.fail(err)
 		}
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -410,21 +411,21 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	var v userDetailView
-	if err := decodeAs(resp.Body, &v, "a person"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &v, "a person"); err != nil {
 		return c.fail(err)
 	}
 	var doc struct {
 		Verification *userVerificationView `json:"verification"`
 	}
-	if err := decodeAs(resp.Body, &doc, "a person"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &doc, "a person"); err != nil {
 		return c.fail(err)
 	}
-	if c.g.JSON {
+	if c.G.JSON {
 		shown := struct {
 			userDetailView
 			Verification *userVerificationView `json:"verification,omitempty"`
 		}{userDetailView: v, Verification: doc.Verification}
-		if err := output.JSON(c.stdout, shown); err != nil {
+		if err := output.JSON(c.Stdout, shown); err != nil {
 			return c.fail(err)
 		}
 		return exitcode.OK
@@ -433,7 +434,7 @@ func UserUpdate(args []string, stdout, stderr io.Writer) int {
 	if doc.Verification != nil {
 		kv = append(kv, verificationKV(doc.Verification, doc.Verification.Method)...)
 	}
-	if err := output.KeyValues(c.stdout, kv); err != nil {
+	if err := output.KeyValues(c.Stdout, kv); err != nil {
 		return c.fail(err)
 	}
 	if doc.Verification != nil && doc.Verification.Method == "link" {
@@ -449,9 +450,9 @@ func UserRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("user rm", true, stdout, stderr)
 	var transferTo string
 	var deleteFiles, yes bool
-	c.set.StringVar(&transferTo, "transfer-to", "", "give the person's My files to this `user` (usr_...)")
-	c.set.BoolVar(&deleteFiles, "delete-files", false, "delete the person's My files as well")
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	c.Set.StringVar(&transferTo, "transfer-to", "", "give the person's My files to this `user` (usr_...)")
+	c.Set.BoolVar(&deleteFiles, "delete-files", false, "delete the person's My files as well")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
 	acc, user, code, ok := oneUser(c, "user rm", args)
 	if !ok {
 		return code
@@ -462,7 +463,7 @@ func UserRm(args []string, stdout, stderr io.Writer) int {
 	}
 	if transferTo != "" {
 		var err error
-		if other, err = idArg("usr", "user", transferTo); err != nil {
+		if other, err = cmdkit.IDArg("usr", "a user", transferTo); err != nil {
 			return c.fail(err)
 		}
 		if other == user {
@@ -476,7 +477,7 @@ func UserRm(args []string, stdout, stderr io.Writer) int {
 	if err := files.Confirm(yes, user, what, stderr); err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -489,12 +490,12 @@ func UserRm(args []string, stdout, stderr io.Writer) int {
 	if _, err := files.Send(cn, http.MethodDelete, usersRoute(acc)+"/"+user, q, nil); err != nil {
 		code := c.fail(err)
 		var ae *client.APIError
-		if !c.g.JSON && errors.As(err, &ae) && ae.Status == http.StatusConflict {
+		if !c.G.JSON && errors.As(err, &ae) && ae.Status == http.StatusConflict {
 			_, _ = io.WriteString(stderr, rmHint)
 		}
 		return code
 	}
-	if err := printDone(c, user); err != nil {
+	if err := cmdkit.PrintDone(c.Command, user); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

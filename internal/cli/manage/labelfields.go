@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -57,13 +58,13 @@ func (v labelFieldView) pairs() []output.KV {
 // until labelFieldView has it.
 func printLabelField(c *command, body []byte) error {
 	var v labelFieldView
-	if err := decodeAs(body, &v, "a label field"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a label field"); err != nil {
 		return err
 	}
-	if c.g.JSON {
-		return output.JSON(c.stdout, v)
+	if c.G.JSON {
+		return output.JSON(c.Stdout, v)
 	}
-	return output.KeyValues(c.stdout, v.pairs())
+	return output.KeyValues(c.Stdout, v.pairs())
 }
 
 func labelFieldsRoute(acc string) string { return "/api/v1/accounts/" + acc + "/label-fields" }
@@ -117,10 +118,10 @@ func LabelFieldAdd(args []string, stdout, stderr io.Writer) int {
 	var typ string
 	var restricted bool
 	var choiceNames labelChoiceFlag
-	c.set.StringVar(&typ, "type", "", "the field's `type`: text, number, date, user or choice")
-	c.set.BoolVar(&restricted, "restricted", false, "only managers see this field's values")
-	c.set.Var(&choiceNames, "choice", "a choice of a choice field, by `name`; may be given more than once")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&typ, "type", "", "the field's `type`: text, number, date, user or choice")
+	c.Set.BoolVar(&restricted, "restricted", false, "only managers see this field's values")
+	c.Set.Var(&choiceNames, "choice", "a choice of a choice field, by `name`; may be given more than once")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -145,12 +146,12 @@ func LabelFieldAdd(args []string, stdout, stderr io.Writer) int {
 		}
 		choices = append(choices, labelChoiceBody{Name: cleaned})
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
 	body := map[string]any{"name": name, "type": typ, "restricted": restricted, "choices": choices}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -174,7 +175,7 @@ func labelChoiceNames(cn *conn.Conn, fieldID string) (map[string]string, error) 
 	var list struct {
 		Items []labelFieldView `json:"items"`
 	}
-	if err := decodeAs(resp.Body, &list, "a list of label fields"); err != nil {
+	if err := cmdkit.DecodeAs(resp.Body, &list, "a list of label fields"); err != nil {
 		return nil, err
 	}
 	for _, f := range list.Items {
@@ -197,23 +198,23 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 	c := begin("label field update", true, stdout, stderr)
 	var name, typ, restricted string
 	var adds, renames, archives, restores labelChoiceFlag
-	c.set.StringVar(&name, "name", "", "the field's new `name`")
-	c.set.StringVar(&typ, "type", "", "the field's new `type`: text, number, date, user or choice")
-	c.set.StringVar(&restricted, "restricted", "", "only managers see this field's values: true or false")
-	c.set.Var(&adds, "add-choice", "a new choice, by `name`; may be given more than once")
-	c.set.Var(&renames, "rename-choice", "a choice named by its `id=name`; may be given more than once")
-	c.set.Var(&archives, "archive-choice", "a choice named by its `id`, kept for the values that use it")
-	c.set.Var(&restores, "restore-choice", "a choice named by its `id`, back in the list")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&name, "name", "", "the field's new `name`")
+	c.Set.StringVar(&typ, "type", "", "the field's new `type`: text, number, date, user or choice")
+	c.Set.StringVar(&restricted, "restricted", "", "only managers see this field's values: true or false")
+	c.Set.Var(&adds, "add-choice", "a new choice, by `name`; may be given more than once")
+	c.Set.Var(&renames, "rename-choice", "a choice named by its `id=name`; may be given more than once")
+	c.Set.Var(&archives, "archive-choice", "a choice named by its `id`, kept for the values that use it")
+	c.Set.Var(&restores, "restore-choice", "a choice named by its `id`, back in the list")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	seen := map[string]bool{}
-	c.set.Visit(func(f *flag.Flag) { seen[f.Name] = true })
+	c.Set.Visit(func(f *flag.Flag) { seen[f.Name] = true })
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("label field update takes one label field id"))
 	}
-	field, err := idArg("lbf", "label field", pos[0])
+	field, err := cmdkit.IDArg("lbf", "a label field", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
@@ -252,7 +253,7 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 		if !ok {
 			return c.fail(exitcode.Usagef("--rename-choice takes id=name"))
 		}
-		choiceID, err := idArg("lbc", "choice", idPart)
+		choiceID, err := cmdkit.IDArg("lbc", "a choice", idPart)
 		if err != nil {
 			return c.fail(err)
 		}
@@ -264,7 +265,7 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	archivedIDs := make([]string, 0, len(archives)+len(restores))
 	for _, raw := range archives {
-		choiceID, err := idArg("lbc", "choice", raw)
+		choiceID, err := cmdkit.IDArg("lbc", "a choice", raw)
 		if err != nil {
 			return c.fail(err)
 		}
@@ -272,7 +273,7 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	restoredIDs := make([]string, 0, len(restores))
 	for _, raw := range restores {
-		choiceID, err := idArg("lbc", "choice", raw)
+		choiceID, err := cmdkit.IDArg("lbc", "a choice", raw)
 		if err != nil {
 			return c.fail(err)
 		}
@@ -286,11 +287,11 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 		}
 		added = append(added, cleaned)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -340,33 +341,33 @@ func LabelFieldUpdate(args []string, stdout, stderr io.Writer) int {
 func LabelFieldRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("label field rm", true, stdout, stderr)
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("label field rm takes one label field id"))
 	}
-	field, err := idArg("lbf", "label field", pos[0])
+	field, err := cmdkit.IDArg("lbf", "a label field", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
 	if err := files.Confirm(yes, field, "remove the label field and every value it holds on files", stderr); err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	if _, err := files.Send(cn, http.MethodDelete, labelFieldsRoute(acc)+"/"+field, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, field); err != nil {
+	if err := cmdkit.PrintDone(c.Command, field); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK

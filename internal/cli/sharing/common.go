@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -63,14 +64,6 @@ func accountArg(flagValue string) (string, error) {
 
 // accountFromEnv reports whether SELFCLOUD_ACCOUNT is set.
 func accountFromEnv() bool { return os.Getenv(accountEnv) != "" }
-
-// idArg checks an id of the given prefix.
-func idArg(prefix, what, v string) (string, error) {
-	if !id.Valid(prefix, v) {
-		return "", exitcode.Usagef("%s is named by its %s_ id", what, prefix)
-	}
-	return v, nil
-}
 
 // subjectArg checks a node permission's subject: a user (usr_) or a group (grp_).
 func subjectArg(v string) (string, error) {
@@ -410,7 +403,7 @@ func flagText(m map[string]json.RawMessage, key string) string {
 
 // run is a command in progress: its flags, its positional arguments and its scrubbed streams.
 type run struct {
-	g    conn.Global
+	*cmdkit.Command
 	pos  []string
 	out  io.Writer // standard output, scrubbed
 	err  io.Writer // standard error, scrubbed
@@ -431,12 +424,11 @@ func begin(name string, args []string, stdout, stderr io.Writer, setup func(*fla
 	// hidden in the link's values (valueFields), not in the address or in a key. raw is standard output as it is.
 	r.val = &scrubber{w: stdout, shapes: true}
 	r.out, r.err, r.raw = r.outS, r.errS, stdout
-	set := conn.NewFlagSet(name)
-	r.g.Register(set)
+	r.Command = cmdkit.New(name, false, r.out, r.err)
 	if setup != nil {
-		setup(set)
+		setup(r.Set)
 	}
-	pos, code, ok := files.Parse(set, &r.g, args, r.out, r.err)
+	pos, code, ok := r.Parse(args)
 	if !ok {
 		return nil, code, false
 	}
@@ -464,10 +456,10 @@ func (r *run) fail(err error) int {
 		code, name, msg := exitcode.Of(err)
 		err = &exitcode.Error{Exit: code, Name: scrubText(name, r.outS.secrets...), Message: scrubText(msg, r.outS.secrets...)}
 	}
-	return output.Fail(r.err, r.g.JSON, err)
+	return output.Fail(r.err, r.G.JSON, err)
 }
 
-func (r *run) connect() (*conn.Conn, error) { return conn.Connect(r.g, r.err, true) }
+func (r *run) connect() (*conn.Conn, error) { return r.Command.Connect() }
 
 // ask asks before a destructive change. yes asks nothing. At a terminal the person types phrase, and details gives it and
 // the question, which may need a read; without a terminal the command refuses with fallback, and reads nothing.
@@ -512,7 +504,7 @@ func (r *run) report(outs []outcome) int {
 		return r.fail(outs[0].err)
 	}
 	var err error
-	if r.g.JSON {
+	if r.G.JSON {
 		err = output.JSON(r.out, outs)
 	} else {
 		rows := make([][]string, 0, len(outs))

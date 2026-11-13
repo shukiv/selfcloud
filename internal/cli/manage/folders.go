@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
+	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
@@ -47,7 +48,7 @@ type folderView struct {
 
 func folderPairs(body []byte) ([]output.KV, error) {
 	var v folderView
-	if err := decodeAs(body, &v, "a folder"); err != nil {
+	if err := cmdkit.DecodeAs(body, &v, "a folder"); err != nil {
 		return nil, err
 	}
 	ext := ""
@@ -79,7 +80,7 @@ func accountFoldersRoute(acc string) string { return "/api/v1/accounts/" + acc +
 
 // oneFolder is the shared start of the commands that take one folder id after the account.
 func oneFolder(c *command, name string, args []string) (acc, folder string, code int, ok bool) {
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return "", "", code, false
 	}
@@ -87,10 +88,10 @@ func oneFolder(c *command, name string, args []string) (acc, folder string, code
 		return "", "", c.fail(exitcode.Usagef("%s takes one folder id", name)), false
 	}
 	var err error
-	if folder, err = idArg("fld", "folder", pos[0]); err != nil {
+	if folder, err = cmdkit.IDArg("fld", "a folder", pos[0]); err != nil {
 		return "", "", c.fail(err), false
 	}
-	if acc, err = c.accountID(); err != nil {
+	if acc, err = c.AccountID(); err != nil {
 		return "", "", c.fail(err), false
 	}
 	return acc, folder, 0, true
@@ -100,8 +101,8 @@ func oneFolder(c *command, name string, args []string) (acc, folder string, code
 func FolderCreate(args []string, stdout, stderr io.Writer) int {
 	c := begin("folder create", true, stdout, stderr)
 	var ext string
-	c.set.StringVar(&ext, "external-id", "", "the caller's own `id` for the folder, kept with it")
-	pos, code, ok := c.parse(args)
+	c.Set.StringVar(&ext, "external-id", "", "the caller's own `id` for the folder, kept with it")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
@@ -112,7 +113,7 @@ func FolderCreate(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -120,7 +121,7 @@ func FolderCreate(args []string, stdout, stderr io.Writer) int {
 	if ext != "" {
 		body["external_id"] = ext
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -140,22 +141,22 @@ func FolderLs(args []string, stdout, stderr io.Writer) int {
 	c := begin("folder ls", true, stdout, stderr)
 	var mine, hidden, all bool
 	var ext string
-	c.set.BoolVar(&mine, "mine", false, "the folders this credential reaches, not an account's team spaces")
-	c.set.BoolVar(&hidden, "hidden", false, "with --mine: only the spaces hidden from the list")
-	c.set.StringVar(&ext, "external-id", "", "with --account: only the folder with this external `id`")
-	c.set.BoolVar(&all, "all", false, "follow the cursor and print every page")
-	pos, code, ok := c.parse(args)
+	c.Set.BoolVar(&mine, "mine", false, "the folders this credential reaches, not an account's team spaces")
+	c.Set.BoolVar(&hidden, "hidden", false, "with --mine: only the spaces hidden from the list")
+	c.Set.StringVar(&ext, "external-id", "", "with --account: only the folder with this external `id`")
+	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
-	if err := noArgs("folder ls", pos); err != nil {
+	if err := cmdkit.NoArgs("folder ls", pos); err != nil {
 		return c.fail(err)
 	}
 	q := url.Values{}
 	var path string
 	switch {
 	case mine:
-		if c.account != "" {
+		if c.Account != "" {
 			return c.fail(exitcode.Usagef("--mine and --account are two listings; give one"))
 		}
 		if ext != "" {
@@ -169,7 +170,7 @@ func FolderLs(args []string, stdout, stderr io.Writer) int {
 		if hidden {
 			return c.fail(exitcode.Usagef("--hidden is for --mine"))
 		}
-		acc, err := c.accountID()
+		acc, err := c.AccountID()
 		if err != nil {
 			return c.fail(err)
 		}
@@ -178,7 +179,7 @@ func FolderLs(args []string, stdout, stderr io.Writer) int {
 			q.Set("external_id", ext)
 		}
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -192,7 +193,7 @@ func FolderLs(args []string, stdout, stderr io.Writer) int {
 	}
 	err = printList(c, items, next, headers, func(raw []byte) ([]string, error) {
 		var v folderView
-		if err := decodeAs(raw, &v, "a folder"); err != nil {
+		if err := cmdkit.DecodeAs(raw, &v, "a folder"); err != nil {
 			return nil, err
 		}
 		row := []string{v.ID, v.Name, v.Kind}
@@ -214,7 +215,7 @@ func FolderShow(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -231,14 +232,14 @@ func FolderShow(args []string, stdout, stderr io.Writer) int {
 // FolderRename is `selfcloud folder rename --account ACC FOLDER NAME`.
 func FolderRename(args []string, stdout, stderr io.Writer) int {
 	c := begin("folder rename", true, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 2 {
 		return c.fail(exitcode.Usagef("folder rename takes a folder id and a new name"))
 	}
-	folder, err := idArg("fld", "folder", pos[0])
+	folder, err := cmdkit.IDArg("fld", "a folder", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
@@ -246,11 +247,11 @@ func FolderRename(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	acc, err := c.accountID()
+	acc, err := c.AccountID()
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -268,12 +269,12 @@ func FolderRename(args []string, stdout, stderr io.Writer) int {
 func FolderRm(args []string, stdout, stderr io.Writer) int {
 	c := begin("folder rm", true, stdout, stderr)
 	var yes bool
-	c.set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
 	acc, folder, code, ok := oneFolder(c, "folder rm", args)
 	if !ok {
 		return code
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -284,7 +285,7 @@ func FolderRm(args []string, stdout, stderr io.Writer) int {
 	if _, err := files.Send(cn, http.MethodDelete, route, nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, folder); err != nil {
+	if err := cmdkit.PrintDone(c.Command, folder); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
@@ -334,16 +335,16 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 		{flagName: "allow-links", key: "allow_links", help: "links to what is in the space may be made"},
 	}
 	for i := range settings {
-		c.set.Var(&settings[i].v, settings[i].flagName, settings[i].help+" (true or false)")
+		c.Set.Var(&settings[i].v, settings[i].flagName, settings[i].help+" (true or false)")
 	}
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("folder settings set takes one folder id"))
 	}
-	folder, err := idArg("fld", "folder", pos[0])
+	folder, err := cmdkit.IDArg("fld", "a folder", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
@@ -356,7 +357,7 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 	if len(body) == 0 {
 		return c.fail(exitcode.Usagef("give at least one setting, such as --allow-links=false"))
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -365,7 +366,7 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 		code := c.fail(err)
 		// Every token is refused a space's settings. The refusal is the server's; the hint says where it is done.
 		var ae *client.APIError
-		if !c.g.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) &&
+		if !c.G.JSON && cn.Kind == profile.KindDevice && errors.As(err, &ae) &&
 			ae.Status == http.StatusForbidden && ae.Reason == "" {
 			_, _ = io.WriteString(stderr, "selfcloud: hint: the web interface changes a space's settings\n")
 		}
@@ -380,25 +381,25 @@ func FolderSettingsSet(args []string, stdout, stderr io.Writer) int {
 // hide is FolderHide and FolderShowAgain: they differ in the method only.
 func hide(name, method string, args []string, stdout, stderr io.Writer) int {
 	c := begin(name, false, stdout, stderr)
-	pos, code, ok := c.parse(args)
+	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
 	}
 	if len(pos) != 1 {
 		return c.fail(exitcode.Usagef("%s takes one folder id", name))
 	}
-	folder, err := idArg("fld", "folder", pos[0])
+	folder, err := cmdkit.IDArg("fld", "a folder", pos[0])
 	if err != nil {
 		return c.fail(err)
 	}
-	cn, err := c.connect()
+	cn, err := c.Connect()
 	if err != nil {
 		return c.fail(err)
 	}
 	if _, err := files.Send(cn, method, "/api/v1/folders/"+folder+"/hidden", nil, nil); err != nil {
 		return c.fail(err)
 	}
-	if err := printDone(c, folder); err != nil {
+	if err := cmdkit.PrintDone(c.Command, folder); err != nil {
 		return c.fail(err)
 	}
 	return exitcode.OK
