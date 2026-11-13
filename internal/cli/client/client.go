@@ -420,6 +420,9 @@ func decodeAPIError(resp *Response) *APIError {
 	default:
 		e.Message = "the server gave an error without a message"
 	}
+	if wait, ok := retryAfter(resp.Header, time.Now()); ok {
+		e.RetryAfter = wait
+	}
 	return e
 }
 
