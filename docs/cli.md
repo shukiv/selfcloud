@@ -8,7 +8,8 @@ exit codes, and then each command, with a section for every group that names its
 
 ## Install
 
-Releases are built for Linux on amd64 and arm64, for now. Download the binary for the machine's architecture and the
+Releases are built for Linux on amd64 and arm64, for now. No release is published yet; until there is one, `make
+release VERSION=<VERSION>` builds the same files. Download the binary for the machine's architecture and the
 release's `SHA256SUMS` into one folder, then check and install it:
 
 ```sh

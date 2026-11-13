@@ -171,7 +171,8 @@ browser, with no password, and `logout` and `whoami` end and check that sign-in.
 large files in checked pieces that resume after a cut connection, and `get` also reads a share link with no sign-in.
 See [docs/cli.md](docs/cli.md).
 
-Releases are built for Linux on amd64 and arm64, for now. Download the binary for the machine's architecture and the
+Releases are built for Linux on amd64 and arm64, for now. No release is published yet; until there is one, `make
+release VERSION=<VERSION>` builds the same files. Download the binary for the machine's architecture and the
 release's `SHA256SUMS` into one folder, then check and install it:
 
 ```sh
@@ -188,7 +189,7 @@ The Docker image holds the same binary. Give the client its address and key in `
 own address, are in "Where the address and the key come from" in [docs/cli.md](docs/cli.md):
 
 ```sh
-docker run --rm -e SELFCLOUD_URL=https://selfcloud.example -e SELFCLOUD_TOKEN="$KEY" selfcloud info
+docker run --rm -e SELFCLOUD_URL=https://selfcloud.example -e SELFCLOUD_TOKEN="$KEY" selfcloud:<VERSION> info
 ```
 
 The image has no persistent home, so a profile written with `profile add` does not survive `--rm`; the environment
