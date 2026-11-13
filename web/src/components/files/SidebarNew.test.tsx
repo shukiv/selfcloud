@@ -147,20 +147,48 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByText("Loading the folder")).toBeNull();
   });
 
-  // Decision 151: the button fills the sidebar's content width (its wrappers stretch too), the plus and the word sit as one group in
-  // the middle, and the start and end padding are equal.
-  it("is as wide as the sidebar's content, with its plus and word centred and equal padding", () => {
+  // Decision 69, restored by decision 172: the button is as wide as its text, not the sidebar's width, and it is capped at the
+  // sidebar's width so a long translation is cut with an ellipsis rather than pushing the sidebar. Its content starts at the
+  // start edge, the plus in the rows' icon column.
+  it("is as wide as its text, and no wider than the sidebar", () => {
     renderNew(myFilesPlace("fld_mine"));
     const button = screen.getByTestId("new-button");
-    expect(button.style.inlineSize).toBe("100%");
+    expect(button.style.inlineSize).toBe("auto");
+    expect(button.style.maxInlineSize).toBe("100%");
     expect(button.style.minInlineSize).toBe("0px");
-    expect(button.style.justifyContent).toBe("center");
-    expect(button.style.paddingInlineStart).toBe(button.style.paddingInlineEnd);
-    expect(button.style.paddingInlineStart).not.toContain("--sc-icon-col");
+    expect(button.style.justifyContent).toBe("flex-start");
+    expect(button.style.paddingInlineStart).toBe("var(--sc-icon-col, 28px)");
+    expect(button.style.paddingInlineEnd).toBe("24px");
     const tip = screen.getByTestId("new-tip");
-    expect(tip.style.display).toBe("flex");
-    expect(tip.style.inlineSize).toBe("100%");
-    expect(tip.parentElement?.style.display).toBe("flex");
+    expect(tip.style.display).toBe("inline-flex");
+    expect(tip.style.inlineSize).toBe("");
+    expect(tip.parentElement?.style.justifyContent).toBe("flex-start");
+  });
+
+  // Decision 172: a dropdown arrow after the word, at the button's end side, the same size and stroke as the plus and never
+  // shrinking. It is hidden from the reading order and adds no words: the button's name stays "New".
+  it("has a dropdown arrow after the word, hidden from the reading order, and its name stays New", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const button = screen.getByTestId("new-button");
+    const svgs = button.querySelectorAll("svg");
+    expect(svgs.length).toBe(2);
+    const arrow = svgs[1];
+    expect(arrow.getAttribute("aria-hidden")).toBe("true");
+    expect(arrow.getAttribute("focusable")).toBe("false");
+    expect(arrow.getAttribute("width")).toBe("18");
+    expect(arrow.getAttribute("height")).toBe("18");
+    expect(arrow.getAttribute("stroke-width")).toBe("1.75");
+    expect(arrow.style.flexShrink).toBe("0");
+    const word = screen.getByText("New");
+    expect(word.compareDocumentPosition(arrow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New" })).toBe(button);
+    expect(button.getAttribute("aria-haspopup")).toBe("menu");
+  });
+
+  // Decision 172: the folded rail's round button keeps its plus alone, with no arrow.
+  it("the folded button has no arrow", () => {
+    renderNew(myFilesPlace("fld_mine"), true);
+    expect(screen.getByTestId("new-button").querySelectorAll("svg").length).toBe(1);
   });
 
   // Decision 69: a long translation is cut with an ellipsis inside the cap, not pushed past the sidebar.
