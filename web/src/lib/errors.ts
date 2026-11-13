@@ -37,6 +37,7 @@ export function errorMessage(err: unknown, ctx: Context = 'generic'): Message {
       return { key: 'error.rateLimited', plural: Math.max(1, Math.ceil(err.retryAfter / 60)) };
     case 'invalid_request':
       // On the link pages the server answers every bad link with invalid_request.
+      if (ctx !== 'link' && err.details.reason === 'mail_not_configured') return { key: 'error.mailNotConfigured' };
       return { key: ctx === 'link' ? 'error.linkInvalid' : 'error.invalid' };
     case 'token_expired':
       return { key: 'error.linkInvalid' };
