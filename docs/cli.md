@@ -1347,7 +1347,7 @@ These commands read the existing derived-file routes; they need a node id and fo
 | Command | What it does |
 |---|---|
 | `thumbnail NODE DEST [--size N] [--wait-timeout DURATION] [--force]` | writes the node's thumbnail |
-| `export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force]` | converts a file and downloads the result |
+| `export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force] [--piece-size S] [--stall-timeout D]` | converts a file and downloads the result |
 
 A thumbnail is a JPEG. `--size` asks for a preview whose longest side is that many pixels; without it the server's
 smallest size is used. The server may answer at once, after a wait, or with a signed link. A signed link is refused:
@@ -1355,12 +1355,16 @@ the command line does not follow the web interface's expiring addresses (exit 1)
 thumbnail, the command waits as the server's `Retry-After` asks, at most 30 seconds at a time, for `--wait-timeout`
 (one minute by default). At that limit it exits 1 with `the thumbnail is not ready yet`; the server goes on making it.
 If `DEST` is a directory the image is written as `thumbnail.jpg` there. An existing file is kept unless `--force` is
-given. `-` writes the JPEG itself to standard output, with `saved` and `size` on standard error.
+given. `-` writes the JPEG itself to standard output, with `saved` and `size` on standard error. A thumbnail body
+larger than 16 MiB is refused (exit 1, `the server's thumbnail is larger than 16 MiB; it was not saved`); a file is
+not kept, and `-` writes at most the 16 MiB limit.
 
 `export` converts a word-processing, spreadsheet, presentation, drawing or PDF file to one of `docx`, `odp`, `ods`,
 `odt`, `pdf`, `pptx` or `xlsx`. The format is checked before any request. The server is asked once; the command then
 follows the conversion with a one-byte ranged request, waiting as the server's `Retry-After` asks, at most 30 seconds
-at a time, for `--wait-timeout` (ten minutes by default). A conversion the server cannot make (415 with `failed`) exits
+at a time, for `--wait-timeout` (ten minutes by default). That timeout covers only the wait: the download runs with
+no deadline and its own stall limit. It takes `get`'s `--piece-size` and `--stall-timeout`, so a proxy that caps a
+request can be worked with. A conversion the server cannot make (415 with `failed`) exits
 1 with the server's message; a format the node cannot be converted to (415 with `not_convertible`) is a usage error
 (exit 2). A file changed or removed while the conversion runs exits 1 with an explanation and nothing is written.
 
@@ -1373,12 +1377,12 @@ An existing file is kept unless `--force` is given. The result is printed as `sa
 selfcloud thumbnail nod_… preview.jpg --size 512
 selfcloud thumbnail nod_… ~/Pictures/ --wait-timeout 5m
 selfcloud thumbnail nod_… - > preview.jpg
-selfcloud export nod_… --format pdf report.pdf
+selfcloud export nod_… --format pdf report.pdf --piece-size 8MiB
 selfcloud export nod_… --format docx ~/Documents/ --json
 ```
 
 Exit codes follow the errors: 2 for a usage error, 3 when the server refuses, 4 for an unknown node, and 1 when a
-wait ends or a conversion fails. A proxy that ignores the range request is an error, not a reason to download the
+wait ends, a thumbnail is over 16 MiB, or a conversion fails. A proxy that ignores the range request is an error, not a reason to download the
 whole file twice.
 
 ## Docker

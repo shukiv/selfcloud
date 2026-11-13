@@ -6038,47 +6038,11 @@ The second review (the independent review, verdict FIX FIRST; each fix red first
    - *Parity.* The five route rows name their commands, the list row naming both `version ls` and `version get` because `get` reads it; the `fn` rows `listVersions`, `updateVersion`, `restoreVersion` and `deleteVersion` name theirs. The HEAD row of the version content route says that the download reads the version's size and ETag from the list instead.
    - *Tests.* `internal/cli/files` runs every command against a fake server for each request and its headers, both outputs, the exit codes, the usage errors that send nothing, the empty label and the keep flags, a resumed download from a kept part file, a missing version, and the 409 and 412 refusals. `cmd/selfcloud` checks that `version` and `version --json` print the build version while `version ls` runs the command, and probes the five commands against the real API with an account key, over a file whose content was replaced once.
 
-168. **Thumbnails and exports from the command line, slice cli11h** (2026-11-13). The commands `thumbnail` and
-   `export`. They call `GET /api/v1/nodes/{nod}/thumbnail` and `POST /api/v1/nodes/{nod}/exports` with
-   `GET /api/v1/nodes/{nod}/exports/{drv}`; the API is unchanged. The user reference is `docs/cli.md`, section
-   "Thumbnails and exports". The command is `thumbnail`, not `thumb`: the server's decoder child process is started as
-   `thumb`, and a short command word would collide with it.
-   - *Thumbnail.* `thumbnail NODE DEST [--size N] [--wait-timeout DURATION] [--force]`. The size is a positive number
-     of pixels and is sent only when the flag is given, so the server's own default stays the default. A 200 is written
-     as it is; a 202 or a 429 is waited for as its `Retry-After` asks, clamped to one to thirty seconds and to two
-     seconds when the header cannot be read, until the 200, another answer, or `--wait-timeout` (one minute by
-     default). The limit exits 1 with exactly `the thumbnail is not ready yet`, since the server goes on making the
-     thumbnail; the time of one request is still `--timeout`. A 303 means the server hands thumbnails out through
-     signed links, which the command line does not follow, and exits 1 with exactly that sentence. The bytes are
-     written with the safe-write rules of `get`: a directory destination takes `thumbnail.jpg`, an existing file is
-     kept unless `--force`, and `--force` writes a new temporary file and renames it over a regular file. There is no
-     `.part` file and no range request: a thumbnail is one small body. `-` writes only the JPEG to standard output and
-     the `saved` and `size` lines to standard error.
-   - *Export.* `export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force]`. The format is checked against
-     the seven the route accepts before the destination is opened or a request is made. The conversion is asked for
-     once; the answer's id is followed with `GET` and `Range: bytes=0-0`, so a refusal carries its body and a ready
-     file is seen without downloading it. A 202 and a 503 or 429 with `Retry-After` are waited for as the server asks,
-     with the same one-to-thirty-second clamp, and a refusal that may pass is retried up to five times in a row.
-     `--wait-timeout` is ten minutes by default. The ready answer gives the version (a strong ETag), the size, the
-     SHA-256 when the ETag is one, and the name from `Content-Disposition`; the download then uses `downloadSubject`,
-     so it keeps a part file, resumes it after a cut, checks the version with `If-Range`, and follows the same
-     safe-write and overwrite rules as `get`. The part record is keyed by the node's id, not by the export's, because
-     the download machinery validates a record as a node's. `DEST` defaults to the server's name, or to `NODE.FORMAT`
-     when none is sent. A 415 with `failed` is exit 1 with the server's message; `not_convertible` stays the API's
-     usage error (exit 2). A 404 after the server accepted the conversion means the file changed or was removed: it
-     exits 1 with an explanation and leaves no output file.
-   - *Output.* Both commands print `saved` and `size`; `--json` prints `{"saved":"…","size":N}`. A thumbnail's `-`
-     destination prints only the bytes on standard output, and the metadata on standard error, plain or JSON. Export
-     takes a file or directory destination, as `zip get` does.
-   - *Retry-After plumbing.* `decodeAPIError` now records the `Retry-After` header on the `APIError` as well, so a
-     429 or 503 that arrives through `Stream` carries the wait. Previously only `Do` set it. `Do` still overwrites it
-     with the same value and still retries GET and HEAD only.
-   - *Confirmations.* Neither command asks. They replace a file only with `--force`, as `get` does, and neither
-     removes or renames anything at the server.
-   - *Tests.* `internal/cli/files` runs both commands against a recording fake: each request and query, the absent
-     size query, the waits and the clamp, a ready answer at once, a pending one then ready, the limit, the signed
-     link, each refusal and its exit code, both outputs, standard output, directory and file destinations, no
-     overwrite, `--force`, a resumed part file and the 415 split. `cmd/selfcloud` probes both against the real API: a
-     PNG is uploaded and its thumbnail waited for, and an export is refused by an office-off server at the POST. The
-     successful export download is covered by the fake, since the test server has no office installation.
+168. **Thumbnails and exports from the command line, slice cli11h** (2026-11-13). The commands `thumbnail` and `export`. They call `GET /api/v1/nodes/{nod}/thumbnail` and `POST /api/v1/nodes/{nod}/exports` with `GET /api/v1/nodes/{nod}/exports/{drv}`; the API is unchanged. The user reference is `docs/cli.md`, section "Thumbnails and exports". The command is `thumbnail`, not `thumb`: the server's decoder child process is started as `thumb`, and a short command word would collide with it.
+   - *Thumbnail.* `thumbnail NODE DEST [--size N] [--wait-timeout DURATION] [--force]`. The size is a positive number of pixels and is sent only when the flag is given, so the server's own default stays the default. A 200 is written as it is; a 202 or a 429 is waited for as its `Retry-After` asks, clamped to one to thirty seconds and to two seconds when the header cannot be read, until the 200, another answer, or `--wait-timeout` (one minute by default). The limit exits 1 with exactly `the thumbnail is not ready yet`, since the server goes on making the thumbnail; the time of one request is still `--timeout`. A 303 means the server hands thumbnails out through signed links, which the command line does not follow, and exits 1 with exactly that sentence. The bytes are written with the safe-write rules of `get`: a directory destination takes `thumbnail.jpg`, an existing file is kept unless `--force`, and `--force` writes a new temporary file and renames it over a regular file. There is no `.part` file and no range request: a thumbnail is one small body. A body over 16 MiB is refused before it is kept (exit 1, exactly `the server's thumbnail is larger than 16 MiB; it was not saved`), and `-` writes at most the 16 MiB limit, with the metadata still on standard error.
+   - *Export.* `export NODE --format FORMAT [DEST] [--wait-timeout DURATION] [--force] [--piece-size SIZE] [--stall-timeout DURATION]`. The format is checked against the seven the route accepts before the destination is opened or a request is made. The conversion is asked for once; the answer's id is followed with `GET` and `Range: bytes=0-0`, so a refusal carries its body and a ready file is seen without downloading it. A 202 and a 503 or 429 with `Retry-After` are waited for as the server asks, with the same one-to-thirty-second clamp, and a refusal that may pass is retried up to five times in a row. `--wait-timeout` is ten minutes by default and covers only the wait: the download runs with no deadline and takes `get`'s `--piece-size` and `--stall-timeout`, so a proxy that caps a request can be worked with. The ready answer gives the version (a strong ETag), the size, the SHA-256 when the ETag is one, and the name from `Content-Disposition`; the download then uses `downloadSubject`, so it keeps a part file, resumes it after a cut, checks the version with `If-Range`, and follows the same safe-write and overwrite rules as `get`. The part record is keyed by the node's id, not by the export's, because the download machinery validates a record as a node's. `DEST` defaults to the server's name, or to `NODE.FORMAT` when none is sent. A 415 with `failed` is exit 1 with the server's message; `not_convertible` stays the API's usage error (exit 2). A 404 after the server accepted the conversion means the file changed or was removed: it exits 1 with an explanation and leaves no output file.
+   - *Output.* Both commands print `saved` and `size`; `--json` prints `{"saved":"…","size":N}`. A thumbnail's `-` destination prints only the bytes on standard output, and the metadata on standard error, plain or JSON. An error report, including a failed write of that output, goes to standard error. Export takes a file or directory destination, as `zip get` does.
+   - *Retry-After plumbing.* `decodeAPIError` now records the `Retry-After` header on the `APIError` as well, so a 429 or 503 that arrives through `Stream` carries the wait. Previously only `Do` set it. `Do` still overwrites it with the same value and still retries GET and HEAD only.
+   - *Confirmations.* Neither command asks. They replace a file only with `--force`, as `get` does, and neither removes or renames anything at the server.
+   - *Tests.* `internal/cli/files` runs both commands against a recording fake: each request and query, the absent size query, the waits and the clamp, a ready answer at once, a pending one then ready, a download that outlives `--wait-timeout`, the piece ranges of a 3 MiB export, an oversized thumbnail body and the bytes written to standard output, the limit, the signed link, each refusal and its exit code, both outputs, standard output, directory and file destinations, no overwrite, `--force`, a resumed part file and the 415 split. `cmd/selfcloud` probes both against the real API: a PNG is uploaded and its thumbnail waited for, and an export is refused by an office-off server at the POST. The successful export download is covered by the fake, since the test server has no office installation.
    - *API change.* None.
