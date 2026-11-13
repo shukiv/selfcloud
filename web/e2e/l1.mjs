@@ -329,6 +329,18 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await menuRowChecks(page, check, 'the file menu, Organize submenu open');
     await closeMenus(page);
 
+    // A finger sizes the file menu's own rows at 44 px (touchItem), so its submenu titles are 44 px too, not the New menu's 40.
+    await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    check(await page.evaluate(`matchMedia('(pointer: coarse)').matches`), 'the coarse pointer is emulated for the file menu check');
+    await page.evaluate(`document.querySelector(${q(`${rowSel(alpha)} button[aria-haspopup="menu"]`)}).click(), true`);
+    await page.waitFor(`${LABELS}.includes('Organize')`, 10000);
+    await hoverMenuTitle(page, 'Share');
+    await menuRowChecks(page, check, 'the file menu on a coarse pointer, Share submenu open');
+    await closeMenus(page);
+    await page.send('Emulation.setEmulatedMedia', { features: [] });
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+
     // Rename from the menu opens the name field; Escape leaves it.
     await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
     await pickMenuEntry(page, 'Rename');

@@ -93,6 +93,14 @@ export const MENU_ROWS = `(() => {
     return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
   };
   const middle = (r) => r.top + r.height / 2;
+  // Each row belongs to the menu it is drawn in: the root dropdown or one submenu popup. Rows of one menu are compared with
+  // each other, and with that menu's plain rows, since each menu has its own height.
+  const menus = new Map();
+  const menuOf = (el) => {
+    const menu = el.closest('.ant-dropdown-menu') || el.closest('.ant-dropdown');
+    if (!menus.has(menu)) menus.set(menu, menus.size);
+    return menus.get(menu);
+  };
   const rows = [];
   for (const row of document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item, .ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-item, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-submenu-title')) {
     if (!shown(row)) continue;
@@ -116,6 +124,9 @@ export const MENU_ROWS = `(() => {
       rowH: r.height,
       icon: icon && shown(icon) ? middle(icon.getBoundingClientRect()) : null,
       text,
+      plain: !sub,
+      popup: !!row.closest('.ant-dropdown-menu-submenu-popup'),
+      menu: menuOf(row),
       title: sub
         ? {
             display: cs.display,
@@ -135,15 +146,32 @@ export const MENU_ROWS = `(() => {
 })()`;
 
 // menuRowChecks measures every row of the menus that are open now and checks that each icon and each label sits on the row's
-// middle, as the row is seen: within one pixel. It also checks that a submenu's title (the element that paints the row) is the
-// 40 or 44 px row, not a taller box around one. A row that is off is reported with the styles that laid it out.
-export async function menuRowChecks(page, check, where) {
+// middle, as the row is seen: within one pixel. It also checks that each menu's rows are one height: a submenu's title (the
+// element that paints the row) is as tall as the menu's plain rows, within half a pixel, and is the expected height when the
+// caller names one (the New menu's 40 px, 44 px on a coarse pointer); with no expected height it reads the mark from the menu's
+// own plain rows (the file menu's 32 px with a mouse, 44 px on a finger). A row that is off is reported with its height and,
+// for a submenu title, the styles that laid it out.
+export async function menuRowChecks(page, check, where, expected = null) {
   const rows = await page.evaluate(MENU_ROWS);
   check(rows.length > 0, `${where}: the open menu has rows to measure (${rows.length})`);
-  const titles = rows.filter((r) => r.title !== null);
-  const badHeight = titles.filter((r) => ![40, 44].some((h) => Math.abs(r.rowH - h) <= 0.5));
-  const heights = titles.map((r) => `${q(r.name)} ${r.rowH.toFixed(1)} px (wrapper ${r.title.wrapperH === null ? '?' : `${r.title.wrapperH.toFixed(1)} px`})`);
-  check(badHeight.length === 0, `${where}: every submenu title is a 40 or 44 px row (${heights.join('; ') || 'no submenu titles'})`);
+  const groups = new Map();
+  for (const row of rows) {
+    if (!groups.has(row.menu)) groups.set(row.menu, []);
+    groups.get(row.menu).push(row);
+  }
+  const problems = [];
+  const measured = [];
+  for (const [id, list] of groups) {
+    const label = `${list[0].popup ? 'submenu' : 'menu'} ${id}`;
+    const shown = list.map((r) => `${q(r.name)} ${r.rowH.toFixed(1)} px`).join(', ');
+    measured.push(`${label}: ${shown}`);
+    const heights = list.map((r) => r.rowH);
+    if (Math.max(...heights) - Math.min(...heights) > 0.5) problems.push(`${label}'s rows are not one height: ${shown}`);
+    const target = expected ?? list.find((r) => r.plain)?.rowH ?? null;
+    const wrong = target === null ? [] : list.filter((r) => Math.abs(r.rowH - target) > 0.5);
+    if (wrong.length > 0) problems.push(`${label}'s rows should be ${target.toFixed(1)} px: ${wrong.map((r) => `${q(r.name)} ${r.rowH.toFixed(1)} px`).join(', ')}`);
+  }
+  check(problems.length === 0, `${where}: each menu's rows are one height (${problems.length > 0 ? problems.join('; ') : measured.join(' | ')})`);
   const off = [];
   for (const r of rows) {
     const moved = [];

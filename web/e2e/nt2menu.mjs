@@ -104,7 +104,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     // From a template, under Document, goes to the gallery at this folder, with the kind.
     await openSubmenu(page, 'Document');
     if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-document.png');
-    await menuRowChecks(page, check, 'the New menu, Document submenu open');
+    await menuRowChecks(page, check, 'the New menu, Document submenu open', 40);
     await clickItem(page, 'From a template');
     await page.waitFor(`location.pathname === ${q(`/new/${teamA}/${folderID}`)} && location.search === '?kind=document'`, 15000);
     check(true, 'From a template goes to the gallery for this directory, with kind=document');
@@ -151,7 +151,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const finger = await page.waitFor(`(() => { const h = ${TITLE_HEIGHT}; return h === 44 ? h : null; })()`, 5000);
     check(finger === 44, `a submenu title on a coarse pointer is 44 px (${finger})`);
     if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-coarse.png');
-    await menuRowChecks(page, check, 'the New menu on a coarse pointer');
+    await menuRowChecks(page, check, 'the New menu on a coarse pointer', 44);
     await page.send('Emulation.setEmulatedMedia', { features: [] });
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await reopenNew();
@@ -169,7 +169,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await hoverMenuTitle(page, 'מסמך');
     await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'ריק')`, 10000);
     if (shotsDir) await menuShot(page, shotsDir, 'nt2-menu-hebrew.png');
-    await menuRowChecks(page, check, 'the New menu in Hebrew, Document submenu open');
+    await menuRowChecks(page, check, 'the New menu in Hebrew, Document submenu open', 40);
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await waitNoDropdown(page);
     await setLanguage(page, 'English');
