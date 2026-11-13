@@ -133,6 +133,35 @@ describe("a list row's name is one line (decision 168)", () => {
     expect(name.style.flex).toMatch(/^1 1 0/);
   });
 
+  it("the kind marks (play, editing, an unavailable shortcut) are in the same group after the name", () => {
+    const clip = node("clip", "clip.mp4", { kind: "file", mime_type: "video/mp4", editing: true });
+    const gone = node("gone", "old shortcut", { kind: "shortcut", unavailable: true });
+    const { container } = render(<Listing {...props({ items: [...items, clip, gone] })} />);
+    const clipMarks = container.querySelector<HTMLElement>('[data-id="clip"] .row-marks');
+    expect(clipMarks).not.toBeNull();
+    expect(clipMarks!.querySelector('[data-testid="play-mark"]')).not.toBeNull();
+    expect(clipMarks!.querySelector('[data-testid="editing-mark"]')).not.toBeNull();
+    const goneMarks = container.querySelector<HTMLElement>('[data-id="gone"] .row-marks');
+    expect(goneMarks).not.toBeNull();
+    expect(goneMarks!.querySelector(".ant-tag")).not.toBeNull();
+    expect(nameOf(container, "clip").contains(clipMarks)).toBe(false);
+    expect(nameOf(container, "gone").contains(goneMarks)).toBe(false);
+  });
+
+  it("the rename error keeps its own line, outside the cut name, and the field keeps its width", () => {
+    const { container } = render(<Listing {...props({ renameID: "long", renameValue: "taken", renameError: "Name is taken" })} />);
+    const input = container.querySelector<HTMLInputElement>('[data-id="long"] input.rename');
+    expect(input).not.toBeNull();
+    expect(input!.style.flex).toBe("1 1 160px");
+    expect(input!.style.minWidth).toBe("0px");
+    const error = container.querySelector<HTMLElement>('[data-id="long"] #rename-error');
+    expect(error).not.toBeNull();
+    expect(error!.style.flexBasis).toBe("100%");
+    expect(error!.closest(".row-name")).toBeNull();
+    expect(container.querySelector('[data-id="long"] .row-name')).toBeNull();
+    expect(input!.compareDocumentPosition(error!) & globalThis.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("the rename field keeps its own flexible width, outside the cut name", () => {
     const { container } = render(<Listing {...props({ renameID: "long", renameValue: "new name" })} />);
     const input = container.querySelector<HTMLInputElement>('[data-id="long"] input.rename');
