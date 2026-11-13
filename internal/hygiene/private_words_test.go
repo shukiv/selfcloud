@@ -32,12 +32,18 @@ var privateWordPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bplans (list|folder)\b`),
 	regexp.MustCompile(`(?i)\breview (round|fix|item)\b`),
 	regexp.MustCompile(`(?i)\bround [0-9]+:`),
+	regexp.MustCompile(`selfcloud-plans`),
+	regexp.MustCompile(`\.local/share/selfcloud`),
+	regexp.MustCompile(`~/\.cache/selfcloud-`),
+	regexp.MustCompile(`\((?:[HMLFS][0-9]{1,2})(?:(?:, ?| and )[HMLFS][0-9]{1,2})*\)`),
+	regexp.MustCompile(`(?:^|[^A-Za-z0-9_])[HMLF][0-9]{1,2}:`),
 }
 
 // allowedPrivateWordHits maps a repository-relative path to exact line
-// substrings that are not private. It is empty because every hit is either
-// private or has been removed.
-var allowedPrivateWordHits = map[string][]string{}
+// substrings that are not private.
+var allowedPrivateWordHits = map[string][]string{
+	"docs/design.md": {"Rename (F2)"}, // F2 is a keyboard key, not a review label.
+}
 
 func TestRepositoryFilesAreListed(t *testing.T) {
 	root := moduleRoot(t)
