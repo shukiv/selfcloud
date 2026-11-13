@@ -102,6 +102,12 @@ func init() {
 		p.answer = "transfer.txt\n"
 		return []string{p.touch("/transfer.txt"), "--to", p.memberNamed("heir")}
 	}
+	fileProbes["share no-download"] = func(p *fileProbe) []string {
+		return []string{p.touch("/no-download.txt"), "on"}
+	}
+	fileProbes["share editors-can-share"] = func(p *fileProbe) []string {
+		return []string{p.touch("/editors-share.txt"), "on"}
+	}
 	fileProbes["link ls"] = func(p *fileProbe) []string {
 		node, _ := p.link("/link-ls.txt")
 		return []string{node}

@@ -277,6 +277,12 @@ var remoteCommands = []remoteCommand{
 		help: `  share transfer-ownership NODE --to USER [--yes]
                                  give a file or folder to another user of the account (asks first)
 `, run: sharing.TransferOwnership},
+	{name: "share no-download", route: "PATCH /api/v1/nodes/{nod}",
+		help: `  share no-download NODE on|off   turn the node's no-download rule on or off (needs editor)
+`, run: sharing.ShareNoDownload},
+	{name: "share editors-can-share", route: "PATCH /api/v1/nodes/{nod}",
+		help: `  share editors-can-share NODE on|off  let editors share the node, or not (needs manager)
+`, run: sharing.ShareEditorsCanShare},
 	{name: "link ls", route: "GET /api/v1/nodes/{nod}/share-links", more: []string{"GET /api/v1/accounts/{acc}/share-links"},
 		help: `  link ls NODE [--json]
   link ls --account ACCOUNT [--audience organisation|anyone] [--kind access|drop] [--all]

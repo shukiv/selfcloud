@@ -587,6 +587,8 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | `share revoke NODE SUBJECT... [--yes]` | takes roles away (asks first) |
 | `share revoke --folder F [--account A] USER... [--yes]` | takes a team folder's grants away (asks first) |
 | `share transfer-ownership NODE --to USER [--yes]` | gives a file or folder to another active user (asks first) |
+| `share no-download NODE on\|off` | turns the node's no-download rule on or off (needs editor) |
+| `share editors-can-share NODE on\|off` | lets editors share the node, or not (needs manager) |
 | `link ls NODE` | the share links on a node and above it; no secret is shown |
 | `link ls --account A [--audience organisation\|anyone] [--kind access\|drop] [--all]` | every live link of an account, with the item's path |
 | `link create NODE [--audience organisation\|anyone] [--role R] [--expires T \| --expires-in D] [--password-file FILE\|-]` | a share link; its address is shown once |
@@ -600,6 +602,18 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | `access approve REQUEST... [--role R]` | gives the role the person asked for, or `viewer`, `commenter` or `editor` |
 | `access deny REQUEST...` | refuses |
 | `shared [--recent] [--all]` | what other people shared with the signed-in person: id, kind, role, name, when, place |
+
+**Sharing switches.** `share no-download` and `share editors-can-share` change one switch on a node and send only that
+field, so a switch never renames the node. The second argument must be exactly `on` or `off`, and the node must be named by
+a `nod_` id; anything else is refused before any request (exit 2). The no-download rule needs editor and
+`editors_can_share` needs manager. These two routes do not refuse a device token, so a person signed in with `login` whose
+role allows it may use them, unlike the rest of this section. The exit codes are those of the other share commands: 0 done;
+2 a usage error or the server's 400; 3 a refusal, including a role that is too low; 4 not found.
+
+```sh
+selfcloud share no-download nod_… on
+selfcloud share editors-can-share nod_… off
+```
 
 A time is RFC 3339 (`2026-12-31T00:00:00Z`); a duration is a Go duration or whole days (`36h`, `30d`). Several targets (revoke,
 `link rm`, `access approve` and `deny`) print one row each and exit 7 when only some were done, as the file commands do.

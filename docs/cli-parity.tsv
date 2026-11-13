@@ -340,7 +340,7 @@ route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	webhook update	cli10	built in
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
-route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
+route	PATCH /api/v1/nodes/{nod}	mv,share no-download,share editors-can-share	cli5	built in cli5 and cli7b
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
