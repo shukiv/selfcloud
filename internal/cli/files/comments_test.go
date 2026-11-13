@@ -259,6 +259,34 @@ func TestCommentAddReadsAFileAndStandardInput(t *testing.T) {
 	}
 }
 
+func TestCommentAddRefusesTextOver64KiB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.txt")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 70*1024)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name  string
+		args  []string
+		stdin string
+	}{
+		{"a file", []string{testNode, "--text-file", path}, ""},
+		{"standard input", []string{testNode, "--text-file", "-"}, strings.Repeat("y", 70*1024)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t, testDeviceTok)
+			Stdin = strings.NewReader(tc.stdin)
+			f := newFake(t)
+			res := f.run(CommentAdd, tc.args...)
+			wantCode(t, res, 2)
+			f.wantNoCalls()
+			if !strings.Contains(res.stderr, "over 64 KiB") {
+				t.Errorf("stderr %q", res.stderr)
+			}
+		})
+	}
+}
+
 func TestCommentAddRefusesBadArgumentsBeforeRequests(t *testing.T) {
 	cases := [][]string{
 		{},

@@ -229,18 +229,28 @@ func CommentAdd(args []string, stdout, stderr io.Writer) int {
 	return exitcode.OK
 }
 
+// commentTextLimit is the most text read from a file or standard input: a comment holds far less, and a stream that
+// never ends must not fill memory.
+const commentTextLimit = 64 << 10
+
 // readCommentText reads the text from a file, or from standard input for "-".
 func readCommentText(path string) (string, error) {
-	if path == "-" {
-		b, err := io.ReadAll(Stdin)
+	var r io.Reader = Stdin
+	what := "standard input"
+	if path != "-" {
+		f, err := os.Open(path)
 		if err != nil {
-			return "", fmt.Errorf("read standard input: %w", err)
+			return "", fmt.Errorf("read the text file: %w", err)
 		}
-		return string(b), nil
+		defer f.Close()
+		r, what = f, "the text file"
 	}
-	b, err := os.ReadFile(path)
+	b, err := io.ReadAll(io.LimitReader(r, commentTextLimit+1))
 	if err != nil {
-		return "", fmt.Errorf("read the text file: %w", err)
+		return "", fmt.Errorf("read %s: %w", what, err)
+	}
+	if len(b) > commentTextLimit {
+		return "", exitcode.Usagef("the text is over 64 KiB; a comment holds at most 2000 characters")
 	}
 	return string(b), nil
 }
