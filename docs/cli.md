@@ -183,7 +183,7 @@ installation admin key (`sc_admin_...`, from `selfcloud admin create-key` on the
 token is refused with a 403, and a line after the error names the admin key to use. That line, and the lines that list the
 keys or the problems of a refused change, are not printed with `--json`, where stderr stays one JSON line. `settings get` prints a table of `KEY`, `VALUE`,
 `SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the two pictures. With a key it prints
-that setting or picture as `key=value` lines (a picture shows `key`, `state`, `type`, `sha256` and `locked`). Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
+that setting or picture as `key=value` lines (a picture shows `key`, `state`, `type`, `sha256` and `locked`, and `reason` when it has one). A picture the server stored but did not use has the state `unusable`, and its `reason` is one of `row_not_written`, `not_regular_file`, `hash_changed`, `file_missing`, `unreadable` and `invalid_picture`; the table shows it in `NOTE`. `settings logo remove` or `settings icon remove` clears it. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
 do not expect a value to come back as it was typed. `--json` prints the server's document.
 
 `settings set KEY=VALUE...` reads the settings first, to learn each key's type, and sends the value in that type's shape:
@@ -210,7 +210,7 @@ name ending in `.svg` is sent as `image/svg+xml`. Any other file exits 2 before 
 is refused. A missing file exits 4; a directory, no file, two files, or a file over 4 MiB exits 2. The server's own limit
 is smaller (256 KiB), and its answer for a file between the two is printed (exit 2), as are its answers for a picture it
 finds invalid. A logo or icon that the config file sets is locked (exit 3, `keys: ui.brand.logo`). On success the command
-prints the picture as `key=value` lines (`key`, `state`, `type`, `sha256`, `locked`); after `remove` the state is `none`.
+prints the picture as `key=value` lines (`key`, `state`, `type`, `sha256`, `locked`, and `reason` for an unusable one); after `remove` the state is `none`, also for an unusable picture.
 
 ### `profile add|use|ls|rm`
 

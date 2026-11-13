@@ -44,6 +44,8 @@ type picture struct {
 	State  string `json:"state"`
 	Type   string `json:"type"`
 	SHA256 string `json:"sha256"`
+	// Reason is why an unusable picture was not used: a code, such as file_missing.
+	Reason string `json:"reason"`
 	Locked bool   `json:"locked"`
 }
 
@@ -154,7 +156,7 @@ func printSettings(w io.Writer, list []setting) error {
 func printPictures(w io.Writer, list []picture) error {
 	rows := make([][]string, 0, len(list))
 	for _, p := range list {
-		n := ""
+		n := p.Reason
 		if p.Locked {
 			n = "locked"
 		}
@@ -163,15 +165,18 @@ func printPictures(w io.Writer, list []picture) error {
 	return output.Table(w, []string{"PICTURE", "STATE", "TYPE", "NOTE"}, rows)
 }
 
-// pictureLines writes one picture as key=value lines.
+// pictureLines writes one picture as key=value lines. The reason line is there for a picture that has one (an unusable one).
 func pictureLines(w io.Writer, p picture) error {
-	return output.KeyValues(w, []output.KV{
+	lines := []output.KV{
 		{Key: "key", Value: p.Key},
 		{Key: "state", Value: p.State},
 		{Key: "type", Value: p.Type},
 		{Key: "sha256", Value: p.SHA256},
-		{Key: "locked", Value: strconv.FormatBool(p.Locked)},
-	})
+	}
+	if p.Reason != "" {
+		lines = append(lines, output.KV{Key: "reason", Value: p.Reason})
+	}
+	return output.KeyValues(w, append(lines, output.KV{Key: "locked", Value: strconv.FormatBool(p.Locked)}))
 }
 
 // fail reports err and returns its exit code. A refusal of the settings routes adds what the person needs to act: the

@@ -290,6 +290,47 @@ func TestGetAPictureKeyAsJSONIsThatObject(t *testing.T) {
 	sameJSON(t, r.stdout, `{"key":"ui.brand.logo","state":"uploaded","type":"image/png","sha256":"abc123","locked":true}`)
 }
 
+// An unusable picture says why: the table's NOTE column and a reason line carry the code, cleaned of anything a terminal would act
+// on, and --json passes the server's object through.
+func TestGetShowsWhyAPictureIsUnusable(t *testing.T) {
+	isolate(t, adminKey)
+	f := newFake(t)
+	doc := `{"settings":[],"facts":[],"pictures":[
+	 {"key":"ui.brand.icon","state":"none","locked":false},
+	 {"key":"ui.brand.logo","state":"unusable","reason":"file_missing","locked":false}]}`
+	f.on("GET", settingsPath, reply{200, doc})
+	r := f.run(Get)
+	if r.code != 0 || !strings.Contains(r.stdout, "ui.brand.logo  unusable  ") || !strings.Contains(r.stdout, "file_missing") {
+		t.Errorf("table: exit %d, stdout %q", r.code, r.stdout)
+	}
+	if strings.Contains(r.stdout, "ui.brand.icon  none  file_missing") {
+		t.Errorf("a picture with no reason shows one: %q", r.stdout)
+	}
+	r = f.run(Get, "ui.brand.logo")
+	if want := "key=ui.brand.logo\nstate=unusable\ntype=\nsha256=\nreason=file_missing\nlocked=false\n"; r.stdout != want {
+		t.Errorf("lines: %q, want %q", r.stdout, want)
+	}
+	r = f.run(Get, "ui.brand.icon")
+	if strings.Contains(r.stdout, "reason=") {
+		t.Errorf("a picture with no reason prints a reason line: %q", r.stdout)
+	}
+	r = f.run(Get, "--json", "ui.brand.logo")
+	sameJSON(t, r.stdout, `{"key":"ui.brand.logo","state":"unusable","reason":"file_missing","locked":false}`)
+}
+
+// A reason is server text: a control character in it never reaches the terminal.
+func TestGetCleansAPictureReason(t *testing.T) {
+	isolate(t, adminKey)
+	f := newFake(t)
+	f.on("GET", settingsPath, reply{200, `{"settings":[],"facts":[],"pictures":[{"key":"ui.brand.logo","state":"unusable","reason":"bad\u001b[31m code","locked":false}]}`})
+	for _, args := range [][]string{{}, {"ui.brand.logo"}} {
+		r := f.run(Get, args...)
+		if strings.ContainsRune(r.stdout, 0x1b) {
+			t.Errorf("%v: an escape reached the output: %q", args, r.stdout)
+		}
+	}
+}
+
 func TestGetAnUnknownKeyExitsFour(t *testing.T) {
 	isolate(t, adminKey)
 	f := newFake(t)
