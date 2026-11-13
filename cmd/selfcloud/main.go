@@ -89,6 +89,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		// The decoder's child process (internal/thumb). It is started by the server, with limits, and reads no config.
 		return thumb.Child(args[1:], os.Stdin, stdout, stderr)
 	case "version", "-version", "--version":
+		if len(args) > 1 && args[0] == "version" {
+			if code, ok := remote(args, stdout, stderr); ok {
+				return code
+			}
+		}
 		fmt.Fprintln(stdout, version.Version)
 		return 0
 	case "help", "-h", "-help", "--help":

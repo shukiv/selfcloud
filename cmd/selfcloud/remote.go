@@ -600,6 +600,27 @@ var remoteCommands = []remoteCommand{
 		help: `  template folder set (DIR | --clear) [--account ACC]
                                  choose or clear the folder whose files an account may use as templates
 `, run: manage.TemplateFolderSet},
+
+	{name: "version ls", route: "GET /api/v1/nodes/{nod}/versions",
+		help: `  version ls NODE [--json]       a file's versions, the current content first
+`, run: files.VersionLs},
+	{name: "version get", route: "GET /api/v1/nodes/{nod}/versions/{ver}/content",
+		more:  []string{"GET /api/v1/nodes/{nod}/versions"},
+		reads: []string{"GET /api/v1/nodes/{nod}"},
+		help: `  version get NODE VER [DEST] [--overwrite] [transfer flags]
+                                 download one version, resuming a part file as get does
+`, run: files.VersionGet},
+	{name: "version label", route: "PATCH /api/v1/nodes/{nod}/versions/{ver}",
+		help: `  version label NODE VER [--label TEXT] [--keep|--no-keep]
+                                 change a version's label, or whether the file keeps it for good
+`, run: files.VersionLabel},
+	{name: "version restore", route: "POST /api/v1/nodes/{nod}/versions/{ver}/restore",
+		reads: []string{"GET /api/v1/nodes/{nod}"},
+		help: `  version restore NODE VER       make a version the file's current content (the replaced content is kept)
+`, run: files.VersionRestore},
+	{name: "version rm", route: "DELETE /api/v1/nodes/{nod}/versions/{ver}",
+		help: `  version rm NODE VER [--yes]    remove one version from the server (asks first)
+`, run: files.VersionRm},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.

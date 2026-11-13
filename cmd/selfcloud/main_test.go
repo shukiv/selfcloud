@@ -26,6 +26,13 @@ func TestVersionAndUnknown(t *testing.T) {
 	if code, out, _ := runCmd(t, "version"); code != 0 || strings.TrimSpace(out) == "" {
 		t.Errorf("version = %d %q", code, out)
 	}
+	if code, out, _ := runCmd(t, "version", "ls", "-h"); code != 0 ||
+		!strings.Contains(out, "usage: selfcloud version ls") {
+		t.Errorf("version ls -h = %d %q", code, out)
+	}
+	if code, out, _ := runCmd(t, "version", "ls"); code != 2 || out != "" {
+		t.Errorf("version ls without a file = %d %q", code, out)
+	}
 	if code, _, _ := runCmd(t, "frobnicate"); code != 2 {
 		t.Errorf("unknown command exit = %d", code)
 	}

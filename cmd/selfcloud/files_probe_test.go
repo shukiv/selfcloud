@@ -244,6 +244,29 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 		p.answer = zipID + "\n"
 		return []string{zipID}
 	},
+	// The version commands need a file with two contents: versionPair replaces the first with the second, which keeps
+	// the first as a version.
+	"version ls": func(p *fileProbe) []string {
+		nodeID, _ := p.versionPair("/version-ls.txt")
+		return []string{nodeID}
+	},
+	// version get writes into a directory of its own, as get does.
+	"version get": func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-get.txt")
+		return []string{nodeID, verID, p.t.TempDir()}
+	},
+	"version label": func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-label.txt")
+		return []string{nodeID, verID, "--label", "probe"}
+	},
+	"version restore": func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-restore.txt")
+		return []string{nodeID, verID}
+	},
+	"version rm": func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-rm.txt")
+		return []string{nodeID, verID, "--yes"}
+	},
 }
 
 // settingsProbes gives, for each settings command, the arguments that make it call its route on the real server. They run
