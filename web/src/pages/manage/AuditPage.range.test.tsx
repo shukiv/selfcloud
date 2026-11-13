@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
@@ -128,6 +128,27 @@ describe("the audit log's date range and export", () => {
     expect(url.searchParams.get("until")).toBe("2026-10-04T00:00:00.000Z");
     expect(url.searchParams.get("actor")).toBeNull();
     expect(anchor!.getAttribute("download")).toBe("");
+  });
+
+  it("Export is disabled for five seconds after a click", async () => {
+    process.env.TZ = "UTC";
+    stubFetch((c: Call) => (isAudit(c) ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    await screen.findByText("folder.create");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    try {
+      vi.useFakeTimers();
+      const button = screen.getByRole("button", { name: "Export CSV" }) as HTMLButtonElement;
+      fireEvent.click(button);
+      expect(button.disabled).toBe(true);
+      act(() => vi.advanceTimersByTime(4999));
+      expect(button.disabled).toBe(true);
+      act(() => vi.advanceTimersByTime(1));
+      expect(button.disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      click.mockRestore();
+    }
   });
 
   it("Export appears once the log has loaded, named and tipped Export CSV", async () => {
