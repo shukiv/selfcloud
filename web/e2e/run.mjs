@@ -58,6 +58,7 @@ import { fu3bChecks } from './fu3b.mjs';
 import { oe1Checks } from './oe1.mjs';
 import { nt2MenuChecks } from './nt2menu.mjs';
 import { nt2GalleryChecks } from './nt2gallery.mjs';
+import { ks1Checks } from './ks1.mjs';
 import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
@@ -950,7 +951,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1084,6 +1085,8 @@ async function main() {
     // Slice nt2 (decision 108): the New menu at a desktop width, Blank opens its file, and the chord Alt+C then F makes a folder.
     if (!only || onlySet.has('nt2menu')) await nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo, fake });
     if (!only || onlySet.has('nt2gallery')) await nt2GalleryChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
+    // Slice ks1 (decision 169): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
+    if (!only || onlySet.has('ks1')) await ks1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
     // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
     // The page is signed in as the member here (the sections above sign the member in last).
     if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });
