@@ -115,7 +115,7 @@ describe("Starred is one table (tl4, decision 137)", () => {
     stubFetch((c: Call) => (c.url.startsWith(STARRED) ? { status: 200, body: { items: [] } } : fail(404, "not_found")));
     renderPage();
     const region = await table();
-    expect(within(region).getByRole("columnheader", { name: "Starred on" })).toBeTruthy();
+    await within(region).findByRole("columnheader", { name: "Starred on" });
     const empty = region.querySelector(".empty");
     expect(empty?.textContent).toContain("Nothing is starred yet");
     expect(region.querySelector("tbody tr.ant-table-placeholder")).toBeTruthy();
