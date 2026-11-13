@@ -32,6 +32,8 @@ type command struct {
 	// kind is the credential's kind once connected, and accountUsed says that the command named an account.
 	kind        string
 	accountUsed bool
+	// adminRoutes says that the command's routes need an installation admin key, so a 403 gets a hint.
+	adminRoutes bool
 }
 
 // begin starts a command with the global flags. withAccount adds --account, which the command then needs.
@@ -67,6 +69,9 @@ func (c *command) fail(err error) int {
 	var ae *client.APIError
 	if !c.g.JSON && c.accountUsed && c.kind == profile.KindDevice && errors.As(err, &ae) && ae.Status == http.StatusNotFound {
 		_, _ = io.WriteString(c.stderr, "selfcloud: hint: this needs an account key; a signed-in device cannot manage an account\n")
+	}
+	if !c.g.JSON && c.adminRoutes && c.kind != profile.KindAdmin && errors.As(err, &ae) && ae.Status == http.StatusForbidden {
+		_, _ = io.WriteString(c.stderr, "selfcloud: hint: this needs an installation admin key\n")
 	}
 	return code
 }
