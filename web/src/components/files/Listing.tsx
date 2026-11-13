@@ -2,9 +2,12 @@
 
 import {
   Fragment,
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,6 +35,7 @@ import type { ViewMode } from "../../lib/files/viewPrefs";
 import { isTextField } from "../../lib/files/keys";
 import { useCoarsePointer } from "../../lib/pointer";
 import { HEADER_H, THEAD_H } from "../../lib/files/layout";
+import { WINDOW_MIN_ROWS, sameRange, spacers, windowRange, withPinned, type WindowRange } from "../../lib/files/window";
 import { useListKeys, useListSelection, type ListSelection } from "../../lib/lists";
 import { getRowHover, setRowHover, subscribeRowHover } from "./rowHover";
 import Icon from "./Icon";
@@ -86,6 +90,9 @@ export interface ListingProps {
   onRename: (commit: boolean) => void;
   onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
   onFocusItem: (index: number) => void;
+  // focusRequest asks for the focus on a row, by its ID, for a key that moved it (decision 162). A row that is not drawn is
+  // scrolled to first, then focused once it is drawn. A new request is a new seq, so the same row can be asked for again.
+  focusRequest?: { id: string; seq: number };
   // rowActs gives the icons at a list row's end for one item. They are drawn with a mouse, where the row is hovered or selected.
   rowActs?: (n: Node) => RowAct[];
   // onRowContext asks for the item's menu: a right-click, or a finger held on the item for a moment. It gets the pointer's
@@ -726,6 +733,131 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
   );
 });
 
+// ---- The windowed list (decision 162). Above 150 loaded rows, My files' list draws only the rows near the screen. ----
+
+// WindowCtx is what the list's table reads from Listing: whether the list is windowed, the two spacers' heights, the loaded rows
+// for aria-rowcount, and the columns a spacer row spans.
+interface WindowCtxValue {
+  windowed: boolean;
+  top: number;
+  bottom: number;
+  rows: number;
+  cols: number;
+}
+const WindowCtx = createContext<WindowCtxValue>({ windowed: false, top: 0, bottom: 0, rows: 0, cols: 0 });
+
+// SpacerRow holds the place of the rows that are not drawn: one cell across the table, as high as the rows it stands for. It is
+// hidden from a screen reader and takes no pointer, so it shows no band and catches no click.
+function SpacerRow({ which, height, cols }: { which: "top" | "bottom"; height: number; cols: number }) {
+  return (
+    <tr aria-hidden="true" data-spacer={which} style={{ height, pointerEvents: "none" }}>
+      <td colSpan={cols} style={{ height, padding: 0, borderBottom: 0 }} />
+    </tr>
+  );
+}
+
+// WindowBody is the table's body, with the two spacers round the drawn rows. The component is the same for the life of the list
+// (the components object below is a module constant), so the rows are not drawn again when a list starts or stops windowing.
+function WindowBody({ className, children }: { className?: string; children?: ReactNode }) {
+  const w = useContext(WindowCtx);
+  return (
+    <tbody className={className}>
+      {w.windowed && <SpacerRow which="top" height={w.top} cols={w.cols} />}
+      {children}
+      {w.windowed && <SpacerRow which="bottom" height={w.bottom} cols={w.cols} />}
+    </tbody>
+  );
+}
+
+// WindowTable is antd's table with aria-rowcount: the loaded rows and the header row.
+function WindowTable(props: Record<string, unknown>) {
+  const w = useContext(WindowCtx);
+  return <table {...props} aria-rowcount={w.rows} />;
+}
+
+// WindowHeaderRow is the column header, row 1 of the table for a screen reader; the rows below count from 2.
+function WindowHeaderRow(props: Record<string, unknown>) {
+  return <tr {...props} aria-rowindex={1} />;
+}
+
+const FILES_TABLE_COMPONENTS = { table: WindowTable, header: { row: WindowHeaderRow }, body: { wrapper: WindowBody } };
+
+// rowHeights is each density's row height, measured from a drawn row. A row is one line (decision 162), so every row of a density
+// is the same height. It is 0 until a row has been drawn.
+const rowHeights = { fine: 0, coarse: 0 };
+
+// measureRow is the height of a drawn row that is not being renamed: a renamed row has its field, and its error line.
+function measureRow(region: HTMLElement): number {
+  for (const tr of region.querySelectorAll<HTMLElement>("tbody tr[data-id]")) {
+    if (tr.querySelector("input.rename")) continue;
+    const h = tr.getBoundingClientRect().height;
+    if (h > 0) return h;
+  }
+  return 0;
+}
+
+// WindowInputs are what the window is worked out from, as of the last render: the list's rows and their IDs, the density, the row
+// being renamed (pinned, or -1) and where the column header is pinned.
+interface WindowInputs {
+  active: boolean;
+  count: number;
+  coarse: boolean;
+  pinned: number;
+  stickyTop: number;
+  ids: string[];
+}
+
+// WindowState is the rows drawn, and the row height they were worked out with.
+interface WindowState {
+  range: WindowRange;
+  rowH: number;
+}
+
+// shownRange is the rows drawn: the window's, kept inside the list, with the pinned row in it.
+function shownRange(r: WindowRange, count: number, pinned: number): WindowRange {
+  return withPinned({ start: Math.min(r.start, count), end: Math.min(r.end, count) }, pinned, count);
+}
+
+// headHeight is the column header's height, which is the rows' offset from the top of the list.
+function headHeight(region: HTMLElement): number {
+  const head = region.querySelector("thead");
+  return head ? head.getBoundingClientRect().height : THEAD_H;
+}
+
+// computeWindow reads the page and says which rows to draw. The list's top and the visible part of the window are read from the
+// region, the header and the window; the row height is the density's, measured once.
+function computeWindow(region: HTMLElement, g: WindowInputs): WindowState {
+  const key = g.coarse ? "coarse" : "fine";
+  if (!g.active) return { range: { start: 0, end: g.count }, rowH: rowHeights[key] };
+  if (!rowHeights[key]) rowHeights[key] = measureRow(region);
+  const rowH = rowHeights[key];
+  const range = windowRange({
+    count: g.count,
+    rowH,
+    bodyTop: region.getBoundingClientRect().top + headHeight(region),
+    viewTop: g.stickyTop + THEAD_H,
+    viewBottom: window.innerHeight,
+  });
+  return { range: shownRange(range, g.count, g.pinned), rowH };
+}
+
+// handOffFocus moves the focus to the list region when the row that holds it is about to leave the drawn rows. The region takes it
+// without a scroll, so the focus is not lost to the body when the row is removed; the next arrow key brings the row back.
+function handOffFocus(region: HTMLElement, range: WindowRange, ids: string[]): void {
+  const a = document.activeElement;
+  if (!(a instanceof HTMLElement) || !region.contains(a)) return;
+  const id = a.closest<HTMLElement>("[data-id]")?.dataset.id;
+  if (id === undefined) return;
+  const i = ids.indexOf(id);
+  if (i < range.start || i >= range.end) region.focus({ preventScroll: true });
+}
+
+// setRef assigns a ref that may be a callback or an object.
+function setRef<T>(r: Ref<T> | undefined, el: T | null): void {
+  if (typeof r === "function") r(el);
+  else if (r) (r as { current: T | null }).current = el;
+}
+
 // PresetHandlers are a preset list's callbacks that a row's content runs, read from the page's current props at the call, so a row
 // that was not drawn again still runs the page's latest action.
 interface PresetHandlers {
@@ -849,6 +981,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // A preset list's selection and keys (the design, not in this repository, section 2.4). My files keeps its own in FilesPage, and these are not used for it.
   const rows = p.items as { id: string }[];
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
+  const indexOf = useMemo(() => new Map(rows.map((r, i) => [r.id, i])), [rows]);
   const sel = useListSelection(ids);
   // rowMenu is the row whose ⋮ menu a right click or a finger's long press opened, and the pointer's place (tl4).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -1048,6 +1181,96 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       window.removeEventListener("mousedown", stopLiftMouseDown, true);
     };
   }, []);
+
+  // ---- The window (decision 162): My files' list draws the rows near the screen once more than 150 rows are loaded. ----
+  const filesList = !isItems(p) && p.view === "list";
+  const extRef = isItems(p) ? undefined : p.containerRef;
+  const pinned = !isItems(p) && p.renameID ? rows.findIndex((r) => r.id === p.renameID) : -1;
+  const winActive = filesList && rows.length > WINDOW_MIN_ROWS;
+  const regionRef = useRef<HTMLDivElement | null>(null);
+  const setRegion = useCallback(
+    (el: HTMLDivElement | null) => {
+      regionRef.current = el;
+      setRef(extRef, el);
+    },
+    [extRef],
+  );
+  // The inputs and the state are read by the page's listeners, which are set up once per windowing, so they are kept in refs.
+  const winInputs = useRef<WindowInputs>({ active: false, count: 0, coarse, pinned: -1, stickyTop, ids: [] });
+  winInputs.current = { active: winActive, count: rows.length, coarse, pinned, stickyTop, ids };
+  const [win, setWin] = useState<WindowState>({ range: { start: 0, end: 0 }, rowH: 0 });
+  const winRef = useRef(win);
+  winRef.current = win;
+  // Every commit, the window is worked out again from the page, and state changes only when its rows do: a row's height is
+  // measured on the first commit that draws one, so the window settles in a commit or two, before the browser paints.
+  useLayoutEffect(() => {
+    const el = regionRef.current;
+    if (!el || !winInputs.current.active) return;
+    const next = computeWindow(el, winInputs.current);
+    const cur = winRef.current;
+    if (!sameRange(cur.range, next.range) || cur.rowH !== next.rowH) setWin(next);
+  });
+  // A scroll or a resize moves the window, at most once a frame. A passive listener, on the window and the capture phase, so a
+  // scroll of any element reaches it.
+  useEffect(() => {
+    if (!winActive) return;
+    let frame = 0;
+    const follow = () => {
+      frame = 0;
+      const el = regionRef.current;
+      if (!el) return;
+      const g = winInputs.current;
+      const next = computeWindow(el, g);
+      const cur = winRef.current;
+      if (sameRange(cur.range, next.range) && cur.rowH === next.rowH) return;
+      handOffFocus(el, next.range, g.ids);
+      setWin(next);
+    };
+    const onMove = () => {
+      if (!frame) frame = requestAnimationFrame(follow);
+    };
+    window.addEventListener("scroll", onMove, { capture: true, passive: true });
+    window.addEventListener("resize", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [winActive]);
+  // A focus request (a key moved the focus) names a row. A row that is drawn takes the focus at once; one that is not is scrolled
+  // to, its window is worked out from the new place, and the next commit draws it and focuses it. pendingFocus is the row still owed.
+  const focusReq = isItems(p) ? undefined : p.focusRequest;
+  const pendingFocus = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (focusReq) pendingFocus.current = focusReq.id;
+  }, [focusReq]);
+  useLayoutEffect(() => {
+    const id = pendingFocus.current;
+    const el = regionRef.current;
+    if (id === null || !el) return;
+    const row = [...el.querySelectorAll<HTMLElement>("tbody tr[data-id]")].find((r) => r.dataset.id === id);
+    if (row) {
+      pendingFocus.current = null;
+      row.focus();
+      return;
+    }
+    const index = ids.indexOf(id);
+    const g = winInputs.current;
+    const rowH = rowHeights[g.coarse ? "coarse" : "fine"];
+    if (index < 0 || !(rowH > 0)) {
+      if (index < 0) pendingFocus.current = null;
+      return;
+    }
+    const top = el.getBoundingClientRect().top + headHeight(el) + index * rowH;
+    const bottom = top + rowH;
+    // The row's place under the pinned header, as a keyboard scroll to a row keeps it (scrollMarginTop).
+    const viewTop = g.stickyTop + THEAD_H + 4;
+    const viewBottom = window.innerHeight;
+    const dy = top < viewTop ? top - viewTop : bottom > viewBottom ? bottom - viewBottom : 0;
+    if (dy !== 0) window.scrollTo({ top: window.scrollY + dy });
+    const next = computeWindow(el, g);
+    if (!sameRange(winRef.current.range, next.range)) setWin(next);
+  });
 
   // ---- The frame both presets draw in. ----
 
@@ -1433,8 +1656,26 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         render: (_v, n) => rowEnd(n),
       },
     ];
+    // The rows drawn: every row, or the window's slice with the row being renamed in it (decision 162). The spacers hold the place
+    // of the rows that are not drawn, and aria-rowcount counts every loaded row.
+    const shown = winActive ? shownRange(win.range, p.items.length, pinned) : { start: 0, end: p.items.length };
+    const drawn = shown.start === 0 && shown.end === p.items.length ? p.items : p.items.slice(shown.start, shown.end);
+    const gap = spacers(shown, p.items.length, win.rowH);
     return (
-      <div role="region" aria-label={p.label} ref={p.containerRef} className="files-list" data-has-selection={someSelected ? "true" : "false"} style={bandVars}>
+      <div
+        role="region"
+        aria-label={p.label}
+        ref={setRegion}
+        className="files-list"
+        data-has-selection={someSelected ? "true" : "false"}
+        style={bandVars}
+        // A windowed list takes the focus when a row scrolls out of the window, so the arrow keys still reach it (decision 162).
+        tabIndex={winActive ? -1 : undefined}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget) H.keyDown(e);
+        }}
+      >
+        <WindowCtx.Provider value={{ windowed: winActive, top: gap.top, bottom: gap.bottom, rows: p.items.length + 1, cols: columns.length + (coarse ? 1 : 0) }}>
         <Table<Node>
           rowKey="id"
           size="middle"
@@ -1443,24 +1684,25 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           // every frame. The stylesheet pins its cells under the toolbar, at --sc-list-top (decision 77, item fu3b).
           tableLayout="fixed"
           columns={columns}
-          dataSource={p.items}
+          dataSource={drawn}
+          components={FILES_TABLE_COMPONENTS}
           // A mouse has no checkbox column: each row's checkbox is in its icon's place (see FileNameCell). A finger keeps the column.
           rowSelection={coarse ? {
             type: "checkbox",
             columnWidth: 44,
-            // antd replaces its select-all box when a column title is given, so the title is a function that keeps it.
-            columnTitle: (selectAll: ReactNode) => (
+            // The header's box is ours, not antd's: antd counts the rows it is given, which are the drawn ones (decision 162). It
+            // reads every loaded row, through selectAllBox.
+            columnTitle: () => (
               <>
-                {selectAll}
+                {selectAllBox}
                 <span className="sr-only">{t("files.col.select")}</span>
               </>
             ),
             // Each row's checkbox is not a tab stop: the row itself takes focus, and the arrow keys move between rows.
             getCheckboxProps: () => ({ tabIndex: -1 }),
             selectedRowKeys: p.items.filter((n) => p.selected.has(n.id)).map((n) => n.id),
-            // A checkbox toggles its row, as Ctrl or Cmd does; the header box selects or clears all.
+            // A checkbox toggles its row, as Ctrl or Cmd does. The header box is selectAllBox, above.
             onSelect: (record) => H.click(record.id, CTRL_CLICK),
-            onSelectAll: (checked) => p.onSelectAll(checked),
           } : undefined}
           onRow={(n) => {
             // The selected band and the hovered band are painted on the cells (index.css), as antd paints a row's cells.
@@ -1470,9 +1712,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
               userSelect: "none" as const,
               scrollMarginTop,
             };
-            return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH), style } as Record<string, unknown>;
+            // The row's place is its index in the whole list, not in the drawn slice (decision 162); aria-rowindex counts the header as 1.
+            const i = indexOf.get(n.id) ?? 0;
+            return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH), "aria-rowindex": i + 2, style } as Record<string, unknown>;
           }}
         />
+        </WindowCtx.Provider>
       </div>
     );
   }

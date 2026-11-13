@@ -391,6 +391,8 @@ export default function FilesPage() {
   const signedIn = useStore(session) !== null;
   const [prefs, setPrefs] = useState<ViewPrefs>(() => readPrefs());
   const [sel, setSel] = useState<SelState>(NO_SEL);
+  // focusReq is the row the keyboard moved the focus to, with a seq for each request (focusRow, decision 162).
+  const [focusReq, setFocusReq] = useState<{ id: string; seq: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -1009,12 +1011,11 @@ export default function FilesPage() {
     }
   }
 
+  // focusRow asks the listing for the focus on a row (decision 162). A row that is not drawn is scrolled to and drawn first, which the
+  // listing does. The request is state, set with the selection by the same key, so it costs no extra render.
   function focusRow(id: string | null) {
     if (!id) return;
-    requestAnimationFrame(() => {
-      const el = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-id]") ?? []).find((x) => x.dataset.id === id);
-      el?.focus();
-    });
+    setFocusReq((r) => ({ id, seq: (r?.seq ?? 0) + 1 }));
   }
 
   // tileRowDelta is how far the focus moves one row up (dir -1) or down (dir 1) in the tile view: the tile one row away on the
@@ -2081,7 +2082,8 @@ export default function FilesPage() {
   const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   // Clear disables itself once the selection is empty, so the focus moves to the listing first: a disabled button drops it.
   const clearPicked = () => {
-    listRef.current?.querySelector<HTMLElement>("[data-id][tabindex='0']")?.focus();
+    // The focused row may be out of the drawn rows (decision 162): then the list takes the focus.
+    (listRef.current?.querySelector<HTMLElement>("[data-id][tabindex='0']") ?? listRef.current)?.focus();
     setSelection(EMPTY);
   };
   // The sort menu lists the fields, then the direction; the current field and direction are marked. Choosing a field keeps
@@ -2168,6 +2170,7 @@ export default function FilesPage() {
     },
     refuse: (why) => void message.warning(t(WHY_KEY[why])),
     selectedIDs: () => sel.ids,
+    rowIDs: () => ids,
     setBand: (hit) => {
       const first = hit.length > 0 ? ids.indexOf(hit[0]) : null;
       const last = hit.length > 0 ? ids.indexOf(hit[hit.length - 1]) : null;
@@ -2384,6 +2387,7 @@ export default function FilesPage() {
                     if (id) setSel((prev) => ({ ...prev, focusID: id }));
                   }}
                   rowActs={rowActsFor}
+                  focusRequest={focusReq ?? undefined}
                   onRowContext={onRowContext}
                   cutIDs={cutSet}
                   stickyTop={stickyTop(coarse)}
