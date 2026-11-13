@@ -2,6 +2,7 @@
 .claude/settings.local.json
 /bin/
 /data/
+/dist/
 # The browser checks' output and the folders their runs keep (scripts/ci-e2e.sh).
 /e2e-out/
 # Package and tool caches, wherever a tool creates them (vitest writes one beside the test it runs).

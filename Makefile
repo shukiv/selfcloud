@@ -1,11 +1,26 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/shukiv/selfcloud/internal/version.Version=$(VERSION)
 
-.PHONY: build web test check docker e2e
+.PHONY: build web test check docker e2e release
 
 # The web interface is built first: the Go build embeds web/dist.
 build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/selfcloud ./cmd/selfcloud
+
+# The release binaries for Linux, with their checksums. The VERSION becomes part of a file name, so it
+# is checked before anything is built.
+release: web
+	@case "$(VERSION)" in \
+	  ''|*[!A-Za-z0-9._+-]*) echo "VERSION must be non-empty and contain only A-Za-z0-9._+-: '$(VERSION)'" >&2; exit 1;; \
+	esac
+	mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/selfcloud_$(VERSION)_linux_amd64 ./cmd/selfcloud
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/selfcloud_$(VERSION)_linux_arm64 ./cmd/selfcloud
+	cd dist && sha256sum selfcloud_$(VERSION)_linux_amd64 selfcloud_$(VERSION)_linux_arm64 > SHA256SUMS
+	@for arch in amd64 arm64; do \
+	  f="dist/selfcloud_$(VERSION)_linux_$$arch"; \
+	  echo "selfcloud_$(VERSION)_linux_$$arch: $$(wc -c < "$$f") bytes"; \
+	done
 
 # Only the web interface. Needs Node 22 and npm. Writes web/dist, which the Go build embeds.
 web:
