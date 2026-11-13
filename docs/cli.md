@@ -973,6 +973,47 @@ selfcloud user add --verification email --name "Ann Lee" ann@example.test
 selfcloud user ls --all
 selfcloud user update usr_... --quota 10GiB
 selfcloud user rm usr_... --transfer-to usr_... --yes
+
+## Sign-in links and resets
+
+These commands manage one person's way back into an account. They take `--account ACC`, or `SELFCLOUD_ACCOUNT`, like
+the other account commands, and the server's rules are the ones that decide who may ask for what.
+
+| Command | What it does |
+|---|---|
+| `user verify USER --method email\|link\|none` | sends a pending person their invitation again, or verifies them outright |
+| `user reset-password USER --method email\|link` | starts a password reset; the person chooses the new password |
+| `user sign-in-link USER [--next PATH]` | makes a one-time link that signs the person in |
+| `user revoke-tokens USER [--yes]` | ends every sign-in of the person on every device; asks first |
+
+`--method` is required and is checked before any request (exit 2). `email` needs mail to be configured on the server,
+and the server refuses it with a 400 if it is not. A `link` is handed to the caller exactly once: it is written to
+standard output, and a note on standard error says to give it to the person. The token the server mints for the link is
+never printed, plain or under `--json`. `none` verifies the person at once and only an API key may ask for it. An
+installation admin's key may not make a link to a person who already exists, since that key reaches every account; the
+server answers 403 and the command prints its message, so use `email`. A reset needs a person who is verified and not
+disabled, and the server answers 409 otherwise.
+
+A sign-in link needs the account's own key: an installation admin's key and a device token are refused with 403.
+`--next` is the path opened after sign-in, such as `/files/report`; the server checks it and refuses anything that is
+not a path on the site. The link is short-lived and single-use.
+
+`user revoke-tokens` asks first, as the other destructive commands do. At a terminal the person types the user's id;
+without a terminal it refuses (exit 2) unless `--yes` is given. The answer is the server's cut-off: every token and
+editing session of that person issued before it no longer works. The account's other people and its keys are not
+affected.
+
+Plain output uses `verification=METHOD`, then `sent=true` or `false` for mail, or `link=URL` and `link_expires_at=TIME`
+for a link. A sign-in link prints `link=URL` and `expires_at=TIME`; a revoke prints `tokens_not_before=TIME`. Under
+`--json` a verification is `{method, url, expires_at, sent}`, with empty fields left out, a sign-in link is
+`{url, expires_at}`, and a revoke is `{tokens_not_before}`. The server's own refusals keep their messages: a missing
+person is exit 4, and a refused method or a conflict is exit 3.
+
+```
+selfcloud user verify --account acc_… usr_… --method email
+LINK=$(selfcloud user reset-password --account acc_… usr_… --method link | sed -n 's/^link=//p')
+selfcloud user sign-in-link --account acc_… usr_… --next /files/report
+selfcloud user revoke-tokens --account acc_… usr_… --yes
 ```
 
 ## Docker

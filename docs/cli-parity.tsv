@@ -149,10 +149,10 @@ fn	lib/manage/api.ts:removeGroupMember	group remove-member	cli8	built in cli8
 fn	lib/manage/api.ts:removePerson	user rm	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:renameGroup	group rename	cli8	built in cli8
 fn	lib/manage/api.ts:renameSpace	folder rename	cli8	built in cli8
-fn	lib/manage/api.ts:resendVerification	-	cli9	planned, cli9
-fn	lib/manage/api.ts:resetUserPassword	-	cli9	planned, cli9
+fn	lib/manage/api.ts:resendVerification	user verify	cli9b2	built in cli9b2
+fn	lib/manage/api.ts:resetUserPassword	user reset-password	cli9b2	built in cli9b2
 fn	lib/manage/api.ts:revokeKey	account key revoke	cli9a1	built in cli9a1
-fn	lib/manage/api.ts:sendPasswordReset	-	cli9	planned, cli9
+fn	lib/manage/api.ts:sendPasswordReset	user reset-password	cli9b2	built in cli9b2
 fn	lib/manage/api.ts:setUserPassword	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (decision 41)
 fn	lib/manage/api.ts:updateAccount	account update	cli9a2	built in cli9a2
@@ -361,11 +361,11 @@ route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/users	user add	cli9b1	built in cli9b1
 route	POST /api/v1/accounts/{acc}/users/{usr}/password	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
-route	POST /api/v1/accounts/{acc}/users/{usr}/password-reset	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/password-reset	user reset-password	cli9b2	built in cli9b2
 route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in	-	-	sign in as a user: browser session only (decision 41)
-route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links	-	cli9	planned, cli9
-route	POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke	-	cli9	planned, cli9
-route	POST /api/v1/accounts/{acc}/users/{usr}/verification	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links	user sign-in-link	cli9b2	built in cli9b2
+route	POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke	user revoke-tokens	cli9b2	built in cli9b2
+route	POST /api/v1/accounts/{acc}/users/{usr}/verification	user verify	cli9b2	built in cli9b2
 route	POST /api/v1/accounts/{acc}/webhooks	webhook add	cli10	built in cli10
 route	POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry	webhook retry	cli10	built in cli10
 route	POST /api/v1/accounts/{acc}/webhooks/{hook}/secret	webhook rotate-secret	cli10	built in cli10
