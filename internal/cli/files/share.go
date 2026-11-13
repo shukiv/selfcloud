@@ -9,7 +9,6 @@ package files
 // credentials are kept in memory only: they are never printed, logged or written to a record.
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -132,22 +130,14 @@ func getShared(g conn.Global, link, dest, folder string, passwordStdin bool, o d
 // readPasswordLine reads the password from standard input: one line, without its line ending. A terminal is refused,
 // since what is typed there is shown.
 func readPasswordLine() (string, error) {
-	if IsTerminal(Stdin) {
-		return "", exitcode.Usagef("--password-stdin reads the password from a pipe or a file, not a terminal, where " +
-			"it would be shown as it is typed")
-	}
-	line, err := bufio.NewReaderSize(io.LimitReader(Stdin, maxPassword+2), maxPassword+2).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", exitcode.Usagef("the password could not be read from standard input")
-	}
-	line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-	switch {
-	case len(line) > maxPassword:
-		return "", exitcode.Usagef("the password on standard input is longer than %d bytes", maxPassword)
-	case line == "":
-		return "", exitcode.Usagef("standard input holds no password")
-	}
-	return line, nil
+	return ReadSecretLine(SecretLine{
+		Source:     "-",
+		Limit:      maxPassword,
+		Terminal:   "--password-stdin reads the password from a pipe or a file, not a terminal, where it would be shown as it is typed",
+		ReadFailed: "the password could not be read from standard input",
+		TooLong:    "the password on standard input is longer than %d bytes",
+		Empty:      "standard input holds no password",
+	})
 }
 
 // readLink reads a share link from standard input, when source is "-", or from a regular file, so the link's secret is not
@@ -155,42 +145,18 @@ func readPasswordLine() (string, error) {
 // the spaces and the line ending around it trimmed; the limit counts the spaces too. A terminal is refused for "-", since what is typed there is shown.
 // An error never repeats the link or the file's name.
 func readLink(source string) (string, error) {
-	var r io.Reader
-	if source == "-" {
-		if IsTerminal(Stdin) {
-			return "", exitcode.Usagef("get - reads the link from a pipe or a file, not a terminal, where it would be shown " +
-				"as it is typed")
-		}
-		r = Stdin
-	} else {
-		f, err := os.Open(source)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return "", exitcode.Usagef("the link file does not exist")
-			}
-			return "", exitcode.Usagef("the link file could not be opened")
-		}
-		defer f.Close()
-		if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-			return "", exitcode.Usagef("the link file is not a regular file")
-		}
-		r = f
-	}
-	line, err := bufio.NewReaderSize(io.LimitReader(r, maxLink+2), maxLink+2).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", exitcode.Usagef("the link could not be read")
-	}
-	// A read that ran to its cap without reaching a line end stopped inside the line, so the limit, which counts the
-	// spaces around the link, was passed; trimming what was read would keep a part of the line as if it were all of it.
-	capped := len(line) >= maxLink+2 && !strings.HasSuffix(line, "\n")
-	line = strings.TrimSpace(line)
-	switch {
-	case capped, len(line) > maxLink:
-		return "", exitcode.Usagef("the link is longer than %d bytes", maxLink)
-	case line == "":
-		return "", exitcode.Usagef("the input holds no link on its first line")
-	}
-	return line, nil
+	return ReadSecretLine(SecretLine{
+		Source:     source,
+		Limit:      maxLink,
+		TrimSpace:  true,
+		Terminal:   "get - reads the link from a pipe or a file, not a terminal, where it would be shown as it is typed",
+		NotExist:   "the link file does not exist",
+		OpenFailed: "the link file could not be opened",
+		NotRegular: "the link file is not a regular file",
+		ReadFailed: "the link could not be read",
+		TooLong:    "the link is longer than %d bytes",
+		Empty:      "the input holds no link on its first line",
+	})
 }
 
 // visitor is a share link opened for a download: the credential the open gave, when it ends, and the link's node.

@@ -11,7 +11,6 @@
 package sharing
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -154,38 +153,19 @@ func (s *optString) Set(v string) error {
 // its line ending. A terminal is refused for "-", since what is typed there is shown. An error never repeats the file's
 // name or any of the text.
 func readPassword(source string) (string, error) {
-	var r io.Reader
-	if source == "-" {
-		if files.IsTerminal(files.Stdin) {
-			return "", exitcode.Usagef("a password is read from a pipe or a file, not from a terminal, where it would be shown " +
-				"as it is typed")
-		}
-		r = files.Stdin
-	} else {
-		f, err := os.Open(source)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return "", exitcode.Usagef("the password file does not exist")
-			}
-			return "", exitcode.Usagef("the password file could not be opened")
-		}
-		defer f.Close()
-		fi, err := f.Stat()
-		if err != nil || !fi.Mode().IsRegular() {
-			return "", exitcode.Usagef("the password file is not a regular file")
-		}
-		r = f
-	}
-	line, err := bufio.NewReaderSize(io.LimitReader(r, maxPassword+2), maxPassword+2).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", exitcode.Usagef("the password could not be read")
-	}
-	line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-	switch {
-	case len(line) > maxPassword:
-		return "", exitcode.Usagef("the password is longer than %d bytes", maxPassword)
-	case line == "":
-		return "", exitcode.Usagef("the password is empty")
+	line, err := files.ReadSecretLine(files.SecretLine{
+		Source:     source,
+		Limit:      maxPassword,
+		Terminal:   "a password is read from a pipe or a file, not from a terminal, where it would be shown as it is typed",
+		NotExist:   "the password file does not exist",
+		OpenFailed: "the password file could not be opened",
+		NotRegular: "the password file is not a regular file",
+		ReadFailed: "the password could not be read",
+		TooLong:    "the password is longer than %d bytes",
+		Empty:      "the password is empty",
+	})
+	if err != nil {
+		return "", err
 	}
 	// The server's own limits (auth.MinPasswordLen, auth.MaxPasswordLen), in characters; a refusal here costs no request.
 	if n := utf8.RuneCountInString(line); n < auth.MinPasswordLen || n > auth.MaxPasswordLen {
