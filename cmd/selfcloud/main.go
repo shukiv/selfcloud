@@ -79,7 +79,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "upload", "settings",
 		"folder", "group", "user", "share", "link", "access", "shared", "webhook", "import", "job", "zip",
 		"account", "storage", "label", "sharing",
-		"star", "unstar", "starred", "recent", "comment", "activity", "search", "people", "tag":
+		"star", "unstar", "starred", "recent", "comment", "activity", "search", "people", "tag", "doc", "template":
 		if code, ok := remote(args, stdout, stderr); ok {
 			return code
 		}

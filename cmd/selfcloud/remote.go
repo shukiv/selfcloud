@@ -583,6 +583,23 @@ var remoteCommands = []remoteCommand{
 	{name: "tag ls", route: "GET /api/v1/nodes/{nod}/tags", more: []string{"GET /api/v1/media/tags"},
 		help: `  tag ls NODE...                 an audio file's title, artist, album and duration
 `, run: files.TagLs},
+
+	{name: "doc new", route: "POST /api/v1/nodes/{nod}/documents",
+		help: `  doc new DIR (--type TYPE | --template TEMPLATE) [--name NAME]
+                                 a new document in a directory, from a type or a template
+`, run: files.DocNew},
+	{name: "template ls", route: "GET /api/v1/templates",
+		help: `  template ls --kind KIND [--limit N] [--all]
+                                 the built-in and account templates of a kind
+`, run: files.TemplateLs},
+	{name: "template folder show", route: "GET /api/v1/accounts/{acc}/templates",
+		help: `  template folder show [--account ACC]
+                                 the folder whose files this account may use as templates
+`, run: manage.TemplateFolderShow},
+	{name: "template folder set", route: "PUT /api/v1/accounts/{acc}/templates",
+		help: `  template folder set [DIR | --clear] [--account ACC]
+                                 choose or clear the folder whose files an account may use as templates
+`, run: manage.TemplateFolderSet},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
