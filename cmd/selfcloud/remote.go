@@ -524,6 +524,24 @@ var remoteCommands = []remoteCommand{
                      [--who-viewed true|false] [--yes]
                                  change the switches given; turning public links off asks first
 `, run: manage.SharingPolicySet},
+	{name: "star", route: "PUT /api/v1/nodes/{nod}/star",
+		notProbed: "needs a device token; internal/cli/files records its calls",
+		help: `  star NODE...                   star one or more nodes
+`, run: files.Star},
+	{name: "unstar", route: "DELETE /api/v1/nodes/{nod}/star",
+		notProbed: "needs a device token; internal/cli/files records its calls",
+		help: `  unstar NODE...                 remove the star from one or more nodes
+`, run: files.Unstar},
+	{name: "starred", route: "GET /api/v1/starred",
+		notProbed: "needs a device token; internal/cli/files records its calls",
+		help: `  starred [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]
+                                 the person's starred nodes, newest star first
+`, run: files.Starred},
+	{name: "recent", route: "GET /api/v1/recent",
+		notProbed: "needs a device token; internal/cli/files records its calls",
+		help: `  recent [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]
+                                 the nodes the person viewed or edited last, newest first
+`, run: files.Recent},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
