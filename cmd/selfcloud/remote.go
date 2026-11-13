@@ -555,6 +555,20 @@ var remoteCommands = []remoteCommand{
 		help: `  activity NODE [--all] [--kind KIND]
                                  a node's audit trail, newest first; KIND is content, comment, access or label
 `, run: files.Activity},
+
+	{name: "search", route: "GET /api/v1/search",
+		help: `  search [QUERY] [--in name|content] [--kind file|dir|shortcut] [--type TYPE] [--ext LIST]
+         [--modified-after TIME] [--modified-before TIME] [--size-min SIZE] [--size-max SIZE]
+         [--label FIELD:VALUE]... [--scope NODE] [--limit N] [--all]
+                                 find nodes by name or content, and by their filters
+`, run: files.Search},
+	{name: "people find", route: "GET /api/v1/directory",
+		help: `  people find [QUERY] [--kind user|group|all]
+                                 the account's people and groups
+`, run: manage.PeopleFind},
+	{name: "tag ls", route: "GET /api/v1/nodes/{nod}/tags", more: []string{"GET /api/v1/media/tags"},
+		help: `  tag ls NODE...                 an audio file's title, artist, album and duration
+`, run: files.TagLs},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
