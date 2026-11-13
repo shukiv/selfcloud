@@ -328,7 +328,7 @@ route	HEAD /api/v1/nodes/{nod}/content	-	-	HTTP HEAD; get reads the file's size 
 route	HEAD /api/v1/nodes/{nod}/preview	-	-	HTTP HEAD, rendered preview for the browser viewer
 route	HEAD /api/v1/nodes/{nod}/tags	-	-	HTTP HEAD
 route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumb
-route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD, used inside version get
+route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD; version get reads the version's size and ETag from the list instead
 route	HEAD /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
 route	PATCH /api/v1/accounts/{acc}	account update	cli9a2	built in cli9a2

@@ -24,3 +24,29 @@ func (p *fileProbe) oldVersion(nodeID string) string {
 	p.t.Fatalf("no version of %s in its list", nodeID)
 	return ""
 }
+
+func init() {
+	// The version commands need a file with two contents: versionPair replaces the first with the second, which keeps
+	// the first as a version.
+	fileProbes["version ls"] = func(p *fileProbe) []string {
+		nodeID, _ := p.versionPair("/version-ls.txt")
+		return []string{nodeID}
+	}
+	// version get writes into a directory of its own, as get does.
+	fileProbes["version get"] = func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-get.txt")
+		return []string{nodeID, verID, p.t.TempDir()}
+	}
+	fileProbes["version label"] = func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-label.txt")
+		return []string{nodeID, verID, "--label", "probe"}
+	}
+	fileProbes["version restore"] = func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-restore.txt")
+		return []string{nodeID, verID}
+	}
+	fileProbes["version rm"] = func(p *fileProbe) []string {
+		nodeID, verID := p.versionPair("/version-rm.txt")
+		return []string{nodeID, verID, "--yes"}
+	}
+}
