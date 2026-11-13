@@ -225,7 +225,7 @@ func TestExportPollsAndDownloads(t *testing.T) {
 		t.Errorf("file %q, %v", got, err)
 	}
 	reqs := f.seen()
-	if len(reqs) != 1+3 {
+	if len(reqs) != 1+4 {
 		t.Fatalf("requests %+v", reqs)
 	}
 	if reqs[0].method != "POST" || reqs[0].path != "/api/v1/nodes/"+testNode+"/exports" ||
@@ -237,7 +237,7 @@ func TestExportPollsAndDownloads(t *testing.T) {
 			t.Errorf("poll %+v", r)
 		}
 	}
-	if reqs[1].rng != "bytes=0-0" || reqs[3].ifRange != etag {
+	if reqs[1].rng != "bytes=0-0" || reqs[4].ifRange != etag {
 		t.Errorf("ranges %+v", reqs)
 	}
 }
@@ -315,5 +315,42 @@ func TestExportTimeout(t *testing.T) {
 	wantCode(t, res, 1)
 	if !strings.Contains(res.stderr, "not ready") {
 		t.Errorf("stderr %q", res.stderr)
+	}
+}
+
+// TestExportGoneDuringTheDownload: an export that was ready and then answers as one that does not exist while the
+// download re-reads its version is a failure with the actionable message, not the route's 404.
+func TestExportGoneDuringTheDownload(t *testing.T) {
+	isolate(t, testAccountKey)
+	noDerivedWait(t)
+	data := []byte("the exported document")
+	etag := `"` + sha(data) + `"`
+	other := `"` + sha([]byte("another version")) + `"`
+	gets := 0
+	f := newZipFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		if r.Method == http.MethodPost {
+			writeDoc(w, http.StatusAccepted, map[string]any{"id": testExport, "state": "queued", "format": "pdf"})
+			return
+		}
+		gets++
+		switch gets {
+		case 1:
+			serveExport(w, r, data, "report.pdf", etag)
+		case 2:
+			w.Header().Set("ETag", other)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("another version"))
+		default:
+			writeErr(w, http.StatusNotFound, "not_found", "")
+		}
+	})
+	dest := filepath.Join(t.TempDir(), "out.pdf")
+	res := f.run(Export, testNode, "--format", "pdf", dest)
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "is no longer there") {
+		t.Errorf("stderr %q", res.stderr)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("destination exists: %v", err)
 	}
 }
