@@ -118,14 +118,10 @@ func (v ownerView) pairs() []output.KV {
 	}
 }
 
-func accountCreatePairs(body []byte) ([]output.KV, error) {
-	var v accountCreateView
-	if err := decodeAs(body, &v, "an account"); err != nil {
-		return nil, err
-	}
+func accountCreatePairs(v accountCreateView) []output.KV {
 	pairs := v.accountView.pairs()
 	if v.Owner == nil {
-		return pairs, nil
+		return pairs
 	}
 	pairs = append(pairs, v.Owner.pairs()...)
 	if v.Owner.Verification != nil && v.Owner.Verification.Method == "link" {
@@ -138,7 +134,7 @@ func accountCreatePairs(body []byte) ([]output.KV, error) {
 			output.KV{Key: "link_expires_at", Value: expires},
 		)
 	}
-	return pairs, nil
+	return pairs
 }
 
 // givenFlags returns the names of the given flags among the command's own, so an update sends only what it was given
@@ -157,7 +153,7 @@ func givenFlags(set *flag.FlagSet, only ...string) map[string]bool {
 	return given
 }
 
-// accountCreate is `selfcloud account create [--external-id ID] [--quota SIZE] [--owner-email EMAIL
+// AccountCreate is `selfcloud account create [--external-id ID] [--quota SIZE] [--owner-email EMAIL
 // --owner-verification email|link|none [--owner-name NAME] [--owner-locale TAG]] NAME`.
 func AccountCreate(args []string, stdout, stderr io.Writer) int {
 	c := begin("account create", false, stdout, stderr)
@@ -221,28 +217,24 @@ func AccountCreate(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	var v accountCreateView
+	if err := decodeAs(resp.Body, &v, "an account"); err != nil {
+		return c.fail(err)
+	}
 	if c.g.JSON {
-		var v accountCreateView
-		if err := decodeAs(resp.Body, &v, "an account"); err != nil {
-			return c.fail(err)
-		}
 		if err := output.JSON(c.stdout, v); err != nil {
 			return c.fail(err)
 		}
 	} else {
-		if err := printDocument(c, resp.Body, accountCreatePairs); err != nil {
+		if err := output.KeyValues(c.stdout, accountCreatePairs(v)); err != nil {
 			return c.fail(err)
 		}
 	}
 	if resp.Status == http.StatusOK {
 		_, _ = io.WriteString(stderr, "selfcloud: note: an account with this external id already exists; nothing was changed\n")
 	}
-	if !c.g.JSON {
-		var v accountCreateView
-		if err := decodeAs(resp.Body, &v, "an account"); err == nil && v.Owner != nil &&
-			v.Owner.Verification != nil && v.Owner.Verification.Method == "link" {
-			_, _ = io.WriteString(stderr, "selfcloud: note: the sign-in link is shown only now; give it to the owner\n")
-		}
+	if !c.g.JSON && v.Owner != nil && v.Owner.Verification != nil && v.Owner.Verification.Method == "link" {
+		_, _ = io.WriteString(stderr, "selfcloud: note: the sign-in link is shown only now; give it to the owner\n")
 	}
 	return exitcode.OK
 }

@@ -117,6 +117,32 @@ func TestAccountCreateOwnerEmailAndJSONOmitsToken(t *testing.T) {
 	}
 }
 
+func TestAccountCreateLinkJSONShowsURLAndNoNote(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	body := accountDoc(testAcc, "Sales")
+	body["owner"] = map[string]any{
+		"id": testUser, "email": "owner@example.com", "display_name": "Owner", "status": "pending",
+		"verification": map[string]any{
+			"method": "link", "url": "https://example.test/verify/abc", "token": "secret-token",
+			"expires_at": "2026-11-13T08:00:00Z",
+		},
+	}
+	f.on("POST", accountsRoute(), doc(http.StatusCreated, body))
+	res := f.run(AccountCreate, "--owner-email", "owner@example.com", "--owner-verification", "link",
+		"--json", "Sales")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stdout, `"url": "https://example.test/verify/abc"`) {
+		t.Fatalf("stdout %q lacks the url", res.stdout)
+	}
+	if strings.Contains(res.stdout+res.stderr, "secret-token") {
+		t.Fatalf("the token was printed: stdout %q stderr %q", res.stdout, res.stderr)
+	}
+	if strings.Contains(res.stderr, "sign-in link") {
+		t.Fatalf("stderr %q has the plain note under --json", res.stderr)
+	}
+}
+
 func TestAccountCreateRepeatNotesIt(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
