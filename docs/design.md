@@ -1185,15 +1185,15 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   that entry is visible to owners; it names the recipient only: no file, no count of what moved, and
   neither the recipient's personal folder nor the new directory.
 
-- **Groups (L4).** Account owners manage groups. Sharing with a group shares with whoever is in it at
+- **Groups.** Account owners manage groups. Sharing with a group shares with whoever is in it at
   the time, the sharer included if the sharer is a member. Membership changes are audited.
-- **Quota through My files (L6), closed by slice p1.** Per-user limits now apply to My files (section 8, Storage
+- **Quota through My files, closed by slice p1.** Per-user limits now apply to My files (section 8, Storage
   limits). The limits slice p1 leaves are these:
   - Team spaces still fill the account's quota until slice u adds limits per space.
   - The sum of the per-user limits may exceed the account's quota.
   - A contributor on a subfolder of another member's My files fills that member's limit.
   - Deleting a user with `transfer_to` may put the recipient over its limit.
-- **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
+- **Shared subtree root.** The root of a shared subtree shows its `parent_id`, which is an ID only.
   It names no ancestor, but it does tell the user that a parent exists.
 - **Login CSRF by sign-in link.** Any holder of an account key on a multi-tenant installation can make a
   sign-in link for a user of its own account and send it to someone who is signed in to another account.
@@ -2155,7 +2155,7 @@ Each slice ships with tests and leaves the server runnable.
 | fu9 | The account menu's "Signed in as" and a New menu's read-only reason are headers, not disabled items, readable in light and dark (decision 95) | Built |
 | fl1 | The first load back under its budget: the chunk groups in `web/vite.config.ts` keep React in `vendor` and the `src/csp` files out of the library chunks, and `check-dist` guards the groups (decision 99; 96 is fu10, 97 is tb1, 98 is im2b) | pending (the fu7 full-pass failure) |
 | fu10 | The people field lists the account's active people and groups when it is focused or clicked under two characters: an empty directory query, `more` on the answer, the list's count and its "more" line (decision 96) | Built |
-| lk1 | An office lock is freed by the sweep once no live editing session is on its file: the editor's browser session ended, or its WOPI session ran out. The release is audited as `node.unlock` with `reason: no_live_session`. A refused WOPI call answered 401, or refused for its node, is logged at warn once a minute per session and reason, with the reason, the node and the WOPI session, never the token (decision 106). The view-mode Save As test of a viewer is added (F6). The full suite on the second machine is pending | Built; the gate is pending |
+| lk1 | An office lock is freed by the sweep once no live editing session is on its file: the editor's browser session ended, or its WOPI session ran out. The release is audited as `node.unlock` with `reason: no_live_session`. A refused WOPI call answered 401, or refused for its node, is logged at warn once a minute per session and reason, with the reason, the node and the WOPI session, never the token (decision 106). The view-mode Save As test of a viewer is added. The full suite on the second machine is pending | Built; the gate is pending |
 | ef1 | Names, copies and sessions in the editor tab (decision 107; 102 is oe1, 106 is lk1): a rename shows in the bar and in Save As, a Save As copy's page moves to the copy, an expired editor token is renewed for the mode and node the editor has, and the other tabs read again a folder the editor changed (ids only, the signed-in user only) | Built; the live check against Collabora is the owner's |
 | nt1 | Templates and more blank kinds, the server part: `POST /api/v1/nodes/{nod}/documents` takes `odt`, `ods`, `odp`, `odg` and `txt`, or `{"template": ...}`; the built-in starter set (`internal/templates`, `builtin:*`); the account's templates folder (`GET` and `PUT /api/v1/accounts/{acc}/templates`, migration 0049); `GET /api/v1/templates?kind=` (decision 105; the web interface is nt2) | Built (server); the web part is nt2 |
 | oe1 | Office files open in their own tab, full page, with a slim bar and close (decision 102) | Built |
@@ -3178,11 +3178,11 @@ Decided on approval:
       account quota only: the folder and personal limits are checked inside the write, after the body. The write also checks
       the token again, so a revocation made while the body is arriving refuses the save
       (`TestWOPIRevocationDuringTheUploadRefusesTheSave`).
-    - **GetFile headers (F7).** GetFile sends `X-Content-Type-Options: nosniff`. When the caller sends
+    - **GetFile headers.** GetFile sends `X-Content-Type-Options: nosniff`. When the caller sends
       `X-WOPI-MaxExpectedSize`, a file larger than that value is refused with 412 before any byte is sent; the GetFile page
       lists 412 among its codes and describes this case. A value that is not a whole number of bytes answers 400, which is my
       choice, as the page gives no code for it. Test: `TestWOPIGetFileHeadersAndMaxExpectedSize`.
-    - **Names (F6).** CheckFileInfo's `UserFriendlyName` is the person's display name. Without one, it is the word `User`, in
+    - **Names.** CheckFileInfo's `UserFriendlyName` is the person's display name. Without one, it is the word `User`, in
       English, because Selfcloud has no translation of that word yet. It is never an ID or an email. `UserId` and `OwnerId` stay
       IDs: Collabora keys its editors by `UserId`, and the page does not describe it as shown to people. Test:
       `TestWOPICheckFileInfoNamesThePersonNotTheirID`.
@@ -3224,7 +3224,7 @@ Decided on approval:
       marks the user's rows, or all the account's rows, revoked, in the same write.
     - **Ended sessions.** The sweep deletes a `wopi_sessions` row once its end has passed (`DeleteEndedWOPISessions`). Refusal
       past the end comes from the token's own expiry, so no refusal is lost.
-    - **Single sign-out, and the browser session that opened the editor (F2).** An editor opened from a browser session records
+    - **Single sign-out, and the browser session that opened the editor.** An editor opened from a browser session records
       that session's hash in `wopi_sessions.browser_session`; an editor opened through a delegated token records none. Every
       WOPI call, and the write of a PutFile, checks that the browser session still exists, has not passed its end, and belongs
       to the same user. The reading: signing out that browser ends its editor (`POST /api/v1/auth/logout`); signing out another
@@ -3251,7 +3251,7 @@ Decided on approval:
       the raw query, so it matches what Collabora signs. The three combinations are all checked, and the old key is used only
       for `X-WOPI-Proof`. The window is 20 minutes old (the page's rule) and 5 minutes ahead (my limit; the page does not
       give one).
-    - **What the proof does not cover (F5).** The proof covers the access token, the URL with its query, and the timestamp. It
+    - **What the proof does not cover.** The proof covers the access token, the URL with its query, and the timestamp. It
       does not cover the method or the body. A captured request can therefore be replayed with another method or body, to the
       same URL, within 20 minutes. This is a property of the protocol as the page describes it, and the window is its only
       bound. Selfcloud adds no nonce, and the page gives none. No code change.
@@ -3318,7 +3318,7 @@ Decided on approval:
         - A file write (`UpdateNode` in its own transaction), with 0, 8, 64 and 1,000 live locks in the account: medians 0.29, 0.33, 0.30 and 0.31 ms; one run at 8 locks reached 0.73 ms and one at 1,000 locks reached 1.2 ms. The write no longer grows with the number of locks.
         - A folder check (`guardNode` on a folder with no lock in its subtree, the chain 10 deep), with 0, 8, 64 and 1,000 live locks: medians 0.12, 0.69, 4.4 ms (range 4.0 to 6.1) and 81.7 ms (range 77.5 to 81.7). The l3 round measured 2.3 ms at 64 locks; this run is slower on the same host, and the difference is noise I cannot separate.
         - Consequence: a folder operation at the cap holds the single writer for about 80 ms. The cap bounds it; a faster folder check (one walk of the folder's subtree, not one walk per lock) is a follow-up and is not built here.
-    - **The store's rule is pinned by tests, and the pins are checked by a scan (l3b, finding 6).** `webhook_guard_test.go` scans every non-test Go file under `internal/` for calls of the node-writing methods and for raw statements. The scan is case-insensitive, collapses whitespace and line breaks, and counts the insert-or-replace forms (`INSERT OR REPLACE INTO`, `REPLACE INTO`), on the four tables a write can change (`nodes`, `versions`, `folders`, `accounts`). A raw statement is pinned per function, since one file can hold writes that follow different rules (`versions.go` has a guarded delete and an unguarded prune). Each pin states its rule: `guarded` (a store guard runs inside the transaction, or the write is refused by the lock as above), `holder` (the lock's own save), `adds` (creates a node, a folder, an account or a history row, which no lock holds), `free` (counters, settings, retention pruning: no file's content, name or place), or `clears` (the account's delete, which clears its locks in the same write). `TestNodeWriteScanCountsEveryForm` plants one statement of each form and checks each count. Mutants: making the match case-sensitive (M8) and dropping `versions` from the tables (M9) each fail that test. Not built: an AST check that every function holding a write calls a guard. The per-function pin and its count do that job by hand: a new raw write changes a count and fails until a reviewer states its rule. The scan does not see SQL assembled by concatenation or from a variable, nor writes to `wopi_locks` and `wopi_sessions`, which are lock state and not node state.
+    - **The store's rule is pinned by tests, and the pins are checked by a scan (l3b, finding 6).** `webhook_guard_test.go` scans every non-test Go file under `internal/` for calls of the node-writing methods and for raw statements. The scan is case-insensitive, collapses whitespace and line breaks, and counts the insert-or-replace forms (`INSERT OR REPLACE INTO`, `REPLACE INTO`), on the four tables a write can change (`nodes`, `versions`, `folders`, `accounts`). A raw statement is pinned per function, since one file can hold writes that follow different rules (`versions.go` has a guarded delete and an unguarded prune). Each pin states its rule: `guarded` (a store guard runs inside the transaction, or the write is refused by the lock as above), `holder` (the lock's own save), `adds` (creates a node, a folder, an account or a history row, which no lock holds), `free` (counters, settings, retention pruning: no file's content, name or place), or `clears` (the account's delete, which clears its locks in the same write). `TestNodeWriteScanCountsEveryForm` plants one statement of each form and checks each count. Mutants: making the match case-sensitive and dropping `versions` from the tables each fail that test. Not built: an AST check that every function holding a write calls a guard. The per-function pin and its count do that job by hand: a new raw write changes a count and fails until a reviewer states its rule. The scan does not see SQL assembled by concatenation or from a variable, nor writes to `wopi_locks` and `wopi_sessions`, which are lock state and not node state.
     - **GET_LOCK to a view-only token (l3b, finding 7): no change.** It answers the lock's ID to a viewer. The ID is not a credential: each WOPI call also needs a token for the file and Collabora's signed proof, and a viewer's token cannot lock, refresh, unlock or save (`404`). An editor learns the same ID from its own `409`. Nothing a viewer can do with the ID is possible.
     - **`file.updated` per autosave (l3b, finding 9): no change.** Every save audits `node.write` through `replaceContent`, which reports `file.updated` (decision 27). A webhook receiver therefore sees one `file.updated` per save, and none when the lock opens or closes (`node.lock` and `node.unlock` are not on the event list). The version count is one per session; the event count is one per save. Receivers that want the session must correlate the saves themselves.
     - **Mutation checks (l3b, each restored and compared byte for byte).** M1, the metadata guard always on: store `TestMetadataOfALockedFileAndItsFolderPasses` fails (`wopi_locks_test.go:248`), API `TestMetadataPassesWhileAnEditorHoldsTheFile` fails with `409 locked` (`office_lock_rules_test.go:90`). M2, a folder's rename refused: the same store test fails (`:259`). M3, account deletion refused while a lock is live: the store and the API deletion tests fail (`:296`; the job ends `failed`). M4, user deletion does not release locks: `TestUserDeletionReleasesItsOpenFile` fails with `409 locked`. M4b, the holder clause of `ReleaseUserLocks` off: `TestUserDeletionReleasesTheLocksItLeaves` fails. M5, relock ignores the old ID: `TestWOPIUnlockAndRelock` fails. M6, the cap one too high: `TestLiveLocksAreCappedPerAccount` fails (`:414`). M7, the empty-save session check off: `TestWOPIEmptyFileSaveChecksTheSession` fails (`:68`). M8 and M9, the scan: `TestNodeWriteScanCountsEveryForm` fails. M11, the break's role lowered to viewer: `TestBreakLockAuthorisationByCallerKind` fails (the editor gets `204`). M12, the break leaves the row: `TestBreakLockEndsTheLockAndNothingElse` fails. M10 and M10b, the token and link refusals removed: no test fails, for the reason given above.
@@ -3792,8 +3792,8 @@ Decided on approval:
     - **Mutation proofs on the final tree.** Each mutation changes one line, runs the tests that must catch it, and is restored. KILLED means the tests failed under the mutation; SURVIVED would be a gap.
       Pass one (before the tests below were added) left three survivors, each a gap in the tests, not in the code: M04 (token node scope: no test confined a token to a directory), M07 (cursor caller binding: the second caller differed in kind, so the test could not tell callers of one kind apart) and M15 (query byte limit: no test sent a query over the limit). Each got a test (`TestSearchFollowsTheTokenNodeScope`, a second user in `TestSearchCursorIsBoundToItsCallerAndAccount`, `TestParseTermsRefusesALongQuery`) and the mutation was run again.
     - Pass two, the final tree, 15 of 15 KILLED:
-      - *Access.* M01: the role check in the search loop removed (KILLED). M02: the trash refusal in the reach role removed (KILLED). M03: the token's folder list removed (KILLED). M04: the token's node scope removed (KILLED). M05: the account key's reach removed (KILLED). M06: the restricted-label rule for non-managers removed (KILLED). M07: the caller removed from the cursor's additional data (KILLED). M08: the label filters removed from the fingerprint (KILLED). M09: the staged filter removed from the candidate query (`f.staged = 0` replaced by `1 = 1` in both queries) (KILLED, `TestStagedRowsNeverMatch`). M10: the folder-delete removal of full-text rows (`dropSearchFolder`) removed (KILLED, `TestDeletingAFolderOrAnAccountRemovesItsFullTextRows`).
-      - *Limits.* M11: the scan budget removed from the loop (KILLED). M12: the rate limit removed (KILLED). M13: the deadline removed (KILLED). M14: the maximum limit of 50 removed (KILLED). M15: the query byte limit removed (KILLED).
+      - *Access.* The role check in the search loop removed (KILLED). The trash refusal in the reach role removed (KILLED). The token's folder list removed (KILLED). The token's node scope removed (KILLED). The account key's reach removed (KILLED). The restricted-label rule for non-managers removed (KILLED). The caller removed from the cursor's additional data (KILLED). The label filters removed from the fingerprint (KILLED). The staged filter removed from the candidate query (`f.staged = 0` replaced by `1 = 1` in both queries) (KILLED, `TestStagedRowsNeverMatch`). The folder-delete removal of full-text rows (`dropSearchFolder`) removed (KILLED, `TestDeletingAFolderOrAnAccountRemovesItsFullTextRows`).
+      - *Limits.* The scan budget removed from the loop (KILLED). The rate limit removed (KILLED). The deadline removed (KILLED). The maximum limit of 50 removed (KILLED). The query byte limit removed (KILLED).
       - Not run: the mutation that removes the account's boundary from the candidate query. That condition is bound inside `MATCH` and the candidate arguments, so the change does not reduce to one line; the cross-account tests (`TestSearchDoesNotReadAnotherAccount`, `TestAccountKeyOfAnotherAccountFindsNothing`) are the check. Every mutation was restored after its run, and the restore was checked by grep.
     - **Deviations from the proposal.** Names only; content keys are deferred to q3. The write code is in `internal/store` rather than in a package above it, which avoids an import cycle. A `label_matches` table is omitted; label predicates read `node_labels` through the indexes that migration 0032 adds. There is no B-tree index on the name key. `search.enabled` set to `false` still indexes. Roots are excluded from the index, as they have no name. Account keys may search, which the proposal refused (review question 10, above); tokens are confined by their folder list and node scope, as the proposal approved.
 41. **Installation admin access to tenant users, slice adm1** (2026-10-31). The owner decided the three ways in and the
@@ -3855,23 +3855,23 @@ Decided on approval:
       than audited. Reading comments stays open. `TestImpersonatedInboxRefused` and `TestNotifyCallerRefusesImpersonation`
       check it.
     - *Review (2026-10-31, independent security review, F1 to F10).* Each item has its test or a mutation proof.
-      **F1:** an installation admin's key is never handed a link to a user that exists (a reset or a resend), whatever
-      `admin.tenant_access` says; it may still create a user and mail that user's link, as before. **F2:** turning
+      An installation admin's key is never handed a link to a user that exists (a reset or a resend), whatever
+      `admin.tenant_access` says; it may still create a user and mail that user's link, as before. Turning
       `admin.tenant_access` off ends a running sign-in-as on its next request; Go back still restores the admin.
-      **F3:** an admin who changes its password, signs out, has its session ended by five wrong passwords, or is disabled
-      or reset loses the sign-ins-as it began, each audited with its reason. **F4:** `POST /nodes/{nod}/access-requests` is
+      An admin who changes its password, signs out, has its session ended by five wrong passwords, or is disabled
+      or reset loses the sign-ins-as it began, each audited with its reason. `POST /nodes/{nod}/access-requests` is
       refused while impersonating. The writes that stay open are listed in `TestImpersonationAllowedWrites`. The open
       writes that send mail or leave a record in the user's name are the unsubscribe link, the anonymous forgot-password
-      route, and share open and renew (token-only). **F5:** the job payload carries the mark (zip, copy, move). **F6:** see
-      above. **F7:** a reset link from an admin's session needs the admin's own password, as a typed password does, and
-      the dialog asks for it. The email reset still needs none, as it reaches the user. **F8:** the viewer's preview link
+      route, and share open and renew (token-only). The job payload carries the mark (zip, copy, move). See
+      above. A reset link from an admin's session needs the admin's own password, as a typed password does, and
+      the dialog asks for it. The email reset still needs none, as it reaches the user. The viewer's preview link
       is a signed link; the browser step in `adminAccess.mjs` makes, reads and downloads a file while signed in as the
-      member, and the link is capped at the sign-in's end. **F9:** while the banner shows, the shell fills the window below
+      member, and the link is capped at the sign-in's end. While the banner shows, the shell fills the window below
       it and its content column scrolls inside it, so the page does not scroll (the page was 814px in a 800px window, the
       shell's content being 14px taller than the window once the banner took its 48px); `adminAccess.mjs` asserts it on the
       files list and the home page, and prints the heights. The banner text is
       4.63:1 on its background in light (`#B45309` on `#FFF6D1`) and 8.21:1 in dark (`#FECC00` on `#2A363A`), computed from
-      the palette in `web/src/theme/tokens.ts`. **F10:** go-back with a wrong Origin is refused by the route and by the
+      the palette in `web/src/theme/tokens.ts`. Go-back with a wrong Origin is refused by the route and by the
       handler (`TestGoBackWithAWrongOriginIsRefused`).
       **Not changed, for the owner:** an account key still makes a reset link to a user of its own account, as it did
       before this slice (`TestCallersOfTheAdminWaysAreRefused` pins it). The review asked for refusal; a key can already
@@ -4044,27 +4044,27 @@ Decided on approval:
 
       | # | Mutant (item) | Outcome |
       |---|---|---|
-      | M28 | unreadable candidates counted against the budget again (S1) | killed: `TestSearchPassesUnreadableMatches` |
-      | M29 | `secure_delete` pragma off (S2) | killed: `TestDeletedTextLeavesNoBytesInTheDatabaseFile` |
-      | M30 | FTS5 secure-delete not set (S2) | killed: `TestDeletedTextLeavesNoBytesInTheDatabaseFile`, `TestVacuumIntoCopyHoldsNoDeletedText` |
-      | M31 | replaced blob keeps its text (S3) | killed: `TestReplacedBlobLosesItsTextWhenNoNodeHoldsIt` |
-      | M32 | `FinishText` keeps a version-only blob (S3) | killed: `TestFinishTextDiscardsAVersionOnlyBlob` |
-      | M33 | per-account cap not checked (S3) | killed: `TestPerAccountCapStopsOnlyTheFullAccount` |
-      | M34 | account cap checked over the installation (S3) | killed: `TestPerAccountCapStopsOnlyTheFullAccount` |
-      | M35 | installation cap not checked (S3) | killed: `TestInstallationCapStopsEveryAccount` |
-      | M36 | `DropUnusedText` drops nothing (S3) | killed: `TestCappedRowsWaitForRoom`, `TestDropUnusedTextIsTheSweepsCatchAll` |
-      | M37 | `search.office_text` gate removed (S4) | killed: `TestOfficeTextOffMakesNoRequest` |
-      | M38 | trashed document sent to the converter (S4) | killed: `TestTrashedDocumentIsNotSentUntilRestored` |
-      | M39 | refusal released by the clock (S4) | killed: `TestConverterRefusalIsStickyWithAFixedReason`, `TestConverterDailyRefusalIsNotResent` |
-      | M40 | in-flight failure not counted (S4) | killed: `TestConverterFailureInFlightIsCountedThenSticky` |
-      | M41 | unreachable treated as in-flight (S4) | killed: `TestOutageIsOneProbePerPause` |
-      | M42 | true type ignored, always docx (S4) | killed: `TestDocumentKeepsItsTrueType` |
-      | M43 | bulk work takes the preview pool (S4) | killed by an assertion since round q3c: `TestBulkUsesItsOwnSlot` (`condition not reached`), not by the timeout |
-      | M44 | queue time counted against the limit (S4) | killed: `TestBulkQueueTimeIsNotCounted` |
-      | M45 | unreachable not classified (S4) | killed: `TestUnreachableConverterIsNotAnAttempt` |
+      | M28 | unreadable candidates counted against the budget again | killed: `TestSearchPassesUnreadableMatches` |
+      | M29 | `secure_delete` pragma off | killed: `TestDeletedTextLeavesNoBytesInTheDatabaseFile` |
+      | M30 | FTS5 secure-delete not set | killed: `TestDeletedTextLeavesNoBytesInTheDatabaseFile`, `TestVacuumIntoCopyHoldsNoDeletedText` |
+      | M31 | replaced blob keeps its text | killed: `TestReplacedBlobLosesItsTextWhenNoNodeHoldsIt` |
+      | M32 | `FinishText` keeps a version-only blob | killed: `TestFinishTextDiscardsAVersionOnlyBlob` |
+      | M33 | per-account cap not checked | killed: `TestPerAccountCapStopsOnlyTheFullAccount` |
+      | M34 | account cap checked over the installation | killed: `TestPerAccountCapStopsOnlyTheFullAccount` |
+      | M35 | installation cap not checked | killed: `TestInstallationCapStopsEveryAccount` |
+      | M36 | `DropUnusedText` drops nothing | killed: `TestCappedRowsWaitForRoom`, `TestDropUnusedTextIsTheSweepsCatchAll` |
+      | M37 | `search.office_text` gate removed | killed: `TestOfficeTextOffMakesNoRequest` |
+      | M38 | trashed document sent to the converter | killed: `TestTrashedDocumentIsNotSentUntilRestored` |
+      | M39 | refusal released by the clock | killed: `TestConverterRefusalIsStickyWithAFixedReason`, `TestConverterDailyRefusalIsNotResent` |
+      | M40 | in-flight failure not counted | killed: `TestConverterFailureInFlightIsCountedThenSticky` |
+      | M41 | unreachable treated as in-flight | killed: `TestOutageIsOneProbePerPause` |
+      | M42 | true type ignored, always docx | killed: `TestDocumentKeepsItsTrueType` |
+      | M43 | bulk work takes the preview pool | killed by an assertion since round q3c: `TestBulkUsesItsOwnSlot` (`condition not reached`), not by the timeout |
+      | M44 | queue time counted against the limit | killed: `TestBulkQueueTimeIsNotCounted` |
+      | M45 | unreachable not classified | killed: `TestUnreachableConverterIsNotAnAttempt` |
       | M46 | no-download rule not applied to content hits (S1, missing test) | killed: `TestContentNoDownloadHoldsForATokenCappedAtViewer`, `TestNoDownloadHitLooksLikeNoMatch` |
       | M47 | restricted label not applied to content hits (missing test) | killed: `TestContentRestrictedLabelMatchesOnlyAManager` |
-      | M48 | usage omits the skipped count (S3) | killed: `TestUsageShowsTheSkippedTextCount` |
+      | M48 | usage omits the skipped count | killed: `TestUsageShowsTheSkippedTextCount` |
       | M49 | trashed rows not excluded in SQL (S1, performance only) | survived: the reach check in Go already drops trashed rows, so the answer is the same and only the work differs. Expected, recorded here, not a gap in the answer |
 
       The mutants of the first round are listed above; this list has the review's mutants (below).
@@ -4092,7 +4092,7 @@ Decided on approval:
         - **Name search, stated (corrected in q3e).** The bypass reached the name index through a two-rune term with punctuation: `a.` became the prefix `a*` across all tenants. It is closed by the word-index token rule above. The trigram path has no prefix and no expansion, so it is not checked, and it finds `1.2` and `a-b` as they are. The round q3d statement that `a-b` would be refused on names was wrong, and is withdrawn.
         - **Checks.** `TestTokensAgreeWithFTS5`: for seventeen samples (punctuation, emoji, niqqud, a combining mark, Arabic diacritics, mixed scripts), the splitter's tokens equal the tokens of an `fts5vocab` table over a `unicode61 remove_diacritics 2` table with the same text. `TestRefusedTermsNeverReachTheIndex`, `TestAcceptedTermsMatchStrings` (the MATCH strings: `text:"x ab"`, `text:"x abc"*`, `text:"abc"*`, the folded Hebrew, combining and Arabic terms, `text:"ab"` after an emoji), `TestShortTokenDoesNotExpandInTheRealTable` (on a real table, `a..`, `a.` and `-a-` match only the word `a`, not `apple` or `abc`), `TestNameWordSearchKeepsItsPrefix`. Mutants: M67 (length on raw runes) and M68 (prefix on raw runes) are killed by the parser and the real-table tests; M70 (punctuation as token characters) is killed by the FTS5 agreement test. The agreement is checked on those samples, not over all of Unicode.
       - **Mutation proofs, round q3c** (one change each, restored after the run, the file checked byte for byte): M50 `PurgeNode` drop removed: killed by `TestPurgeDropsItsTextInTheSameWrite`. M51 cleanup last-step drop removed: survived (item 1). M52 publish drop removed: survived (item 1). M53 cleanup derived-node drop removed: killed by `TestCopyCleanupDropsTextOfAStagedOnlyBlob`. M54 passive checkpoint: killed by `TestCheckpointTakesDeletedTextOutOfTheLog`. M55 busy as error: killed by `TestCheckpointWithAReaderIsBusyNotAnError`. M56 third time-out resent after a day: killed by `TestConverterTimeoutCountsThreeTriesThenWaitsADay`. M57 rebuild keeps usage: killed by `TestSearchRebuildEmptiesTheContentRowsAndQueuesTheBackfill`. M58 attempt not counted before the send: killed by `TestCancelledConversionKeepsItsAttempt`. M59 unreachable attempt not taken back: killed by `TestUnreachableConverterCountsNoAttempt`. M60 paging on `search_texts.id`: survived (performance only, item 5). M61 two-rune term expands: killed by `TestShortContentTermDoesNotExpand`. M62 every OLE file sent as `doc`: killed by `TestOldOfficeFileIsSentAsItsOwnType`. M63 unknown OLE type not skipped: killed by `TestOldOfficeFileWhoseTypeIsUnknownIsSkipped`. M43 bulk work takes the preview pool: killed by `TestBulkUsesItsOwnSlot`. M65 an unreadable candidate ends the page: killed by `TestSearchAnswerDoesNotRevealAnUnreadableFile`.
-    - **Owner choices recorded here.** Words only in the text; substring for names (from decision 40); OCR is a later slice; the text limit of 1 MiB per file and the source limit of 50 MiB are the defaults, and both are settable. Set by this review, for the owner to change: (a) FTS5 secure-delete, about 18.7 ms per deleted file in writes, on by default; turning it off leaves deleted text in the full-text shadow segments of a `VACUUM INTO` copy (M30). (b) `search.office_text` off by default. (c) `search.max_text_per_account` 64 MiB and `search.max_text_total` 1 GiB, with no quota charge. (d) The per-account search rate at ten times the per-caller rate.
+    - **Owner choices recorded here.** Words only in the text; substring for names (from decision 40); OCR is a later slice; the text limit of 1 MiB per file and the source limit of 50 MiB are the defaults, and both are settable. Set by this review, for the owner to change: (a) FTS5 secure-delete, about 18.7 ms per deleted file in writes, on by default; turning it off leaves deleted text in the full-text shadow segments of a `VACUUM INTO` copy. (b) `search.office_text` off by default. (c) `search.max_text_per_account` 64 MiB and `search.max_text_total` 1 GiB, with no quota charge. (d) The per-account search rate at ten times the per-caller rate.
     - **Not done in this slice, stated plainly.** The reach check is not in the candidate SQL; it stays a Go check per batch, so the timing difference of S1 remains (decision 46, S1 timing residue). The live Collabora run was not repeated for this slice; the live results above are from the earlier run. `SELFCLOUD_SCALE` was not run. The first run of `TestMeasureUnreadableMatchCost` failed in 14.5 s and passed on the second run; the cause was not found. `search.workers` is not built. The measurement data in `/var/tmp/q3b-measure-*` is removed after the figures were taken.
 47. **Server-side sorting of folder listings, slice sort** (2026-10-31, built on the owner's request that the listing be a normal file manager's: a long folder sorted by size or date must show its largest file first, and the sort must not depend on the rows already loaded). Both children routes (`GET /api/v1/folders/{fld}/children`, `GET /api/v1/nodes/{nod}/children`) take `sort` (`name`, `size`, `modified`) and `order` (`asc`, `desc`). Migration 0035 adds three partial indexes, `nodes_list_name`, `nodes_list_size` and `nodes_list_modified`, on `(parent_id, kind, key, id) WHERE trashed_at IS NULL`. Built as follows, and each point is a choice the owner may want to confirm.
     - *Validation.* A value outside the fixed lists is `invalid_request`, and so is a repeated parameter. No value reaches SQL: the sort is a Go enum, and each column is a constant (`internal/store/children.go`). Neither parameter given keeps today's listing exactly: the name-key order, one page of `name_key, id`, and the plain cursor. Given either, a missing `sort` is `name` and a missing `order` is `asc`.
