@@ -15,7 +15,8 @@ describe("request access", () => {
   afterEach(() => vi.clearAllMocks());
 
   it("sends the request and gives the one confirmation, whatever the item", async () => {
-    const user = userEvent.setup();
+    // No delay between keystrokes: each one is a timer wait that a busy machine stretches, and the test proves nothing by them.
+    const user = userEvent.setup({ delay: null });
     render(<RequestAccess nodeID="nod_secret" />);
     await user.type(document.getElementById("request-message") as HTMLElement, "Need it for the review");
     await user.click(screen.getByRole("button", { name: "Ask for access" }));
@@ -24,7 +25,7 @@ describe("request access", () => {
   });
 
   it("a rate limit is said apart, in words for its code, and the server text is never shown", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     api.createAccessRequest.mockRejectedValueOnce(new ApiError(429, "rate_limited", {}, 120));
     render(<RequestAccess nodeID="nod_secret" />);
     await user.click(screen.getByRole("button", { name: "Ask for access" }));
