@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package hygiene
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -34,19 +37,62 @@ var privateWordPatterns = []*regexp.Regexp{
 // private or has been removed.
 var allowedPrivateWordHits = map[string][]string{}
 
-func TestWalkSeesRepositoryFiles(t *testing.T) {
+func TestRepositoryFilesAreListed(t *testing.T) {
 	root := moduleRoot(t)
-	files := walkFiles(t, root)
+	files := repositoryFiles(t, root)
 	for _, want := range []string{"go.mod", "docs/design.md", "web/src/main.tsx"} {
 		if _, ok := files[want]; !ok {
-			t.Errorf("walk did not see %s", want)
+			t.Errorf("repository listing did not see %s", want)
 		}
+	}
+}
+
+func TestRepositoryFilesExcludeGitIgnored(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+
+	root := t.TempDir()
+	writeFile := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create directory for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	writeFile("go.mod", "module example.test\n\ngo 1.22\n")
+	writeFile("clean.txt", "clean\n")
+	writeFile(".gitignore", "notes.local.md\n")
+	writeFile("notes.local.md", "pending.md\n")
+
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{
+			"-c", "user.name=t", "-c", "user.email=t@example.test",
+		}, args...)...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	git("init")
+	git("add", "go.mod", "clean.txt", ".gitignore")
+	git("commit", "-m", "initial")
+
+	files := repositoryFiles(t, root)
+	if _, ok := files["notes.local.md"]; ok {
+		t.Error("repository listing included the git-ignored file")
+	}
+	if _, ok := files["clean.txt"]; !ok {
+		t.Error("repository listing did not include the tracked file")
 	}
 }
 
 func TestNoPrivateReviewWords(t *testing.T) {
 	root := moduleRoot(t)
-	files := walkFiles(t, root)
+	files := repositoryFiles(t, root)
 
 	rels := make([]string, 0, len(files))
 	for rel := range files {
@@ -108,56 +154,38 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
-func walkFiles(t *testing.T, root string) map[string]string {
+func repositoryFiles(t *testing.T, root string) map[string]string {
 	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-z")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git ls-files: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+
 	files := make(map[string]string)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel == "" {
+			continue
 		}
 		rel = filepath.ToSlash(rel)
-
-		if entry.IsDir() {
-			if path == root {
-				return nil
-			}
-			if skipDir(rel, entry.Name()) {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
 		if rel == "web/package-lock.json" || rel == thisFile {
-			return nil
+			continue
 		}
-		info, err := entry.Info()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		info, err := os.Stat(path)
 		if err != nil {
-			return err
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			t.Fatalf("stat %s: %v", rel, err)
 		}
-		if info.Size() > maxScanSize {
-			return nil
+		if !info.Mode().IsRegular() || info.Size() > maxScanSize {
+			continue
 		}
 		files[rel] = path
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", root, err)
 	}
 	return files
-}
-
-func skipDir(rel, name string) bool {
-	switch name {
-	case ".git", "node_modules", "bin", ".claude":
-		return true
-	}
-	return rel == "web/dist"
 }
 
 func allowedPrivateHit(rel, line string) bool {
