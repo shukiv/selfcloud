@@ -526,6 +526,31 @@ func TestWebhookRotateSecretAsksFirstAndShowsTheNewSecretOnce(t *testing.T) {
 	}
 }
 
+// TestWebhookRotateSecretNoteTakesOnlyATime: the end of the old secret's period is the server's text, written to a
+// terminal, so the note prints it only when it is a time, and never prints a control or format character.
+func TestWebhookRotateSecretNoteTakesOnlyATime(t *testing.T) {
+	isolate(t, testAccountKey)
+	for _, until := range []string{"2026-11-03T10:00:00Z\x1b]0;owned\x07", "‮2026-11-03T10:00:00Z", "soon"} {
+		f := newFake(t)
+		f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(map[string]any{
+			"secret": testSecret, "previous_secret_until": until})))
+		res := f.runAcc(WebhookRotateSecret, testHook, "--yes")
+		wantCode(t, res, 0)
+		if strings.Contains(res.stderr, "old secret") || strings.ContainsAny(res.stderr, "\x1b\x07‮") {
+			t.Fatalf("until %q: stderr %q", until, res.stderr)
+		}
+	}
+	// A time with an offset is a time: the note prints it.
+	f := newFake(t)
+	f.on("POST", accHook(testHook)+"/secret", doc(200, hookDoc(map[string]any{
+		"secret": testSecret, "previous_secret_until": "2026-11-03T12:00:00+02:00"})))
+	res := f.runAcc(WebhookRotateSecret, testHook, "--yes")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stderr, "the old secret keeps signing until 2026-11-03T12:00:00+02:00;") {
+		t.Fatalf("stderr %q", res.stderr)
+	}
+}
+
 // TestWebhookTestQueuesAnEvent.
 func TestWebhookTestQueuesAnEvent(t *testing.T) {
 	isolate(t, testAccountKey)

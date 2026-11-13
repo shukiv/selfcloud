@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -520,9 +521,12 @@ func WebhookRotateSecret(args []string, stdout, stderr io.Writer) int {
 	}
 	// The secret it replaces goes on signing for a while, so a receiver can switch without a gap. The server keeps only
 	// one old secret, so a second rotation ends that period at once.
+	// The end is the server's text on a terminal, so it is printed only as the time it parses to.
 	if !c.g.JSON && v.PreviousSecretUntil != nil {
-		_, _ = io.WriteString(c.stderr, "selfcloud: note: the old secret keeps signing until "+*v.PreviousSecretUntil+
-			"; a second rotation ends that at once\n")
+		if until, err := time.Parse(time.RFC3339, *v.PreviousSecretUntil); err == nil {
+			_, _ = io.WriteString(c.stderr, "selfcloud: note: the old secret keeps signing until "+until.Format(time.RFC3339)+
+				"; a second rotation ends that at once\n")
+		}
 	}
 	return exitcode.OK
 }
