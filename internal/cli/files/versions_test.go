@@ -375,7 +375,11 @@ func TestVersionLabel(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFake(t)
-			f.on("PATCH", versionItemPath(n, ver), ok(versionLabelDoc(ver)))
+			doc := versionLabelDoc(ver)
+			for k, v := range c.body {
+				doc[k] = v
+			}
+			f.on("PATCH", versionItemPath(n, ver), ok(doc))
 			res := f.run(VersionLabel, append([]string{n, ver}, c.args...)...)
 			wantCode(t, res, 0)
 			f.wantCalls("PATCH " + versionItemPath(n, ver))
