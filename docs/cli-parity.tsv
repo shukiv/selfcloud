@@ -60,7 +60,7 @@ fn	lib/files/api.ts:createDocument	doc new	cli11g	built in cli11g
 fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
 fn	lib/files/api.ts:createZipJob	zip create	cli12	built in cli12
 fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
-fn	lib/files/api.ts:deleteVersion	-	cli11	planned, cli11
+fn	lib/files/api.ts:deleteVersion	version rm	cli11b	built in cli11b
 fn	lib/files/api.ts:emptyTrashStep	trash empty	cli5	built in cli5
 fn	lib/files/api.ts:getJob	job show	cli10	built in cli10
 fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
@@ -68,7 +68,7 @@ fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:inlineRange	-	-	the browser viewer's range read of a file: the text preview and the subtitles
 fn	lib/files/api.ts:listSubtitles	-	-	playback subtitles: a player feature
 fn	lib/files/api.ts:listTrash	trash ls	cli5	built in cli5
-fn	lib/files/api.ts:listVersions	-	cli11	planned, cli11
+fn	lib/files/api.ts:listVersions	version ls	cli11b	built in cli11b
 fn	lib/files/api.ts:mkdir	mkdir	cli5	built in cli5
 fn	lib/files/api.ts:mkdirIn	mkdir	cli5	built in cli5
 fn	lib/files/api.ts:moveNode	mv	cli5	built in cli5
@@ -79,12 +79,12 @@ fn	lib/files/api.ts:refreshNode	stat	cli5	built in cli5
 fn	lib/files/api.ts:renameNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	trash restore	cli5	built in cli5
-fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
+fn	lib/files/api.ts:restoreVersion	version restore	cli11b	built in cli11b
 fn	lib/files/api.ts:signedLink	link create	cli7	built in cli7
 fn	lib/files/api.ts:statNode	stat	cli5	built in cli5
 fn	lib/files/api.ts:unlockNode	unlock	cli5	built in cli5
 fn	lib/files/api.ts:updateAppearance	-	-	colours and icons are display only: no CLI
-fn	lib/files/api.ts:updateVersion	-	cli11	planned, cli11
+fn	lib/files/api.ts:updateVersion	version label	cli11b	built in cli11b
 fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer
 fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
 fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview uses; its request is GET /api/v1/nodes/{nod}/preview, browser only
@@ -229,7 +229,7 @@ route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	label clear	cli11f	built in cli11f
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
 route	DELETE /api/v1/nodes/{nod}/star	unstar	cli11a	built in cli11a
-route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
+route	DELETE /api/v1/nodes/{nod}/versions/{ver}	version rm	cli11b	built in cli11b
 route	DELETE /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	DELETE /api/v1/recent	-	-	browser session only: the server refuses every token on this route
@@ -297,8 +297,8 @@ route	GET /api/v1/nodes/{nod}/share-links	link ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/subtitles	-	-	playback subtitles: a player feature
 route	GET /api/v1/nodes/{nod}/tags	tag ls	cli11e	built in cli11e
 route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/versions	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/versions/{ver}/content	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/versions	version ls,version get	cli11b	built in cli11b
+route	GET /api/v1/nodes/{nod}/versions/{ver}/content	version get	cli11b	built in cli11b
 route	GET /api/v1/nodes/{nod}/viewers	-	-	live presence of other viewers: a browser feature
 route	GET /api/v1/notifications	-	-	browser session only: the server refuses every token on this route
 route	GET /api/v1/notifications/settings	-	-	browser session only: the server refuses every token on this route
@@ -343,7 +343,7 @@ route	PATCH /api/v1/comments/{cmt}	-	-	browser session only: the server refuses 
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
 route	PATCH /api/v1/nodes/{nod}	mv,share no-download,share editors-can-share	cli5	built in cli5 and cli7b
-route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
+route	PATCH /api/v1/nodes/{nod}/versions/{ver}	version label	cli11b	built in cli11b
 route	PATCH /api/v1/notifications/settings	-	-	browser session only: the server refuses every token on this route
 route	PATCH /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PATCH /api/v1/settings	settings set,settings reset	se4	built in se4
@@ -406,7 +406,7 @@ route	POST /api/v1/nodes/{nod}/share-links	link create	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/shortcuts	shortcut add	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/transfer-ownership	share transfer-ownership	cli7	built in cli7
 route	POST /api/v1/nodes/{nod}/unlock	unlock	cli5	built in cli5
-route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	version restore	cli11b	built in cli11b
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	POST /api/v1/notifications/{ntf}/read	-	-	browser session only: the server refuses every token on this route
 route	POST /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)

@@ -1293,6 +1293,53 @@ selfcloud template folder set --clear
 The thumbnail of a built-in template is only a picture in the web interface; `template ls` lists the templates, and the
 picture is not a command.
 
+## Versions
+
+A file keeps the contents it has lost as versions. The API lists the current content as `current` and the older ones,
+newest replaced first. A version is named by its id, `ver_` and 26 characters; `version ls` prints it. `current` is not a
+version: the current content is read with `get`. These commands use the credential of the profile, `--token-file` or
+`SELFCLOUD_TOKEN`; both a device token and an account key reach them.
+
+| Command | What it does |
+|---|---|
+| `version ls NODE [--json]` | a file's versions, the current content first |
+| `version get NODE VER [DEST] [transfer flags]` | downloads one version, with `get`'s resumable transfer |
+| `version label NODE VER [--label TEXT] [--keep\|--no-keep]` | sets or removes a version's label, and whether the file keeps it for good |
+| `version restore NODE VER` | makes a version the file's current content; the content it replaces becomes a version |
+| `version rm NODE VER [--yes]` | removes one version from the server (asks first) |
+
+`version ls` prints `ID`, `SIZE`, `CREATED`, `REPLACED`, `LABEL` and `KEEP`. `REPLACED` is empty for the current content,
+`LABEL` is empty when the version has none, and `KEEP` is `yes` when the server keeps the version past the file's
+version limit. `--json` prints the API's items as it wrote them.
+
+`version get` takes `get`'s transfer flags (`--piece-size`, `--stall-timeout` and the rest) and `--overwrite`, and
+follows `get`'s rules for the destination, the `.part` file and its record, the resume with `If-Range`, and the SHA-256
+check. With no `DEST` the name is the file's current name, written in the working directory or the directory named. A
+version that the list does not hold is exit 4, and nothing is downloaded.
+
+`version label` sends only what was given. `--label ""` removes the label; a label is at most 100 characters, counted as
+characters rather than bytes. No `--label`, `--keep` or `--no-keep` is a usage error, and so are `--keep` and `--no-keep`
+together. The command prints the version as key=value lines, or the API's document under `--json`.
+
+`version restore` does not ask, since the content it replaces is kept as a version. The command reads the file's current
+ETag and sends it with the request, so a file that changed since it was read is refused with the server's message (exit
+3) instead of losing a change. A locked file and a full quota are refused the same way.
+
+`version rm` asks first, by the version's id. Without a terminal it refuses (exit 2) unless `--yes` is given, and sends
+nothing. It prints `deleted=VER`, or `{"deleted": "VER"}` under `--json`.
+
+Exit codes follow the errors: 2 for a usage or confirmation refusal, 3 when the server refuses (too many kept versions,
+a changed or locked file, no permission to download), and 4 for a file or version that is not there.
+
+```
+selfcloud version ls nod_…
+selfcloud version get nod_… ver_… --overwrite
+selfcloud version label nod_… ver_… --label before-edit --keep
+selfcloud version label nod_… ver_… --label ""
+selfcloud version restore nod_… ver_…
+selfcloud version rm nod_… ver_… --yes
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
