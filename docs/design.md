@@ -1062,7 +1062,7 @@ reveals. A move that stays in its folder with no higher role, and a move of an i
 subtree, are unaffected. A purge removes the values with the node.
 
 **What a label change does not do.** It does not write the node's own row, so the modification time and the ETag do
-not change. It is not a webhook event (design-j-proposal section 10), and each of its audit actions is classified in
+not change. It is not a webhook event, and each of its audit actions is classified in
 `webhookAuditNoEvent`. Nor is it an edit in Recent, a rename or a move.
 
 **Measured.** `BenchmarkCopyLabelValues` (`internal/store/labels_bench_test.go`) times the one statement that copies
@@ -1099,14 +1099,14 @@ of each phase, with three runs per size (`MEASURE` lines, `internal/api/copy_mea
 The machine's load varied between the runs (load average 4.5 to 16), and the spread is large at 100,000, so three runs are
 the least a rule can rest on, not a precise figure. The publish is the longest write at every size; the batches stay
 between 0.3 s and 1.3 s, under the 5 s rule, though above the 400 ms the batch sizer aims at (a batch holds the writer
-for its whole write, and the sizer reacts after the fact). Before the review fixes the same measurement gave 2.39 s,
+for its whole write, and the sizer reacts after the fact). Before the fixes the same measurement gave 2.39 s,
 2.84 s and 3.01 s at 50,000 (worst 3.01 s) and 3.22 s, 4.96 s and 6.54 s at 100,000 (worst 6.54 s). The load was not the
 same in the two matrices, and the cause of the difference was not isolated; the 100,000 worst case is over 5 s in both.
 
 The rule (the largest measured size whose worst longest write is at most 5 s) gives 50,000 as the default. The bare move
 above is 1.3 to 3.4 s (median) at 100,000, so the checks and reads around the move account for part of the 4 to 8 s of
 the real publish; the reads before the move were measured at about 0.4 s in one run, and the snapshot check added in
-the review fixes (`CopySnapshotChanged`, one join over the snapshot rows) was not timed on its own.
+the fixes (`CopySnapshotChanged`, one join over the snapshot rows) was not timed on its own.
 
 **Measured for the default of 20,000 before chunking (`BenchmarkCopyHold`, `internal/store/copy_hold_bench_test.go`). The default is now 50,000 (decision 34).**
 The benchmark times one `store.Write` that does what `copyTree` does: it reads the subtree, inserts every node, and,
@@ -1252,7 +1252,7 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   written is lost in a crash. The gate's keys are in memory and reset on a restart, which only lets a view through
   again. Stars and recent rows of items the user can no longer reach stay in the database and in backups, and their
   names are not listed. Migration 0018 adds two tables and rewrites no rows.
-- **Stars and recent, review round (p2).** Creating a signed link counts as a view of the file, by design: web previews
+- **Stars and recent, review (p2).** Creating a signed link counts as a view of the file, by design: web previews
   and downloads go through signed links, and a link is how the interface opens a file. Recent's 500-per-user cap applies
   when the sweep runs, so the table may hold more than 500 for a user between sweeps. The prune is one full-table window
   query (`ROW_NUMBER() OVER (PARTITION BY user_id ...)`) inside the sweep transaction; it reads every recent row once per
@@ -2102,7 +2102,7 @@ Each slice ships with tests and leaves the server runnable.
 | j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. The worker that sends them is j3 (decision 28) | Built |
 | j3 | Webhook worker: claim, lease, per-endpoint order, signing, delivery, backoff and the give-up, the disable paths, the 100,000 pending cap, the sweep, the metrics, the delivery log, retry and test routes; the SSRF dialer and `webhooks.allow_networks`, moved here from j4 (decision 28) | Built |
 | j4 | Quota warnings (`quota.warning`, `quota.exceeded`, once per crossing), the level setting and its route, the rewrap of secrets (`selfcloud admin rewrap-secrets`), the sweep of stale quota marks, the openapi for them (decision 30) | Built |
-| j | Webhooks: the slice review of j1 to j4 (`review-j3.md`, `review-j4.md`). Its j4 fixes are in decision 30; its j3 fixes are the ones the code cites as "review finding", not re-verified in this round | Built |
+| j | Webhooks: the slice review of j1 to j4 (`review-j3.md`, `review-j4.md`). Its j4 fixes are in decision 30; its j3 fixes are the ones the code cites as "review finding", not re-verified in this review | Built |
 | t | Changes feed, file picker, WebDAV (the installable web app is now slices pwa1 and pwa2) | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
