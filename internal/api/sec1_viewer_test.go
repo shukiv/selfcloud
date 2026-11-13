@@ -96,7 +96,7 @@ func TestViewerOpensANoDownloadPDFInlineWithContentURL(t *testing.T) {
 	}
 }
 
-// sec1 item 11, review F8 (decision 84): the main-origin refusal of an inline link to a no-download file applies to every
+// sec1 (decision 84): the main-origin refusal of an inline link to a no-download file applies to every
 // caller. An unrestricted caller's inline link, minted with content_url set, points at the content host, so it is not
 // refused and still opens inline there. The account key stands for the owner, who mints the same way.
 func TestUnrestrictedInlineLinkWithContentURLStillOpens(t *testing.T) {

@@ -380,7 +380,7 @@ func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error 
 	if err != nil {
 		return err
 	}
-	// The old content stops being current here, so its text goes unless another node holds it (review S3). A version of it
+	// The old content stops being current here, so its text goes unless another node holds it. A version of it
 	// keeps the blob, not the text. A restore of it brings the text back through the queue below.
 	if oldBlob.Valid && oldBlob.String != n.BlobID {
 		if err := tx.dropTextIfUnused(ctx, n.AccountID, oldBlob.String); err != nil {

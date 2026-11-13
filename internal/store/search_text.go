@@ -42,7 +42,7 @@ func (tx *Tx) queueText(ctx context.Context, accountID, blobID string) error {
 // dropText removes the content row of blobID and its full-text row. The full-text row goes first: the store's own delete
 // does not reach it, and a cascade from blobs removes the row without it. It is called only for a blob that is going.
 func (tx *Tx) dropText(ctx context.Context, accountID, blobID string) error {
-	// The account's stored bytes go down by the ready row's bytes, in the same write (review S3).
+	// The account's stored bytes go down by the ready row's bytes, in the same write.
 	if _, err := tx.q.ExecContext(ctx, `UPDATE search_text_usage SET bytes = bytes - (
 		SELECT st.bytes FROM search_texts st WHERE st.account_id = ? AND st.blob_id = ? AND st.state = 'ready')
 		WHERE account_id = ? AND EXISTS (SELECT 1 FROM search_texts st WHERE st.account_id = ? AND st.blob_id = ? AND st.state = 'ready')`,
@@ -227,7 +227,7 @@ func (s *Store) FinishText(ctx context.Context, r TextResult) error {
 		if state != TextPending && state != TextFailed {
 			return nil // another write has finished this row
 		}
-		// A node must hold the blob now. A version alone does not keep text (review S3): its blob's text is not wanted.
+		// A node must hold the blob now. A version alone does not keep text: its blob's text is not wanted.
 		var used int
 		err = tx.q.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE account_id = ? AND blob_id = ? LIMIT 1`,
 			r.AccountID, r.BlobID).Scan(&used)
@@ -242,7 +242,7 @@ func (s *Store) FinishText(ctx context.Context, r TextResult) error {
 			return err
 		}
 		if r.State == TextReady {
-			// The caps are read in this write, so two workers cannot both take the last of the room (review S3).
+			// The caps are read in this write, so two workers cannot both take the last of the room.
 			ok, reason, err := textRoomOn(ctx, tx.q, r.AccountID, r.Bytes, r.CapAccount, r.CapTotal)
 			if err != nil {
 				return err

@@ -146,7 +146,7 @@ func saveAsPrincipal(p *auth.Principal) *auth.Principal {
 // 87), so a lifted cap never reaches it.
 func copyPrincipal(p *auth.Principal) *auth.Principal {
 	// A token minted by a delegated key is never lifted, whatever the write refuses earlier: returned as it is, its node
-	// scope still refuses the copy (decision 87, the defence in depth of the review).
+	// scope still refuses the copy (decision 87).
 	if p.Token == nil || delegatedOrigin(p.Token) {
 		return p
 	}
@@ -346,7 +346,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 	}
 	// The quota is checked on the whole new size, with replaces 0: an overwrite is refused while the file is locked, so the
 	// transaction charges all of the new bytes (replaceContent) and keeps the old content as a version. A pre-check that
-	// subtracted the old size would pass a write the transaction refuses (decision 87, L1).
+	// subtracted the old size would pass a write the transaction refuses (decision 87).
 	c, err := s.writeBlob(w, r, acc, limit, 0)
 	if err != nil {
 		s.wopiFail(w, r, err)
@@ -358,7 +358,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 	sid := id.New("wps")
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		// Everything is decided again on the state this write sees (decision 87, L2): the token, the source (gone or
+		// Everything is decided again on the state this write sees (decision 87): the token, the source (gone or
 		// trashed is 404, and the copy's directory is the source's parent as read now), the rule, and the target.
 		p, pl, err := s.authenticateWOPI(ctx, tx, g.token, s.store.Clock())
 		if err != nil {
@@ -376,7 +376,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 			return errSaveAsNotAuthorized
 		}
 		// The name comes from the source as this write reads it, not from the name it had before the body arrived, so a
-		// source renamed during the upload gives a copy named from its new name (the nit).
+		// source renamed during the upload gives a copy named from its new name .
 		inWrite, inWriteSuggested, err := saveAsNames(src.node.Name, rel, sug)
 		if err != nil {
 			return err
@@ -434,7 +434,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 			expires = time.UnixMilli(pl.ExpiresAt)
 		}
 		// The copy's token may write when the caller may edit the copy itself, as an open of an editable file would. The role
-		// is read on the copy's own node (the new file, or the file it replaced), never the directory's (decision 87, L4).
+		// is read on the copy's own node (the new file, or the file it replaced), never the directory's (decision 87).
 		_, cr, err := nodeAccessWith(ctx, tx, copyPrincipal(p), out.ID)
 		if err != nil {
 			return err

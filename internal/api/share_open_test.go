@@ -720,7 +720,7 @@ func (fx *anyoneFixture) tryFrom(t *testing.T, addr, secret, password string) *h
 	return rec
 }
 
-// M4: a switch to anyone keeps no end past the anyone cap.
+// A switch to anyone keeps no end past the anyone cap.
 func TestSwitchToAnyoneCapsAnEarlierEnd(t *testing.T) {
 	t.Parallel()
 	fx := newLinkFixture(t)
@@ -747,7 +747,7 @@ func TestSwitchToAnyoneCapsAnEarlierEnd(t *testing.T) {
 	}
 }
 
-// L1: a link under a trashed ancestor is dead before its password is checked.
+// A link under a trashed ancestor is dead before its password is checked.
 func TestTrashedAncestorRefusesAnyoneLinkBeforeThePassword(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -760,7 +760,7 @@ func TestTrashedAncestorRefusesAnyoneLinkBeforeThePassword(t *testing.T) {
 	deadVisitor(t, rec)
 }
 
-// M1, L5: one password check per link at a time. With the budget spent, each attempt waits two seconds, so two
+// One password check per link at a time. With the budget spent, each attempt waits two seconds, so two
 // concurrent wrong guesses take two waits in turn, not one.
 func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 	t.Parallel()
@@ -792,7 +792,7 @@ func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 	}
 }
 
-// M1, L5: an address is the /64 of an IPv6 client, so one address cannot shed its lock by changing its low bits.
+// An address is the /64 of an IPv6 client, so one address cannot shed its lock by changing its low bits.
 func TestLockoutCountsAnIPv6PrefixOnce(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -806,7 +806,7 @@ func TestLockoutCountsAnIPv6PrefixOnce(t *testing.T) {
 	wantError(t, rec, 429, apierr.RateLimited)
 }
 
-// M2: the in-memory guard keeps at most passwordLinkBudget timestamps per link, and at most 100000 keys in each
+// The in-memory guard keeps at most passwordLinkBudget timestamps per link, and at most 100000 keys in each
 // per-address map. A full map takes no new key: the address is not recorded, and nothing else is refused.
 func TestGuardKeepsItsMapsBounded(t *testing.T) {
 	t.Parallel()
@@ -870,7 +870,7 @@ func TestGuardSweepsAFullMapAtMostOnceASecond(t *testing.T) {
 	}
 }
 
-// M3: an anyone link writes one link.open entry per throttle gap, not one per open.
+// An anyone link writes one link.open entry per throttle gap, not one per open.
 func TestAnyoneOpenAuditsOncePerGap(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -889,7 +889,7 @@ func TestAnyoneOpenAuditsOncePerGap(t *testing.T) {
 	}
 }
 
-// L4: the signed-link budget of a visitor is its own, not the link's.
+// The signed-link budget of a visitor is its own, not the link's.
 func TestVisitorsHaveTheirOwnSignedLinkBudget(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -913,7 +913,7 @@ func TestVisitorsHaveTheirOwnSignedLinkBudget(t *testing.T) {
 	wantStatus(t, makeFrom("198.51.100.2:4000"), http.StatusCreated)
 }
 
-// L2: a visitor is not told the folder or the editors-can-share flag.
+// A visitor is not told the folder or the editors-can-share flag.
 func TestVisitorSeesNoFolderOrEditorFlag(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -933,7 +933,7 @@ func TestVisitorSeesNoFolderOrEditorFlag(t *testing.T) {
 	}
 }
 
-// L6: a visitor's role is viewer whatever the link's row says.
+// A visitor's role is viewer whatever the link's row says.
 func TestAuthenticateShareClampsTheRoleToViewer(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -949,7 +949,7 @@ func TestAuthenticateShareClampsTheRoleToViewer(t *testing.T) {
 	}
 }
 
-// L6: a visitor is never the account key in a share, transfer or listing; the principal is built here directly.
+// A visitor is never the account key in a share, transfer or listing; the principal is built here directly.
 func TestTransferRefusesAVisitorWhateverRoleItHolds(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
@@ -974,7 +974,7 @@ func TestSeesFullChainIsNotAVisitor(t *testing.T) {
 	}
 }
 
-// L6: the folder list of a visitor is its own, never every folder of the account as manager.
+// The folder list of a visitor is its own, never every folder of the account as manager.
 func TestVisitorIsNotListedEveryFolder(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)

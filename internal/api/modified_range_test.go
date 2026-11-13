@@ -109,7 +109,7 @@ var boundaryCases = []boundaryCase{
 }
 
 // TestModifiedRangeIsHalfOpenOnEveryList: on each file list and on both Largest routes, a file modified at exactly
-// modified_after is listed and a file modified at exactly modified_before is not (review L4 of ff1a, decision 110).
+// modified_after is listed and a file modified at exactly modified_before is not (decision 110).
 func TestModifiedRangeIsHalfOpenOnEveryList(t *testing.T) {
 	q := "modified_after=" + strconv.FormatInt(boundaryAfter, 10) + "&modified_before=" + strconv.FormatInt(boundaryBefore, 10)
 	for _, c := range boundaryCases {

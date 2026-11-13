@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Residue of deleted text (review S2). A deleted file's words must not be in the database file, or in a copy made with
+// Residue of deleted text. A deleted file's words must not be in the database file, or in a copy made with
 // VACUUM INTO, once the write-ahead log is checkpointed. Each test has a control: the same marker held by a live file is
 // found in the file, so a scan that finds nothing is known to be able to find something.
 

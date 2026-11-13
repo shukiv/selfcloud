@@ -273,7 +273,7 @@ func TestResetWorksWhileTheCapIsSpentAndSetsADeviceCookie(t *testing.T) {
 	wantStatus(t, loginWith(t, s, "10.11.0.3:4000", "ann@example.com", newPassword, dev), 200)
 }
 
-// cookieAcrossEvent is the check for review F9 (decision 84). A device cookie made before an event (a password change or
+// cookieAcrossEvent is the check for decision 84. A device cookie made before an event (a password change or
 // reset, an admin's set-password, or a disable) stops working after it: with the email's cap spent, the old cookie is
 // refused, while a cookie made after the event is trusted. The event is run by the caller; newPassword is the password
 // the user has after it.
@@ -288,7 +288,7 @@ func cookieAcrossEvent(t *testing.T, s *Server, tag int, email, newPassword stri
 	wantStatus(t, loginWith(t, s, fmt.Sprintf("10.%d.3.1:4000", tag), email, newPassword, fresh), 200)
 }
 
-// sec1 item 1, review F9 (decision 84): a password change ends the device cookies made before it.
+// sec1 (decision 84): a password change ends the device cookies made before it.
 func TestDeviceCookieEndsWithAPasswordChange(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -302,7 +302,7 @@ func TestDeviceCookieEndsWithAPasswordChange(t *testing.T) {
 	cookieAcrossEvent(t, s, 50, "ann@example.com", newPassword, dev)
 }
 
-// sec1 item 1, review F9 (decision 84): a reset ends the device cookies made before it.
+// sec1 (decision 84): a reset ends the device cookies made before it.
 func TestDeviceCookieEndsWithAReset(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
@@ -323,7 +323,7 @@ func TestDeviceCookieEndsWithAReset(t *testing.T) {
 	cookieAcrossEvent(t, s, 51, "ann@example.com", newPassword, dev)
 }
 
-// sec1 item 1, review F9 (decision 84): an admin's set-password (the typed password) ends the device cookies made before it.
+// sec1 (decision 84): an admin's set-password (the typed password) ends the device cookies made before it.
 func TestDeviceCookieEndsWithAnAdminsTypedPassword(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
@@ -335,7 +335,7 @@ func TestDeviceCookieEndsWithAnAdminsTypedPassword(t *testing.T) {
 	cookieAcrossEvent(t, fx.s, 52, "member@example.com", newPassword, dev)
 }
 
-// sec1 item 1, review F9 (decision 84): a disable ends the device cookies made before it, and they stay dead when the user
+// sec1 (decision 84): a disable ends the device cookies made before it, and they stay dead when the user
 // is enabled again.
 func TestDeviceCookieEndsWithADisable(t *testing.T) {
 	t.Parallel()
@@ -350,7 +350,7 @@ func TestDeviceCookieEndsWithADisable(t *testing.T) {
 	cookieAcrossEvent(t, s, 53, "ann@example.com", testPassword, dev)
 }
 
-// sec1 item 1, review F9 (decision 84): a password change that commits after a sign-in's transaction, and before its
+// sec1 (decision 84): a password change that commits after a sign-in's transaction, and before its
 // device cookie is written, voids that cookie. The sign-in's cookie is stamped with the time its transaction made the
 // session, so the change's cut-off is later, and the cookie is refused on the next sign-in with the cap spent. The
 // change is made by the hook that runs after the commit (afterLoginCommit), a few milliseconds before the cookie is

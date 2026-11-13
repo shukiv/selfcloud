@@ -23,7 +23,7 @@ import (
 // milliseconds), where the MAC is HMAC-SHA256 under a key derived from the links signing key with its own label. It is
 // not stored: a cookie is trusted only while its MAC, its expiry and its user check out, and only if it was issued after
 // the user's cut-off (store.UserTokensNotBefore). A password change or reset, an admin's set-password and a disable move
-// the cut-off, so a cookie from before any of them stops working (sec1, decision 84, review F9). Its own failure budget
+// the cut-off, so a cookie from before any of them stops working (sec1, decision 84). Its own failure budget
 // (login.device) stops a stolen cookie from guessing without limit.
 const deviceCookieLabel = "selfcloud device cookie v1"
 
@@ -48,7 +48,7 @@ func (s *Server) deviceMAC(userID, nonce string, issuedMS, expiry int64) (string
 
 // setDeviceCookie sets a new device cookie for userID, with a fresh nonce, and the configured lifetime. issuedAt is the
 // time the caller's transaction made the sign-in (or the reset), taken by the caller and not read from the clock here:
-// a cut-off committed after that transaction is later, and voids the cookie (sec1, decision 84, review F9).
+// a cut-off committed after that transaction is later, and voids the cookie (sec1, decision 84).
 func (s *Server) setDeviceCookie(w http.ResponseWriter, userID string, issuedAt time.Time) error {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
@@ -104,7 +104,7 @@ func (s *Server) trustedDevice(r *http.Request, candidates []*store.User) (strin
 			continue
 		}
 		// A cookie issued at or before the user's cut-off is void: the password was changed or reset, the user was
-		// disabled, or an admin set the password, at or after the cookie was made (sec1, decision 84, review F9). The cut-off
+		// disabled, or an admin set the password, at or after the cookie was made (sec1, decision 84). The cut-off
 		// is in milliseconds, as the cookie's issue time is, so a cookie in the same millisecond is void too.
 		cut, err := s.store.UserTokensNotBefore(r.Context(), u.AccountID, u.ID)
 		if err != nil || (!cut.IsZero() && issued <= cut.UnixMilli()) {

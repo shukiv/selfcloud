@@ -18,7 +18,7 @@ func deviceImportBody(t *testing.T, fx *importFixture) map[string]any {
 }
 
 // A device token starts no import, and resumes none: an import job runs with its stored actor and does not re-check the
-// token that started it, so a device's import would keep writing after the device is revoked (review re-check 1). The
+// token that started it, so a device's import would keep writing after the device is revoked. The
 // refusal is the device refusal, before the handler runs.
 func TestDeviceTokenRefusedStartingAnImport(t *testing.T) {
 	t.Parallel()
@@ -38,7 +38,7 @@ func TestDelegatedTokenStillStartsAnImport(t *testing.T) {
 }
 
 // A device token cancels no import. The usual sequence is a pause, then a cancel: once the paused job has ended, no
-// import job is unfinished, so a cancel would queue a cleanup job under the stored actor (review re-check 2). The
+// import job is unfinished, so a cancel would queue a cleanup job under the stored actor. The
 // refusal is the device refusal, the import stays paused, and no job is queued.
 func TestDeviceTokenRefusedCancellingAnImport(t *testing.T) {
 	t.Parallel()

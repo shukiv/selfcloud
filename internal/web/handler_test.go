@@ -340,7 +340,7 @@ func TestNoReportHeaderOnAnyBuild(t *testing.T) {
 	}
 }
 
-// TestClientRoutesGetAFreshNoncedPage (M1): a client-route fallback is the page too, so it carries
+// TestClientRoutesGetAFreshNoncedPage: a client-route fallback is the page too, so it carries
 // its own nonce, the placeholder is never sent, it is not cached, and the nonce policy is enforced.
 func TestClientRoutesGetAFreshNoncedPage(t *testing.T) {
 	h := newTestHandler(t, nonceFiles(), Options{})
@@ -365,7 +365,7 @@ func TestClientRoutesGetAFreshNoncedPage(t *testing.T) {
 	}
 }
 
-// TestNonceIsTwentyFourBase64Characters (L1): a nonce is 16 random bytes, base64-encoded: exactly 24
+// TestNonceIsTwentyFourBase64Characters: a nonce is 16 random bytes, base64-encoded: exactly 24
 // characters that decode back to 16 bytes.
 func TestNonceIsTwentyFourBase64Characters(t *testing.T) {
 	h := newTestHandler(t, nonceFiles(), Options{})
@@ -376,7 +376,7 @@ func TestNonceIsTwentyFourBase64Characters(t *testing.T) {
 	}
 }
 
-// TestNonceSourceFailureIsAServerError (L1): when the random source fails, the page is not sent with
+// TestNonceSourceFailureIsAServerError: when the random source fails, the page is not sent with
 // no nonce or a repeated one; the answer is a 500 and no page body.
 func TestNonceSourceFailureIsAServerError(t *testing.T) {
 	old := nonceReader
@@ -396,7 +396,7 @@ type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("entropy exhausted") }
 
-// TestRangeRequestGetsTheWholePage (L4): the page is served whole, whatever the Range header asks;
+// TestRangeRequestGetsTheWholePage: the page is served whole, whatever the Range header asks;
 // it is never a partial answer with a nonce.
 func TestRangeRequestGetsTheWholePage(t *testing.T) {
 	h := newTestHandler(t, nonceFiles(), Options{})

@@ -21,7 +21,7 @@ func randomText(n int) string {
 	return string(b)
 }
 
-// A tar entry of a normal size is not a ratio bomb: a tar entry has no compressed size of its own (F12).
+// A tar entry of a normal size is not a ratio bomb: a tar entry has no compressed size of its own.
 func TestTarEntryOfOneMebibyteImports(t *testing.T) {
 	data := tarOf(t, []tarEntry{{hdr: tar.Header{Name: "big.bin", Typeflag: tar.TypeReg, Mode: 0o644,
 		Size: 1 << 20}, body: randomText(1 << 20)}}, false)
@@ -42,7 +42,7 @@ func TestTarGzEntryOfFiftyMebibytesImports(t *testing.T) {
 }
 
 // Entries that are each under 100 KiB are still refused when the stream they make expands past the ratio: the stream
-// check fires, not the per-entry check (fix 6 re-proved without F12's path, F12).
+// check fires, not the per-entry check.
 func TestTarGzSmallEntriesStillHitTheStreamRatio(t *testing.T) {
 	var entries []tarEntry
 	for i := 0; i < 300; i++ {
@@ -57,7 +57,7 @@ func TestTarGzSmallEntriesStillHitTheStreamRatio(t *testing.T) {
 	}
 }
 
-// A file and an entry under a folder of the same name is refused at scan, in either order (F7).
+// A file and an entry under a folder of the same name is refused at scan, in either order.
 func TestFileAndItsSubfolderRefusedAtScan(t *testing.T) {
 	for _, order := range [][]string{{"a", "a/b"}, {"a/b", "a"}} {
 		data := zipOf(t, map[string]string{"a": "x", "a/b": "y"}, order)
@@ -70,7 +70,7 @@ func TestFileAndItsSubfolderRefusedAtScan(t *testing.T) {
 }
 
 // A zip whose central directory is larger than its entry cap can hold is refused before archive/zip reads it: the
-// directory's bytes, not only its count, are bounded (F18). Seventy headers of 60 KB extra data are about 4.2 MB, over
+// directory's bytes, not only its count, are bounded. Seventy headers of 60 KB extra data are about 4.2 MB, over
 // 1000 entries times 4 KiB.
 func TestZipCentralDirectoryOverTheBoundIsRefused(t *testing.T) {
 	var buf bytes.Buffer

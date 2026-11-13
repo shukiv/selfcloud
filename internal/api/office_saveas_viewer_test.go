@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// lk1 F6: a browser view of a file by a viewer, who may not add files to the file's folder, is refused Save As: CheckFileInfo
+// A browser view of a file by a viewer, who may not add files to the file's folder, is refused Save As: CheckFileInfo
 // says UserCanNotWriteRelative, PUT_RELATIVE answers 501, and nothing is made. This is the live run's shape: the view-mode
 // editor offers no Save As, and the server must refuse one anyway. Not a no-download file (TestWOPISaveAsNoDownloadAnswers501),
 // and not a delegated token (TestWOPISaveAsDelegatedTokenIsRefused).

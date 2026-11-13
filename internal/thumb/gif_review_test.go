@@ -34,7 +34,7 @@ func gifWithFrame(t *testing.T, screenW, screenH int, frameRect image.Rectangle,
 	return buf.Bytes()
 }
 
-// L2: a GIF whose first frame is smaller than its screen is thumbnailed on the screen: the frame where it is drawn,
+// A GIF whose first frame is smaller than its screen is thumbnailed on the screen: the frame where it is drawn,
 // and the rest of the screen shows as white.
 func TestGIFFirstFrameSmallerThanScreenIsComposed(t *testing.T) {
 	t.Parallel()

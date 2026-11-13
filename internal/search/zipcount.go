@@ -9,7 +9,7 @@ import (
 )
 
 // The records of a zip's central directory, as archive/zip reads them. zipEntryCount reads them, so the cap on a
-// container's entries holds before zip.NewReader builds one entry for each header (sec1, decision 84, review F5).
+// container's entries holds before zip.NewReader builds one entry for each header (sec1, decision 84).
 const (
 	eocdSig          = 0x06054b50 // end of central directory
 	eocd64LocSig     = 0x07064b50 // zip64 end of central directory locator

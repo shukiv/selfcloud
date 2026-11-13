@@ -47,7 +47,7 @@ func TestFilteredLargestAndTrashPlansUseTheListIndexes(t *testing.T) {
 		t.Errorf("largest in a folder with group pdf: plan %q does not use nodes_size_group", p)
 	}
 	// The account-wide page (Manage > Largest, no folder) is the same query without the folder. Without its own index the
-	// planner scanned nodes_size and filtered the group on each row (review M1 of ff1a); it now searches the account index.
+	// planner scanned nodes_size and filtered the group on each row; it now searches the account index.
 	query, args = largestPageSQL("acc_a", "", "", "", f, nil, 26)
 	if p := explainPlan(t, s, query, args...); !strings.Contains(p, "nodes_size_account_group") {
 		t.Errorf("largest of the account with group pdf: plan %q does not use nodes_size_account_group", p)

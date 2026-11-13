@@ -250,7 +250,7 @@ func randomText(n int) string {
 	return string(b)
 }
 
-// sec1 item 3, review F2 (decision 84): a zip download is held to the same progress deadline as a file. A reader that
+// sec1 (decision 84): a zip download is held to the same progress deadline as a file. A reader that
 // stops is cut off within about one segment's time, not sent the whole zip.
 func TestZipThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
 	setSegment(t, 1<<20)
@@ -286,7 +286,7 @@ func TestZipThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
 	}
 }
 
-// sec1 item 3, review F2 (decision 84): a slow zip reader above download.min_rate gets the whole zip.
+// sec1 (decision 84): a slow zip reader above download.min_rate gets the whole zip.
 func TestZipCompletesForASlowReaderAboveTheMinimumRate(t *testing.T) {
 	setSegment(t, 512<<10)
 	const size = 2 << 20

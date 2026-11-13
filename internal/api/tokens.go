@@ -746,7 +746,7 @@ func userPrincipal(accID string, u *store.User) *auth.Principal {
 // endUserTokens ends a user's delegated tokens and editing sessions, as handleRevokeUserTokens does. A password reset,
 // a password change, an admin's password set and a disable call it, so a token does not outlive the password or the
 // status it was issued under (sec1, decision 84). It returns the cut-off now in force, which a device cookie made in the
-// same transaction must be stamped after (sec1, decision 84, review F9).
+// same transaction must be stamped after (sec1, decision 84).
 func endUserTokens(ctx context.Context, tx *store.Tx, accountID, userID string) (time.Time, error) {
 	return recovery.EndUserTokens(ctx, tx, accountID, userID)
 }

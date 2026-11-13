@@ -419,7 +419,7 @@ func TestCappedEmailHasAHardLimitOnPasswordChecks(t *testing.T) {
 	}
 }
 
-// M2, the oracle: while the cap is spent, a right password and a wrong one get byte-identical answers, whether or not the
+// The oracle: while the cap is spent, a right password and a wrong one get byte-identical answers, whether or not the
 // per-email limit is spent. The shape is the status, the body, the headers, and each cookie's name and attributes.
 func TestCappedRightAndWrongPasswordsAnswerTheSameBytes(t *testing.T) {
 	t.Parallel()
@@ -565,7 +565,7 @@ func TestTheLinkRefusesASuspendedOrDeletingAccount(t *testing.T) {
 	}
 }
 
-// M3: an installation admin gets the same answer as anyone in the capped state, so the answer shows nothing about which
+// An installation admin gets the same answer as anyone in the capped state, so the answer shows nothing about which
 // addresses are admins' (a 429 for them would). The password is still checked, and no mail is sent to an admin: an
 // admin with a right password gets no link, and nothing in the answer says so. The three answers below must be
 // byte-identical: status, body and cookies (shapeOf masks the cookie values).
@@ -597,7 +597,7 @@ func TestInstallationAdminAnswersAsAnyoneInTheCappedState(t *testing.T) {
 	}
 }
 
-// L4: the mail cap counts the address, not each account that matched. An email in two accounts, with the same password in
+// The mail cap counts the address, not each account that matched. An email in two accounts, with the same password in
 // both, gets three mails in the window, not three per account.
 func TestConfirmMailCapCountsTheAddressAcrossAccounts(t *testing.T) {
 	t.Parallel()
@@ -914,7 +914,7 @@ func TestTheBackgroundWaitCoversAnInFlightConfirmationMail(t *testing.T) {
 	}
 }
 
-// Round 3, the write-error path and the L1 refund: when a job's link write fails, the job logs the failure and sends no
+// The write-error path and the refund: when a job's link write fails, the job logs the failure and sends no
 // mail, and the mail token it took is given back, so the failed write spends nothing from the address's cap of three
 // mails in fifteen minutes. Here the first of four confirmations fails; the three after it must all be mailed.
 func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {

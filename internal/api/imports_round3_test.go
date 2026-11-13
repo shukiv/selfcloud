@@ -32,7 +32,7 @@ func reservedOf(t *testing.T, fx *importFixture) int64 {
 	return usageOf(t, fx.s, fx.key, fx.acc.ID).ReservedBytes
 }
 
-// A member at quota cannot start an import upload of 2 MiB: the archive reserves its length like any upload (F1). The
+// A member at quota cannot start an import upload of 2 MiB: the archive reserves its length like any upload. The
 // length stays far below any test machine's free disk, so the disk check never answers before the quota check.
 func TestImportArchiveIsReservedAgainstQuota(t *testing.T) {
 	fx := newImportFixture(t)
@@ -46,7 +46,7 @@ func TestImportArchiveIsReservedAgainstQuota(t *testing.T) {
 
 // The archive's reservation is held from its upload until its import ends, and released once however the import ends
 // (done, cancelled, failed, expired). Another upload's reservation in the folder must survive it, so a second release
-// would show as 0 instead of the other upload's bytes (F1, F3).
+// would show as 0 instead of the other upload's bytes.
 func TestImportArchiveReservationEndsOnce(t *testing.T) {
 	for _, end := range []string{"done", "cancelled", "failed", "expired"} {
 		t.Run(end, func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestImportArchiveReservationEndsOnce(t *testing.T) {
 	}
 }
 
-// An account holds a limited number of import uploads that no import has claimed (default 3) (F1).
+// An account holds a limited number of import uploads that no import has claimed (default 3).
 func TestImportArchiveUploadsAreCapped(t *testing.T) {
 	fx := newImportFixture(t)
 	for i := 0; i < 3; i++ {
@@ -101,7 +101,7 @@ func TestImportArchiveUploadsAreCapped(t *testing.T) {
 }
 
 // An import upload that no import claimed expires after a day (imports.unclaimed_expiry_hours), even when uploads
-// themselves live longer. Its reservation goes with it (F1, F3).
+// themselves live longer. Its reservation goes with it.
 func TestImportArchiveUploadExpiresAfterADay(t *testing.T) {
 	fx := newImportFixture(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(72 * time.Hour) })
 	upl := fx.archive(t, "one.zip", zipArchive(t, [][2]string{{"a.txt", "1"}}))
@@ -129,7 +129,7 @@ func TestImportArchiveUploadExpiresAfterADay(t *testing.T) {
 }
 
 // A recount, run while an import holds its archive, keeps the archive's reservation on the staging folder; the two
-// totals agree (F3).
+// totals agree.
 func TestRecountKeepsTheArchiveReservation(t *testing.T) {
 	fx := newImportFixture(t)
 	data := zipArchive(t, [][2]string{{"a.txt", "1"}})
@@ -157,7 +157,7 @@ func TestRecountKeepsTheArchiveReservation(t *testing.T) {
 	}
 }
 
-// A drop-link visitor cannot send an import archive, and nothing is reserved for the attempt (F2).
+// A drop-link visitor cannot send an import archive, and nothing is reserved for the attempt.
 func TestDropVisitorCannotUploadAnArchive(t *testing.T) {
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
@@ -173,7 +173,7 @@ func TestDropVisitorCannotUploadAnArchive(t *testing.T) {
 }
 
 // The disk check before an entry counts the entry: an entry larger than the usable space pauses the import with
-// storage_full, and no byte of it is written (F5).
+// storage_full, and no byte of it is written.
 func TestImportEntryLargerThanTheDiskPauses(t *testing.T) {
 	fx := newImportFixture(t)
 	minFree := uint64(fx.s.cfg.Storage.MinFree)
@@ -300,7 +300,7 @@ func TestImportPanicReleasesTheFlightLock(t *testing.T) {
 }
 
 // A publish that writes one audit row per file floods the webhooks; the folder is reported once, as a copy reports a
-// large tree (F4).
+// large tree.
 func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
 	wf := newWebhookFixture(t)
 	wf.create(t, map[string]any{"url": "https://hooks.example.com/in", "events": []string{"file.created"}})
@@ -339,7 +339,7 @@ func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
 	}
 }
 
-// An import whose job ended without finishing its cleanup gets a job again from the store's requeue (F10).
+// An import whose job ended without finishing its cleanup gets a job again from the store's requeue.
 func TestAbandonedImportIsQueuedAgain(t *testing.T) {
 	fx := newImportFixture(t)
 	imp := fx.startOK(t, fx.archive(t, "one.zip", zipArchive(t, [][2]string{{"a.txt", "1"}})), "")
@@ -368,14 +368,14 @@ func TestAbandonedImportIsQueuedAgain(t *testing.T) {
 }
 
 // The archive's digest is read or the import is refused: an empty hash would make different archives dedupe against
-// each other (F15).
+// each other.
 func TestArchiveDigestErrorIsRefused(t *testing.T) {
 	if _, err := importDigest(&store.Upload{HashState: []byte("not a hash state"), Length: 3}); err == nil {
 		t.Fatal("a digest that cannot be read was accepted")
 	}
 }
 
-// A job's error names no server path and no SQL text: the user sees the code (F8).
+// A job's error names no server path and no SQL text: the user sees the code.
 func TestImportFailureLeaksNoServerText(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importFault = func(stage string) error {
@@ -399,7 +399,7 @@ func TestImportFailureLeaksNoServerText(t *testing.T) {
 	}
 }
 
-// A cleanup that has not ended keeps its import's record: retention does not purge it (F9).
+// A cleanup that has not ended keeps its import's record: retention does not purge it.
 func TestRetentionKeepsAnImportWhoseCleanupDidNotEnd(t *testing.T) {
 	fx := newImportFixture(t)
 	fx.s.importFault = func(stage string) error {
@@ -421,7 +421,7 @@ func TestRetentionKeepsAnImportWhoseCleanupDidNotEnd(t *testing.T) {
 }
 
 // The target directory is checked again at publish: moved to another folder between staging and publish, the import
-// fails and writes nothing into the moved directory (F17).
+// fails and writes nothing into the moved directory.
 func TestImportTargetMovedBeforePublishFails(t *testing.T) {
 	fx := newImportFixture(t)
 	first := fx.startOK(t, fx.archive(t, "dir.zip", zipArchive(t, [][2]string{{"t/", ""}, {"t/a.txt", "1"}})), "")

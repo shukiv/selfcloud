@@ -46,7 +46,7 @@ const (
 	// notifyDigestEntries is how many notifications a digest names; the rest are counted.
 	notifyDigestEntries = 5
 	// notifyMailMaxAge is how old a queued row may be and still be mailed. Older rows are skipped as late, so a comment
-	// switch that comes back on does not send a flood of old mail (review D5).
+	// switch that comes back on does not send a flood of old mail.
 	notifyMailMaxAge = 48 * time.Hour
 	// notifyHold is how long a row waits while its account's comments are off. It is kept, not sent, and not skipped.
 	notifyHold = 10 * time.Minute
@@ -127,7 +127,7 @@ func (s *Server) runNotifications(ctx context.Context) {
 
 // notifyPass is what one pass knows about the users it sends to. Each map is keyed by everything the answer depends on:
 // users by user, actors by account and actor, and reach by user and node. Reach is the answer for one user; a node
-// shared by two users of a pass has a different answer for each (review D1).
+// shared by two users of a pass has a different answer for each.
 type notifyPass struct {
 	users  map[string]*store.User
 	actors map[string]*store.User
@@ -208,7 +208,7 @@ func (s *Server) sendUserMail(ctx context.Context, pass *notifyPass, now time.Ti
 		}
 		entry, reason, err := s.checkNotice(ctx, pass, u, g, now)
 		if err != nil {
-			// A failed read says nothing about the row. It waits for the next pass, and no attempt is counted (review D2).
+			// A failed read says nothing about the row. It waits for the next pass, and no attempt is counted.
 			s.log.Warn("cannot check a notification mail", "error", err)
 			s.finishMail(ctx, store.NotifyOutcome{OutboxID: g.OutboxID, Lease: g.Lease, At: now, NextAt: now})
 			continue
@@ -334,7 +334,7 @@ func (s *Server) notifyUser(ctx context.Context, pass *notifyPass, accountID, us
 // checkNotice is the send-time check of one row (design section 7.4). It returns the entry the mail shows and "" when the
 // row may be sent. Otherwise it returns the reason the row is skipped, or notifyHoldComments when the row waits. A read that
 // fails returns an error instead: an error says nothing about the row, so the caller puts the row back with no attempt
-// counted (review D2). Only a definite answer skips a row: the user is inactive or has email off, the comment is gone, the
+// counted. Only a definite answer skips a row: the user is inactive or has email off, the comment is gone, the
 // item is not reached, or the row is older than notifyMailMaxAge.
 func (s *Server) checkNotice(ctx context.Context, pass *notifyPass, u *store.User, g store.MailJob, now time.Time) (mail.Entry, string, error) {
 	if u.Status != store.UserActive {
@@ -437,7 +437,7 @@ func (s *Server) notifyActor(ctx context.Context, pass *notifyPass, accountID, a
 // notification whose item the reader lost reach to is left out: it is kept in the store, and shows again if reach returns.
 // The actors' names are read for the kept rows only, and only when the reader may learn names.
 func (s *Server) visibleNotices(ctx context.Context, p *auth.Principal, rows []store.NotifyRow) ([]notifyJSON, error) {
-	// While the account's comments are off the list and the bell show nothing; the rows are kept (review D5).
+	// While the account's comments are off the list and the bell show nothing; the rows are kept.
 	on, err := s.store.CommentsOn(ctx, p.AccountID)
 	if err != nil {
 		return nil, err

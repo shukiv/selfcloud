@@ -12,7 +12,7 @@ import (
 )
 
 // TestSearchCursorRefusesAnotherTypeGroup: a search cursor made under type=pdf does not continue type=image (400
-// invalid_request), and it still continues type=pdf (decision 110, review M2 of ff1a).
+// invalid_request), and it still continues type=pdf (decision 110).
 func TestSearchCursorRefusesAnotherTypeGroup(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})

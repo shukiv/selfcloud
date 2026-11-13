@@ -25,7 +25,7 @@ type ff1Doc struct {
 }
 
 // TestFF1RoutesDeclareTheirFilters: each file list the filters of decision 110 reaches names their parameters in
-// api/openapi.yaml, and the Node schema has type. This is a narrow check of the ff1 routes only (review M3 of ff1a): a
+// api/openapi.yaml, and the Node schema has type. This is a narrow check of the ff1 routes only: a
 // missing name fails it, and a route that is not listed here is not checked.
 func TestFF1RoutesDeclareTheirFilters(t *testing.T) {
 	var doc ff1Doc

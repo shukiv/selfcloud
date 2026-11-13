@@ -9,7 +9,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// Decision 86, L5: an email change voids the user's open device-confirm links, in the same transaction as the change. A
+// Decision 86: an email change voids the user's open device-confirm links, in the same transaction as the change. A
 // link mailed before the change is refused after it. Two changes apply an address: one at once (verification none), and
 // the confirmation of a change with a link.
 

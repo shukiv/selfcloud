@@ -58,7 +58,7 @@ func TestCallersOfTheAdminWaysAreRefused(t *testing.T) {
 }
 
 // TestAdminKeyNeverMintsALink: an installation admin's key gets no link to an existing user, a reset or a resend,
-// whatever admin.tenant_access says (F1). It may still create a user and mail that user's link, as before.
+// whatever admin.tenant_access says. It may still create a user and mail that user's link, as before.
 func TestAdminKeyNeverMintsALink(t *testing.T) {
 	t.Parallel()
 	for _, access := range []bool{false, true} {
@@ -75,7 +75,7 @@ func TestAdminKeyNeverMintsALink(t *testing.T) {
 }
 
 // TestAdminSessionResetLinkNeedsThePassword: the reset link from an admin's session needs the admin's own password,
-// as a typed password does (F7). The email reset needs none.
+// as a typed password does. The email reset needs none.
 func TestAdminSessionResetLinkNeedsThePassword(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
@@ -92,7 +92,7 @@ func TestAdminSessionResetLinkNeedsThePassword(t *testing.T) {
 	}
 }
 
-// TestGoBackWithAWrongOriginIsRefused: the go-back route checks the Origin header before anything else (F10). A wrong
+// TestGoBackWithAWrongOriginIsRefused: the go-back route checks the Origin header before anything else. A wrong
 // origin is refused and the impersonation keeps running.
 func TestGoBackWithAWrongOriginIsRefused(t *testing.T) {
 	t.Parallel()
@@ -123,7 +123,7 @@ func TestGoBackWithAWrongOriginIsRefused(t *testing.T) {
 	wantStatus(t, callSession(t, fx.s, imp, "GET", "/api/v1/me", nil), 200)
 }
 
-// TestTenantAccessOffEndsARunningSignInAs: turning admin.tenant_access off ends a sign-in-as at once (F2). Go back
+// TestTenantAccessOffEndsARunningSignInAs: turning admin.tenant_access off ends a sign-in-as at once. Go back
 // still restores the admin's session.
 func TestTenantAccessOffEndsARunningSignInAs(t *testing.T) {
 	t.Parallel()
@@ -141,7 +141,7 @@ func TestTenantAccessOffEndsARunningSignInAs(t *testing.T) {
 }
 
 // TestAdminSessionEndsItsSignInsAs: an admin who changes its password, signs out, or loses its session by five wrong
-// passwords ends each sign-in-as it began, and each end is audited with its reason (F3).
+// passwords ends each sign-in-as it began, and each end is audited with its reason.
 func TestAdminSessionEndsItsSignInsAs(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

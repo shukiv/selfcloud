@@ -903,7 +903,7 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			}
 		}
 		// The entries staged under a reused directory go into its live directory, deepest directory first, and its
-		// placeholder goes. A child is a staged entry, so the live directory holds no staged entry while this runs (B2).
+		// placeholder goes. A child is a staged entry, so the live directory holds no staged entry while this runs.
 		for _, d := range reused {
 			live, err := tx.Node(ctx, im.AccountID, d.Live)
 			if err != nil {

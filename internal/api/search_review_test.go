@@ -213,7 +213,7 @@ func TestUsageShowsTheSkippedTextCount(t *testing.T) {
 }
 
 // TestOfficeTextOffMakesNoRequest: with search.office_text off, a document is skipped with its reason and the converter is
-// not asked (review S4). Mutation: a worker that converts with OfficeText off calls the converter.
+// not asked. Mutation: a worker that converts with OfficeText off calls the converter.
 func TestOfficeTextOffMakesNoRequest(t *testing.T) {
 	t.Parallel()
 	fx := newContentFixture(t)
@@ -230,7 +230,7 @@ func TestOfficeTextOffMakesNoRequest(t *testing.T) {
 }
 
 // TestTrashedDocumentIsNotSentUntilRestored: a document in the trash is not sent to the converter, and is sent after it is
-// restored (review S4). Mutation: the trash test skipped in the worker sends the trashed document.
+// restored. Mutation: the trash test skipped in the worker sends the trashed document.
 func TestTrashedDocumentIsNotSentUntilRestored(t *testing.T) {
 	t.Parallel()
 	fx := newContentFixture(t)
@@ -251,7 +251,7 @@ func TestTrashedDocumentIsNotSentUntilRestored(t *testing.T) {
 	}
 }
 
-// TestDocumentKeepsItsTrueType: the converter is told the document's true type, read from its entries (review S4), so an
+// TestDocumentKeepsItsTrueType: the converter is told the document's true type, read from its entries, so an
 // xlsx is not sent as a Word file. Mutation: every ZIP document sent as docx.
 func TestDocumentKeepsItsTrueType(t *testing.T) {
 	t.Parallel()
@@ -291,7 +291,7 @@ func TestOutageIsOneProbePerPause(t *testing.T) {
 	}
 }
 
-// TestSearchAccountLimitHoldsAcrossCallers (review S5): one caller may search a minute, and an account ten times that. Eleven
+// TestSearchAccountLimitHoldsAcrossCallers: one caller may search a minute, and an account ten times that. Eleven
 // users of one account each search once; the eleventh is refused by the account's bucket, not its own. Mutation: the
 // per-account limit removed lets the eleventh through.
 func TestSearchAccountLimitHoldsAcrossCallers(t *testing.T) {

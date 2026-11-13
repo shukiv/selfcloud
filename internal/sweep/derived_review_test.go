@@ -14,7 +14,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// L3: one ready file that cannot be removed is logged, and the rest of the pass still runs.
+// One ready file that cannot be removed is logged, and the rest of the pass still runs.
 // The file is replaced by a non-empty directory, which os.Remove refuses with an error other than not-exist.
 func TestUnremovableDerivedFileDoesNotStopLaterSteps(t *testing.T) {
 	t.Parallel()
@@ -57,7 +57,7 @@ func TestUnremovableDerivedFileDoesNotStopLaterSteps(t *testing.T) {
 	}
 }
 
-// L4: a derived file no row names is removed once it is an hour old. A young one is kept for the next pass, and an
+// A derived file no row names is removed once it is an hour old. A young one is kept for the next pass, and an
 // old one with a row is kept whatever its state.
 func TestOrphanDerivedFilesAreRemovedWhenOldAndUnnamed(t *testing.T) {
 	t.Parallel()
@@ -107,7 +107,7 @@ func TestOrphanDerivedFilesAreRemovedWhenOldAndUnnamed(t *testing.T) {
 	}
 }
 
-// M1: a failed row is cleared after 30 days, and kept before that.
+// A failed row is cleared after 30 days, and kept before that.
 func TestFailedDerivedRowsAreClearedAfterThirtyDays(t *testing.T) {
 	t.Parallel()
 	f := newDerivedFixture(t, 1<<40)

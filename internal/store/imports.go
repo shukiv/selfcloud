@@ -62,7 +62,7 @@ type Import struct {
 	Cursor          int64 // archive entries finished; a run resumes after this one
 	ReservedBytes   int64 // held against the quota by the entry being written
 	// ArchiveReserved is the archive's length, held against the staging folder's quota from the upload's hand-over until
-	// the import ends (published, failed, cancelled or expired). It is released once, by ReleaseArchiveReservation (F1).
+	// the import ends (published, failed, cancelled or expired). It is released once, by ReleaseArchiveReservation.
 	ArchiveReserved int64
 	Files           int64
 	Bytes           int64
@@ -271,7 +271,7 @@ const stagedFolderOfNode = "EXISTS (SELECT 1 FROM folders f WHERE f.account_id =
 
 // removeStaging removes a staging folder with its nodes and its row, in this transaction, and changes no usage. Staged
 // bytes are not in the account's usage until publish, so there is nothing to take off; DeleteFolder would take them off
-// corrupt the count. The caller releases the reservations first. The blobs of the removed nodes are no
+// and corrupt the count. The caller releases the reservations first. The blobs of the removed nodes are no
 // longer referenced, and the orphan sweep removes their files. Only a staged folder is removed: a live one is left alone.
 func (tx *Tx) removeStaging(ctx context.Context, accountID, stagingFolder string) error {
 	// The staged check comes first: a live folder is left alone, search rows included.
@@ -601,8 +601,7 @@ func (tx *Tx) SetImportSwitch(ctx context.Context, accountID string, on bool) er
 
 // OtherUnfinishedBytes is the size the user's other unfinished imports hold against the quota: the full declared size of
 // each one. Staged bytes are not in the account's usage until the publish, which is one write, so an import that has
-// staged but not published (queued, running or paused) still holds all of its declared size; a scan counts it (
-// which counted only the bytes not yet staged).
+// staged but not published (queued, running or paused) still holds all of its declared size; a scan counts it.
 func (tx *Tx) OtherUnfinishedBytes(ctx context.Context, accountID, userID, importID string) (int64, error) {
 	var n int64
 	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(declared_bytes), 0)

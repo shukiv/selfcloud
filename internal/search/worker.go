@@ -43,7 +43,7 @@ type WorkerOptions struct {
 	// Conv is the converter, or nil while office.enabled is off. A document then gets a skipped row, and the row is
 	// released when the converter is turned on (store.ReleaseTextSkipped).
 	Conv Converter
-	// OfficeText is search.office_text: whether documents are sent to the converter at all (review S4). It is off by
+	// OfficeText is search.office_text: whether documents are sent to the converter at all. It is off by
 	// default: an operator who runs a converter for previews has not agreed to send every tenant's documents to it.
 	OfficeText bool
 	// OfficeTextNow, when set, gives search.office_text for each file in place of OfficeText: the server's settings may
@@ -269,7 +269,7 @@ func (w *Worker) extract(ctx context.Context, j store.TextJob, res *store.TextRe
 		}
 	default:
 		if !w.officeText() {
-			// Documents are not sent to a converter unless the operator has said so (review S4). No request is made.
+			// Documents are not sent to a converter unless the operator has said so. No request is made.
 			skip(res, store.TextErrOfficeTextOff)
 			return false
 		}
@@ -334,10 +334,10 @@ func (w *Worker) readPlain(f *os.File, j store.TextJob, res *store.TextResult) {
 	}
 }
 
-// officeExt is the true type of a ZIP-based document: the extension the converter is told (review S4). It is decided by
+// officeExt is the true type of a ZIP-based document: the extension the converter is told. It is decided by
 // the entries of the container, not by the name. OLE2 files are not decided here. An unknown container is "".
 func officeExt(f *os.File, size int64) string {
-	// The cap is read from the end record before zip.NewReader builds an entry for each record (sec1, decision 84, F5).
+	// The cap is read from the end record before zip.NewReader builds an entry for each record (sec1, decision 84).
 	if n, ok := zipEntryCount(f, size, maxOfficeEntries); !ok || n > maxOfficeEntries {
 		return ""
 	}
@@ -402,7 +402,7 @@ const maxOfficeEntries = 10000
 // convert sends a document to the converter for plain text, and classifies its answer. It returns true when the
 // converter could not be reached. A conversion whose output is over the text limit is a success: the writer stops the
 // converter once it has the limit, and the text is marked truncated. The conversion's time limit is the client's: it
-// starts when the request does, not when the worker first asks (review S4).
+// starts when the request does, not when the worker first asks.
 func (w *Worker) convert(ctx context.Context, j store.TextJob, f *os.File, ext string, res *store.TextResult) (paused bool) {
 	key, err := w.key(ctx)
 	if err != nil {
@@ -522,7 +522,7 @@ func (w *Worker) park(res *store.TextResult) {
 }
 
 // refused records a refusal of the converter: sticky under the converter key, which is the row's converter column. It
-// is tried again only when the key changes (store.ReleaseTextKey), never by the clock (review S4).
+// is tried again only when the key changes (store.ReleaseTextKey), never by the clock.
 func (w *Worker) refused(res *store.TextResult, key, msg string) {
 	res.State = store.TextFailed
 	res.Error = msg

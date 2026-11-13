@@ -105,7 +105,7 @@ const (
 func (s *Server) confirmAdminPassword(w http.ResponseWriter, r *http.Request, p *auth.Principal, sess *store.Session,
 	way, target, accountID, password string) error {
 	// The wrong passwords are counted per signed-in session. A delegated token has none, so it is refused here rather
-	// than counted under an empty key or dereferenced (sec1, decision 84, review F7).
+	// than counted under an empty key or dereferenced (sec1, decision 84).
 	if sess == nil {
 		return apierr.New(apierr.Forbidden, "this needs a signed-in session; a delegated token cannot confirm the admin's password").
 			With("reason", "session_required")

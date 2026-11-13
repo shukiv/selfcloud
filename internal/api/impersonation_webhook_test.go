@@ -11,7 +11,7 @@ import (
 
 // TestImpersonatedWritesAreMarkedAndNamed: a write made while an installation admin is signed in as a user says so on
 // its webhook event, without the admin's ID, and the audit row names the admin for the owner's and the admin's viewers
-// (decision 41, F6).
+// (decision 41).
 func TestImpersonatedWritesAreMarkedAndNamed(t *testing.T) {
 	t.Parallel()
 	fx := newWebhookFixture(t, func(c *config.Config) { c.Admin.TenantAccess = true })

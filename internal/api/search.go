@@ -119,7 +119,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// Per account as well as per caller: a tenant with many users or tokens would otherwise multiply the caller's limit
-	// (review S5). The account's share is ten callers' worth.
+	// The account's share is ten callers' worth.
 	if err := s.rateLimit("search.account", p.AccountID); err != nil {
 		return err
 	}
@@ -221,7 +221,7 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 	}
 	// The only things that stop the walk are the items the caller may read and the end of the candidates. A candidate
 	// the caller cannot read, or one the no-download or label rules drop, moves the walk on and decides nothing else: a
-	// cursor, a short page or a count is never a sign of such a row (review S1). The work is bounded by the request's
+	// cursor, a short page or a count is never a sign of such a row. The work is bounded by the request's
 	// deadline, which answers unavailable.
 	limit := req.Limit
 	exhausted := false

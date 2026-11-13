@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// N1. A cancelled run is not a damaged database: it is an error (exit 2), with integrity still unchecked and no
+// A cancelled run is not a damaged database: it is an error (exit 2), with integrity still unchecked and no
 // sqlite_integrity finding. Mutant: every failure at the start is a finding, as in.
 func TestCancelledRunIsNotADamagedDatabase(t *testing.T) {
 	t.Parallel()
@@ -28,7 +28,7 @@ func TestCancelledRunIsNotADamagedDatabase(t *testing.T) {
 	}
 }
 
-// N1. A database another connection holds exclusively is busy, not damaged: the run is an error (exit 2), with no
+// A database another connection holds exclusively is busy, not damaged: the run is an error (exit 2), with no
 // sqlite_integrity finding and integrity unchecked. Mutant: as for the cancelled run.
 func TestBusyDatabaseIsNotADamagedDatabase(t *testing.T) {
 	t.Parallel()

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Measurements of the text policy (review S2, S3, S5). Gated by SELFCLOUD_MEASURE_CONTENT=1. The data goes under /var/tmp,
+// Measurements of the text policy. Gated by SELFCLOUD_MEASURE_CONTENT=1. The data goes under /var/tmp,
 // as the brief asks, and nothing here runs in the gate. The figures are in decision 46.
 
 // measureStore opens a store under /var/tmp with two accounts, for a measurement.
@@ -93,7 +93,7 @@ func fileSize(t *testing.T, s *Store) int64 {
 	return size
 }
 
-// TestMeasureSecureDeleteCost (review S2): the write cost of secure delete, measured with it on (the default) and off. A
+// TestMeasureSecureDeleteCost: the write cost of secure delete, measured with it on (the default) and off. A
 // batch of 2,000 files of 1 KiB each is written, then deleted one write at a time, as the sweep deletes them.
 func TestMeasureSecureDeleteCost(t *testing.T) {
 	if os.Getenv("SELFCLOUD_MEASURE_CONTENT") != "1" {
@@ -144,7 +144,7 @@ func TestMeasureSecureDeleteCost(t *testing.T) {
 	}
 }
 
-// TestMeasureTextGrowth (review S3): the database's growth for high-entropy text, per MiB of extracted text. Four files of
+// TestMeasureTextGrowth: the database's growth for high-entropy text, per MiB of extracted text. Four files of
 // 1 MiB of random words each are written as ready text.
 func TestMeasureTextGrowth(t *testing.T) {
 	if os.Getenv("SELFCLOUD_MEASURE_CONTENT") != "1" {
@@ -165,7 +165,7 @@ func TestMeasureTextGrowth(t *testing.T) {
 		text, time.Since(start).Round(time.Millisecond), after-before, float64(after-before)/float64(text))
 }
 
-// TestMeasurePrefixAcrossTenants (review S5): a short prefix query on a small account, while a large other tenant's corpus
+// TestMeasurePrefixAcrossTenants: a short prefix query on a small account, while a large other tenant's corpus
 // is in the same full-text table. 150,000 rows of 20 words are written for the big tenant, 10 for the small one.
 func TestMeasurePrefixAcrossTenants(t *testing.T) {
 	if os.Getenv("SELFCLOUD_MEASURE_CONTENT") != "1" {
@@ -221,7 +221,7 @@ func TestMeasurePrefixAcrossTenants(t *testing.T) {
 	}
 }
 
-// TestMeasurePrefixIndex (review S5): the same 60,000 rows in a full-text table with no prefix index and one with prefix='3'.
+// TestMeasurePrefixIndex: the same 60,000 rows in a full-text table with no prefix index and one with prefix='3'.
 // The index's size is the file's growth, and each query is timed on both tables. Gated by SELFCLOUD_MEASURE_CONTENT=1.
 // The shipped table has no prefix index; the decision (decision 46) says whether this one is adopted.
 func TestMeasurePrefixIndex(t *testing.T) {

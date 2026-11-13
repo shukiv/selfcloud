@@ -13,7 +13,7 @@ import (
 )
 
 // A role held only through an organisation link opens the content. It never shares, decides requests or
-// makes links (security review M1). The tests put the link's editor role on a node whose editors may share,
+// makes links. The tests put the link's editor role on a node whose editors may share,
 // so the only thing that could let the caller share is the link.
 
 // linkEditorOnB gives ann editor through an organisation link on the team node b, where editors may share.
@@ -73,7 +73,7 @@ func TestRealEditorStillShares(t *testing.T) {
 		map[string]any{}), 200)
 }
 
-// TestTransferWritesEditorForALinkHolder (M2): the previous owner holds editor on a personal item only through
+// TestTransferWritesEditorForALinkHolder: the previous owner holds editor on a personal item only through
 // a link when the transfer runs. The transfer must still leave it a row, since the link can be deleted. The
 // item moves into the recipient's My files, so the row is what keeps the previous owner's access.
 func TestTransferWritesEditorForALinkHolder(t *testing.T) {
@@ -96,7 +96,7 @@ func TestTransferWritesEditorForALinkHolder(t *testing.T) {
 	}
 }
 
-// TestApprovalWritesARowForALinkHolder (M2): the requester holds the requested role only through a link when
+// TestApprovalWritesARowForALinkHolder: the requester holds the requested role only through a link when
 // the approval runs. The approval must still write its row, so the grant outlives the link.
 func TestApprovalWritesARowForALinkHolder(t *testing.T) {
 	t.Parallel()
@@ -130,7 +130,7 @@ func TestLinkHolderMayRequestDurableAccess(t *testing.T) {
 	onlyPending(t, fx.sharingFixture)
 }
 
-// TestOpenDeletedBetweenReadAndWrite (L1): the link is deleted after the open reads it and before its write.
+// TestOpenDeletedBetweenReadAndWrite: the link is deleted after the open reads it and before its write.
 // The answer is the uniform not_found, not a failure from the visit's foreign key.
 func TestOpenDeletedBetweenReadAndWrite(t *testing.T) {
 	t.Parallel()
@@ -154,7 +154,7 @@ func TestOpenDeletedBetweenReadAndWrite(t *testing.T) {
 	}
 }
 
-// TestOpenSecretResetBetweenReadAndWrite (L1): the secret is replaced after the open reads the old hash. The
+// TestOpenSecretResetBetweenReadAndWrite: the secret is replaced after the open reads the old hash. The
 // old secret must not open the link: the stored hash no longer matches what was presented.
 func TestOpenSecretResetBetweenReadAndWrite(t *testing.T) {
 	t.Parallel()
@@ -187,7 +187,7 @@ func TestOpenSecretResetBetweenReadAndWrite(t *testing.T) {
 	wantError(t, fx.stat(t, fx.annSess, fx.b.ID), 404, apierr.NotFound)
 }
 
-// TestRepeatOpenAuditsOnce (L2): a member who opens the same link again within a day adds no audit entry.
+// TestRepeatOpenAuditsOnce: a member who opens the same link again within a day adds no audit entry.
 func TestRepeatOpenAuditsOnce(t *testing.T) {
 	t.Parallel()
 	fx := newLinkFixture(t)
@@ -207,7 +207,7 @@ func TestRepeatOpenAuditsOnce(t *testing.T) {
 	}
 }
 
-// TestOpenIsLimitedPerUser (L2): the per-address limit is raised here, so the per-member limit is what refuses
+// TestOpenIsLimitedPerUser: the per-address limit is raised here, so the per-member limit is what refuses
 // the sixty-first open of a link by one member.
 func TestOpenIsLimitedPerUser(t *testing.T) {
 	t.Parallel()

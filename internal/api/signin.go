@@ -320,7 +320,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		secret   string
 		sess     *store.Session
 		// issuedAt is the time the sign-in's transaction makes the session: the device cookie is stamped with it, so a
-		// cut-off committed after this transaction is later and voids the cookie (sec1, decision 84, review F9).
+		// cut-off committed after this transaction is later and voids the cookie (sec1, decision 84).
 		issuedAt time.Time
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -635,7 +635,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		u      *store.User
 		secret string
 		sess   *store.Session
-		// cut is the user's cut-off this reset sets; the device cookie it makes is stamped just after it (review F9).
+		// cut is the user's cut-off this reset sets; the device cookie it makes is stamped just after it.
 		cut time.Time
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -702,7 +702,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	// The reset's own cut-off voids the cookies made before it; the new cookie is stamped a millisecond after it, in the
-	// reset's transaction, and nothing is read after the commit (sec1, decision 84, review F9).
+	// reset's transaction, and nothing is read after the commit (sec1, decision 84).
 	if err := s.setDeviceCookie(w, u.ID, cut.Add(time.Millisecond)); err != nil {
 		return err
 	}

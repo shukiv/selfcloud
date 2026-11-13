@@ -65,7 +65,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/exports.go":         3,
 	"internal/api/links.go":           3,
 	"internal/api/lock_break.go":      1,
-	// 14th (review M5 of ff1a, decision 110): writeChildren's early return compares the request's filter kind with
+	// 14th (decision 110): writeChildren's early return compares the request's filter kind with
 	// shortcut, not a node's. A link visitor who asks for shortcuts gets an empty page with no cursor, before any SQL.
 	// It only narrows what a visitor sees, and access is nodeAccess, which runs first.
 	"internal/api/nodes.go":        14, // 13th: mkdirUnder's parent must be a directory (fu2, decision 74); a shortcut or file parent is refused

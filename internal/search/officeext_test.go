@@ -67,7 +67,7 @@ func TestOfficeExtRefusesAZipOverTheEntryCap(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 (decision 84): the entry cap is read from the central directory's record before the container is
+// sec1 (decision 84): the entry cap is read from the central directory's record before the container is
 // parsed. zip.NewReader builds an entry for each record (about 200 bytes an entry, so 4 MB for these 20,000), and the cap
 // of 10,000 must refuse the zip before that cost. The heap allocated while officeExt refuses it stays under 1 MiB. The
 // test is not parallel: it reads the process's allocation counter.
@@ -90,7 +90,7 @@ func TestOfficeExtRefusesOverTheCapBeforeBuildingTheEntries(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 (decision 84): the entry count is read for a zip64 container too, so a zip64 zip over the cap is
+// sec1 (decision 84): the entry count is read for a zip64 container too, so a zip64 zip over the cap is
 // refused by the same count, and a file that is not a zip has none.
 func TestZipEntryCountReadsZip64AndRejectsOthers(t *testing.T) {
 	f, size := zipWith(t, zip64Names(70000), "")
@@ -112,7 +112,7 @@ func TestZipEntryCountReadsZip64AndRejectsOthers(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 (decision 84, the bypass found on review): a zip whose end record declares 100 entries, but whose
+// sec1 (decision 84): a zip whose end record declares 100 entries, but whose
 // central directory really holds 65,636 (100 + 65,536), passed the declared count and then made zip.NewReader build all
 // 65,636, since archive/zip reads headers until one fails and checks only the count modulo 65,536. The walk counts the
 // real headers before zip.NewReader, so this zip is refused, and the heap allocated while it is refused stays under 1 MiB.
@@ -166,7 +166,7 @@ func TestOfficeExtRefusesADeclaredCountThatHidesRealHeaders(t *testing.T) {
 	}
 }
 
-// sec1 item 6, review F5 (decision 84): a zip64 zip over the cap is refused before its entries are built, as the
+// sec1 (decision 84): a zip64 zip over the cap is refused before its entries are built, as the
 // zip with a 16-bit count is.
 func TestOfficeExtRefusesAZip64OverTheCapBeforeBuildingTheEntries(t *testing.T) {
 	f, size := zipWith(t, zip64Names(70000), "")

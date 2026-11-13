@@ -158,7 +158,7 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// sec1 item 2, review F6 and F3 (decision 84): every one-request write is rate limited per caller at 300 a minute, large
+// sec1 (decision 84): every one-request write is rate limited per caller at 300 a minute, large
 // or small, so the 301st write in a minute from one caller is refused, and an earlier one is not. Small bodies are
 // used, so the test stays quick; the limit does not depend on the size.
 func TestOneRequestWritesAreRateLimitedPerCaller(t *testing.T) {
@@ -193,7 +193,7 @@ func (g *gatedReader) Read(p []byte) (int, error) {
 	return g.r.Read(p)
 }
 
-// sec1 item 2, review F3 (decision 84): one-request writes reserve their bytes while they are in flight, so writes that
+// sec1 (decision 84): one-request writes reserve their bytes while they are in flight, so writes that
 // run together cannot each pass against the same free space. Four writes of 16 MiB see 40 MiB above storage.min_free.
 // Each waits in its body until the test lets it go, so every write has been checked before any byte arrives. At least
 // one must be refused before its body is read, and at most two may be accepted (2 x 16 MiB fits, 3 do not).

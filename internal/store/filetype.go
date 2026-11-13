@@ -59,8 +59,8 @@ var groupByExt, groupByMime = func() (map[string]string, map[string]string) {
 }()
 
 // asciiLower folds A to Z only, as SQLite's lower() does without ICU. strings.ToLower folds all of Unicode, and the
-// backfill (migration 0053) would then disagree with groupOf on a name such as one with the Kelvin sign (review L1 of
-// ff1a). Trimming is done with strings.Trim(s, " "), spaces only, as SQLite's trim() does.
+// backfill (migration 0053) would then disagree with groupOf on a name such as one with the Kelvin sign.
+// Trimming is done with strings.Trim(s, " "), spaces only, as SQLite's trim() does.
 func asciiLower(s string) string {
 	b := []byte(s)
 	for i, c := range b {

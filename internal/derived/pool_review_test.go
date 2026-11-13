@@ -14,7 +14,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// M1: a failure of the image is kept for its key, and a limit that changes is a new key.
+// A failure of the image is kept for its key, and a limit that changes is a new key.
 func TestImageRefusalIsStickyUntilALimitChanges(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 8)
@@ -45,7 +45,7 @@ func TestImageRefusalIsStickyUntilALimitChanges(t *testing.T) {
 	}
 }
 
-// M1: a time limit is a host condition. It is retried after a wait, up to maxAttempts, then it is sticky.
+// A time limit is a host condition. It is retried after a wait, up to maxAttempts, then it is sticky.
 func TestTimeoutIsRetriedWithBackoffThenSticky(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 8)
@@ -87,7 +87,7 @@ func TestTimeoutIsRetriedWithBackoffThenSticky(t *testing.T) {
 	}
 }
 
-// M1: a shutdown records nothing. The job is dropped, the row is removed, and no failure is written.
+// A shutdown records nothing. The job is dropped, the row is removed, and no failure is written.
 func TestShutdownRecordsNothing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 8)
@@ -111,7 +111,7 @@ func TestShutdownRecordsNothing(t *testing.T) {
 	}
 }
 
-// M1: a retry that has come is queued by the request, and the row keeps its attempt count.
+// A retry that has come is queued by the request, and the row keeps its attempt count.
 func TestRetryKeepsTheAttemptCount(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 8)
@@ -126,7 +126,7 @@ func TestRetryKeepsTheAttemptCount(t *testing.T) {
 	}
 }
 
-// M1: a failed row older than the sweep's age is cleared, so its key is queued again.
+// A failed row older than the sweep's age is cleared, so its key is queued again.
 func TestClearFailedRemovesOldFailures(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 8)
@@ -146,7 +146,7 @@ func TestClearFailedRemovesOldFailures(t *testing.T) {
 	}
 }
 
-// M3: requests cancelled while the queue is full leave no pending row without a job.
+// Requests cancelled while the queue is full leave no pending row without a job.
 func TestCancelledRequestsLeaveNoPendingRowWithoutAJob(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 1)
@@ -171,7 +171,7 @@ func TestCancelledRequestsLeaveNoPendingRowWithoutAJob(t *testing.T) {
 	}
 }
 
-// M4: a request over an account's share costs no writer lock. The writer is held here, so a request that
+// A request over an account's share costs no writer lock. The writer is held here, so a request that
 // tried to write would wait for it and never return.
 func TestRequestOverTheAccountShareTakesNoWriterLock(t *testing.T) {
 	t.Parallel()
@@ -215,7 +215,7 @@ func TestRequestOverTheAccountShareTakesNoWriterLock(t *testing.T) {
 // errEndWrite ends a write that changed nothing, so the write rolls back.
 var errEndWrite = errors.New("derived test: end the write without changes")
 
-// M4: one account's backlog does not hold the workers while another waits. Account A fills its share, then B
+// One account's backlog does not hold the workers while another waits. Account A fills its share, then B
 // queues one job; B's job is the second to run, after the one of A's that is already next.
 func TestRoundRobinBetweenAccounts(t *testing.T) {
 	t.Parallel()
@@ -248,7 +248,7 @@ func TestRoundRobinBetweenAccounts(t *testing.T) {
 	}
 }
 
-// M4: the total is still the constant the queue has always had, whichever accounts fill it.
+// The total is still the constant the queue has always had, whichever accounts fill it.
 func TestTotalQueueIsStillBounded(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, 2)
@@ -262,7 +262,7 @@ func TestTotalQueueIsStillBounded(t *testing.T) {
 	}
 }
 
-// L5: a refused image is logged below warning, and only once per request that decodes it.
+// A refused image is logged below warning, and only once per request that decodes it.
 func TestRefusalIsLoggedBelowWarning(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer

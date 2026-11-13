@@ -121,7 +121,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("store: search index: %w", err)
 	}
 	// The full-text tables keep a deleted word in their old segments unless told otherwise: FTS5 then leaves the bytes in
-	// the file and in a VACUUM INTO copy (review S2). The option is stored in the table, so setting it again is a no-op.
+	// the file and in a VACUUM INTO copy. The option is stored in the table, so setting it again is a no-op.
 	if err := s.secureDeleteFTS(ctx); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("store: full-text secure delete: %w", err)

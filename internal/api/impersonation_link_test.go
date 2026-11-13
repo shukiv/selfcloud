@@ -9,7 +9,7 @@ import (
 )
 
 // TestImpersonatedSignedLinkEndsWithTheSignIn: the viewer's preview link is a signed link, and it works while an admin
-// is signed in as the user (F8). Its life is capped at the sign-in-as's hour, so it never outlives that hour.
+// is signed in as the user. Its life is capped at the sign-in-as's hour, so it never outlives that hour.
 func TestImpersonatedSignedLinkEndsWithTheSignIn(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)

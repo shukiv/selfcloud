@@ -547,7 +547,7 @@ func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
 	}
 }
 
-// M2: no read transaction judges more than snapshotBatch files. With a batch of five and sixty orphans, the walk alone
+// No read transaction judges more than snapshotBatch files. With a batch of five and sixty orphans, the walk alone
 // must open at least twelve transactions, and each judgment is still right. The other opens (the integrity check, the
 // foreign key check and the row pages) add a handful more; a run that never renews opens about eight.
 func TestSnapshotsAreRenewedInBatches(t *testing.T) {
@@ -566,7 +566,7 @@ func TestSnapshotsAreRenewedInBatches(t *testing.T) {
 	}
 }
 
-// M3: a repair stopped after its first move leaves a manifest naming exactly the moved files, line by line.
+// A repair stopped after its first move leaves a manifest naming exactly the moved files, line by line.
 func TestCancelledRepairManifestNamesTheMovedFiles(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -615,7 +615,7 @@ func TestCancelledRepairManifestNamesTheMovedFiles(t *testing.T) {
 	}
 }
 
-// M1: the sweep sets a blob to orphan, removes its file, then deletes the row. A recheck that finds such a row with no
+// The sweep sets a blob to orphan, removes its file, then deletes the row. A recheck that finds such a row with no
 // file must drop the candidate: the sweep got there first.
 func TestOrphanStateRowWhoseFileIsGoneIsDroppedOnRecheck(t *testing.T) {
 	t.Parallel()
@@ -648,7 +648,7 @@ func TestOrphanStateRowWhoseFileIsGoneIsDroppedOnRecheck(t *testing.T) {
 	}
 }
 
-// H1: a derived directory other than data_dir/derived is checked where the server keeps its files.
+// A derived directory other than data_dir/derived is checked where the server keeps its files.
 func TestNonDefaultDerivedDirIsChecked(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

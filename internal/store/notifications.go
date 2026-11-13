@@ -32,7 +32,7 @@ const (
 // design section 14.
 const (
 	// NotifyAccountPendingLimit is how many outbox rows one account may hold waiting for mail. Over it no mail is queued
-	// for that account's new notifications; the app still gets them, and other accounts are not affected (review D3).
+	// for that account's new notifications; the app still gets them, and other accounts are not affected.
 	NotifyAccountPendingLimit = 10000
 	// NotifyPendingLimit is how many outbox rows may wait for mail at once, over all accounts: a backstop only, so the
 	// accounts together cannot exhaust the table. Over it a notification still reaches the app, and no mail is queued
@@ -301,7 +301,7 @@ type MailJob struct {
 	ActorID        string
 	Attempts       int
 	Lease          int64
-	// CreatedAt is when the row was queued. A row older than the mail's age limit is not sent (review D5).
+	// CreatedAt is when the row was queued. A row older than the mail's age limit is not sent.
 	CreatedAt time.Time
 }
 

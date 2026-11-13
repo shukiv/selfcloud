@@ -277,7 +277,7 @@ func largestPageSQL(accountID, folderID, kind, fileKind string, f ListFilter, af
 	}
 	args = append(args, limit)
 	// With a group, the index that matches the scope is named. Without a hint the planner chose between the folder and the
-	// account index by their equality columns, and picked the account one for a folder page (review M1 of ff1a). The index
+	// account index by their equality columns, and picked the account one for a folder page. The index
 	// names are fixed here, never taken from a request.
 	hint := ""
 	if f.Group != "" {

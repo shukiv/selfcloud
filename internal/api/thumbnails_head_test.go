@@ -11,7 +11,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// L5: a HEAD request reads a thumbnail and starts no work. It answers 404 when nothing is made, and queues nothing;
+// A HEAD request reads a thumbnail and starts no work. It answers 404 when nothing is made, and queues nothing;
 // the GET that follows is what starts it.
 func TestHeadStartsNoWork(t *testing.T) {
 	t.Parallel()

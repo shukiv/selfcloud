@@ -246,7 +246,7 @@ func TestSearchValidatesItsParameters(t *testing.T) {
 	}
 }
 
-// TestSearchPassesUnreadableMatches (review S1): matches the caller cannot read do not stop or shorten a page. The
+// TestSearchPassesUnreadableMatches: matches the caller cannot read do not stop or shorten a page. The
 // readable match comes back on the first page, with no cursor, although 120 unreadable matches come first.
 func TestSearchPassesUnreadableMatches(t *testing.T) {
 	fx := newLabelFixture(t)

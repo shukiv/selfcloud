@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// The confirmation oracle (review S1). A file the caller cannot read, in another folder, either contains the word or does
+// The confirmation oracle. A file the caller cannot read, in another folder, either contains the word or does
 // not. A search may not tell the caller which: not by a cursor, a count, a short page, or a page that is empty where a
 // full one should be. The walk below pages through the whole answer, with a small page, and compares every page. Node IDs
 // are random in each world, so they are masked; a cursor is masked to its presence, since the walk follows it anyway.
@@ -81,7 +81,7 @@ func oracleWorld(t *testing.T, hiddenHas bool, fill int) string {
 	return ""
 }
 
-// TestSearchAnswerDoesNotRevealAnUnreadableFile (review S1): with trashed matches filling the caller's own folder, every
+// TestSearchAnswerDoesNotRevealAnUnreadableFile: with trashed matches filling the caller's own folder, every
 // page of the walk is the same bytes, cursors included, whether or not the unreadable file holds the word. The walk must
 // find the two visible matches, or it proves nothing.
 func TestSearchAnswerDoesNotRevealAnUnreadableFile(t *testing.T) {

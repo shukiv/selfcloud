@@ -610,7 +610,7 @@ func isDeviceToken(p *auth.Principal) bool {
 
 // delegatedOrigin reports whether a token's rights come from something other than the person's own browser session: a
 // token minted by an account key, or a device token. Such a token never gets Save As, and the editor's own checks treat
-// it as a delegated one (review H1).
+// it as a delegated one.
 func delegatedOrigin(t *auth.TokenScope) bool {
 	return t != nil && (t.MintedBy != "" || t.Audience == auth.CLIAudience)
 }

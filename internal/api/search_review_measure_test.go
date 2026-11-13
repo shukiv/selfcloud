@@ -14,7 +14,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// TestMeasureUnreadableMatchCost (review S1, "what timing still shows"): a viewer searches a word that N files the viewer
+// TestMeasureUnreadableMatchCost ("what timing still shows"): a viewer searches a word that N files the viewer
 // cannot reach all hold. The answer is the same bytes as for no such file, but the time is not: the walk reads each
 // unreadable match. Gated by SELFCLOUD_MEASURE_CONTENT=1; figures in decision 46.
 func TestMeasureUnreadableMatchCost(t *testing.T) {

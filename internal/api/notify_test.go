@@ -704,7 +704,7 @@ func (fx *notifyFixture) setComments(t *testing.T, on bool) {
 }
 
 // TestActorWithoutNameIsLabelled: a person with no display name is named by a label in the mail, never by the address, and
-// the inbox shows no name, as the comment page shows none (review D4).
+// the inbox shows no name, as the comment page shows none.
 func TestActorWithoutNameIsLabelled(t *testing.T) {
 	t.Parallel()
 	fx := newNotifyFixture(t)
@@ -751,7 +751,7 @@ func TestPersonNameFollowsTheRule(t *testing.T) {
 }
 
 // TestTransientReadErrorKeepsTheRow: a read that fails while a row is checked does not skip it. The row waits, with no
-// attempt counted, and is sent by a later pass (review D2). The context is cancelled, as a shutdown does mid-pass.
+// attempt counted, and is sent by a later pass. The context is cancelled, as a shutdown does mid-pass.
 func TestTransientReadErrorKeepsTheRow(t *testing.T) {
 	t.Parallel()
 	fx := newNotifyFixture(t)
@@ -784,7 +784,7 @@ func TestTransientReadErrorKeepsTheRow(t *testing.T) {
 }
 
 // TestCommentsOffHoldsMailAndHidesTheInbox: while an account's comments are off, its rows are kept, and no mail goes and
-// the inbox shows nothing. When they are back on, a row still young enough is sent (review D5).
+// the inbox shows nothing. When they are back on, a row still young enough is sent.
 func TestCommentsOffHoldsMailAndHidesTheInbox(t *testing.T) {
 	t.Parallel()
 	fx := newNotifyFixture(t)
@@ -813,7 +813,7 @@ func TestCommentsOffHoldsMailAndHidesTheInbox(t *testing.T) {
 }
 
 // TestOldRowsAreNotMailedWhenCommentsReturn: a row older than notifyMailMaxAge is skipped as late when its account's
-// comments come back on, so a long switch-off does not flood the reader (review D5).
+// comments come back on, so a long switch-off does not flood the reader.
 func TestOldRowsAreNotMailedWhenCommentsReturn(t *testing.T) {
 	t.Parallel()
 	fx := newNotifyFixture(t)

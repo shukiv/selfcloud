@@ -31,7 +31,7 @@ func tokenParts(tok string) []string {
 	return []string{tok, body, mac, "access_token"}
 }
 
-// lk1 F4: a WOPI call refused at its checks writes one line at warn, which names the reason, the node and the WOPI session,
+// A WOPI call refused at its checks writes one line at warn, which names the reason, the node and the WOPI session,
 // and never the token, its body or its signature. A refusal from the same session for the same reason repeats at debug
 // within the window (wopi.session_refusal), so a stuck editor cannot fill the log.
 func TestWOPIRefusedCallLogsItsReasonAndNeverTheToken(t *testing.T) {
@@ -122,7 +122,7 @@ func TestWOPIRefusedCallLogsItsReasonAndNeverTheToken(t *testing.T) {
 	}
 }
 
-// lk1 F4: from one session and reason, a repeated refusal is debug within the window, so one warn line stands for the
+// From one session and reason, a repeated refusal is debug within the window, so one warn line stands for the
 // first of them.
 func TestWOPIRefusedCallsWarnOncePerSessionAndReason(t *testing.T) {
 	t.Parallel()

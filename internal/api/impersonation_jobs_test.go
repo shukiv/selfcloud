@@ -11,7 +11,7 @@ import (
 )
 
 // TestImpersonatedJobsKeepTheMark: a zip, a large copy and a move made while an admin is signed in as a user carry the
-// admin's mark into their audit rows (decision 41), including a job that runs after the sign-in-as has ended (F5).
+// admin's mark into their audit rows (decision 41), including a job that runs after the sign-in-as has ended.
 func TestImpersonatedJobsKeepTheMark(t *testing.T) {
 	t.Parallel()
 	fx := zipFixture(t, func(c *config.Config) { c.Admin.TenantAccess = true })

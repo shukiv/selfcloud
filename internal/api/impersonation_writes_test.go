@@ -23,10 +23,10 @@ var allowedWrites = map[string]string{
 	"PATCH /api/v1/nodes/{nod}":                       "file data: rename",
 	"DELETE /api/v1/nodes/{nod}":                      "file data: trash",
 	"POST /api/v1/nodes/{nod}/move":                   "file data",
-	"POST /api/v1/nodes/{nod}/copy":                   "file data; the copy job keeps the admin's mark (F5)",
+	"POST /api/v1/nodes/{nod}/copy":                   "file data; the copy job keeps the admin's mark",
 	"POST /api/v1/nodes/{nod}/shortcuts":              "file data",
 	"POST /api/v1/nodes/{nod}/exports":                "file data: a derived copy",
-	"POST /api/v1/zips":                               "file data: the zip job keeps the admin's mark (F5)",
+	"POST /api/v1/zips":                               "file data: the zip job keeps the admin's mark",
 	"DELETE /api/v1/zips/{zip}":                       "the caller's own zip job",
 	"PUT /api/v1/nodes/{nod}/content":                 "file data",
 	"PUT /api/v1/nodes/{nod}/labels/{lbf}":            "file metadata",
@@ -38,7 +38,7 @@ var allowedWrites = map[string]string{
 	"POST /api/v1/nodes/{nod}/versions/{ver}/restore": "file data",
 	"DELETE /api/v1/nodes/{nod}/versions/{ver}":       "file data",
 	"POST /api/v1/notifications/unsubscribe":          "anonymous; the token in the mail is the credential",
-	"POST /api/v1/nodes/{nod}/links":                  "a signed link (the viewer's preview), capped at the sign-in-as's end (F8)",
+	"POST /api/v1/nodes/{nod}/links":                  "a signed link (the viewer's preview), capped at the sign-in-as's end",
 	"POST /api/v1/share/open":                         "anonymous; the visitor's own credential",
 	"POST /api/v1/share/renew":                        "anonymous; the visitor's own credential",
 	"POST /wopi/files/{nod}/contents":                 "office edit: a WOPI token, not the session",
@@ -49,7 +49,7 @@ var allowedWrites = map[string]string{
 	"POST /api/v1/uploads/{upl}/commit":               "file data: an upload",
 }
 
-// TestImpersonationAllowedWrites pins the writes that stay open while impersonating (F4). The walk covers every route
+// TestImpersonationAllowedWrites pins the writes that stay open while impersonating. The walk covers every route
 // the table classifies impAllow, not only the refusals.
 func TestImpersonationAllowedWrites(t *testing.T) {
 	t.Parallel()

@@ -71,8 +71,7 @@ func CheckPassword(p string) error {
 }
 
 // EndUserTokens ends a user's delegated tokens and editing sessions, as handleRevokeUserTokens does. It returns the
-// cut-off now in force, which a device cookie made in the same transaction must be stamped after (sec1, decision 84,
-// review F9).
+// cut-off now in force, which a device cookie made in the same transaction must be stamped after (sec1, decision 84).
 func EndUserTokens(ctx context.Context, tx *store.Tx, accountID, userID string) (time.Time, error) {
 	cut, err := tx.RevokeUserTokens(ctx, accountID, userID, store.Now())
 	if err != nil {

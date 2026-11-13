@@ -31,7 +31,7 @@ func listDeviceIDs(t *testing.T, s *Server, sess testSession) []string {
 }
 
 // A person may end only their own device. Another user's device in the same account, and a device of another account,
-// both answer 404, the same as an unknown id, so the answer does not show that the device exists (review H2). The owner's
+// both answer 404, the same as an unknown id, so the answer does not show that the device exists. The owner's
 // own device keeps working afterwards.
 func TestDeviceRevokeOfAnotherUsersDeviceIsNotFound(t *testing.T) {
 	t.Parallel()
@@ -63,7 +63,7 @@ func TestDeviceRevokeOfAnotherAccountsDeviceIsNotFound(t *testing.T) {
 }
 
 // The request's end is fixed at 600 s from its start. A poll before the end does not move it: a sign-in approved at 650 s
-// is refused as expired, and its poll gets expired_token (review M1; the sliding mutant accepts the approval).
+// is refused as expired, and its poll gets expired_token (the sliding mutant accepts the approval).
 func TestDeviceApprovalAfterTheFixedEndIsRefused(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, false)
@@ -85,7 +85,7 @@ func TestDeviceApprovalAfterTheFixedEndIsRefused(t *testing.T) {
 }
 
 // Ending a device is a change, so it needs the session's CSRF token as every session change does: a cookie alone is refused,
-// and the device keeps working (review M2).
+// and the device keeps working.
 func TestDeviceRevokeNeedsCSRF(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, false)

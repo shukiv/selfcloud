@@ -189,7 +189,7 @@ func rowOf(t *testing.T, s *Server, nodeID string) textRow {
 	return r
 }
 
-// docxBytes is a file whose content is a Word document: a real ZIP container with the OOXML entries (review S4: the true
+// docxBytes is a file whose content is a Word document: a real ZIP container with the OOXML entries: the true
 // type is read from the entries). Its name is irrelevant: the content decides what it is.
 func docxBytes(text string) string {
 	var buf bytes.Buffer
@@ -539,7 +539,7 @@ func TestConverterRefusalIsStickyWithAFixedReason(t *testing.T) {
 	if got := fx.find(t, fx.bobSess, "refusedword"); len(got) != 0 {
 		t.Errorf("a refused document was indexed: %v", contentNames(got))
 	}
-	// Sticky (review S4): not tried again by the clock, however long it is, and tried once when the converter's key changes.
+	// Sticky: not tried again by the clock, however long it is, and tried once when the converter's key changes.
 	clock.now = clock.now.Add(400 * 24 * time.Hour)
 	drainText(t, w)
 	if conv.calls != 1 {
@@ -555,7 +555,7 @@ func TestConverterRefusalIsStickyWithAFixedReason(t *testing.T) {
 	}
 }
 
-// TestConverterDailyRefusalIsNotResent (review S4): a PDF the converter refuses is sent once per converter key, not once
+// TestConverterDailyRefusalIsNotResent: a PDF the converter refuses is sent once per converter key, not once
 // a day for ever. Mutation: a refusal with a day's wait (the earlier rule) sends it again on the second day.
 func TestConverterDailyRefusalIsNotResent(t *testing.T) {
 	t.Parallel()
@@ -574,7 +574,7 @@ func TestConverterDailyRefusalIsNotResent(t *testing.T) {
 	}
 }
 
-// TestConverterFailureInFlightIsCountedThenSticky (review S4): a converter that fails while it has the document is a
+// TestConverterFailureInFlightIsCountedThenSticky: a converter that fails while it has the document is a
 // counted try, so a document that crashes it is not retried for ever: after the third try the row is sticky under the key.
 // Mutation: an in-flight failure left uncounted (the earlier default case) never reaches the third try.
 func TestConverterFailureInFlightIsCountedThenSticky(t *testing.T) {
@@ -610,7 +610,7 @@ func TestConverterOutageIsRetriedAndNotCounted(t *testing.T) {
 	fx := newContentFixture(t)
 	n := fx.file(t, "down.docx", docxBytes("downword"))
 	clock := &fakeClock{now: time.Unix(1_000_000, 0)}
-	// An outage is a connection that cannot be made (review S4): the worker pauses, and no row is counted or written.
+	// An outage is a connection that cannot be made: the worker pauses, and no row is counted or written.
 	conv := &fakeConverter{err: office.ErrUnreachable}
 	w := fx.worker(conv, clock)
 	for i := 0; i < 5; i++ {

@@ -476,7 +476,7 @@ func TestNotificationSQLDoesNotScan(t *testing.T) {
 }
 
 // TestAccountPendingCapLeavesOtherAccountsMail: an account at NotifyAccountPendingLimit queues no more mail, and another
-// account's notification is still queued (review D3). The global cap is only a backstop.
+// account's notification is still queued. The global cap is only a backstop.
 func TestAccountPendingCapLeavesOtherAccountsMail(t *testing.T) {
 	s := openTest(t)
 	seedNotify(t, s)
@@ -537,7 +537,7 @@ func seedOtherAccount(t *testing.T, s *Store) {
 }
 
 // TestClaimIsFairAcrossAccounts: one account with a backlog of due users does not take every claim slot of another
-// account (review D3). Two slots go to the first user of each account, not to both of the first account's users.
+// account. Two slots go to the first user of each account, not to both of the first account's users.
 func TestClaimIsFairAcrossAccounts(t *testing.T) {
 	s := openTest(t)
 	seedNotify(t, s)

@@ -206,7 +206,7 @@ func peopleNamesSeen(p *auth.Principal, accountID string) bool {
 
 // personName is the display name a response shows for the person id: the name for a caller peopleNamesSeen admits, and ""
 // otherwise, or when the person has no display name. names is UserNames of the people read. Every surface that names a
-// person uses this one function, so a comment's author, a notification's actor and a mail's actor agree (review D4).
+// person uses this one function, so a comment's author, a notification's actor and a mail's actor agree.
 func personName(p *auth.Principal, accountID string, names map[string]string, id string) string {
 	if id == "" || !peopleNamesSeen(p, accountID) {
 		return ""
@@ -413,7 +413,7 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		return blob.Committed{}, tooLarge(limit)
 	}
 	p := principalOf(r)
-	// Every one-request write takes the write.one_request limiter, large or small (sec1, decision 84, review F6). A large
+	// Every one-request write takes the write.one_request limiter, large or small (sec1, decision 84). A large
 	// or unsized body also takes write.one_request_large, which is the old 60 a minute, so a large write charges both.
 	if p != nil {
 		key := string(p.Kind) + ":" + p.ID
@@ -427,7 +427,7 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		}
 	}
 	// The bytes are reserved while the body arrives, so writes that run together cannot each pass the disk check
-	// against the same free space (review F3). The reservation is released when the write ends, success or not.
+	// against the same free space. The reservation is released when the write ends, success or not.
 	release, err := s.reserveOneRequest(r.Context(), p, accountID, r.ContentLength, replaces, limit)
 	if err != nil {
 		return blob.Committed{}, err
@@ -448,7 +448,7 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	return wr.Commit()
 }
 
-// oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3),
+// oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84),
 // in total and per account, as dropFlight does. An account's entry is deleted at zero.
 type oneRequestFlight struct {
 	mu        sync.Mutex
@@ -592,8 +592,8 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 		return err
 	}
 	// A link visitor sees no shortcut in a listing. A filter for shortcuts therefore answers an empty page with no cursor,
-	// before any SQL runs: a cursor after a page the visitor cannot see in full would show that hidden rows exist (review
-	// M5 of ff1a, decision 110).
+	// before any SQL runs: a cursor after a page the visitor cannot see in full would show that hidden rows exist
+	// (decision 110).
 	if p.Kind == auth.KindShareLink && filter.Kind == store.KindShortcut {
 		writeJSON(w, http.StatusOK, listResponse[nodeJSON]{Items: []nodeJSON{}})
 		return nil

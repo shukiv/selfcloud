@@ -175,7 +175,7 @@ func TestTooManyEntriesIsRefused(t *testing.T) {
 }
 
 // TestDeclaredCountThatHidesEntriesIsRefused: the end record says one entry, but five headers follow it. The count is
-// taken from the headers, as decision 84 F5 does, so the cap of 3 holds.
+// taken from the headers, as decision 84 does, so the cap of 3 holds.
 func TestDeclaredCountThatHidesEntriesIsRefused(t *testing.T) {
 	files := map[string]string{}
 	var order []string

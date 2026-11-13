@@ -125,7 +125,7 @@ func Match(index Index, terms []string, accountID string) (string, error) {
 
 // MatchContent is the match of a content search. A term expands to a prefix only from wordPrefixMinRunes runes: a shorter
 // prefix matches a large share of a tenant's words, so a short search would cost what the largest tenant's corpus costs
-// (review S5, decision 46). A shorter term matches whole words only. Name search keeps Match, where a short word is a
+// (decision 46). A shorter term matches whole words only. Name search keeps Match, where a short word is a
 // prefix (decision 40).
 func MatchContent(terms []string, accountID string) (string, error) {
 	return match(Words, terms, accountID, wordPrefixMinRunes)

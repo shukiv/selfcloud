@@ -39,7 +39,7 @@ var (
 	// about the document.
 	ErrUnavailable = errors.New("office: the converter is unavailable")
 	// ErrUnreachable is a connection that could not be made: nothing listens, the name does not resolve, or the dial timed
-	// out. Nothing reached the converter, so no document was tried and no attempt is counted (review S4).
+	// out. Nothing reached the converter, so no document was tried and no attempt is counted.
 	ErrUnreachable = errors.New("office: the converter cannot be reached")
 	// ErrTooLarge is an answer over the output limit.
 	ErrTooLarge = errors.New("office: the converted file is over the output limit")
@@ -170,7 +170,7 @@ func (c *Client) Convert(ctx context.Context, src io.Reader, size int64, ext, fo
 	return c.acquire(ctx, c.slots, src, size, ext, format, dst)
 }
 
-// ConvertBulk is Convert for the content search's own work (review S4). It takes a slot of its own, one at a time, so a
+// ConvertBulk is Convert for the content search's own work. It takes a slot of its own, one at a time, so a
 // backlog of bulk conversions never takes the slots of a user's preview, and a preview never waits for a backlog. The
 // time spent waiting for the slot is not part of the conversion's time limit, and is not a failed attempt: the limit
 // starts when the request does.
@@ -230,7 +230,7 @@ func (c *Client) convert(ctx context.Context, f format, src io.Reader, size int6
 		if rctx.Err() != nil {
 			return context.DeadlineExceeded
 		}
-		// No connection was made: the converter cannot be reached, which is not a judgement about the document (review S4).
+		// No connection was made: the converter cannot be reached, which is not a judgement about the document.
 		var op *net.OpError
 		if errors.As(err, &op) && op.Op == "dial" {
 			return ErrUnreachable

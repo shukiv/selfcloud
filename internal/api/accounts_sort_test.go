@@ -139,7 +139,7 @@ func TestListAccountsSortCursor(t *testing.T) {
 }
 
 // TestListAccountsSortCursorFilter checks that a sorted cursor is bound to the walk's filters as well as its sort: a cursor
-// from one status, search or external ID resumes no walk of another, and is refused as invalid_request (review L1).
+// from one status, search or external ID resumes no walk of another, and is refused as invalid_request.
 func TestListAccountsSortCursorFilter(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})

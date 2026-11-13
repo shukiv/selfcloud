@@ -35,7 +35,7 @@ func storedZip(t *testing.T, names []string) []byte {
 // one key per entry, not one per prefix of each path. The file that clashes with the first entry's top folder
 // still refuses the archive.
 func TestDeepPathsScanInBoundedMemory(t *testing.T) {
-	// Each name is about 3.2 KB, under the 4 KiB a central-directory header may take (F18), so the scan reaches the paths.
+	// Each name is about 3.2 KB, under the 4 KiB a central-directory header may take, so the scan reaches the paths.
 	const entries, depth, seg = 2000, 32, 100
 	var names []string
 	pathBytes := 0

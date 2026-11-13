@@ -143,7 +143,7 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 		if err := voidAddressTokens(ctx, tx, u.ID); err != nil {
 			return nil, err
 		}
-		// The device-confirm links mailed to the old address stop too (decision 86, L5), in this same transaction.
+		// The device-confirm links mailed to the old address stop too (decision 86), in this same transaction.
 		if err := tx.VoidDeviceConfirms(ctx, u.ID, now); err != nil {
 			return nil, err
 		}
@@ -272,7 +272,7 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		if err := voidAddressTokens(ctx, tx, found.ID); err != nil {
 			return err
 		}
-		// The device-confirm links mailed to the old address stop too (decision 86, L5), in this same transaction.
+		// The device-confirm links mailed to the old address stop too (decision 86), in this same transaction.
 		if err := tx.VoidDeviceConfirms(ctx, found.ID, at); err != nil {
 			return err
 		}

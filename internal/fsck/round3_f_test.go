@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// F1. The manifest is opened before the first rename. Here the quarantine folder for today is read-only, the folders the
+// The manifest is opened before the first rename. Here the quarantine folder for today is read-only, the folders the
 // blob would move into already exist, so the rename could succeed and only the manifest cannot be created. No file
 // may move. Mutant: open the manifest after the rename; the blob is then moved with no line.
 func TestManifestFailureMovesNothing(t *testing.T) {
@@ -43,7 +43,7 @@ func TestManifestFailureMovesNothing(t *testing.T) {
 	}
 }
 
-// F2. A link swapped in after the walk, before the hash pass, is a stray entry and not an abort. The run finishes and
+// A link swapped in after the walk, before the hash pass, is a stray entry and not an abort. The run finishes and
 // reports it, so the exit status is 1. Mutant: return the ELOOP error from the hash pass; the run fails.
 func TestSymlinkSwappedBeforeHashIsStray(t *testing.T) {
 	t.Parallel()

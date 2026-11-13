@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestShortContentTermDoesNotExpand (review S5, decision 46): a content term of two runes matches whole words only, so a
+// TestShortContentTermDoesNotExpand (decision 46): a content term of two runes matches whole words only, so a
 // short search does not match most of a large tenant's words. Two runes of Hebrew or Arabic are still a whole word. A term
 // of three runes expands to a prefix, as before.
 func TestShortContentTermDoesNotExpand(t *testing.T) {

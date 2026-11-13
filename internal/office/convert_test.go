@@ -226,7 +226,7 @@ func TestConvertDoesNotFollowRedirects(t *testing.T) {
 }
 
 // TestConvertHonoursItsTimeout: a converter that stalls is cut off, and the caller gets context.DeadlineExceeded, not a
-// hang. A time-out is its own class (review S4): the worker counts it, as it does not count an outage.
+// hang. A time-out is its own class: the worker counts it, as it does not count an outage.
 func TestConvertHonoursItsTimeout(t *testing.T) {
 	f := newFakeConverter(t, func(w http.ResponseWriter, r *http.Request) {
 		select {

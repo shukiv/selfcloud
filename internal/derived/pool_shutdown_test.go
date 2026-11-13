@@ -10,7 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// M1: a shutdown that stops a decode in progress records nothing. The child is killed by the cancelled context, so it
+// A shutdown that stops a decode in progress records nothing. The child is killed by the cancelled context, so it
 // exits by a signal: that is the outcome a host condition would give, and it must not be written as a failure.
 func TestShutdownDuringADecodeRecordsNothing(t *testing.T) {
 	t.Parallel()

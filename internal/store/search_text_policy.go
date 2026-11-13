@@ -9,7 +9,7 @@ import (
 	"math"
 )
 
-// The policy of the stored text (review S3, S4, decision 46): which blobs have text, what the text may cost, and which
+// The policy of the stored text (decision 46): which blobs have text, what the text may cost, and which
 // rows wait. The rules are kept by the writes that change a node, and the worker reads them before it sends anything.
 
 // Error texts of a skipped row that the policy chose. ReleaseTextSkipped and ReleaseTextCapped look for them.
@@ -111,7 +111,7 @@ func (s *Store) DropUnusedText(ctx context.Context) (int64, error) {
 }
 
 // TextLive reports whether blobID is held by a node of accountID that is not in the trash, itself or through an ancestor.
-// A trashed file's text is not sent to the converter (review S4); the worker parks the row until the file is out again.
+// A trashed file's text is not sent to the converter; the worker parks the row until the file is out again.
 func (s *Store) TextLive(ctx context.Context, accountID, blobID string) (bool, error) {
 	rows, err := s.r.QueryContext(ctx, "SELECT id FROM nodes WHERE account_id = ? AND blob_id = ?", accountID, blobID)
 	if err != nil {
@@ -191,7 +191,7 @@ func (s *Store) TextUsageOf(ctx context.Context, accountID string) (TextUsage, e
 }
 
 // ReleaseTextKey makes pending the refusals of an earlier converter key. A refusal is sticky until the converter's key
-// changes (decision 37's rule, review S4); when the key differs, the refused rows are tried again, once.
+// changes (decision 37's rule); when the key differs, the refused rows are tried again, once.
 func (s *Store) ReleaseTextKey(ctx context.Context, key string) (int64, error) {
 	var n int64
 	err := s.Write(ctx, func(tx *Tx) error {

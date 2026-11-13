@@ -31,7 +31,7 @@ func dropDeclare(t *testing.T, s *Server, tok, name string, length int64) string
 	return uploadID(t, createUpload(t, s, tok, length, md("name", name)))
 }
 
-// TestDropUploadsReserveAsReceived (item 1, M1): a drop upload holds only the bytes it has received, so twenty
+// TestDropUploadsReserveAsReceived: a drop upload holds only the bytes it has received, so twenty
 // drop uploads each declaring the largest file hold nothing until bytes arrive, and the owner's upload still fits.
 func TestDropUploadsReserveAsReceived(t *testing.T) {
 	t.Parallel()
@@ -54,7 +54,7 @@ func TestDropUploadsReserveAsReceived(t *testing.T) {
 	}
 }
 
-// TestDropRefusalsHideTheAccountsNumbers (item 2, M2): a drop visitor is refused a full quota or a full disk with
+// TestDropRefusalsHideTheAccountsNumbers: a drop visitor is refused a full quota or a full disk with
 // one generic answer, with no numbers and no scope. The owner still gets the detail.
 func TestDropRefusalsHideTheAccountsNumbers(t *testing.T) {
 	t.Parallel()
@@ -97,7 +97,7 @@ func assertGenericRefusal(t *testing.T, rec *httptest.ResponseRecorder, message 
 	}
 }
 
-// TestDropPausedLinkKeepsItsUploads (item 3, M3): a paused link or a trashed directory refuses the visitor's piece
+// TestDropPausedLinkKeepsItsUploads: a paused link or a trashed directory refuses the visitor's piece
 // with not_found but keeps the upload, so the visitor resumes once the link is back. A deleted, reset or expired link
 // still ends it (see TestDropMidUploadEndsWhenItsLinkDies).
 func TestDropPausedLinkKeepsItsUploads(t *testing.T) {
@@ -147,7 +147,7 @@ func TestDropPausedLinkKeepsItsUploads(t *testing.T) {
 	}
 }
 
-// TestDropFinishesAfterItsDirectoryMoves (item 3, M3): a directory moved to another folder must not destroy a finished
+// TestDropFinishesAfterItsDirectoryMoves: a directory moved to another folder must not destroy a finished
 // transfer. The file lands in the directory where it now is.
 func TestDropFinishesAfterItsDirectoryMoves(t *testing.T) {
 	t.Parallel()
@@ -168,7 +168,7 @@ func TestDropFinishesAfterItsDirectoryMoves(t *testing.T) {
 	}
 }
 
-// TestDropDeleteAndResetReleaseTheirUploads (item 4, L7): deleting or resetting a drop link releases its open uploads
+// TestDropDeleteAndResetReleaseTheirUploads: deleting or resetting a drop link releases its open uploads
 // at once, with their rows, their files and their reservations, not on the visitor's next request.
 func TestDropDeleteAndResetReleaseTheirUploads(t *testing.T) {
 	t.Parallel()
@@ -226,7 +226,7 @@ func (m *countingMailer) Send(ctx context.Context, msg mail.Message) error {
 	return nil
 }
 
-// TestDropFailedMailBacksOff (item 5, L4): a mail that does not go does not make the notifier try again every minute.
+// TestDropFailedMailBacksOff: a mail that does not go does not make the notifier try again every minute.
 // The files stay counted, and the next try is an hour after the failed one.
 func TestDropFailedMailBacksOff(t *testing.T) {
 	t.Parallel()
@@ -255,7 +255,7 @@ func TestDropFailedMailBacksOff(t *testing.T) {
 	}
 }
 
-// TestDropCompletionSendsNoNodeID (item 6, L5): the completing piece of a drop upload does not name the new node to
+// TestDropCompletionSendsNoNodeID: the completing piece of a drop upload does not name the new node to
 // the visitor. An owner's completing piece still does.
 func TestDropCompletionSendsNoNodeID(t *testing.T) {
 	t.Parallel()
@@ -276,7 +276,7 @@ func TestDropCompletionSendsNoNodeID(t *testing.T) {
 	}
 }
 
-// TestDropNodeOwnerFollowsTheStore (item 6, L5): the owner the completed node reports is the one the store gives it:
+// TestDropNodeOwnerFollowsTheStore: the owner the completed node reports is the one the store gives it:
 // the folder's user in a personal folder, and the link's creator elsewhere.
 func TestDropNodeOwnerFollowsTheStore(t *testing.T) {
 	t.Parallel()
@@ -290,7 +290,7 @@ func TestDropNodeOwnerFollowsTheStore(t *testing.T) {
 	}
 }
 
-// TestDropUploaderFieldsStripControls (item 7, L6): every control character and the Unicode line and paragraph
+// TestDropUploaderFieldsStripControls: every control character and the Unicode line and paragraph
 // separators are replaced by a space before the uploader's name or email is stored or audited.
 func TestDropUploaderFieldsStripControls(t *testing.T) {
 	t.Parallel()

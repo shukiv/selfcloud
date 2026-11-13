@@ -64,7 +64,7 @@ func (s *Server) reachableAncestors(ctx context.Context, rd accessReader, p *aut
 }
 
 // handleListAncestors answers a node's reachable ancestors in one call, so a client opening a folder needs one round trip
-// for its trail, not one per level (perf-1 3.2, decision 132). The node itself must be reachable, and is refused as stat
+// for its trail, not one per level (decision 132). The node itself must be reachable, and is refused as stat
 // refuses it. Each item is the stat answer for that node, built the way stat builds its own. Read-only: no audit, no write.
 func (s *Server) handleListAncestors(w http.ResponseWriter, r *http.Request) error {
 	n, _, err := s.nodeAccess(r, r.PathValue("nod"))

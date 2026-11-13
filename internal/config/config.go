@@ -394,7 +394,7 @@ type SearchConfig struct {
 	// marked truncated, so a word past the cut is not found.
 	TextMaxBytes ByteSize `yaml:"text_max_bytes"`
 	// OfficeText is whether documents (Word, spreadsheets, presentations, PDFs) are sent to the converter for their text
-	// (review S4). It is off by default: a converter run for previews has not been agreed for every tenant's documents.
+	// It is off by default: a converter run for previews has not been agreed for every tenant's documents.
 	// With it off, no document is sent, and document files have no content search.
 	OfficeText bool `yaml:"office_text"`
 	// MaxTextPerAccount is the stored text one account may hold, in bytes of extracted text, and MaxTextTotal the text of

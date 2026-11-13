@@ -160,7 +160,7 @@ func TestPaletteFromYAML(t *testing.T) {
 	}
 }
 
-// TestEveryBrandTokenIsValidated (M2): each colour token of the palette and the sidebar is refused
+// TestEveryBrandTokenIsValidated: each colour token of the palette and the sidebar is refused
 // when it is not a colour, and the test finds the tokens by reflection, so a token added to the structs
 // without a check in validate fails here.
 func TestEveryBrandTokenIsValidated(t *testing.T) {
@@ -224,7 +224,7 @@ func setToken(b *BrandConfig, prefix string, value string) {
 	}
 }
 
-// TestContrastWarningsForExplicitPairs (L5): an explicit colour pair under 4.5:1 is reported, once per
+// TestContrastWarningsForExplicitPairs: an explicit colour pair under 4.5:1 is reported, once per
 // pair, and the config is still accepted. Pairs of defaults are not reported.
 func TestContrastWarningsForExplicitPairs(t *testing.T) {
 	b := Defaults().UI.Brand

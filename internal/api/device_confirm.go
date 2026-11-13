@@ -123,7 +123,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	nonce := s.setConfirmCookie(w, r)
 	short := remember != nil && !*remember
 	// Two budgets are taken together, before any password check, or neither is taken. The first is per email
-	// client address: an attacker who spends it from its own address does not stop another address's mail.
+	// and client address: an attacker who spends it from its own address does not stop another address's mail.
 	// The address is read as login.ip reads it, so proxy headers are trusted the same way. The NUL separates the two parts:
 	// an address key never holds one. The second is the email's ceiling from all addresses together: it bounds the hashing
 	// that many addresses could make, and the price is that an attacker with enough addresses spends it and blocks the real
@@ -380,7 +380,7 @@ func (s *Server) handleDeviceConfirm(w http.ResponseWriter, r *http.Request) err
 		u        *store.User
 		secret   string
 		sess     *store.Session
-		// issuedAt is the time the transaction makes the session: the device cookie is stamped with it (sec1, F9).
+		// issuedAt is the time the transaction makes the session: the device cookie is stamped with it (sec1).
 		issuedAt time.Time
 	)
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
@@ -407,7 +407,7 @@ func (s *Server) handleDeviceConfirm(w http.ResponseWriter, r *http.Request) err
 				With("reason", "other_browser")
 		}
 		// A change to the password, a reset, an admin's set-password or a disable after the mail voids the link, as it
-		// voids a device cookie (sec1, decision 84, F9). The cut-off is in milliseconds, as the link's creation is.
+		// voids a device cookie (sec1, decision 84). The cut-off is in milliseconds, as the link's creation is.
 		cut, err := tx.TokensNotBeforeIn(ctx, found.AccountID, found.ID)
 		if err != nil {
 			return err

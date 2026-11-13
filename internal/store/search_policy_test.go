@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The text policy (review S3, decision 46): text is kept only for blobs a node holds, a cap is checked in the write that
+// The text policy (decision 46): text is kept only for blobs a node holds, a cap is checked in the write that
 // makes a text ready, and a cap on one account does not stop another.
 
 // replaceBlob makes node nodeID hold blob (a new version of the file) in one write, as UpdateNodeHeld does.
@@ -161,7 +161,7 @@ func readyWithCaps(t *testing.T, s *Store, blobID, acc string, n int64, perAccou
 // TextState is the state and reason of one content row, in the tests.
 type TextState struct{ State, Error string }
 
-// TestPerAccountCapStopsOnlyTheFullAccount (review S3): an account at its cap does not stop another account's text. Two
+// TestPerAccountCapStopsOnlyTheFullAccount: an account at its cap does not stop another account's text. Two
 // accounts, the first over its cap, the second not. Mutation: the cap checked over the installation instead of the account
 // stops the second account too.
 func TestPerAccountCapStopsOnlyTheFullAccount(t *testing.T) {

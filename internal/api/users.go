@@ -150,7 +150,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 		Role          string `json:"role"`
 		ExternalID    string `json:"external_id"`
 		Verification  string `json:"verification"`
-		AdminPassword string `json:"admin_password"` // an admin session's link to a pending owner needs it (sec1, F4)
+		AdminPassword string `json:"admin_password"` // an admin session's link to a pending owner needs it (sec1)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err

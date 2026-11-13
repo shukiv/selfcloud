@@ -23,7 +23,7 @@ func wantDeviceRefused(t *testing.T, rec *httptest.ResponseRecorder) {
 }
 
 // A device token opens no editor: neither a view nor an edit, and no WOPI token is minted from it. The WOPI token would
-// otherwise carry the device's empty key and outlive the device's revocation (review H1).
+// otherwise carry the device's empty key and outlive the device's revocation.
 func TestDeviceTokenRefusedTheEditor(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"edit", "view"} {
@@ -78,7 +78,7 @@ func TestDeviceTokenRefusedDerivedCredentialRoutes(t *testing.T) {
 }
 
 // The zip a device makes is read with the device's token on each call, so it ends with the device: the read after
-// revocation is refused (review H1, the derived-credential audit). This is a regression test; it passes once the reads
+// revocation is refused (the derived-credential audit). This is a regression test; it passes once the reads
 // check the device on every call.
 func TestDeviceDerivedZipEndsWithRevoke(t *testing.T) {
 	t.Parallel()
@@ -113,7 +113,7 @@ func deviceIDOf(t *testing.T, fx *officeFixture, sess testSession) string {
 }
 
 // A device token gets no Save As: saveAsPrincipal does not lift its node scope or its write cap. Its MintedBy is empty, so
-// the old check on MintedBy alone let it through (review H1).
+// the old check on MintedBy alone let it through.
 func TestDeviceTokenNeverGetsSaveAs(t *testing.T) {
 	t.Parallel()
 	p := &auth.Principal{Kind: auth.KindUser, UserID: "usr_x", Token: &auth.TokenScope{
@@ -125,7 +125,7 @@ func TestDeviceTokenNeverGetsSaveAs(t *testing.T) {
 }
 
 // An upload session a device starts is read and written with the device's token on each call, so it ends with the device:
-// the next call after revocation is refused (review H1, the derived-credential audit).
+// the next call after revocation is refused (the derived-credential audit).
 func TestDeviceDerivedUploadEndsWithRevoke(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)

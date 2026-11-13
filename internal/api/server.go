@@ -102,10 +102,10 @@ type Server struct {
 	sessionClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (item 1).
 	dropFlight dropFlight
-	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
+	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84).
 	oneFlight oneRequestFlight
 	// afterLoginCommit, when set, runs in a sign-in after its transaction commits and before its device cookie is written.
-	// Production leaves it nil; a test uses it to make a password change land in that gap (sec1, decision 84, review F9).
+	// Production leaves it nil; a test uses it to make a password change land in that gap (sec1, decision 84).
 	afterLoginCommit func(userID string)
 	pwFails          passwordFails // wrong current passwords, per session, for POST /me/password
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
@@ -434,8 +434,8 @@ func New(opts Options) (*Server, error) {
 			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
 			"device.confirm.ip":   newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"mail.device.address": newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
-			// Password checks for one email from one client address while the email's failed-sign-in cap is spent (
-			// per address). The setting is rate_limit.capped_per_email_per_hour.
+			// Password checks for one email from one client address while the email's failed-sign-in cap is spent (per address).
+			// The setting is rate_limit.capped_per_email_per_hour.
 			"login.capped": newLimiterRate(cfg.RateLimit.CappedPerEmailPerHour, time.Hour),
 			// The ceiling on those checks for one email from all addresses together. The setting is
 			// rate_limit.capped_email_per_hour.
@@ -465,7 +465,7 @@ func New(opts Options) (*Server, error) {
 			// Searches, per caller: each one reads up to the scan budget and checks access to every candidate.
 			"search": newLimiter(cfg.Search.RatePerMinute),
 			// Searches, per account: every user and token of an account has its own limit above, so a tenant with many users
-			// would multiply it. The account's total is ten times one caller's (review S5).
+			// would multiply it. The account's total is ten times one caller's.
 			"search.account": newLimiter(cfg.Search.RatePerMinute * 10),
 			// Directory searches are typed, so one caller searching while it types stays well inside this.
 			"directory.search": newLimiter(60),
@@ -574,7 +574,7 @@ func New(opts Options) (*Server, error) {
 			MinFreeNow: minFree, Log: log})
 	}
 	// The content worker's converter is nil while office is off. With office on it has the converter, and asks
-	// search.office_text, from the settings, before each document (review S4, decision 139): while the setting is off a
+	// search.office_text, from the settings, before each document (decision 139): while the setting is off a
 	// document gets a skipped row, and no request is made. Plain text works either way.
 	var textConv search.Converter
 	if cfg.Office.Enabled {

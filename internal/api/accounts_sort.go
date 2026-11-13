@@ -69,7 +69,7 @@ func accountSortParams(r *http.Request) (order store.AccountSort, sorted bool, e
 }
 
 // accountCursorAAD binds a sorted cursor to its caller, its sort and its filters (the status, the search text and the
-// external ID), so a cursor resumes only the walk that made it (review L1). Each filter value is quoted, so a NUL or a
+// external ID), so a cursor resumes only the walk that made it. Each filter value is quoted, so a NUL or a
 // separator in the search text cannot make two filters read alike.
 func accountCursorAAD(p *auth.Principal, order store.AccountSort, f store.AccountFilter) []byte {
 	tag := fmt.Sprintf("%t/%t", order.ByName, order.Desc)

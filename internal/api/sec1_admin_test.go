@@ -55,7 +55,7 @@ func TestAdminSessionOwnerLinkNeedsThePassword(t *testing.T) {
 	_ = acc
 }
 
-// sec1 item 12, review F4 (decision 84): an admin session that asks for a link to a new pending owner through the user
+// sec1 (decision 84): an admin session that asks for a link to a new pending owner through the user
 // create route needs the admin's password, as the owner link at account create and the resend do. Without it the
 // link is refused; with it the owner is created.
 func TestAdminSessionCreateUserOwnerLinkNeedsThePassword(t *testing.T) {
@@ -76,7 +76,7 @@ func TestAdminSessionCreateUserOwnerLinkNeedsThePassword(t *testing.T) {
 	wantStatus(t, callSession(t, s, adminSess, "POST", users, withPassword), 201)
 }
 
-// sec1 item 12, review F7 (decision 84): the admin's password is confirmed per signed-in session. A delegated token has
+// sec1 (decision 84): the admin's password is confirmed per signed-in session. A delegated token has
 // no session, so with no session confirmAdminPassword refuses at once, with a message that says a signed-in session is
 // needed. It does not count the failures under an empty key, and five wrong passwords answer 403, never 500.
 // No legitimate flow sends a token here: each route that confirms the password requires a session.

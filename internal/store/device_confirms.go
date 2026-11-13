@@ -68,7 +68,7 @@ func (tx *Tx) UseDeviceConfirm(ctx context.Context, id string, at time.Time) err
 }
 
 // VoidDeviceConfirms ends every open link of a user at at, so that a link mailed before a change of the user's address
-// does not sign in after it (decision 86, L5). The rows stay, as spent links do, until the sweep removes them. It is
+// does not sign in after it (decision 86). The rows stay, as spent links do, until the sweep removes them. It is
 // not an error when the user has no open link.
 func (tx *Tx) VoidDeviceConfirms(ctx context.Context, userID string, at time.Time) error {
 	_, err := tx.q.ExecContext(ctx,
