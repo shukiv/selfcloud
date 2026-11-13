@@ -6,7 +6,7 @@ import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
-import { stubFetch } from "../../test/fetchStub";
+import { fail, stubFetch } from "../../test/fetchStub";
 import InviteDialog from "./InviteDialog";
 
 function signedAs(): Session {
@@ -69,5 +69,30 @@ describe("the invite dialog", () => {
     expect(onclose).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalled();
     expect(await screen.findByText("Cancelled. The change may or may not have been saved; check the list before you try again.")).toBeTruthy();
+  });
+
+  // A server without mail refuses the email invitation with its own reason: the dialog says why, and keeps everything typed.
+  it("says the server cannot send mail, and keeps the fields", async () => {
+    const { calls } = stubFetch(() => fail(400, "invalid_request", { reason: "mail_not_configured" }));
+    const onclose = vi.fn();
+    const oncreated = vi.fn();
+    render(
+      <App>
+        <QueryClientProvider client={createQueryClient()}>
+          <InviteDialog account="acc_1" onclose={onclose} oncreated={oncreated} />
+        </QueryClientProvider>
+      </App>,
+    );
+    fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "ana@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    expect(
+      await screen.findByText("This server can't send email yet, so nothing was sent. The installation admin needs to set up mail."),
+    ).toBeTruthy();
+    expect(onclose).not.toHaveBeenCalled();
+    expect(oncreated).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("ana@example.com");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Ana");
+    expect(calls[0].body).toMatchObject({ email: "ana@example.com", display_name: "Ana", verification: "email" });
   });
 });
