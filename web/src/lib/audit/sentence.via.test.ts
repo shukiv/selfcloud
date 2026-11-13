@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderSentence, sentence, type AuditEntry, type Names } from './sentence';
 
-// The viewers say who acted for an installation admin who was signed in as the user (decision 41, F6). The owner and
+// The viewers say who acted for an installation admin who was signed in as the user (decision 41). The owner and
 // the admin both see the admin's name, and a row whose admin is gone says so in general words.
 const names: Names = {
   person: (id) => (id === 'usr_dana' ? 'Dana' : undefined),

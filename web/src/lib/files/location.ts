@@ -39,7 +39,7 @@ export function joinPath(base: string | null, name: string): string | null {
 
 // locate reads where the browser is. It answers null when the folder or the directory is not reachable by
 // the caller, so the page shows the not-found view. Other errors are thrown. listing, when the caller already reads the
-// folder's root (the files page does), is that read: it answers for the root, so the root is not read a second time (perf-1 3.2).
+// folder's root (the files page does), is that read: it answers for the root, so the root is not read a second time.
 export async function locate(
   folder: string,
   dirID: string | null,
@@ -72,7 +72,7 @@ export async function locate(
     };
   }
 
-  // The directory and its reachable ancestors come in two answers read at once (perf-1 3.2, decision 132): the chain
+  // The directory and its reachable ancestors come in two answers read at once (decision 132): the chain
   // is the server's walk, which stops at the first folder the caller does not reach.
   const [dir, found] = await Promise.all([statOrNull(dirID), ancestorsOrNull(dirID)]);
   if (!dir || dir.kind !== 'dir' || dir.folder_id !== folder || found === null) return null;

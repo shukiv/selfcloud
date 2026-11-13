@@ -411,7 +411,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     for (let i = 0; i < 5; i++) await act(async () => undefined);
   }
 
-  it("F1: a rename in the editor shows the new name in the bar, from the file's own read", async () => {
+  it("a rename in the editor shows the new name in the bar, from the file's own read", async () => {
     await openEditor();
     nodesMock.byId.set("nod_a1", { ...NODE, name: "renamed.docx", parent_id: "nod_dir" });
     from({ MessageId: "File_Rename", Values: { NewName: "renamed" } });
@@ -419,14 +419,14 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(screen.queryByText("letter.docx")).toBeNull();
   });
 
-  it("F1: until the read lands, the bar shows the decoded name the editor sent, with the extension", async () => {
+  it("until the read lands, the bar shows the decoded name the editor sent, with the extension", async () => {
     await openEditor();
     nodesMock.pending = true;
     from({ MessageId: "File_Rename", Values: { NewName: "Quarterly%20report" } });
     expect(await screen.findByText("Quarterly report.docx")).toBeTruthy();
   });
 
-  it("F1: a malformed name in a rename does not throw, and the read's name is shown", async () => {
+  it("a malformed name in a rename does not throw, and the read's name is shown", async () => {
     await openEditor();
     nodesMock.byId.set("nod_a1", { ...NODE, name: "renamed.docx", parent_id: "nod_dir" });
     const errors: unknown[] = [];
@@ -438,7 +438,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(errors).toEqual([]);
   });
 
-  it("F1: the Save As dialog suggests the renamed file's base name", async () => {
+  it("the Save As dialog suggests the renamed file's base name", async () => {
     await openEditor();
     nodesMock.byId.set("nod_a1", { ...NODE, name: "renamed.docx", parent_id: "nod_dir" });
     from({ MessageId: "File_Rename", Values: { NewName: "renamed" } });
@@ -456,7 +456,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(sent.Values).toEqual({ Filename: "letter (2).docx", Notify: true });
   });
 
-  it("F2: Doc_Title arrives first, then Action_Save_Resp: the page moves to the copy, without reopening the editor", async () => {
+  it("Doc_Title arrives first, then Action_Save_Resp: the page moves to the copy, without reopening the editor", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -469,7 +469,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(await screen.findByText("letter (2).docx")).toBeTruthy();
   });
 
-  it("F2: when Doc_Title names another file first, Action_Save_Resp's name decides the copy", async () => {
+  it("when Doc_Title names another file first, Action_Save_Resp's name decides the copy", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -480,7 +480,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("F2: with only Doc_Title arriving, its name finds the copy", async () => {
+  it("with only Doc_Title arriving, its name finds the copy", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -488,7 +488,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("F2: a name with no exact match in the folder is no guess: the page stays on the source and says where the copy is", async () => {
+  it("a name with no exact match in the folder is no guess: the page stays on the source and says where the copy is", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (9)");
@@ -561,7 +561,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(window.location.pathname).toBe("/edit/nod_c2");
   });
 
-  it("F4: App_TokenExpired gets a fresh token for the same mode, posted to the editor's origin only", async () => {
+  it("App_TokenExpired gets a fresh token for the same mode, posted to the editor's origin only", async () => {
     await openEditor();
     from({ MessageId: "App_TokenExpired", Values: {} });
     await waitFor(() => expect(officePosts()).toHaveLength(2));
@@ -576,20 +576,20 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(sent.Values).toEqual({ token: TOKEN, ttl: Date.parse("2026-11-03T12:00:00Z") });
   });
 
-  it("F4: App_TokenExpiring is answered the same way, before the expiry", async () => {
+  it("App_TokenExpiring is answered the same way, before the expiry", async () => {
     await openEditor();
     from({ MessageId: "App_TokenExpiring", Values: { Timeout: 60000 } });
     await waitFor(() => expect(officePosts()).toHaveLength(2));
   });
 
-  it("F4: a view-mode page is renewed in view mode, never in edit", async () => {
+  it("a view-mode page is renewed in view mode, never in edit", async () => {
     await openEditor("/edit/nod_a1?mode=view&from=%2Ffiles%2Ffld_b");
     from({ MessageId: "App_TokenExpired", Values: {} });
     await waitFor(() => expect(officePosts()).toHaveLength(2));
     expect(officePosts().every((c) => JSON.stringify(c[2]) === JSON.stringify({ body: { mode: "view" } }))).toBe(true);
   });
 
-  it("F4: after a Save As the token is renewed for the copy the editor now has", async () => {
+  it("after a Save As the token is renewed for the copy the editor now has", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -599,7 +599,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(officePosts().some((c) => c[1] === "/api/v1/nodes/nod_c2/office")).toBe(true));
   });
 
-  it("F4: when the browser session has changed since the editor opened, nothing is minted and the session-ended message is shown", async () => {
+  it("when the browser session has changed since the editor opened, nothing is minted and the session-ended message is shown", async () => {
     await openEditor();
     session.set({ user: { id: "usr_2" }, csrf: "csrf_other" } as never);
     from({ MessageId: "App_TokenExpired", Values: {} });
@@ -608,7 +608,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect(submit).toHaveBeenCalledTimes(1);
   });
 
-  it("F4: a renewal that is refused says so, and the status, not the server's text, chooses the words", async () => {
+  it("a renewal that is refused says so, and the status, not the server's text, chooses the words", async () => {
     await openEditor();
     apiMock.mockImplementationOnce(() => Promise.reject(new ApiError(403, "forbidden", {}, 0)));
     from({ MessageId: "App_TokenExpired", Values: {} });

@@ -9,7 +9,7 @@ function press(code: string, altKey = false) {
   document.body.dispatchEvent(new KeyboardEvent("keydown", { code, altKey, bubbles: true, cancelable: true }));
 }
 
-describe("useNewChord: the chord is cancelled by blur and by Escape (F6)", () => {
+describe("useNewChord: the chord is cancelled by blur and by Escape", () => {
   afterEach(() => {
     document.body.replaceChildren();
   });
@@ -41,7 +41,7 @@ describe("useNewChord: the chord is cancelled by blur and by Escape (F6)", () =>
   });
 });
 
-describe("useNewChord: a plain key with no chord armed reads no overlay (F7)", () => {
+describe("useNewChord: a plain key with no chord armed reads no overlay", () => {
   afterEach(() => {
     document.body.replaceChildren();
     vi.restoreAllMocks();

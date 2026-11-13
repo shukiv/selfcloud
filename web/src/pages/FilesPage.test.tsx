@@ -2693,10 +2693,10 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(rows("alpha.txt")).not.toBeNull();
     expect(busyFrame()?.getAttribute("aria-busy")).toBe("true");
     expect(busyFrame()?.closest("[inert]")).not.toBeNull();
-    // The rows are present but not actionable: Ctrl+A selects none of them (fu3b review 1).
+    // The rows are present but not actionable: Ctrl+A selects none of them (fu3b).
     fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
     expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
-    // The change is announced to assistive technology while the rows are kept (fu3b review 2).
+    // The change is announced to assistive technology while the rows are kept (fu3b).
     expect(screen.getByText("Loading the folder").closest('[role="status"]')).not.toBeNull();
     await act(async () => {
       answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
@@ -2725,7 +2725,7 @@ describe("the list while the next folder is read (fu3b)", () => {
       await router.navigate(SUB);
     });
     await waitFor(() => expect(vi.mocked(locate)).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", expect.anything()));
-    // The load is announced while the place is looked up, and the rows stay (fu3b review 2).
+    // The load is announced while the place is looked up, and the rows stay (fu3b).
     expect(screen.getByText("Loading the folder").closest('[role="status"]')).not.toBeNull();
     expect(rows("alpha.txt")).not.toBeNull();
     expect(busyFrame()?.closest("[inert]")).not.toBeNull();
@@ -2775,7 +2775,7 @@ describe("the list while the next folder is read (fu3b)", () => {
   });
 
   // Review fixes of fu3b (decision 77): while the rows on screen are the folder left behind, nothing acts on them.
-  it("Ctrl+A and Ctrl+X during the load select and cut nothing of the folder left, and a paste after it moves nothing of that folder (fu3b review 1)", async () => {
+  it("Ctrl+A and Ctrl+X during the load select and cut nothing of the folder left, and a paste after it moves nothing of that folder (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
@@ -2807,7 +2807,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(api.moveNode).not.toHaveBeenCalled();
   });
 
-  it("Ctrl+V during the load moves nothing, and the same paste after it does (fu3b review 3)", async () => {
+  it("Ctrl+V during the load moves nothing, and the same paste after it does (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
@@ -2885,7 +2885,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     return { answer };
   }
 
-  it("the notice is also held in a polite live region, which screen readers announce (fu4 review 1)", async () => {
+  it("the notice is also held in a polite live region, which screen readers announce (fu4)", async () => {
     const { answer } = await busyFolder({ clip: true });
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
@@ -2896,7 +2896,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  it("Ctrl+C with nothing picked says nothing while busy (fu4 review 2)", async () => {
+  it("Ctrl+C with nothing picked says nothing while busy (fu4)", async () => {
     const { answer } = await busyFolder();
     fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
     await act(async () => {
@@ -2909,7 +2909,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  it("Delete and F2 with nothing picked say nothing while busy (fu4 review 2)", async () => {
+  it("Delete and F2 with nothing picked say nothing while busy (fu4)", async () => {
     const { answer } = await busyFolder();
     fireEvent.keyDown(document.body, { key: "Delete" });
     fireEvent.keyDown(document.body, { key: "F2" });
@@ -2923,7 +2923,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  it("Ctrl+V with nothing on the clipboard says nothing while busy (fu4 review 2)", async () => {
+  it("Ctrl+V with nothing on the clipboard says nothing while busy (fu4)", async () => {
     const { answer } = await busyFolder();
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     await act(async () => {
@@ -2936,7 +2936,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  it("a key typed on a button outside the listing says nothing while busy (fu4 review 2)", async () => {
+  it("a key typed on a button outside the listing says nothing while busy (fu4)", async () => {
     const { answer } = await busyFolder();
     const outside = document.createElement("button");
     document.body.appendChild(outside);
@@ -2952,7 +2952,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await screen.findByRole("row", { name: "gamma.txt" });
   });
 
-  it("the sidebar's New is read-only while the next folder's listing is read, and while its place is looked up (fu3b review 3)", async () => {
+  it("the sidebar's New is read-only while the next folder's listing is read, and while its place is looked up (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt")], next_cursor: undefined },
@@ -2973,7 +2973,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(get(newPlace)?.canUpload).toBe(true);
   });
 
-  it("focus in the folder left moves to the first row of the next folder once it loads (fu3b review 4)", async () => {
+  it("focus in the folder left moves to the first row of the next folder once it loads (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
@@ -2993,7 +2993,7 @@ describe("the list while the next folder is read (fu3b)", () => {
   });
 
   // The file picker is offered by the same rule as upload: while the rows of the folder left are shown, there is no picker.
-  it("the file picker is not offered while the next folder is read (fu3b review 3)", async () => {
+  it("the file picker is not offered while the next folder is read (fu3b)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
       dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
@@ -3071,7 +3071,7 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(box.querySelector(".ant-empty .ant-empty-description")?.textContent).toBe(
       translate("en", "files.empty") + translate("en", "files.emptyMouse"),
     );
-    // The drop target keeps its visible affordance: a dashed box, styled by its class (decision 111, review 1).
+    // The drop target keeps its visible affordance: a dashed box, styled by its class (decision 111).
     expect(box.classList.contains("empty-folder-drop")).toBe(true);
   });
 

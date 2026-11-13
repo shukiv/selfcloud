@@ -40,7 +40,7 @@ export default function TenantAudit({ account }: { account: string }) {
   });
   const entries: Entry[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
-  // An entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it (review L4).
+  // An entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it.
   const said = (e: Entry) => auditSaid(e, names, lang);
 
   return (

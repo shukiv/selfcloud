@@ -21,7 +21,7 @@ export default function DeletePublicLinks({
   account: string;
   count: number;
   ondone: (deleted: number) => void;
-  // onunsure is called when a cancel leaves the delete unsure: the links are read again, as after a success (fu4 review 3).
+  // onunsure is called when a cancel leaves the delete unsure: the links are read again, as after a success (fu4).
   onunsure?: () => void;
 }) {
   const { t, tp } = useT();

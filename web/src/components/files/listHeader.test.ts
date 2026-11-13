@@ -21,7 +21,7 @@ describe("the pinned header of the file list (fu3b, item 1)", () => {
   });
 
   // The header keeps antd's tint, the theme's token (colorFillAlter), over the list's solid background, so rows do not show
-  // through the pinned header (fu3b review 5).
+  // through the pinned header (fu3b).
   it("takes the header's tint from the theme's token, over a solid background", () => {
     const rule = indexCss.match(RULE);
     expect(rule?.[1]).toMatch(/background:\s*linear-gradient\(var\(--sc-list-head-tint\),\s*var\(--sc-list-head-tint\)\),\s*var\(--sc-list-head\);/);

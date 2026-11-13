@@ -366,7 +366,7 @@ export default function FolderTree(props: FolderTreeProps) {
     tabRef.current = tabKey;
     propsRef.current = props;
     // latestRef takes a state only when the parent sends a new one. A render that carries the state the tree sent earlier (before the parent
-    // has applied it) must not take the tree back to that state: the next change builds on what the tree last sent (decision 88, review L5).
+    // has applied it) must not take the tree back to that state: the next change builds on what the tree last sent (decision 88).
     if (props.state !== seenStateRef.current) {
       seenStateRef.current = props.state;
       latestRef.current = props.state;

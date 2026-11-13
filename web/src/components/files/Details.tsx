@@ -56,7 +56,7 @@ export default function Details({
   const cancelEnd = () => {
     if (request.abort()) {
       void message.warning(t("common.cancelledMaybe"));
-      // The unlock may have gone through: the file is read again, so the drawer does not show it as still being edited (fu4 review 3).
+      // The unlock may have gone through: the file is read again, so the drawer does not show it as still being edited (fu4).
       void refreshNode(node.id).then((fresh) => onChanged?.(fresh), () => undefined);
     }
     setEndError(null);

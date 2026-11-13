@@ -13,7 +13,7 @@ import type { FolderAccess } from "../lib/files/types";
 import FilesPage from "./FilesPage";
 
 // The API is the real one (lib/files/api, lib/api, location.ts); only the network is replaced. Each test counts the
-// requests a folder open sends, so a repeated read shows up as a second request for the same address (perf-1 3.2).
+// requests a folder open sends, so a repeated read shows up as a second request for the same address.
 
 vi.mock("../lib/files/folders", async () => {
   const { userWritable } = await import("../lib/store");
@@ -114,7 +114,7 @@ function renderAt(path: string, client?: QueryClient) {
   return { router };
 }
 
-describe("a folder open reads what it needs once (perf-1 3.2)", () => {
+describe("a folder open reads what it needs once", () => {
   it("reads the root listing once for the open, not once for a probe and once for the page", async () => {
     renderAt(`/files/${FOLDER_ROOT}`);
     await waitFor(() => expect(requestsTo(`/api/v1/folders/${FOLDER_ROOT}/children`)).toBeGreaterThan(0));

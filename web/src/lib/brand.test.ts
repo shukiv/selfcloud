@@ -114,7 +114,7 @@ describe('resolveBrand', () => {
   });
 });
 
-// L5: the derived accent text is the text colour of the accent on the card, so it must read at 4.5:1,
+// The derived accent text is the text colour of the accent on the card, so it must read at 4.5:1,
 // not only the 3:1 the accent gate asks of the accent itself.
 describe('derived accent text reads at 4.5:1 on the card', () => {
   it('holds for light accents too', () => {

@@ -134,7 +134,7 @@ function PeopleView() {
       render: (p) => (
         <span style={{ minWidth: 0 }}>
           <span>
-            {/* The name is a link-like button (review L1): a keyboard user opens the person from it. It stops the click here, so the row does not open it twice. */}
+            {/* The name is a link-like button: a keyboard user opens the person from it. It stops the click here, so the row does not open it twice. */}
             <Button
               type="link"
               onClick={(e) => {

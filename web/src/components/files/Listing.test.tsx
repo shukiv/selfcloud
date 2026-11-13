@@ -654,7 +654,7 @@ describe("checkboxes on demand (decision 70)", () => {
   });
 });
 
-// The files preset's actions column has a name for a screen reader, shown to no one (review L4).
+// The files preset's actions column has a name for a screen reader, shown to no one.
 describe("the files preset's actions column", () => {
   it("has a visually hidden header name", () => {
     const { container } = render(<Listing {...props()} />);
@@ -789,7 +789,7 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(screen.getAllByRole("button", { name: /^More for/ })).toHaveLength(3);
   });
 
-  // Review M1: a disabled action keeps its place. It is a disabled icon in the row, and a disabled entry in the ⋮ menu.
+  // A disabled action keeps its place. It is a disabled icon in the row, and a disabled entry in the ⋮ menu.
   // The re-check: a real browser takes the focus from a button that turns disabled (the e2e found BODY focused), so the
   // icon is aria-disabled, still focusable, and its click and its keys do nothing.
   it("a disabled action stays in its place, aria-disabled and focusable, inline and in the ⋮ menu", () => {
@@ -811,7 +811,7 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(entry.getAttribute("aria-disabled")).toBe("true");
   });
 
-  // Review L2: an entry with an address is a real link, so a middle or modified click opens it in a new tab.
+  // An entry with an address is a real link, so a middle or modified click opens it in a new tab.
   it("a ⋮ entry with an address is a link: a plain click runs the entry and keeps the page, a modified click is the browser's", () => {
     viewport(1200);
     const onSelect = vi.fn();
@@ -825,7 +825,7 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  // The owner's rule of 2026-11-09 (decision 114), and review L3: an empty list keeps its table and its header row, with the
+  // The owner's rule of 2026-11-09 (decision 114): an empty list keeps its table and its header row, with the
   // column titles and the sort mark; inside the body, antd's simple Empty, a bold title, one muted line, and the page's create
   // action, a primary button with a + icon.
   it("an empty list keeps its header row, and shows the Empty with its title, description and action inside the table body", () => {

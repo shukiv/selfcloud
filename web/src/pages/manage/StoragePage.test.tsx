@@ -79,7 +79,7 @@ describe("manage storage", () => {
     // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited.
     await waitFor(() => expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]));
     expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
-    // Round 2 (M3): each empty table says what will show there (the admin catalogue, loaded on demand).
+    // Each empty table says what will show there (the admin catalogue, loaded on demand).
     await waitFor(() => expect(people.querySelector("tbody .empty-desc")?.textContent).toBe("People show here once an owner adds them and attaches a folder."));
     const spaces = screen.getByRole("region", { name: "Team spaces" });
     await waitFor(() => expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]));
@@ -91,7 +91,7 @@ describe("manage storage", () => {
     await waitFor(() => expect(largest.querySelector("tbody .empty-desc")?.textContent).toBe("The largest files in this account show here, with their sizes."));
   });
 
-  // Round 2 (H1, design section 4): at 375 px each storage table shows its name column, and the other columns join its second line.
+  // At 375 px each storage table shows its name column, and the other columns join its second line.
   it("at 375 px each storage table shows its name column, and the other columns join it", async () => {
     stubFetch((c) => {
       if (c.url.includes("/storage/largest")) {
@@ -119,7 +119,7 @@ describe("manage storage", () => {
     }
   });
 
-  // Round 2 (M5): the people table's Load more appends the next page of people; a failed next page keeps the first one.
+  // The people table's Load more appends the next page of people; a failed next page keeps the first one.
   const CY = { id: "usr_c", display_name: "Cy", email: "cy@example.com", status: "active", used_bytes: 5, reserved_bytes: 0, quota_bytes: null, effective_quota_bytes: null };
   const pagedPeople = (c: Call, second: Answer) => {
     if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
@@ -149,7 +149,7 @@ describe("manage storage", () => {
     expect(within(people).getByText("Ada")).toBeTruthy();
   });
 
-  // Round 2 (M7): a person's Change icon opens the limit dialog for that person.
+  // A person's Change icon opens the limit dialog for that person.
   it("a person's Change icon opens the limit dialog for that person", async () => {
     stubFetch((c) => {
       if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };

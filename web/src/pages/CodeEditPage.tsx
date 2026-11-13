@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor, full page, in its own tab (decision 115, 3.4, 4.2 to 4.6, decisions 124 and 130). The address is /edit/<node>, the
+// The code editor, full page, in its own tab (decisions 115, 124 and 130). The address is /edit/<node>, the
 // one the office editor uses; App sends a code file here and an office file to OfficeEditPage. The page reads the file's node (its
 // etag is the file's version, decision 135), then the whole content with If-Match set to that etag, shows it in CodeMirror, and
 // saves on an explicit save only: a button, or Ctrl or Cmd+S. A save is a PUT with If-Match set to the etag of the last answer, and

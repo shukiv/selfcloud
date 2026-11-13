@@ -131,7 +131,7 @@ async function tenantPeopleChecks(h, { page, base, accountID, accountKey }) {
     await page.waitFor(`(() => { const b = ${rowButton(pat.display_name, resend)}; return !!b && (b.disabled || b.getAttribute('aria-disabled') === 'true'); })()`, 5000);
     const busyFocus = await focusNow(page);
     check(busyFocus === `BUTTON:${resend}`, `while the row is busy, the pressed Resend icon keeps the focus, disabled (${busyFocus})`);
-    // Under the pointer the busy icon looks disabled: antd gives a text button that is not:disabled its hover
+    // Under the pointer the busy icon looks disabled: antd gives a text button that is not :disabled its hover
     // background, so an aria-disabled icon must be kept from it, and it shows the disabled colour and the not-allowed cursor.
     const busyHover = await hoverRead(page, rowButton(pat.display_name, resend));
     check(

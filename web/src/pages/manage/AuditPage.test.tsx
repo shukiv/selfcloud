@@ -68,7 +68,7 @@ describe("the audit log is one table (decision 122)", () => {
     expect(row.getAttribute("aria-label")?.length ?? 0).toBeGreaterThan(5);
   });
 
-  // Round 2 (H1, design section 4): at 375 px only the sentence column shows; When joins its second line.
+  // At 375 px only the sentence column shows; When joins its second line.
   it("at 375 px the log shows only the Action column, and the When joins its name cell", async () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
     const undo = phoneViewport();
@@ -91,7 +91,7 @@ describe("the audit log is one table (decision 122)", () => {
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing recorded yet");
     expect(region.querySelector("tbody .ant-empty")).not.toBeNull();
-    // Round 2 (M3): the audit log's description is the admin catalogue's admin.empty.audit, as the tenant's log has it.
+    // The audit log's description is the admin catalogue's admin.empty.audit, as the tenant's log has it.
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("Sign-ins, changes to people and keys, and other actions show here."));
   });
 });
@@ -114,7 +114,7 @@ describe("the audit log", () => {
     expect(await screen.findByText(/The account has too many people to look up every name here/)).toBeTruthy();
   });
 
-  // Round 2 (M5): Load more appends the next page of the log; a failed next page keeps the first one, with the error.
+  // Load more appends the next page of the log; a failed next page keeps the first one, with the error.
   it("Load more appends the next page of the log", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/audit")) {

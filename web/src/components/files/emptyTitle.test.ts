@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// An empty table's title is a phrase with no full stop at its end, as the approved mockup's "No labels yet" (decision 114)
+// An empty table's title is a phrase with no full stop at its end, as the approved mockup's "No labels yet" (decision 114).
 // The keys are read from the source: each preset Listing's empty prop names its title with t()
 // (a filtered list may choose between two), and each key's text in the seven catalogues must not end in "." or in the
 // ideographic full stop "。" (U+3002).

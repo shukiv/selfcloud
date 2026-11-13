@@ -67,7 +67,7 @@ afterEach(() => {
 
 const isLinkDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/share-links/shl_1";
 
-// Round 2 (LOW): a row opens its item, as Enter and a click open a row of any list (decision 122).
+// A row opens its item, as Enter and a click open a row of any list (decision 122).
 describe("a link row opens its item", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -157,9 +157,9 @@ describe("links", () => {
     expect(row.querySelector(".item-name")?.textContent).toBe("report.pdf");
   });
 
-  // Round 2 (H1, design section 4): at 375 px only the name column and the ⋮ menu show; the audience, kind, created and status
+  // At 375 px only the name column and the ⋮ menu show; the audience, kind, created and status
   // join the name cell's second line.
-  it("at 375 px only the name and the ⋮ column show, and the other columns join the name cell (design section 4)", async () => {
+  it("at 375 px only the name and the ⋮ column show, and the other columns join the name cell", async () => {
     stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
     const undo = phoneViewport();
     try {
@@ -181,7 +181,7 @@ describe("links", () => {
     // An empty list has no row icons, so no Actions column (it comes with the first row's icons).
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No links to show");
-    // Round 2 (M3): the empty table says what will show here, in the admin catalogue (loaded on demand).
+    // The empty table says what will show here, in the admin catalogue (loaded on demand).
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("Drop links and links that anyone can open show here."));
   });
 
@@ -196,7 +196,7 @@ describe("links", () => {
     expect(screen.queryByRole("button", { name: "Delete all public links" })).toBeNull();
   });
 
-  // Round 2 (M5): Load more appends the next page of links; a failed next page keeps the first one, with the error.
+  // Load more appends the next page of links; a failed next page keeps the first one, with the error.
   const SECOND_LINK = { ...LINK, id: "shl_2", item_name: "budget.xlsx", item_path: "Plans/budget.xlsx" };
   it("Load more appends the next page of links", async () => {
     stubFetch((c: Call) => {

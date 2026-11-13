@@ -12,7 +12,7 @@ import LabelsPage from "./LabelsPage";
 import SpacesPage from "./SpacesPage";
 
 // The admin catalogue has not loaded: its hook answers false, as it does before the chunk arrives or after it fails. A Manage page
-// for a non-admin owner must still name its columns, so the column titles may not come from that catalogue (review H1).
+// for a non-admin owner must still name its columns, so the column titles may not come from that catalogue.
 vi.mock("../../lib/manage/adminText", () => ({
   useAdminText: () => false,
   loadAdminText: async () => undefined,
@@ -60,7 +60,7 @@ const SPACE = {
   updated_at: "2026-10-01T00:00:00Z",
 };
 
-describe("the column titles of a Manage list, before the admin catalogue has loaded (review H1)", () => {
+describe("the column titles of a Manage list, before the admin catalogue has loaded", () => {
   it("Labels names its columns in words, never with a key", async () => {
     stubFetch(() => ({ status: 200, body: { items: [NOTE] } }));
     renderIn("labels");

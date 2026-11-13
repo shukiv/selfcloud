@@ -682,7 +682,7 @@ describe("the share target (decision 82)", () => {
     expect(await take(w, b)).toEqual([]);
   });
 
-  // Round 4, H1: the referrer rule is narrowed like the Origin rule. Only a web referrer of another site is refused. An Android
+  // The referrer rule is narrowed like the Origin rule. Only a web referrer of another site is refused. An Android
   // app's referrer parses to the origin "null", which is not this site, so the old rule refused every such share.
   it("accepts an Android-app referrer with no Origin, since only a web referrer of another site is refused", async () => {
     const w = load();
@@ -702,14 +702,14 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
-  // Round 4, L3: an Origin of another web site is refused even when the referrer is this site's own page.
+  // An Origin of another web site is refused even when the referrer is this site's own page.
   it("refuses an Origin of another web site even when the referrer is this site's own page", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: absolute("/files"), origin: "https://evil.test" }));
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
-  // Round 4, L4: the Origin is normalised before it is compared, so a host in another case is this site, and a port is another site.
+  // The Origin is normalised before it is compared, so a host in another case is this site, and a port is another site.
   it("accepts an Origin of this site whose host is written in capitals, since it is the same origin once normalised", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "https://DRIVE.test" }));
@@ -722,7 +722,7 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
-  // Round 5, L2: a blob: or filesystem: referrer is the address it wraps. A page of another site can make a blob that the browser
+  // A blob: or filesystem: referrer is the address it wraps. A page of another site can make a blob that the browser
   // reports as this referrer, so the inner address is the one that is compared.
   it("refuses a blob referrer made by another site, with no Origin", async () => {
     const w = load();
@@ -744,7 +744,7 @@ describe("the share target (decision 82)", () => {
     expect(own?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
   });
 
-  // Round 5, L3: a default port is the same origin, an IPv6 literal is an address like any other, and an http:// referrer of another
+  // A default port is the same origin, an IPv6 literal is an address like any other, and an http:// referrer of another
   // site is refused as an https one is.
   it("accepts an Origin of this site written with its default port", async () => {
     const w = load();

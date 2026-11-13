@@ -163,7 +163,7 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     expect(document.getElementById("admin-email")).toBeTruthy();
   });
 
-  // Review M3: the mockup's Last sign-in column, from last_sign_in_at on each admin; Never when the admin has not signed in.
+  // The mockup's Last sign-in column, from last_sign_in_at on each admin; Never when the admin has not signed in.
   it("shows each admin's last sign-in as a date, and Never for one who has not signed in", async () => {
     stubFetch(() => ({
       status: 200,

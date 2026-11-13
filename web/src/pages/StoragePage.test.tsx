@@ -301,7 +301,7 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: "Download: Two.bin" })));
   });
 
-  // Round 2 (M1): on a phone a row's icons are in its ⋮ menu, so the focus after Move to trash goes to the next row's ⋮ button.
+  // On a phone a row's icons are in its ⋮ menu, so the focus after Move to trash goes to the next row's ⋮ button.
   it("on a phone, after Move to trash the focus goes to the next row's ⋮ button", async () => {
     let trashed = false;
     stubFetch((c: Call) => {

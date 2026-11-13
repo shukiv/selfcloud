@@ -18,7 +18,7 @@ async function key(page, { code, key: name, vk }) {
 
 // pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
 // OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
-// .ant-dropdown: it is its own.ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted.
+// .ant-dropdown: it is its own .ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted.
 const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"], .ant-dropdown-menu-submenu-popup [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
 async function pickMenuItem(page, text) {
   const visible = `${OPEN_ITEMS}.filter((x) => x.textContent.trim() === ${q(text)})`;

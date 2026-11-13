@@ -163,7 +163,7 @@ describe("a row's name and its actions", () => {
     expect(screen.getByRole("menuitem", { name: "Delete tenant…" })).toBeTruthy();
   });
 
-  // Review L2: Open in the ⋮ menu is a real link, so a middle or modified click opens the tenant in a new tab.
+  // Open in the ⋮ menu is a real link, so a middle or modified click opens the tenant in a new tab.
   it("Open in the ⋮ menu is a link to the tenant", async () => {
     stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : { status: 200, body: usage() }));
     renderPage();
@@ -174,7 +174,7 @@ describe("a row's name and its actions", () => {
   });
 });
 
-// Review M3: the Users column of the approved mockup, read from user_count on each account of the list (no request per row).
+// The Users column of the approved mockup, read from user_count on each account of the list (no request per row).
 describe("the tenants table's Users column", () => {
   it("shows each tenant's number of users, from the list itself", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: /min-width: (\d+)px/.test(query) && Number(/min-width: (\d+)px/.exec(query)?.[1]) <= 1200, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }));

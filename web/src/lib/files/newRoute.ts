@@ -2,7 +2,7 @@
 
 import { validID } from "./route";
 
-// The gallery's address (decision 108, Gallery rules): /new/{fld} for a folder's root and /new/{fld}/{nod} for a directory,
+// The gallery's address (decision 108): /new/{fld} for a folder's root and /new/{fld}/{nod} for a directory,
 // with the kind of document the gallery offers. The parser is added beside this function by the gallery's builder.
 
 // NewGalleryKind is the kind of document a gallery offers: a document, a spreadsheet or a presentation.

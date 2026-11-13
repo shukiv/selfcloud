@@ -142,7 +142,7 @@ describe("the breakdown and the meter racing (wf1)", () => {
     const breakdownCall = refreshMyBreakdown();
     const plainCall = refreshMyStorage();
 
-    // The newer plain call answers first; the older breakdown's figures must not show over it when they land (review item 3).
+    // The newer plain call answers first; the older breakdown's figures must not show over it when they land.
     newer.resolve(storage(200));
     await plainCall;
     expect(get(myStorage)?.used_bytes).toBe(200);

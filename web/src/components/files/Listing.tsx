@@ -348,7 +348,7 @@ function keysStop(e: { key: string; stopPropagation: () => void }) {
 const MORE_ICON = <EllipsisVertical size={18} aria-hidden="true" focusable="false" />;
 
 // menuItemOf is a ⋮ entry. An entry with an address is a real link: the browser opens a middle or a modified click in a new
-// tab, and a plain click or a key runs the entry here, in this tab (review L2).
+// tab, and a plain click or a key runs the entry here, in this tab.
 function menuItemOf(e: ListMenuEntry, select: () => void): NonNullable<MenuProps["items"]>[number] {
   return {
     key: e.key,
@@ -1067,7 +1067,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     onHeaderCell: () => ({ "aria-sort": ariaSortOf(dir) }),
   });
 
-  // The actions column's header: a name for a screen reader, shown to no one (review L4).
+  // The actions column's header: a name for a screen reader, shown to no one.
   const actionsHead = <span className="sr-only">{t("storage.actions")}</span>;
 
   // A row's icons and More button, and a tile's menu button, are IconButtons (above): 40 pixels with a mouse and 44 on a finger

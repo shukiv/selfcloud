@@ -116,7 +116,7 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
     await page.waitFor(`!document.querySelector('[data-testid="versions"]')`, 10000);
   }
 
-  // The empty folder's drop box (decision 85, review 1): a dashed box around the Empty, at both widths and in both themes.
+  // The empty folder's drop box (decision 85): a dashed box around the Empty, at both widths and in both themes.
   const made = await api(base, 'POST', `/api/v1/folders/${pf}/directories`, accountKey, { path: `/em1-empty-${suffix}`, parents: false });
   await navigateTo(page, `/files/${pf}/${made.id}`);
   await page.waitFor(`!!document.querySelector('[data-testid="empty-folder"]')`, 15000);

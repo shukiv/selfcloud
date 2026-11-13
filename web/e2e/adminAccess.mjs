@@ -388,7 +388,7 @@ async function runSteps(page, { base, accountID, sink }) {
   check(!menuItems.includes(L('user.signOut')), 'the account menu offers no sign-out while signed in as another person');
   await page.evaluate(`document.activeElement?.blur(); document.body.click()`);
 
-  // 4c. Signed in as the member, the files work for the member (F8): the member makes a file in its own folder, finds it,
+  // 4c. Signed in as the member, the files work for the member: the member makes a file in its own folder, finds it,
   // reads it, downloads it, and makes the preview link the viewer uses. The page's own fetches carry the member's session.
   await open(page, '/files');
   await waitText(page, L('nav.files'));
@@ -468,7 +468,7 @@ async function runSteps(page, { base, accountID, sink }) {
   await clickRowButton(page, RITA.name, L('tenant.users.reset'));
   await page.waitFor(`!!document.querySelector('.ant-modal')`);
   await clickRadio(page, L('tenant.reset.link'));
-  // A link from the admin's session needs the admin's own password (decision 41, F7).
+  // A link from the admin's session needs the admin's own password (decision 41).
   await page.setInput('#reset-admin', ADMIN.password);
   await clickButton(page, L('tenant.reset.submitLink'), '.ant-modal');
   await page.waitFor(`!!document.getElementById('reset-link-value')`, 15000);

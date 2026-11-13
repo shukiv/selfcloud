@@ -15,7 +15,7 @@ export const myStorage = userWritable<MeStorage | null>(null);
 let latestMeterRequest = 0;
 
 // shownMeter numbers the call whose figures the meter shows. An answer is shown only when it is newer than that one, so an
-// older answer never overwrites a newer one. A newer call that has not settled hides nothing (wf1, review item 1).
+// older answer never overwrites a newer one. A newer call that has not settled hides nothing (wf1).
 let shownMeter = 0;
 
 // showMeter shows call n's figures unless the session changed or a newer answer is shown already.

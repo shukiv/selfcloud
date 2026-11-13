@@ -617,7 +617,7 @@ describe("the Requests entry", () => {
     expect(menu.querySelector("[aria-disabled='true']")).toBeNull();
   });
 
-  // Round 2, H1: user-event keys, not a script. This checks that Enter on the account button opens the menu, and that Tab moves
+  // User-event keys, not a script. This checks that Enter on the account button opens the menu, and that Tab moves
   // focus into the menu and the menu stays open. It does not check the arrow keys or Escape, and jsdom does not reproduce the
   // round-1 fault (it passes on both trees). The browser run checks the rest: e2e/accountKeys.mjs (arrow, Escape, focus back).
   it("keyboard: Enter on the account button opens the menu, and Tab moves focus into it and keeps it open", async () => {
@@ -637,7 +637,7 @@ describe("the Requests entry", () => {
     expect(popup.contains(document.activeElement)).toBe(true);
   });
 
-  // Round 2, M4: the header's drawn colours, read from the DOM in dark, are 4.5:1 or more on the menu's ground (the palette's own
+  // The header's drawn colours, read from the DOM in dark, are 4.5:1 or more on the menu's ground (the palette's own
   // colorBgElevated, which the popup is drawn on). A mutant ink (for example the description colour) fails this.
   it("in dark, the Signed in as label and email are drawn at 4.5:1 or more on the menu's ground", async () => {
     window.localStorage.setItem("selfcloud.theme", "dark");
@@ -669,14 +669,14 @@ describe("the Requests entry", () => {
       return el;
     });
     expect(email.textContent).toBe("olivia@example.com");
-    // Round 2, H2: the header is in browse mode, not hidden from it (no aria-hidden on or above the email).
+    // The header is in browse mode, not hidden from it (no aria-hidden on or above the email).
     expect(email.closest("[aria-hidden='true']")).toBeNull();
     expect(email.parentElement?.style.textOverflow).toBe("ellipsis");
-    // Round 3, M4: the cut is at the end of the address in Hebrew too. The box that is cut is left to right, so its overflow runs to
+    // The cut is at the end of the address in Hebrew too. The box that is cut is left to right, so its overflow runs to
     // the end side of the address (on a right-to-left page the box would otherwise cut the start).
     expect(email.parentElement?.getAttribute("dir")).toBe("ltr");
     expect(email.parentElement?.title).toBe("olivia@example.com");
-    // Round 4, L2: the box is as wide as its address (up to the header's width), so a short address sits at the header's start edge.
+    // The box is as wide as its address (up to the header's width), so a short address sits at the header's start edge.
     expect(email.parentElement?.style.width).toBe("fit-content");
   });
 });

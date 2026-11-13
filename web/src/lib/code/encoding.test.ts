@@ -26,7 +26,7 @@ describe("the whole-file sniff at /edit/", () => {
   });
 });
 
-// The read side of the text rule (decision 115 and 4.8). The write side comes with the editor.
+// The read side of the text rule (decision 115). The write side comes with the editor.
 describe("the sniff", () => {
   it("reads 8 KiB", () => {
     expect(SNIFF_BYTES).toBe(8192);

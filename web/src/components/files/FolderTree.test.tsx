@@ -454,7 +454,7 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     // The test's own limit is above the wait's, so a slow machine meets the wait instead of the default 20 s test limit.
   }, 45_000);
 
-  // Decision 88 (review L1): the saved cap forgets by last use. The place passes through Team A, which moves it to the end of the list,
+  // Decision 88: the saved cap forgets by last use. The place passes through Team A, which moves it to the end of the list,
   // so when the list is full and another folder is opened by hand, the folder opened longest ago that the place did not pass through
   // is the one forgotten. Without the move (touchExpanded in the reveal), Team A, opened first, is the one forgotten.
   it("the cap forgets the folder least used, not the one opened first: a folder the place passes through is kept", async () => {
@@ -470,7 +470,7 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     expect(latest.expanded).toHaveLength(MAX_EXPANDED);
   });
 
-  // Decision 88 (review L5): a render that carries a state the tree sent earlier, before the parent has applied it, must not take the tree
+  // Decision 88: a render that carries a state the tree sent earlier, before the parent has applied it, must not take the tree
   // back to that state. A change made next (here, a click) builds on the state the tree last sent, so the folder the reveal just opened is kept.
   it("a click before the parent applies a reveal keeps the folder the reveal opened", async () => {
     const sent: TreeState[] = [];

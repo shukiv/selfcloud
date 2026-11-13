@@ -177,8 +177,8 @@ describe("labels page", () => {
     expect(post?.body).toEqual({ name: "Due", type: "text", restricted: false });
   });
 
-  // review L4: Edit opens the field's form with its current name and type.
-  it("Edit opens the form for the field, with its name in it (review L4)", async () => {
+  // Edit opens the field's form with its current name and type.
+  it("Edit opens the form for the field, with its name in it", async () => {
     stubFetch((c) => {
       if (c.method === "GET") return { status: 200, body: { items: [STATUS] } };
       return { status: 404, body: {} };

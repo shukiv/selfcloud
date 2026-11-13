@@ -342,7 +342,7 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await waitIn(api, base, teamA, '/sd1/Src', accountKey, 's01.txt', false);
       await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Undo')`, 15000);
       // Undo is a pointer click once its notice has settled: the notice's button is still animating in when it first shows, as the Delete
-      // button was in step 8. (Decision 104's round two pressed it as a DOM click for that reason; see the review's M3.)
+      // button was in step 8.
       // Undo is a real pointer click, once the notice's button is settled and is what is under the pointer (see settledPoint: the closing
       // Delete dialog covered it in one close, and a press there went to the dialog).
       const undo = await settledPoint(page, UNDO_PICK, 'the Undo button');

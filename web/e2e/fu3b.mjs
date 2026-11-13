@@ -36,7 +36,7 @@ const SAMPLER = `(() => {
       t: Math.round(performance.now()),
       list: !!list,
       busy: !!list?.closest('[aria-busy="true"]'),
-      // The rows of a busy frame are the folder left behind: they must be inert (no pointer, no key, no focus) (fu3b review 3).
+      // The rows of a busy frame are the folder left behind: they must be inert (no pointer, no key, no focus) (fu3b).
       inert: !!list?.closest('[inert]'),
       rows: list ? list.querySelectorAll('[role="row"]').length : 0,
       // The header is compared only when it is drawn (visible): a header hidden until its columns are measured paints nothing.

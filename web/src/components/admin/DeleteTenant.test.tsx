@@ -37,8 +37,8 @@ describe("cancelling the tenant deletion while its request is out", () => {
     expect(calls.find((c) => c.method === "DELETE")?.signal?.aborted).toBe(true);
   });
 
-  // fu4 review 3: the deletion may have started, so the tenant list and this tenant are read again.
-  it("a cancel after the deletion was sent reads the tenant list and the tenant again (fu4 review 3)", async () => {
+  // The deletion may have started, so the tenant list and this tenant are read again.
+  it("a cancel after the deletion was sent reads the tenant list and the tenant again (fu4)", async () => {
     session.set(signedAs("admin", "admin_1"));
     const onClose = vi.fn();
     const { calls: sent } = stubFetch((c: Call): Answer | Promise<Answer> => {

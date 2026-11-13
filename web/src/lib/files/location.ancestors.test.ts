@@ -110,7 +110,7 @@ const isStat = (c: string) => /^GET \/api\/v1\/nodes\/[^/]+$/.test(c);
 const isAncestors = (c: string) => /\/ancestors$/.test(c);
 
 describe('a folder open reads its trail in one request', () => {
-  // The stat, the ancestors and the listing start together: no one of them waits for another (perf-1 3.2).
+  // The stat, the ancestors and the listing start together: no one of them waits for another.
   it('starts the directory stat, its ancestors and the listing before any of them answers', () => {
     let release: () => void = () => undefined;
     net.gate = new Promise<void>((r) => (release = r));

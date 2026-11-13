@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The New chord (decision 108, Menu and shortcut rules): Alt+C, then one letter that runs a New action. The reader is pure: it
+// The New chord (decision 108): Alt+C, then one letter that runs a New action. The reader is pure: it
 // takes the state, the key and the time, and says what to do. A key is read by its position (event.code: KeyF, KeyU, ...), so it
 // is the same key on a Hebrew or Arabic layout. The chord is armed for CHORD_WINDOW_MS; a key that is not in the chord cancels it.
 import { isTextField } from "./keys";
@@ -86,7 +86,7 @@ export function overlayOpen(root: ParentNode = document): boolean {
 }
 
 // chordNeedsOverlayCheck says whether the overlays must be read for this key: only for Alt+C, or for a key while the chord is armed.
-// Any other key cannot act, so the (costly) style reads are skipped for it (F7).
+// Any other key cannot act, so the (costly) style reads are skipped for it.
 export function chordNeedsOverlayCheck(state: ChordState, e: ChordEvent, now: number): boolean {
   if (e.ctrlKey || e.metaKey) return false;
   if (e.code === "KeyC" && e.altKey) return true;

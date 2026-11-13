@@ -61,8 +61,8 @@ describe("the new folder dialog", () => {
   });
 
   // The Shell closes the sidebar's dialog on a change of address by unmounting it. A folder whose call is still in flight then
-  // is still made, and its result is still told to the person (fu3b review 6).
-  it("tells the person the folder was made when the dialog was unmounted while the call was in flight (fu3b review 6)", async () => {
+  // is still made, and its result is still told to the person (fu3b).
+  it("tells the person the folder was made when the dialog was unmounted while the call was in flight (fu3b)", async () => {
     let finish!: (node: { id: string; name: string; kind: string }) => void;
     mocks.mkdir.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
     const qc = new QueryClient();

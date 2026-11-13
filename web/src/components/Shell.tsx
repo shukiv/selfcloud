@@ -576,7 +576,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           gap: 12,
           // 48px on the desktop, where the sider below is offset by this height; a phone may wrap the name onto two lines.
           minHeight: 48,
-          // Counted inside the 48px, so the shell beneath is exactly one banner shorter (review F9).
+          // Counted inside the 48px, so the shell beneath is exactly one banner shorter.
           boxSizing: "border-box",
           padding: "8px 16px",
           background: token.colorWarningBg,

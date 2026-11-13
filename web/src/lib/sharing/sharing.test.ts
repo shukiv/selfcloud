@@ -161,7 +161,7 @@ describe('the people combobox', () => {
     expect(got.status).toBe('ready');
     expect(got.items).toEqual([ann, fin]);
     expect(got.open).toBe(true);
-    // No option is active until an arrow key is pressed, so Enter right after the focus picks nothing (review L3).
+    // No option is active until an arrow key is pressed, so Enter right after the focus picks nothing.
     expect(got.active).toBe(-1);
   });
 

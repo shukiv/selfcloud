@@ -196,7 +196,7 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   // ---- A file dragged from the listing and dropped on a tree row moves into that folder.
   await navigateTo(page, `/files/${teamA}`);
   await page.waitFor(`!!document.querySelector('[role="option"][data-id][aria-label=${q(MOVED)}]')`, 15000);
-  // The drag waits for the listing to be read: while the rows of the folder left are kept, they take no drag (fu3b review 1).
+  // The drag waits for the listing to be read: while the rows of the folder left are kept, they take no drag (fu3b).
   await page.waitFor(`!document.querySelector('.files-list')?.closest('[aria-busy="true"]')`, 15000);
   const state = await dragOnto(page, `[role="option"][aria-label=${q(MOVED)}]`, `[data-testid="folder-tree"] .tree-row[data-drop-name="D1 Projects"]`);
   check(state === 'ok', `the tree row takes the drop (${state})`);

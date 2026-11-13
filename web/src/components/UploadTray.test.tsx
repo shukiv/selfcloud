@@ -143,7 +143,7 @@ describe("UploadTray", () => {
     expect(screen.getByRole("status").textContent).not.toContain("running");
   });
 
-  it("a name waiting for an answer is not counted as running (fu4 review 4)", () => {
+  it("a name waiting for an answer is not counted as running (fu4)", () => {
     uploads.set([item({ id: 8, status: "conflict" }), item({ id: 9, status: "uploading", offset: 100, size: 1000 })]);
     conflictAsk.set("report.pdf");
     render(<UploadTray />);

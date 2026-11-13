@@ -115,16 +115,16 @@ describe("the people list", () => {
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
-  // review L1: the name is a link-like button, so a keyboard user can open the person from the name itself.
-  it("the name is a button that opens the person's details (review L1)", async () => {
+  // The name is a link-like button, so a keyboard user can open the person from the name itself.
+  it("the name is a button that opens the person's details", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Name usr_a" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
-  // review L5: the email line takes its colour from the theme token, not from a CSS variable.
-  it("the email line's colour is a theme token, not a CSS variable (review L5)", async () => {
+  // The email line takes its colour from the theme token, not from a CSS variable.
+  it("the email line's colour is a theme token, not a CSS variable", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const line = (await screen.findByText("usr_a@example.com")).parentElement as HTMLElement;
@@ -151,7 +151,7 @@ describe("the people list", () => {
     const headers = within(screen.getByRole("region", { name: "People" })).getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).not.toContain("Role");
     expect(headers).not.toContain("Status");
-    // The name is a link-like button that opens the person (review L1); the actions are the ⋮ button alone.
+    // The name is a link-like button that opens the person; the actions are the ⋮ button alone.
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["Name usr_a", "More actions for Name usr_a"]);
   });
 });

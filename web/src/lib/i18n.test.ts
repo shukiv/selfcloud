@@ -148,7 +148,7 @@ describe('setLang', () => {
 });
 
 // Every catalogue, the main one and each part (search, share, comments, notifications and any added later), has the same
-// keys in every language as in English (review M4): a key missing in one language shows English to its readers, and
+// keys in every language as in English: a key missing in one language shows English to its readers, and
 // check-keys.mjs reads only the English catalogue. The files are found by their folder, so a new part is checked too.
 describe('every catalogue has the same keys in every language', () => {
   const files = import.meta.glob<{ default: Record<string, string> }>('../i18n/**/*.json', { eager: true });

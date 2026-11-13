@@ -106,8 +106,8 @@ describe("delete all public links", () => {
     expect(ondone).not.toHaveBeenCalled();
   });
 
-  // fu4 review 3: the delete may have gone through, so the page is asked to read the links again.
-  it("a cancel after the delete was sent asks the page to read the links again (fu4 review 3)", async () => {
+  // fu4: the delete may have gone through, so the page is asked to read the links again.
+  it("a cancel after the delete was sent asks the page to read the links again (fu4)", async () => {
     const user = userEvent.setup();
     const onunsure = vi.fn();
     api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));

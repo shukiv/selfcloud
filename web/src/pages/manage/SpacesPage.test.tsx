@@ -181,8 +181,8 @@ describe("team spaces", () => {
   });
 });
 
-// review L4: the Share, Settings and Rename icons, each tested on its own.
-describe("a space's Share, Settings and Rename icons (review L4)", () => {
+// The Share, Settings and Rename icons, each tested on its own.
+describe("a space's Share, Settings and Rename icons", () => {
   it("Share reads the space's root node, which the share dialog works on", async () => {
     const { calls } = stubFetch(answerFor(() => null));
     renderPage();

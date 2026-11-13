@@ -14,7 +14,7 @@ import type { FolderAccess, Node } from "../lib/files/types";
 import type { UploadItem } from "../lib/files/uploads";
 
 // The listing is replaced by a stub that counts its renders. FilesPage renders the listing on each of its own renders, so the
-// count is FilesPage's render count (perf-1 3.3: every upload progress event used to redraw the whole page and its listing).
+// count is FilesPage's render count: every upload progress event used to redraw the whole page and its listing).
 const counts = vi.hoisted(() => ({ listing: 0 }));
 const uploads = vi.hoisted(() => ({ store: null as unknown as ReturnType<typeof writable<UploadItem[]>>, add: vi.fn() }));
 const api = vi.hoisted(() => ({
@@ -133,7 +133,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the files page under an upload (perf-1 3.3)", () => {
+describe("the files page under an upload", () => {
   it("a progress event does not re-render the page or its listing", async () => {
     renderAt(FOLDER);
     await waitFor(() => expect(counts.listing).toBeGreaterThan(0));
@@ -164,7 +164,7 @@ describe("the files page under an upload (perf-1 3.3)", () => {
   });
 });
 
-describe("the page does not re-render for the place it writes (perf-1 3.2)", () => {
+describe("the page does not re-render for the place it writes", () => {
   it("a write of the same place to newPlace does not re-render the listing", async () => {
     renderAt(FOLDER);
     await waitFor(() => expect(counts.listing).toBeGreaterThan(0));

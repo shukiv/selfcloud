@@ -223,7 +223,7 @@ export async function peopleFocusChecks(page, ctx) {
       `(() => { const r = document.querySelector('[role="listbox"]').getBoundingClientRect(); const d = document.querySelector('[role="dialog"]').getBoundingClientRect(); return r.left >= d.left - 1 && r.right <= d.right + 1 && r.left >= 0 && r.right <= window.innerWidth; })()`,
     );
     check(inside, `${look.name}: the list stays inside the dialog and on the screen`);
-    // Enter right after the focus picks nothing (decision 96, review L3). A real Enter key goes to the field: the list has
+    // Enter right after the focus picks nothing (decision 96). A real Enter key goes to the field: the list has
     // no option active, so nobody is added, the field is still empty and shows its usual hint, and the dialog stays open.
     // An Enter in a form's text field may submit the form; the check reads the field's error state too.
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

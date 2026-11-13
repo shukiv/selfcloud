@@ -43,7 +43,7 @@ describe("tenant audit table", () => {
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
   });
 
-  // Review L4: a screen reader hears a row as its sentence, not as the action's code.
+  // A screen reader hears a row as its sentence, not as the action's code.
   it("names each row by its sentence, not by the action code", async () => {
     stubFetch((c: Call) =>
       c.url.includes("/audit")

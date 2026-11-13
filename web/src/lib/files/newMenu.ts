@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The New menu, one list for the sidebar's New and the files page's New (decision 108 section 3). newMenuTree
+// The New menu, one list for the sidebar's New and the files page's New (decision 108). newMenuTree
 // says what the menu holds, as data: the groups in order, the submenus (Blank, From a template), the direct items (Drawing, Text
 // file under More), and the chord letters. newMenuItems turns that tree into the antd items both callers render, with the labels,
 // the icons, the row heights and the hints, so the two menus cannot drift apart.

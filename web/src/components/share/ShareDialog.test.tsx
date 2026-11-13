@@ -304,7 +304,7 @@ describe("the share dialog", () => {
     expect(await screen.findByText("You can't change who has access to this item.")).toBeTruthy();
   });
 
-  // Review L2: a transfer goes to a person, so its field lists people only, and a group cannot be picked for it.
+  // A transfer goes to a person, so its field lists people only, and a group cannot be picked for it.
   it("the transfer field searches people only", async () => {
     const user = userEvent.setup();
     renderDialog(nodeOf("manager", { owner_id: "usr_ann" }));

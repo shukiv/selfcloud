@@ -142,7 +142,7 @@ interface SelState extends Selection {
 const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 
 // doneUploads is the number of uploads that finished. The page reads only this number: an upload progress event replaces the
-// whole list, and a page that read the list would be drawn again for each event (perf-1 3.3). The number changes only when an
+// whole list, and a page that read the list would be drawn again for each event. The number changes only when an
 // upload finishes, so the page renders for that and for nothing else.
 const doneUploads = derived(uploads, (list) => list.filter((u) => u.status === "done").length);
 
@@ -158,7 +158,7 @@ const MENU_FIT = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as const
 const MENU_SCROLL = { maxBlockSize: "calc(100dvh - 16px)", overflowY: "auto" } as const;
 // antd offsets a menu 4 px from its anchor after it has been fitted to the window; 4 px of padding in the popup keeps the offset menu inside.
 const MENU_POPUP = { paddingBlock: 4 } as const;
-// NEW_MENU_STYLE is the New menu's width: 400 px at most, 320 px at least, and the screen less a 16 px gutter each side (decision 108 section 3).
+// NEW_MENU_STYLE is the New menu's width: 400 px at most, 320 px at least, and the screen less a 16 px gutter each side (decision 108).
 const NEW_MENU_STYLE = { ...MENU_SCROLL, width: "min(400px, calc(100vw - 32px))", minWidth: 320, boxSizing: "border-box" } as const;
 // MAC_KEYS says whether the shortcuts a menu shows are the Mac's (the command sign) or the Windows and Linux ones (Ctrl).
 const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
@@ -231,7 +231,7 @@ function childrenKey(folder: string | null, dir: string | null, sort: { key: Sor
 }
 
 // readFirstPage reads the first page of a listing into the query client. The page's listing reads the same key, so one read serves
-// both (perf-1 3.2). It reads again on every call: a visit reads the listing again (fu8, decision 94).
+// both. It reads again on every call: a visit reads the listing again (fu8, decision 94).
 function readFirstPage(qc: QueryClient, folder: string, dir: string | null, sort: { key: SortKey; dir: SortDir }): Promise<InfiniteData<Page<Node>>> {
   return qc.fetchInfiniteQuery({
     queryKey: childrenKey(folder, dir, sort),
@@ -244,7 +244,7 @@ function readFirstPage(qc: QueryClient, folder: string, dir: string | null, sort
 }
 
 // readMe reads the signed-in person's /me once for the query client, under the key the Trash page also uses, for five minutes:
-// the personal folder does not change in a session (perf-1 3.2: /me was read four times for one page).
+// the personal folder does not change in a session: /me was read four times for one page).
 function readMe(qc: QueryClient): Promise<{ personal_folder_id: string | null }> {
   return qc.fetchQuery({ queryKey: queryKey("me"), queryFn: () => getMe(), staleTime: 5 * 60_000 });
 }
@@ -259,7 +259,7 @@ async function loadPlace(route: FilesRoute, qc: QueryClient, sort: { key: SortKe
     return { kind: "redirect", to: filesURL(me.personal_folder_id, null) };
   }
   // The person's own folder, the folder's first listing and the folder list need none of each other, so they are read at once.
-  // The listing is the page's own read (childrenKey), so the page does not read it again (perf-1 3.2).
+  // The listing is the page's own read (childrenKey), so the page does not read it again.
   const me = readMe(qc).catch(() => null);
   const dirID = route.kind === "dir" ? route.dir : null;
   const first = readFirstPage(qc, route.folder, dirID, sort);
@@ -366,7 +366,7 @@ export default function FilesPage() {
   const impersonating = !!useStore(session)?.impersonation;
   // The toolbar's New and the drawer's make blank documents in the place the New actions act on, as the sidebar's New does (decision
   // 66, decision 91). Only the document kinds that place takes are read from newPlace: the page writes its own place each time its
-  // folder is read, and a page that subscribed to the whole place was drawn again for each of those writes (perf-1 3.2).
+  // folder is read, and a page that subscribed to the whole place was drawn again for each of those writes.
   const placeKinds = useStoreSelect(newPlace, (p) => documentKinds(placeForRoute(p, path), editorOn, impersonating), sameKinds);
   // viewable is a file the viewer opens: a previewable one, one the code viewer's sniff may find to be text (decision 115), or an
   // office document while its preview is offered.
@@ -508,7 +508,7 @@ export default function FilesPage() {
     // The sort is part of the key, so a sort change reads the directory again from its first page.
     queryKey: childrenKey(folderID, dirID, prefs.sort),
     // The place's read (placeQ, read on each visit) reads the first page under this key before the page shows it, so the page does
-    // not read it again on mount (perf-1 3.2). A folder's listing is still read again on each visit, through that place read.
+    // not read it again on mount. A folder's listing is still read again on each visit, through that place read.
     refetchOnMount: false,
     // A folder's listing is read again each time the page shows it (through the place read above, on each visit), so the rows
     // are read again even inside the 30 seconds in which a read is fresh (fu8, decision 94). The page enables this query only after
@@ -537,7 +537,7 @@ export default function FilesPage() {
   const busy = placeBusy || stale !== null;
   // The notice for a key pressed while busy is shown once per busy period (fu4, decision 80).
   const busyNoticed = useRef(false);
-  // The same text is held in a polite live region, which assistive technology reads (antd's message is not one; fu4 review 1).
+  // The same text is held in a polite live region, which assistive technology reads (antd's message is not one; fu4).
   const [busyNote, setBusyNote] = useState("");
   useEffect(() => {
     if (!busy) {
@@ -743,7 +743,7 @@ export default function FilesPage() {
   }, [items]);
 
   // While the rows on screen are the folder left behind, nothing is selected in them: the selection is cleared as the change
-  // starts (fu3b review 1). Focus that was in the rows is put in the next listing once it loads (fu3b review 4).
+  // starts (fu3b). Focus that was in the rows is put in the next listing once it loads (fu3b).
   useEffect(() => {
     if (busy) setSel(NO_SEL);
   }, [busy]);
@@ -787,7 +787,7 @@ export default function FilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newKey]);
   useEffect(() => () => newPlace.set(null), []);
-  // A failed place read is named to the sidebar's New (newPlaceFailure, wf1 review item 2); a read that works clears it.
+  // A failed place read is named to the sidebar's New (newPlaceFailure, wf1); a read that works clears it.
   const placeError = placeQ.isError ? fileErrorText(placeQ.error, lang) : null;
   useEffect(() => { newPlaceFailure.set(placeError); }, [placeError]);
   useEffect(() => () => newPlaceFailure.set(null), []);
@@ -1096,7 +1096,7 @@ export default function FilesPage() {
     if (e.defaultPrevented || renameRef.current || isTextField(e.target) || dialogRef.current !== null || conflict !== null) return;
     if (dialogOpen()) return;
     if (!here) return;
-    // While the rows on screen are the folder left behind (busy), no key acts on them (fu3b review 1). A key that would have
+    // While the rows on screen are the folder left behind (busy), no key acts on them (fu3b). A key that would have
     // acted says why it did nothing, once (fu4, decision 80).
     if (busy) {
       noteBusyKey(e);
@@ -1140,7 +1140,7 @@ export default function FilesPage() {
   // noteBusyKey says, once per busy period, that the folder is still opening, for a key that would have acted on it (fu4).
   // It uses the app's own notice, as copying does, so assistive technology hears it the way the other notices are heard.
   function noteBusyKey(e: KeyboardEvent) {
-    // A control keeps its own keys (a button, a link, a field): they are not the listing's (fu4 review 2).
+    // A control keeps its own keys (a button, a link, a field): they are not the listing's (fu4).
     if (e.target instanceof Element && e.target.closest('button, a, input, textarea, select, [role="button"]')) return;
     const kind = keyAction(e, { cols: 1, grid: view === "grid", rtl: document.documentElement.dir === "rtl", count: ids.length, mac: MAC_KEYS })?.kind;
     if (!kind || !BUSY_NOTICE_KEYS.has(kind) || busyNoticed.current) return;
@@ -2221,7 +2221,7 @@ export default function FilesPage() {
         </div>
       ) : (
         <>
-          {/* The change of folder is announced while the rows of the last read are kept (fu3b review 2). */}
+          {/* The change of folder is announced while the rows of the last read are kept (fu3b). */}
           {busy && (
             <span role="status" className="sr-only">
               {t("files.loading")}
@@ -2340,7 +2340,7 @@ export default function FilesPage() {
                   tabIndex={-1}
                   aria-busy={busy ? "true" : undefined}
                   {...(busy ? { inert: "" } : {})}
-                  // Focus in the rows is kept across a change: when the next listing loads, it goes to its first row (fu3b review 4).
+                  // Focus in the rows is kept across a change: when the next listing loads, it goes to its first row (fu3b).
                   onFocus={() => {
                     listFocused.current = true;
                   }}

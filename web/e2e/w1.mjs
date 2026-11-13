@@ -164,7 +164,7 @@ async function openByDoubleClick(page, nameText) {
 }
 
 // folderShown waits until the page shows the folder with this name and has read its listing. A change of folder keeps the rows
-// of the folder left, busy and inert, until the next listing is read (FilesPage busy guard, fu3b review 1). A key or a drag sent
+// of the folder left, busy and inert, until the next listing is read (FilesPage busy guard, fu3b). A key or a drag sent
 // before that is dropped, so every step waits here before it presses a key.
 async function folderShown(page, name) {
   await page.waitFor(`document.querySelector('#browser-title')?.textContent === ${q(name)}`, 10000);

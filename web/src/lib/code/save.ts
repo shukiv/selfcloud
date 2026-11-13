@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's reads and writes of a file's bytes (decision 124 to 4.3). The version of a file is the etag in its node's
+// The code editor's reads and writes of a file's bytes (decision 124). The version of a file is the etag in its node's
 // JSON answer (decision 135), never a response header. The open is a GET of the whole file with If-Match set to that etag; the
 // save is a PUT with If-Match set to the etag of the last answer and the stored type sent unchanged. Neither goes through
 // api(), which parses JSON and does not give the response's headers, and a save's body is bytes, not JSON.
@@ -16,7 +16,7 @@ import { EDIT_LIMIT } from "./edit";
 // (forbidden), a file that was deleted (gone), a draft that is not UTF-8 text (notText), a draft over the limit (tooLarge), and
 // anything else, including no answer at all (failed).
 // signedOut is a sign-in that has ended (401): the draft stays and the page offers to sign in again. storageFull is a store
-// with no room left (507). badName and folderGone are a copy's own refusals (400 404); see keepCopy.
+// with no room left (507). badName and folderGone are a copy's own refusals (400 and 404); see keepCopy.
 export type SaveFailure =
   | "conflict"
   | "locked"

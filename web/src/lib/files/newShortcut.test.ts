@@ -260,7 +260,7 @@ describe("overlayOpen: which menus and popovers are overlays", () => {
   });
 });
 
-describe("the chord's text fields and its overlay check (F6, F7)", () => {
+describe("the chord's text fields and its overlay check", () => {
   it("a contenteditable element blocks the chord, and so does a node inside it", () => {
     const editable = document.createElement("div");
     editable.setAttribute("contenteditable", "true");

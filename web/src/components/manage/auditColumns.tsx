@@ -8,7 +8,7 @@ import type { ListColumn } from "../files/Listing";
 // AuditRow is one audit entry as a table row: its ID is the row's key.
 export type AuditRow = AuditEntry & { id: string; time: string };
 
-// auditSaid is an entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it (review L4).
+// auditSaid is an entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it.
 export function auditSaid(e: AuditRow, names: Names, lang: Lang): string {
   return renderSentence(sentence(e, names), (key, params) => translate(lang, key, params));
 }

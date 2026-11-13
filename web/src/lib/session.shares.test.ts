@@ -2,7 +2,7 @@
 
 // The page's held shares follow the person (decision 82). A different person who signs in over a signed-in one, a
 // change of the person viewed as, and the start and end of viewing as are each a point where the page's copy of a share must go.
-// A sign-in from the signed-out state keeps it: that is the exception for a share opened while signed out (decision 82, M2).
+// A sign-in from the signed-out state keeps it: that is the exception for a share opened while signed out (decision 82).
 // Each test uses the real share module against a fake worker, and counts what the page asks and what the worker is told.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -90,7 +90,7 @@ describe("a change of person clears the page's shares (decision 82)", () => {
   });
 });
 
-describe("a sign-in from the signed-out state keeps the shares (decision 82, M2)", () => {
+describe("a sign-in from the signed-out state keeps the shares (decision 82)", () => {
   it("a share held while signed out is still there after the sign-in", async () => {
     session.set(null);
     await takeShare("s1", { signedOut: true });

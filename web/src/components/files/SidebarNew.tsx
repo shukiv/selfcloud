@@ -21,7 +21,7 @@ export interface SidebarNewProps {
   // place is where the New actions act, and what it takes. null: the folder shown is not read yet, so the button waits.
   place: NewPlace | null;
   // failure is the error text when the folder shown could not be read (null otherwise): the reason a disabled button gives in
-  // place of "Loading the folder" (wf1, review item 2).
+  // place of "Loading the folder" (wf1).
   failure?: string | null;
   collapsed: boolean;
   coarse: boolean;
@@ -39,7 +39,7 @@ const ic = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
 // The raised face: the sidebar's white with its blue word, and a shadow that reads on the blue in light and in dark.
 const RAISED = "0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.28)";
 
-// The menu's width (decision 108 section 3): 400 px at most, 320 px at least, and never wider than the screen less a 16 px gutter each side.
+// The menu's width (decision 108): 400 px at most, 320 px at least, and never wider than the screen less a 16 px gutter each side.
 const MENU_STYLE = { width: "min(400px, calc(100vw - 32px))", minWidth: 320, boxSizing: "border-box" } as const;
 
 // useNewChord reads the chord on the window, so it works with the menu closed (Alt+C, then a letter; newShortcut.ts). enabled is read
@@ -53,14 +53,14 @@ export function useNewChord(enabled: () => boolean, run: (action: NewChordAction
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented || !latest.current.enabled()) return;
       const now = Date.now();
-      // The overlays are read only for a key that could act (F7); the chord is otherwise idle, and a key that is not in it passes.
+      // The overlays are read only for a key that could act; the chord is otherwise idle, and a key that is not in it passes.
       const blocked = chordNeedsOverlayCheck(chord.current, e, now) && chordBlocked(e.target);
       const step = readChord(chord.current, e, now, blocked);
       chord.current = step.state;
       if (step.consume) e.preventDefault();
       if (step.action) latest.current.run(step.action);
     };
-    // Leaving the window (a blur) cancels an armed chord, so the letter typed after the focus comes back is not taken (F6).
+    // Leaving the window (a blur) cancels an armed chord, so the letter typed after the focus comes back is not taken.
     const onBlur = () => {
       chord.current = IDLE;
     };
@@ -79,7 +79,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   const reasonId = useId();
   // While the place is read, or could not be (failure), the button says why it waits: the hover tooltip shows the reason, and
   // the button's accessible description is the same text, always present while disabled, so a keyboard or screen-reader user
-  // gets it too (wf1, review item 1). A disabled button fires no hover events, so the tooltip hangs on the span around it.
+  // gets it too (wf1). A disabled button fires no hover events, so the tooltip hangs on the span around it.
   const waitId = useId();
   const inks = useMenuHeaderInks();
   const navigate = useNavigate();

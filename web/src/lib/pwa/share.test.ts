@@ -137,7 +137,7 @@ describe("the time-box on the page's copy (decision 82)", () => {
     expect(takenIDs()).not.toContain("t3");
   });
 
-  // Round 4, M2: a forgotten share's timer must be stopped. If it kept running, it would fire at its old time and drop a later copy
+  // A forgotten share's timer must be stopped. If it kept running, it would fire at its old time and drop a later copy
   // of the same id that the page took after the forget.
   it("a forgotten share's timer does not drop a later copy of the same id", async () => {
     held = { t5: [file("k.txt")] };

@@ -44,7 +44,7 @@ describe("the tree's saved state", () => {
     expect(big.expanded).toContain(`f${MAX_EXPANDED + 4}`);
   });
 
-  // Decision 88 (review L1): the cap forgets by last use. A folder the place passes through moves to the end, so the folder that was
+  // Decision 88: the cap forgets by last use. A folder the place passes through moves to the end, so the folder that was
   // opened first and not passed through since is the one forgotten.
   it("moves the folders a place passes through to the end, so the cap forgets by last use", () => {
     let s = DEFAULT_TREE;
@@ -63,7 +63,7 @@ describe("the tree's saved state", () => {
     expect(touchExpanded(s, ["gone"])).toBe(s);
   });
 
-  // The folders on the way that the reveal keeps (decision 88, H1) are not forgotten by the cap, even when they are the oldest.
+  // The folders on the way that the reveal keeps (decision 88) are not forgotten by the cap, even when they are the oldest.
   it("keeps the folders the way keeps, and forgets others", () => {
     let s = DEFAULT_TREE;
     for (let i = 0; i < MAX_EXPANDED; i++) s = withExpanded(s, `f${i}`, true);

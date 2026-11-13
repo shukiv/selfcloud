@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatBytes, formatDate, formatNumber } from './format';
 
 // Every row of a listing formats its date and its size, so the formatters must not build an Intl object on each call
-// (perf-1 section 6). The constructors are counted: a call that reuses an object builds nothing.
+// The constructors are counted: a call that reuses an object builds nothing.
 describe('the formatters reuse their Intl objects', () => {
   afterEach(() => {
     vi.restoreAllMocks();

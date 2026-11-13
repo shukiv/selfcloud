@@ -37,7 +37,7 @@ interface OnceLink {
 // TenantUsers: the tenant's people. An admin does not manage a tenant's members day to day. It can resend the invitation of
 // a person who has not verified yet, reset a person's password, disable or enable a person, remove a person from the account, and (when admin.tenant_access
 // is on) sign in as the person. The actions are offered only as far as the installation allows; the server checks each one
-// again. One action runs at a time; while it runs, the row's actions stay where they are, disabled (review M1).
+// again. One action runs at a time; while it runs, the row's actions stay where they are, disabled.
 export default function TenantUsers({ account }: { account: string }) {
   const { t } = useT();
   const lang = useLang();
@@ -177,7 +177,7 @@ export default function TenantUsers({ account }: { account: string }) {
               canSignIn && { key: "signin", label: `${t("tenant.users.signInAs")}: ${personLabel(p)}`, icon: <LogIn className="icon-dir" size={18} aria-hidden="true" focusable="false" />, run: () => setSignInFor(p) },
               canReset && { key: "reset", label: `${t("tenant.users.reset")}: ${personLabel(p)}`, icon: <KeyRound size={18} aria-hidden="true" focusable="false" />, run: () => setResetFor(p) },
             ];
-            // A row with a change on its way keeps its actions where they are, disabled (review M1).
+            // A row with a change on its way keeps its actions where they are, disabled.
             return acts.flatMap((a) => (a ? [{ ...a, disabled: busyRow }] : []));
           }}
           menu={(p): ListMenuEntry[] => [

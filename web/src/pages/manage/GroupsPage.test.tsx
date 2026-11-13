@@ -215,7 +215,7 @@ describe("the open group after a rename", () => {
   });
 
   // decision 114: the open group's Members icon is pressed, so a screen reader says which group's members show.
-  // Only the open group is pressed; the others have no pressed state at all (review M1).
+  // Only the open group is pressed; the others have no pressed state at all.
   const OTHER = { ...GROUP, id: "grp_2", name: "Sales" };
   const twoGroups = () =>
     stubFetch((c) => {
@@ -225,7 +225,7 @@ describe("the open group after a rename", () => {
       return { status: 200, body: { items: [] } };
     });
 
-  it("the open group's Members icon is aria-pressed=true, and no other group's icon has a pressed state (review M1)", async () => {
+  it("the open group's Members icon is aria-pressed=true, and no other group's icon has a pressed state", async () => {
     twoGroups();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
@@ -234,7 +234,7 @@ describe("the open group after a rename", () => {
     expect(screen.getByRole("button", { name: "Members: Sales" }).hasAttribute("aria-pressed")).toBe(false);
   });
 
-  it("the pressed Members icon has the pressed look, the class IconButton draws for it (review M1, visual cue)", async () => {
+  it("the pressed Members icon has the pressed look, the class IconButton draws for it (visual cue)", async () => {
     twoGroups();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
@@ -243,7 +243,7 @@ describe("the open group after a rename", () => {
     expect(screen.getByRole("button", { name: "Members: Sales" }).classList.contains("icon-btn--pressed")).toBe(false);
   });
 
-  it("opening another group moves the pressed state to it (review M1)", async () => {
+  it("opening another group moves the pressed state to it", async () => {
     twoGroups();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
@@ -254,7 +254,7 @@ describe("the open group after a rename", () => {
     expect(screen.getByRole("button", { name: "Members: Finance" }).hasAttribute("aria-pressed")).toBe(false);
   });
 
-  it("a second click on the open group's Members icon closes its members, and nothing is pressed (review M1)", async () => {
+  it("a second click on the open group's Members icon closes its members, and nothing is pressed", async () => {
     twoGroups();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));

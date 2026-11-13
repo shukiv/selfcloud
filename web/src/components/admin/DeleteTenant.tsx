@@ -122,7 +122,7 @@ export default function DeleteTenant({
   const cancelSend = () => {
     if (!request.abort()) return;
     void message.warning(t("common.cancelledMaybe"));
-    // The deletion may have started: the tenant list and this tenant are read again, as after a success (fu4 review 3).
+    // The deletion may have started: the tenant list and this tenant are read again, as after a success (fu4).
     void qc.invalidateQueries({ queryKey: queryKey("admin-tenants") });
     void qc.invalidateQueries({ queryKey: queryKey("admin-tenant", id) });
     onClose();

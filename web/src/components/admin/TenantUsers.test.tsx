@@ -50,7 +50,7 @@ describe("people of a tenant as a table", () => {
     expect(document.querySelector("ul[aria-label]")).toBeNull();
   });
 
-  // Review M3: the mockup's Last sign-in column, Never when the person has not signed in.
+  // The mockup's Last sign-in column, Never when the person has not signed in.
   it("has a Last sign-in column with the date, or Never", async () => {
     const active = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active", last_sign_in_at: "2026-11-02T08:00:00Z" });
     stubFetch(() => ({ status: 200, body: { items: [active, pendingOwner] } }));
@@ -141,7 +141,7 @@ describe("people of a tenant", () => {
     await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());
   });
 
-  // Review M1: a row with a request on its way keeps its icons where they are, disabled; an icon taken out of the row would
+  // A row with a request on its way keeps its icons where they are, disabled; an icon taken out of the row would
   // move the others and drop the focus. The re-check: a real browser takes the focus from a button that turns disabled, so
   // the icons are aria-disabled and stay focusable, and a second press does nothing (the e2e reads the focus in Chrome).
   it("keeps a busy row's actions in place, aria-disabled, and the pressed one keeps the focus", async () => {
@@ -170,7 +170,7 @@ describe("people of a tenant", () => {
     expect(document.activeElement).toBe(resend);
   });
 
-  // Review M2: the ⋮ menu's Disable and Enable (the mockup's), through the route the owner's People page uses.
+  // The ⋮ menu's Disable and Enable (the mockup's), through the route the owner's People page uses.
   it("the ⋮ menu disables an active person and enables a disabled one, and the list is read again", async () => {
     const mateo = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active" });
     const gal = person({ id: "usr_g", email: "gal@example.com", display_name: "Gal", role: "member", status: "disabled" });

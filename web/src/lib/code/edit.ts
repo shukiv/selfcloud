@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Who may edit a file in the code editor, and how a draft is written back (decision 124, 3.1, 4.2, 5). The entry is the
+// Who may edit a file in the code editor, and how a draft is written back (decision 124). The entry is the
 // code viewer's own: the pencil in the preview, and the More menu's Edit. The office editor's entry (lib/files/editor.ts)
 // is not used here, so a code file never reaches it, and the office feature flag does not gate the code editor.
 import { can } from "../files/roles";

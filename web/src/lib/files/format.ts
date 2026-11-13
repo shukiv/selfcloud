@@ -5,8 +5,8 @@ import { directionOf, isolate, matchLang } from '../i18n';
 // Sizes and dates, in the language of the interface. Sizes use decimal units, the way Intl names them.
 const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
 
-// Every row of a listing formats its date and its size, and building an Intl object costs far more than using one (perf-1
-// section 6). The objects are kept by language and by every option that changes the output (for dates, the time zone too), so a
+// Every row of a listing formats its date and its size, and building an Intl object costs far more than using one.
+// The objects are kept by language and by every option that changes the output (for dates, the time zone too), so a
 // change of language or zone asks for a different object at once. The keys are few: the interface's languages, the units and two digit counts.
 const formatters = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat>();
 // zoneNow is the browser's time zone. Reading it builds a formatter, which costs about what a cached one saves, so it is read at

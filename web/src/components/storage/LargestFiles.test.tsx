@@ -81,14 +81,14 @@ describe("the largest files are one table (decision 122)", () => {
     expect(container.querySelectorAll("tbody td .item-name").length).toBe(2);
   });
 
-  // Round 2 (M2): Download is a real link to the file's own address, so a middle click, a new tab and Copy link work as before.
+  // Download is a real link to the file's own address, so a middle click, a new tab and Copy link work as before.
   it("Download is a link to the file's own address", () => {
     renderCard();
     const link = screen.getByRole("link", { name: "Download: scan.pdf" });
     expect(link.getAttribute("href")).toBe(contentPath("nod_pdf1"));
   });
 
-  // Round 2 (M6): on a phone every action is in the row's ⋮ menu, and the menu keeps all three, Download among them.
+  // On a phone every action is in the row's ⋮ menu, and the menu keeps all three, Download among them.
   it("on a phone the ⋮ menu keeps every action, Download among them", async () => {
     const undo = phoneViewport();
     try {
@@ -108,7 +108,7 @@ describe("the largest files are one table (decision 122)", () => {
     // No row, so no row icons and no Actions column: the four column headers stay.
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
-    // Round 2 (M3): the empty table says what will show here (the admin catalogue, loaded on demand).
+    // The empty table says what will show here (the admin catalogue, loaded on demand).
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The largest files in this account show here, with their sizes."));
   });
 

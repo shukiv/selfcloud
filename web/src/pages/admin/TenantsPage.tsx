@@ -156,7 +156,7 @@ function TenantsView() {
   };
 
   // The ⋮ menu of a tenant: Open, Suspend (or Resume) and Delete. Open is a link, as the name is, so a middle or modified
-  // click opens the tenant in a new tab (review L2).
+  // click opens the tenant in a new tab.
   const open = (a: Account) => go(`/admin/tenants/${a.id}`);
   const menuFor = (a: Account): ListMenuEntry[] => [
     { key: "open", label: t("tenants.open"), href: `/admin/tenants/${a.id}`, onSelect: () => open(a) },

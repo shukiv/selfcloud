@@ -58,7 +58,7 @@ describe("the owner overview", () => {
   });
 
   // Decision 122 (tl3): the recent activity is the audit table, with its headers kept when nothing has happened.
-  // Round 2 (H1, design section 4): at 375 px only the Action column shows; When joins its name cell.
+  // At 375 px only the Action column shows; When joins its name cell.
   it("at 375 px the activity shows only the Action column, and the When joins its name cell", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };
@@ -78,7 +78,7 @@ describe("the owner overview", () => {
     }
   });
 
-  // Round 2 (M8): an activity row is named by its sentence and shows its action code.
+  // An activity row is named by its sentence and shows its action code.
   it("each activity row shows its action code, and is named by its sentence", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };
@@ -99,7 +99,7 @@ describe("the owner overview", () => {
     expect(row.getAttribute("aria-label")).not.toBe("folder.create");
   });
 
-  // Round 2 (M4): the overview keeps its ten rows, as the base did; the design's "five" was wrong (decision 122).
+  // The overview keeps its ten rows, as the base did; the design's "five" was wrong (decision 122).
   it("the overview asks the server for ten activity rows", async () => {
     const { calls } = stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };
@@ -126,7 +126,7 @@ describe("the owner overview", () => {
     // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited.
     await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing has happened yet");
-    // Round 2 (M3): the overview's empty activity says what will show here (the admin catalogue, loaded on demand).
+    // The overview's empty activity says what will show here (the admin catalogue, loaded on demand).
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The latest actions on this account show here."));
   });
 
