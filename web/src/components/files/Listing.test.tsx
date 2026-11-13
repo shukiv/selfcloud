@@ -248,10 +248,11 @@ describe("the list's column header (fu3b)", () => {
 });
 
 describe("the table listing", () => {
-  it("renders every row of a long folder, with no window that hides rows out of view", () => {
-    const items = Array.from({ length: 250 }, (_, i) => node(`n${i}`, `file-${String(i).padStart(3, "0")}.txt`));
+  // Up to 150 loaded rows every row is drawn; above that the list draws a window (decision 162, Listing.window.test.tsx).
+  it("renders every row of a folder of up to 150 rows, with no window that hides rows out of view", () => {
+    const items = Array.from({ length: 150 }, (_, i) => node(`n${i}`, `file-${String(i).padStart(3, "0")}.txt`));
     const { container } = render(<Listing {...props({ items })} />);
-    expect(container.querySelectorAll("tr[data-id]").length).toBe(250);
+    expect(container.querySelectorAll("tr[data-id]").length).toBe(150);
     expect(container.querySelector(".ant-table-tbody-virtual")).toBeNull();
   });
 

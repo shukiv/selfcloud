@@ -3267,3 +3267,74 @@ describe("decision 91: the document entries follow the place and the impersonati
     for (const name of DOCUMENTS) expect(screen.queryByText(name)).toBeNull();
   });
 });
+
+// My files' list draws only the rows near the screen above 150 loaded rows (decision 162), so the keyboard and the range
+// selection must reach rows that are not drawn. jsdom lays nothing out: each row is 40 px, the column header 48 px, the list
+// starts 120 px down the page, and the window is 800 px high. The page's scroll is scrollY, which the fake window.scrollTo sets.
+describe("a windowed listing's keys and range selection (decision 162)", () => {
+  const ROW = 40;
+  const HEAD = 48;
+  const REGION_TOP = 120;
+  let scrollY = 0;
+  let ids: string[] = [];
+
+  function rect(top: number, height: number): DOMRect {
+    return { top, bottom: top + height, height, left: 0, right: 800, width: 800, x: 0, y: top, toJSON() {} } as DOMRect;
+  }
+
+  function fakeRect(el: Element): DOMRect {
+    if (el.classList.contains("files-list")) return rect(REGION_TOP - scrollY, HEAD + ids.length * ROW);
+    if (el.tagName === "THEAD") return rect(REGION_TOP - scrollY, HEAD);
+    if (el.tagName === "TR" && el.hasAttribute("data-id")) {
+      const i = ids.indexOf(el.getAttribute("data-id") ?? "");
+      return rect(REGION_TOP + HEAD + i * ROW - scrollY, ROW);
+    }
+    return rect(0, 0);
+  }
+
+  function scrollPage(y: number) {
+    scrollY = y;
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+  }
+
+  beforeEach(() => {
+    scrollY = 0;
+    ids = Array.from({ length: 1000 }, (_, i) => `n${i}`);
+    const items = ids.map((id, i) => node(id, `file-${i}.txt`));
+    api.childrenPage.mockResolvedValue({ items, next_cursor: undefined });
+    Object.defineProperty(window, "innerHeight", { value: 800, configurable: true, writable: true });
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      return fakeRect(this);
+    });
+    window.scrollTo = vi.fn((arg: ScrollToOptions | number) => {
+      scrollY = typeof arg === "number" ? arg : (arg.top ?? scrollY);
+    }) as unknown as typeof window.scrollTo;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("End focuses the last loaded row, after scrolling to it and drawing it", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "file-0.txt" });
+    expect(rows("file-999.txt")).toBeNull();
+    fireEvent.keyDown(rows("file-0.txt") as Element, { key: "End" });
+    await waitFor(() => expect(document.activeElement?.getAttribute("data-id")).toBe("n999"));
+    expect(rows("file-999.txt")).not.toBeNull();
+    expect(window.scrollTo).toHaveBeenCalled();
+  });
+
+  it("Shift+click from the first row to the last selects every loaded row", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "file-0.txt" });
+    fireEvent.click(rows("file-0.txt") as Element);
+    scrollPage(999 * ROW);
+    await waitFor(() => expect(rows("file-999.txt")).not.toBeNull());
+    fireEvent.click(rows("file-999.txt") as Element, { shiftKey: true });
+    const panel = await screen.findByTestId("selection-panel");
+    expect(panel.textContent).toBe("1,000 selected");
+  });
+});
