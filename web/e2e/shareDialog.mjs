@@ -142,8 +142,11 @@ async function pickAntdOption(page, id, text) {
   );
 }
 
-async function dialogSubmit(page) {
-  await clickOn(page, `[role="dialog"] form button[type="submit"]`);
+// peopleSubmit presses the submit button of the share dialog's people form only. General access sits above that form and
+// draws a form of its own (the "Create link" button) when a link is chosen, so the dialog's first submit button is not
+// always the people form's.
+async function peopleSubmit(page) {
+  await clickOn(page, `[role="dialog"] section[aria-labelledby="share-add"] form button[type="submit"]`);
 }
 
 // pickPerson types a query into the people combobox and chooses the option with the name.
@@ -156,24 +159,64 @@ async function pickPerson(page, query, name, inputId = 'share-who') {
   await page.waitFor(`document.getElementById(${q(inputId)}).value === ${q(name)}`);
 }
 
+// peopleRect reads the people field's rectangle, or null while the field is not drawn.
+const peopleRect = `(() => { const f = document.getElementById('share-who'); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`;
+
+// waitStillPeople waits until the people field's rectangle is the same in two reads about 150 ms apart, and returns its
+// centre. General access shows a one-line loading status first and then a taller radio group, which moves the field down,
+// so a point measured during the move can be outside the field by the time the mouse gets there.
+async function waitStillPeople(page) {
+  const deadline = Date.now() + 10000;
+  let last = await page.evaluate(peopleRect);
+  for (;;) {
+    await sleep(150);
+    const now = await page.evaluate(peopleRect);
+    if (!now) throw new Error('the people field left the share dialog');
+    if (now.x === last.x && now.y === last.y && now.width === last.width && now.height === last.height) {
+      return { x: now.x + now.width / 2, y: now.y + now.height / 2 };
+    }
+    last = now;
+    if (Date.now() > deadline) throw new Error(`the people field kept moving (${JSON.stringify(now)})`);
+  }
+}
+
 // focusPeopleField focuses the share dialog's people field with a real mouse click, after blurring it (the dialog puts the
 // cursor there when it opens; a script's focus() does not fire the focus event in a page without the window's focus). It
 // waits until the list shows the named person, and returns the status line's text and the attempt that showed it (1 when the
-// first click did). A miss is logged and clicked again, up to three attempts. On failure it throws with the status,
-// the focus, and the names the list shows, so a run's log says what the page did.
+// first click did). A miss is logged and clicked again, up to three attempts, unless the click moved General access off
+// restricted, which means it landed outside the field. On failure it throws with the status, the focus, and the names the
+// list shows, so a run's log says what the page did.
 async function focusPeopleField(page, name) {
   await page.evaluate(`(() => { document.getElementById('share-who').blur(); return true; })()`);
   // The dialog animates in, so the first click waits until its animations have ended (the same settled test as d3's helper).
   await page.waitFor(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.getAnimations({ subtree: true }).every((a) => a.playState !== 'running'); })()`, 10000);
+  // General access reads the item's links after the dialog opens. Until the answer, it shows a one-line loading status;
+  // then it draws its taller radio group and the people field moves down. The field is measured only after that.
+  await page.waitFor(
+    `(() => {
+      const d = document.querySelector('[role="dialog"]');
+      if (!d || !d.querySelector('input[name="share-general-access"]')) return false;
+      const loading = [...d.querySelectorAll('[role="status"]')].some((s) => s.textContent === ${q(en['share.loading'])} || s.textContent === ${q(he['share.loading'])});
+      return !loading;
+    })()`,
+    10000,
+  );
+  const stillRestricted = `document.querySelector('[role="dialog"] input[name="share-general-access"][value="restricted"]')?.checked === true`;
   let attempt = 0;
   for (;;) {
     attempt += 1;
-    const at = await page.evaluate(`(() => { const r = document.getElementById('share-who').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    // The field is measured again right before every click, once its rectangle has stopped moving.
+    const at = await waitStillPeople(page);
     await click(page, at);
     try {
       await page.waitFor(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.textContent.includes(${q(name)}))`, 4000);
       break;
     } catch (e) {
+      // A click that moved General access off restricted landed outside the field; clicking again would only move it again.
+      if (!(await page.evaluate(stillRestricted))) {
+        const dbg = await page.evaluate(`(() => { const c = document.getElementById('share-who').closest('.combo'); return JSON.stringify({ focused: document.activeElement && document.activeElement.id, expanded: document.getElementById('share-who').getAttribute('aria-expanded'), status: c.querySelector('[role="status"]').textContent, listed: [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.textContent.trim()) }); })()`);
+        throw new Error(`focusPeopleField: the click landed outside the people field, so General access is no longer restricted. DEBUG ${dbg}`);
+      }
       if (attempt < 3) {
         // A miss is logged with its attempt number, so a run that needed a second click shows it.
         console.log(`focusPeopleField: attempt ${attempt} did not show ${name} in the list; trying again`);
@@ -293,7 +336,7 @@ export async function sharingChecks(page, ctx) {
   );
   await page.waitFor(`document.getElementById('share-who').value === ${q(MEMBER.name)}`);
   await setCheckbox(page, 'share-notify', false);
-  await dialogSubmit(page);
+  await peopleSubmit(page);
   await page.waitFor(`${liveText}.includes('Shared with ${MEMBER.name} as Can view')`);
   check(true, 'the owner shares a folder with the member as a viewer, without mail');
   check(
@@ -357,7 +400,7 @@ export async function sharingChecks(page, ctx) {
   await pickPerson(page, 'field', 'Field team');
   const thirty = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   await setInput(page, 'share-expires', thirty);
-  await dialogSubmit(page);
+  await peopleSubmit(page);
   await page.waitFor(`${liveText}.includes('Shared with Field team as Can view')`);
   check(!(await page.evaluate(liveText)).includes('No email was sent'), 'the reply carries no "no email" notice, since the mail went out');
   check((await waitForMail(ctx.sink, MEMBER.email)).to.includes(MEMBER.email), 'the member the group reaches is mailed the share');
