@@ -95,6 +95,9 @@ type Server struct {
 	// confirmBusy names the users with a confirmation job in flight, at most one each. confirmMu guards it.
 	confirmMu   sync.Mutex
 	confirmBusy map[string]bool
+	// exportMu guards exporting, the accounts with a CSV audit export in flight: one per account.
+	exportMu  sync.Mutex
+	exporting map[string]bool
 	// verifyHook, when set, is told of each password check a device confirmation makes (dummy reports the check against no
 	// hash). A test counts the checks with it; production leaves it nil and the call is a nil test.
 	verifyHook func(dummy bool)
@@ -646,6 +649,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit/export", handle: s.handleAuditExport, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleListWebhooks, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleGetWebhook, auth: true, imp: impAllow},

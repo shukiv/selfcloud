@@ -26,6 +26,7 @@ var webhookAuditNoEvent = map[string]string{
 	"imports.archive": "the archive source switch is an account setting; no event (decision 92)",
 	// The account's templates folder is a setting, as the archive switch is; the documents made from a template are
 	// node.create, which already reports file.created (decision 105).
+	"audit.exported":   "the export reads the audit log; there is no event for reading it",
 	"templates.folder": "the account's templates folder is an account setting; no event (decision 105)",
 	"import.start":     "the request is reported as import.started, with the import's IDs and counts",
 	"import.finish":    "the outcome is reported as import.completed, import.failed or import.cancelled",

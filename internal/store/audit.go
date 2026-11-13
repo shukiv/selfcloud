@@ -85,10 +85,14 @@ func (s *Store) AuditLog(ctx context.Context, accountID, viewerUserID string, se
 	return s.AuditLogFiltered(ctx, accountID, viewerUserID, seeAll, AuditFilter{}, p)
 }
 
-// AuditFilter narrows an audit listing to one action, or to entries by one actor. Empty fields do not narrow.
+// AuditFilter narrows an audit listing to one action, to entries by one actor, or to a window of
+// time. Empty fields and the zero time do not narrow. Since includes its own instant; Until leaves
+// its own out.
 type AuditFilter struct {
 	Action  string
 	ActorID string
+	Since   time.Time
+	Until   time.Time
 }
 
 // AuditLogFiltered is AuditLog narrowed by f. The visibility rule is the same: a private entry is listed
@@ -117,6 +121,14 @@ func (s *Store) AuditLogFiltered(ctx context.Context, accountID, viewerUserID st
 	if f.ActorID != "" {
 		visible += " AND actor_id = ?"
 		args = append(args, f.ActorID)
+	}
+	if !f.Since.IsZero() {
+		visible += " AND time >= ?"
+		args = append(args, millis(f.Since))
+	}
+	if !f.Until.IsZero() {
+		visible += " AND time < ?"
+		args = append(args, millis(f.Until))
 	}
 	args = append(args, p.Limit+1)
 	rows, err := s.r.QueryContext(ctx, `SELECT id, time, account_id, actor_kind, actor_id, action,
