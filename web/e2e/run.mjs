@@ -950,7 +950,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2 or cli4 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1137,6 +1137,9 @@ async function main() {
         sec2Browser = null;
       }
     }
+    // Slice myfiles: the member's star, open and recent checks, run alone (SELFCLOUD_E2E_ONLY=myfiles), signed in as the
+    // member the run leaves the shared page as. The full run reaches the same checks below.
+    if (only && onlySet.has('myfiles')) await owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     // Slice fu10 (decision 96): the sections that use the people field, run on their own (SELFCLOUD_E2E_ONLY=share, owner-group
     // or fu10). Each one signs in itself; the full run reaches the same checks in its own order below.
     if (only && onlySet.has('share')) await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });

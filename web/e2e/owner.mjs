@@ -74,10 +74,22 @@ export async function myFilesChecks(page, h, { base, accountKey, memberID, owner
   await page.waitFor(`location.pathname === '/starred' && !!document.querySelector('.items a[href="/n/${noteID}"]')`);
   h.check(true, 'the starred file is listed in Starred');
 
-  // Opening the file (through its address) records it in Recent. The server writes views in batches every two seconds.
+  // Opening the file (through its address) records it in Recent, but the view is recorded only once the preview has
+  // downloaded the file, and the server writes queued views every two seconds. Recent reads its list once, when it
+  // opens, so wait for the signed-in page's own read of the server's list to carry the note before opening Recent.
   await h.navigateTo(page, `/n/${noteID}`);
   await page.waitFor(`location.pathname.startsWith('/files/') || location.pathname === '/n/${noteID}'`, 15000);
-  await new Promise((resolve) => setTimeout(resolve, 2500));
+  try {
+    await page.waitFor(
+      `fetch('/api/v1/recent', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => (j.items ?? []).some((i) => i.id === ${q(noteID)}))`,
+      30000,
+    );
+  } catch {
+    const ids = await page
+      .evaluate(`fetch('/api/v1/recent', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => (j.items ?? []).map((i) => i.id))`)
+      .catch(() => []);
+    throw new Error(`the recent list did not list ${noteID} within 30 s (the API listed ${JSON.stringify(ids)})`);
+  }
   await h.clickNav(page, 'Recent');
   await page.waitFor(`location.pathname === '/recent' && !!document.querySelector('.items a[href="/n/${noteID}"]')`, 15000);
   h.check(true, 'the opened file is listed in Recent');
