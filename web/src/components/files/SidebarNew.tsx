@@ -14,9 +14,8 @@ import type { UploadWhere } from "../../lib/files/ops";
 import type { Sidebar } from "../../theme/tokens";
 
 // The sidebar's New button (decision 66): a raised, rounded button at the top of the sidebar, with the New menu (newMenu.ts, the one
-// list the files page's New reads too). Its plus and its word sit in the rows' icon column and name column (--sc-icon-col, set by the
-// shell). The shell does the picking and the dialog: onPick and onFolder are called from the menu's click, so the file picker opens
-// inside the click. The chord (Alt+C, then a letter) is read here too, with the menu closed: it runs the action and opens nothing.
+// list the files page's New reads too). It is as wide as the sidebar's content, its plus and word centred (decision 151). The shell does the picking and the dialog: onPick and onFolder are called from
+// the menu's click, so the file picker opens inside the click. The chord (Alt+C, then a letter) is read here too, with the menu closed: it runs the action and opens nothing.
 
 export interface SidebarNewProps {
   // place is where the New actions act, and what it takes. null: the folder shown is not read yet, so the button waits.
@@ -168,16 +167,15 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   const face: CSSProperties = {
     display: "flex",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "center",
     gap: 10,
-    // As wide as its text (decision 69): the content, the start column and an end padding of 24 px, capped at the sidebar's width.
-    inlineSize: "auto",
+    // As wide as the sidebar's content (decision 151), with the plus and the word as one group in the middle.
+    inlineSize: "100%",
     maxInlineSize: "100%",
     minInlineSize: 0,
     minBlockSize: 56,
-    // The plus starts in the icon column (the shell sets --sc-icon-col from the sidebar's content edge), and its word in the name
-    // column (18 px icon, 10 px gap), as the rows below it.
-    paddingInlineStart: "var(--sc-icon-col, 28px)",
+    // Equal padding at both ends, so the group is truly in the middle.
+    paddingInlineStart: 24,
     paddingInlineEnd: 24,
     borderRadius: 16,
     border: "none",
@@ -190,11 +188,11 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   };
   return (
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
-    <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
+    <div onKeyDown={takeEscape} style={{ display: "flex", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine } } }}>
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}
         <Tooltip title={reason ?? undefined}>
-          <span data-testid="new-tip" style={{ display: "inline-flex", maxInlineSize: "100%", minInlineSize: 0 }}>
+          <span data-testid="new-tip" style={{ display: "flex", inlineSize: "100%", maxInlineSize: "100%", minInlineSize: 0 }}>
             <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
               <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} disabled={disabled} style={face}>
                 <Plus {...ic} />

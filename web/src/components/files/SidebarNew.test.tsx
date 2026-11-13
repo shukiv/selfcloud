@@ -147,14 +147,20 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByText("Loading the folder")).toBeNull();
   });
 
-  // Decision 69: the button is as wide as its text, not the sidebar's width, and it is capped at the sidebar's width so a long
-  // translation is cut with an ellipsis rather than pushing the sidebar.
-  it("is as wide as its text, and no wider than the sidebar", () => {
+  // Decision 151: the button fills the sidebar's content width (its wrappers stretch too), the plus and the word sit as one group in
+  // the middle, and the start and end padding are equal.
+  it("is as wide as the sidebar's content, with its plus and word centred and equal padding", () => {
     renderNew(myFilesPlace("fld_mine"));
     const button = screen.getByTestId("new-button");
-    expect(button.style.inlineSize).toBe("auto");
-    expect(button.style.maxInlineSize).toBe("100%");
+    expect(button.style.inlineSize).toBe("100%");
     expect(button.style.minInlineSize).toBe("0px");
+    expect(button.style.justifyContent).toBe("center");
+    expect(button.style.paddingInlineStart).toBe(button.style.paddingInlineEnd);
+    expect(button.style.paddingInlineStart).not.toContain("--sc-icon-col");
+    const tip = screen.getByTestId("new-tip");
+    expect(tip.style.display).toBe("flex");
+    expect(tip.style.inlineSize).toBe("100%");
+    expect(tip.parentElement?.style.display).toBe("flex");
   });
 
   // Decision 69, review fix 8: a long translation is cut with an ellipsis inside the cap, not pushed past the sidebar.
