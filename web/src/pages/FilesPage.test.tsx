@@ -21,6 +21,7 @@ import { newPlace, newPlaceFailure } from "../lib/files/newPlace";
 import { treePlace } from "../lib/files/treePlace";
 import { officeEdit } from "../lib/files/editor";
 import { officeConvert } from "../lib/files/convert";
+import { PREF_FILES } from "../lib/files/viewPrefs";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -3336,5 +3337,45 @@ describe("a windowed listing's keys and range selection (decision 162)", () => {
     fireEvent.click(rows("file-999.txt") as Element, { shiftKey: true });
     const panel = await screen.findByTestId("selection-panel");
     expect(panel.textContent).toBe("1,000 selected");
+  });
+});
+
+describe("a key's focus request in each view (decision 162)", () => {
+  const originalScrollTo = window.scrollTo;
+
+  function tile(id: string): HTMLElement | null {
+    return document.querySelector(`[data-id="${id}"]`);
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    window.scrollTo = originalScrollTo;
+  });
+
+  it("moves the focus to the next tile in the grid, without scrolling by list geometry", async () => {
+    localStorage.setItem(PREF_FILES, JSON.stringify({ view: "grid", sort: { key: "name", dir: "asc" } }));
+    renderAt(FOLDER);
+    const first = (await screen.findByRole("option", { name: "alpha.txt" })) as HTMLElement;
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    await waitFor(() => expect(document.activeElement?.getAttribute("data-id")).toBe("n2"));
+    expect(tile("n2")).toBe(document.activeElement);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("moves the focus to the next row in a list of 150 rows, without scrolling", async () => {
+    const items = Array.from({ length: 150 }, (_, i) => node(`n${i}`, `file-${i}.txt`));
+    api.childrenPage.mockResolvedValue({ items, next_cursor: undefined });
+    renderAt(FOLDER);
+    const first = (await screen.findByRole("row", { name: "file-0.txt" })) as HTMLElement;
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement?.getAttribute("data-id")).toBe("n1"));
+    expect(window.scrollTo).not.toHaveBeenCalled();
   });
 });
