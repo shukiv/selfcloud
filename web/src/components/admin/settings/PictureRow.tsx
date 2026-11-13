@@ -26,6 +26,8 @@ interface Props {
   kind: PictureKind;
   picture: Picture;
   wide: boolean;
+  // fill is the colour behind the thumbnail: the logo is drawn on the sidebar's colour, as it is in the preview.
+  fill?: string;
   // onAnswer is given the settings answer of a change that was made.
   onAnswer: (answer: SettingsAnswer) => void;
   // onLocked is called when the server says the picture is set in the config file, so the page reads the settings again.
@@ -42,7 +44,7 @@ export function pictureSrc(kind: PictureKind, p: Picture): string | null {
 // PictureRow is the logo or the icon: what is in use, Upload (or Replace) and Remove as icon buttons with a tooltip. A change is made
 // at once, as the API does, and is not part of the section's Save. A picture the config file sets is read-only. One that was stored
 // and not used says why and offers Remove.
-export default function PictureRow({ kind, picture, wide, onAnswer, onLocked }: Props) {
+export default function PictureRow({ kind, picture, wide, fill, onAnswer, onLocked }: Props) {
   const { t } = useT();
   const lang = useLang();
   const input = useRef<HTMLInputElement>(null);
@@ -117,7 +119,7 @@ export default function PictureRow({ kind, picture, wide, onAnswer, onLocked }: 
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: wide ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
-          {src !== null && <img src={src} alt="" height={kind === "logo" ? 28 : 32} style={{ maxWidth: 120, background: "var(--ant-color-fill-quaternary)", borderRadius: 4 }} />}
+          {src !== null && <img src={src} alt="" height={kind === "logo" ? 28 : 32} style={{ maxWidth: 120, background: fill ?? "var(--ant-color-fill-quaternary)", borderRadius: 4 }} />}
           {!picture.locked && (
             <>
               <input

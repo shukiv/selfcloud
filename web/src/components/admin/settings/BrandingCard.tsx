@@ -113,7 +113,7 @@ export default function BrandingCard({ section, settings, pictures, edits, error
     <CardFrame id={section.id} title={t(`settings.section.${section.id}`)} intro={t(`settings.section.${section.id}.intro`)}>
       {main.fields.map(row)}
       {warn !== null && <Alert type="warning" showIcon style={{ marginBlock: 8 }} message={warn} />}
-      {pictures.length > 0 && KINDS.map((kind) => <PictureRow key={kind} kind={kind} picture={picture(kind)} wide={wide} onAnswer={onPictures} onLocked={onLocked} />)}
+      {pictures.length > 0 && KINDS.map((kind) => <PictureRow key={kind} kind={kind} picture={picture(kind)} wide={wide} fill={kind === "logo" ? resolved.sidebar.bg : undefined} onAnswer={onPictures} onLocked={onLocked} />)}
       <Collapse
         ghost
         size="small"

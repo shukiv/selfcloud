@@ -372,8 +372,21 @@ describe("the pictures", () => {
     expect(within(pictureRow("logo")).getByRole("button", { name: "Remove logo" })).toBeTruthy();
     expect(within(pictureRow("logo")).getByText("Set here")).toBeTruthy();
     expect(preview("sidebar").querySelector("img")?.getAttribute("src")).toBe(`/brand/logo?v=${SHA}`);
+    // The thumbnail is drawn on the sidebar's colour, as the logo is in the preview.
+    expect((pictureRow("logo").querySelector("img") as HTMLImageElement).style.background).toBe("rgb(5, 61, 142)");
     // The page's own brand is read again, so its sidebar shows the logo.
     expect(calls.filter((c) => c.url === "/api/v1/info").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("draws the logo's thumbnail on the sidebar colour being typed", async () => {
+    server({ pictures: [{ key: "ui.brand.icon", state: "none", locked: false }, uploaded("ui.brand.logo")] });
+    renderPage();
+    await ready();
+    const thumb = () => pictureRow("logo").querySelector("img") as HTMLImageElement;
+    expect(thumb().style.background).toBe("rgb(5, 61, 142)");
+    await openAdvanced();
+    await pick("ui.brand.sidebar.bg", "112233");
+    await waitFor(() => expect(thumb().style.background).toBe("rgb(17, 34, 51)"));
   });
 
   it("is not a change of the section: Save stays off and nothing is asked on leaving", async () => {
