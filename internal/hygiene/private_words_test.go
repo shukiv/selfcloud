@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +45,36 @@ func TestRepositoryFilesAreListed(t *testing.T) {
 	for _, want := range []string{"go.mod", "docs/design.md", "web/src/main.tsx"} {
 		if _, ok := files[want]; !ok {
 			t.Errorf("repository listing did not see %s", want)
+		}
+	}
+}
+
+func TestRepositoryFilesWalkExport(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create directory for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("go.mod", "module example.test\n")
+	write("docs/a.md", "# a\n")
+	write("node_modules/x/b.md", "# b\n")
+	write("web/dist/c.js", "// c\n")
+
+	files := repositoryFiles(t, root)
+	for _, want := range []string{"go.mod", "docs/a.md"} {
+		if _, ok := files[want]; !ok {
+			t.Errorf("export listing did not see %s", want)
+		}
+	}
+	for _, unwanted := range []string{"node_modules/x/b.md", "web/dist/c.js"} {
+		if _, ok := files[unwanted]; ok {
+			t.Errorf("export listing included %s", unwanted)
 		}
 	}
 }
@@ -156,6 +188,16 @@ func moduleRoot(t *testing.T) string {
 
 func repositoryFiles(t *testing.T, root string) map[string]string {
 	t.Helper()
+	if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
+		return trackedFiles(t, root)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat .git: %v", err)
+	}
+	return exportedFiles(t, root)
+}
+
+func trackedFiles(t *testing.T, root string) map[string]string {
+	t.Helper()
 	cmd := exec.Command("git", "ls-files", "-z")
 	cmd.Dir = root
 	out, err := cmd.Output()
@@ -191,6 +233,79 @@ func repositoryFiles(t *testing.T, root string) map[string]string {
 		files[rel] = path
 	}
 	return files
+}
+
+func exportedFiles(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := make(map[string]string)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if skipExportDir(rel, entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		if rel == "web/package-lock.json" || rel == thisFile {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Size() > maxScanSize {
+			return nil
+		}
+		nul, err := fileHasNUL(path, nulProbeSize)
+		if err != nil {
+			return err
+		}
+		if nul {
+			return nil
+		}
+		files[rel] = path
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return files
+}
+
+func skipExportDir(rel, name string) bool {
+	switch name {
+	case ".git", "node_modules", ".claude":
+		return true
+	}
+	switch rel {
+	case "bin", "dist", "data", "e2e-out", "web/dist":
+		return true
+	}
+	return false
+}
+
+func fileHasNUL(path string, limit int) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	buf := make([]byte, limit)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false, err
+	}
+	return bytes.IndexByte(buf[:n], 0) >= 0, nil
 }
 
 func allowedPrivateHit(rel, line string) bool {
