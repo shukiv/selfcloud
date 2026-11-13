@@ -6,11 +6,14 @@
 // has the box on the page, and its filter fields are touch-sized; a file whose name and text hold markup shows the markup as
 // text; the result links and the Clear filters button reach 4.5 to 1 in both themes; a failed request says it could not reach
 // the server; and past the limit of sixty a minute the page says so in a sentence. With SELFCLOUD_Q4_SHOTS set (a folder, or 1
-// for the slice's own folder), the run also saves the pictures of the page: desktop and phone, English and Hebrew, light and dark.
+// for the slice's own folder, e2e-out/shots-q4), the run also saves the pictures of the page: desktop and phone, English and
+// Hebrew, light and dark.
 import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setLanguage, setPhone, setTheme } from './media.mjs';
+
+const repo = fileURLToPath(new URL('../../', import.meta.url));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -180,7 +183,7 @@ async function shot(page, dir, name) {
 async function shotsDir() {
   const v = process.env.SELFCLOUD_Q4_SHOTS;
   if (!v) return null;
-  const dir = v === '1' ? join(homedir(), '.local', 'share', 'selfcloud-plans', 'shots-q4') : v;
+  const dir = v === '1' ? join(repo, 'e2e-out', 'shots-q4') : v;
   await mkdir(dir, { recursive: true });
   return dir;
 }
