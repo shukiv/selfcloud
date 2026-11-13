@@ -542,6 +542,19 @@ var remoteCommands = []remoteCommand{
 		help: `  recent [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]
                                  the nodes the person viewed or edited last, newest first
 `, run: files.Recent},
+	{name: "comment ls", route: "GET /api/v1/nodes/{nod}/comments",
+		help: `  comment ls NODE [--all] [--replies CMT]
+                                 a node's comments, newest first, or one comment's replies
+`, run: files.CommentLs},
+	{name: "comment add", route: "POST /api/v1/nodes/{nod}/comments",
+		notProbed: "needs a device token; internal/cli/files records its calls",
+		help: `  comment add NODE (--text TEXT | --text-file FILE) [--reply-to CMT]
+                                 comment on a node, or reply to a top-level comment
+`, run: files.CommentAdd},
+	{name: "activity", route: "GET /api/v1/nodes/{nod}/activity",
+		help: `  activity NODE [--all] [--kind KIND]
+                                 a node's audit trail, newest first; KIND is content, comment, access or label
+`, run: files.Activity},
 }
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
