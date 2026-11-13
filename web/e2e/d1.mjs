@@ -104,7 +104,7 @@ const measure = (page) =>
     return { side: side ? Math.round(side.width) : null, listing: section ? Math.round(section.width) : null, treeInSidebar: !!tree, overflow, wide };
   })()`);
 
-// oneLineRow reads a list row's height, and its name's cut and marks, for the one-line checks (decision 168).
+// oneLineRow reads a list row's height, and its name's cut and marks, for the one-line checks (decision 161).
 const oneLineRow = (page, id) =>
   page.evaluate(`(() => {
     const row = document.querySelector('[role="row"][data-id="' + ${q(id)} + '"]');
@@ -321,7 +321,7 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === 'list') b.click(); })()`);
   await page.waitFor(`!!document.querySelector('section.browser [role="row"]')`, 15000);
 
-  // ---- The one-line list name (decision 168): a short row and a 200-character starred, publicly linked row.
+  // ---- The one-line list name (decision 161): a short row and a 200-character starred, publicly linked row.
   await setPhone(page, false);
   await size(1280, 800);
   const oneLine = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: '/D1 One line', parents: false });

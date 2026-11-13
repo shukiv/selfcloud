@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import Listing, { type ListingProps } from "./Listing";
 
-// The owner's rule (2026-11-10, decision 168, option A): a list row's name is one line in My files' list view, at every size
+// The owner's rule (2026-11-10, decision 161, option A): a list row's name is one line in My files' list view, at every size
 // and in both densities. A long name is cut with an ellipsis, its full text is the name's title, and the marks (the link badge,
 // the kind marks, the star) stay on the same line after it, in a group that does not wrap. The rename field keeps the width it
 // has: its own flexible width, outside the cut name.
@@ -81,7 +81,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("a list row's name is one line (decision 168)", () => {
+describe("a list row's name is one line (decision 161)", () => {
   it.each([false, true])("a long name is cut on one line with an ellipsis (coarse pointer: %s)", (coarse) => {
     setCoarse(coarse);
     const { container } = render(<Listing {...props()} />);
@@ -173,7 +173,7 @@ describe("a list row's name is one line (decision 168)", () => {
   });
 });
 
-describe("one row height per density, with a long name in it (decision 168)", () => {
+describe("one row height per density, with a long name in it (decision 161)", () => {
   it.each([false, true])("every row's name is one line in the same way (coarse pointer: %s)", (coarse) => {
     setCoarse(coarse);
     const { container } = render(<Listing {...props()} />);

@@ -520,7 +520,7 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
       {renaming ? (
         <FileRename value={renameValue} error={renameError} H={H} />
       ) : (
-        // The name is one line (decision 168): a long one is cut with an ellipsis, and its full text is the title. It starts at
+        // The name is one line (decision 161): a long one is cut with an ellipsis, and its full text is the title. It starts at
         // no width and takes the room the icons and the marks leave, so the marks after it keep their line.
         <span className="row-name" title={n.name} style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           <bdi>{n.name}</bdi>
