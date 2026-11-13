@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The label field commands (design-cli.md section 8, slice cli9b4): label field add|update|rm. They define the fields an
+// The label field commands (slice cli9b4): label field add|update|rm. They define the fields an
 // account labels its files with, as the web interface's settings page does. A field is named by its lbf_ id; a choice by
 // its lbc_ id. The account owner and its account key define labels; an installation admin and a device token do not.
 

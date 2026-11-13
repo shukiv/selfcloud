@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The sharing policy commands (design-cli.md section 8, slice cli9b4): sharing policy show|set. They read and change the
+// The sharing policy commands (slice cli9b4): sharing policy show|set. They read and change the
 // account's switches for links that anyone can open, for comments, and for who viewed. Only the account's owner or key
 // may change them; the show command also answers managers.
 
