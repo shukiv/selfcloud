@@ -39,9 +39,9 @@ fn	lib/cli.ts:cliApprove	-	cli4	the approval page /cli-approve, with a signed-in
 fn	lib/cli.ts:cliDevices	-	cli4	the Signed-in devices page (/devices)
 fn	lib/cli.ts:cliLookup	-	cli4	the approval page /cli-approve, with a signed-in session and CSRF token
 fn	lib/cli.ts:cliRevokeDevice	-	cli4	the Signed-in devices page's revoke icon (/devices)
-fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (design-ce 4.4): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` (planned, ce3c) may offer the same
+fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (decision 130): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` (planned, ce3c) may offer the same
 fn	lib/code/read.ts:readHead	-	-	the browser viewer's range read of a file's first bytes: the code viewer's sniff and its text
-fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with If-Match set to the node's etag (decision 135); the CLI's `edit` (planned, design-ce 8.2) reads the same way
+fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with If-Match set to the node's etag (decision 135); the CLI's `edit` (planned) reads the same way
 fn	lib/code/save.ts:saveText	-	ce3c	the browser editor's save: a PUT with If-Match and the stored type unchanged; the CLI's `put --if-match` and `edit` (planned, ce3c) save the same way
 fn	lib/comments/api.ts:createComment	-	cli11	planned, cli11
 fn	lib/comments/api.ts:deleteComment	-	cli11	planned, cli11
@@ -268,7 +268,7 @@ route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	webhook deliveries	c
 route	GET /api/v1/admins	admin ls	cli9a3	built in cli9a3
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
 route	GET /api/v1/directory	-	cli11	planned, cli11
-route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); folder ls --mine (cli8) lists the same route
+route	GET /api/v1/folders	whoami	cli4	whoami reads it (decision 125); folder ls --mine (cli8) lists the same route
 route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5
 route	GET /api/v1/imports/sources	import sources	cli10	built in cli10
 route	GET /api/v1/imports/{imp}	import show	cli10	built in cli10
@@ -373,9 +373,9 @@ route	POST /api/v1/accounts/{acc}/webhooks/{hook}/test	webhook test	cli10	built 
 route	POST /api/v1/admins	admin add	cli9a3	built in cli9a3
 route	POST /api/v1/auth/cli/approve	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
 route	POST /api/v1/auth/cli/lookup	-	cli4	the browser approval page /cli-approve, with a signed-in session and CSRF token
-route	POST /api/v1/auth/cli/poll	login	cli4	the device sign-in polls here until it is approved (design-cli 3.3)
-route	POST /api/v1/auth/cli/revoke	logout	cli4	logout ends the device token here (design-cli 3.3)
-route	POST /api/v1/auth/cli/start	login	cli4	the device sign-in starts here (design-cli 3.3)
+route	POST /api/v1/auth/cli/poll	login	cli4	the device sign-in polls here until it is approved (decision 125)
+route	POST /api/v1/auth/cli/revoke	logout	cli4	logout ends the device token here (decision 125)
+route	POST /api/v1/auth/cli/start	login	cli4	the device sign-in starts here (decision 125)
 route	POST /api/v1/auth/device-confirm	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 route	POST /api/v1/auth/email-change/confirm	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 route	POST /api/v1/auth/impersonation/end	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
