@@ -154,9 +154,9 @@ describe("the pointer's movement", () => {
   });
 });
 
-// A rubber band over a windowed list (decision 134): rows that are not drawn have no element to measure, so their boxes are
+// A rubber band over a windowed list (decision 162): rows that are not drawn have no element to measure, so their boxes are
 // placed from their index and the row height, from the one row that is drawn. A band covers them as it covers drawn rows.
-describe("rowBoxes: the band's boxes for rows that are not drawn (decision 134)", () => {
+describe("rowBoxes: the band's boxes for rows that are not drawn (decision 162)", () => {
   const ids = Array.from({ length: 300 }, (_, i) => `n${i}`);
 
   it("places every row from the drawn row's top and its index", () => {

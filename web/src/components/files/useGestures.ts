@@ -177,7 +177,7 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
         const box = boxBetween(press.ax, press.ay, last.x - rr.left, py);
         const drawn = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-id]") ?? []);
         const rowIDs = c.rowIDs?.() ?? [];
-        // A windowed list draws only the rows near the screen (decision 134). Its rows are one height and in order, so the rows that
+        // A windowed list draws only the rows near the screen (decision 162). Its rows are one height and in order, so the rows that
         // are not drawn take their boxes from the first drawn row and their index; the band then covers them as it covers drawn rows.
         const first = listRef.current?.querySelector<HTMLElement>("tbody tr[data-id]") ?? null;
         const placed =

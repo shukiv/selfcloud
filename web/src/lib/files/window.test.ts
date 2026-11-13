@@ -3,14 +3,14 @@
 import { describe, expect, it } from "vitest";
 import { WINDOW_FIRST_ROWS, WINDOW_MIN_ROWS, WINDOW_OVERSCAN, spacers, sameRange, windowRange, withPinned } from "./window";
 
-// The windowing rule (decision 134): more than 150 loaded rows in My files' list are drawn as a slice around the screen, the
+// The windowing rule (decision 162): more than 150 loaded rows in My files' list are drawn as a slice around the screen, the
 // rows on screen plus 10 each side, with two spacers that hold the place of the rest. Geometry is in pixels, in the window's
 // coordinates: bodyTop is where the first row starts, viewTop and viewBottom the visible part of the list below the pinned
 // header and above the window's bottom.
 
 const ROW = 40;
 
-describe("the threshold and the overscan are the named constants of decision 134", () => {
+describe("the threshold and the overscan are the named constants of decision 162", () => {
   it("windowing starts above 150 loaded rows, and the overscan is 10", () => {
     expect(WINDOW_MIN_ROWS).toBe(150);
     expect(WINDOW_OVERSCAN).toBe(10);
