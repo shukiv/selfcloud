@@ -894,6 +894,43 @@ selfcloud account audit --account acc_… --action file.read
 selfcloud account rm --account acc_… --yes
 ```
 
+## Installation admins
+
+An installation admin manages the server: the settings, accounts and other admins. These commands run against a server
+and need an installation admin key (`sc_admin_…`, from `selfcloud admin create-key` on the server). An account key or a
+device token is refused (403, exit 3), and plain output adds `hint: this needs an installation admin key`; no hint is
+printed under `--json`. The other `selfcloud admin` commands work on the local data folder and are not described here.
+
+| Command | What it does |
+|---|---|
+| `admin ls [--all]` | lists the installation admins, each `usr_…` id, email, name, status, verification time and last sign-in time |
+| `admin add --verification email\|link [--name NAME] EMAIL` | makes a pending installation admin and shows how it verifies |
+| `admin rm USER [--yes]` | removes an installation admin; asks first |
+
+`admin ls` prints `ID`, `EMAIL`, `NAME`, `STATUS`, `VERIFIED`, `LAST SIGN-IN` and `CREATED`. One page is read unless
+`--all` follows the cursor; a note on standard error says when another page exists. `--json` prints only those fields,
+even when the server answers with more.
+
+`admin add` sends one email address and the verification method. With `email` the server sends a code, and the output
+has `sent=true|false`; with `link` it answers a sign-in link, and the output has `link` and `link_expires_at`. The link
+holds a secret and is shown only in that output: a note on standard error reminds you to give it to the new admin, and
+the token in the server's answer is never printed. `--name` sets the display name; without it, the field is not sent.
+The email address is checked by the server, and the new admin stays pending until it verifies. `--json` prints `id`,
+`email`, `display_name`, `status` and a `verification` object with `method`, `url`, `expires_at` and `sent` (each
+verification fills the fields that apply, and the token is absent).
+
+`admin rm` takes a `usr_` id. Without `--yes` it asks you to type the id first, and with no terminal it refuses before
+anything is sent. A removal the server refuses because it would leave no way in (for example, the last active admin) is
+reported with the server's message (409, exit 3).
+
+```sh
+selfcloud admin ls --all
+selfcloud admin add --verification link --name "Ann" ann@example.com
+selfcloud admin rm usr_… --yes
+```
+
+Exit codes are the usual ones: 0 done, 1 failed, 2 usage or a bad id, 3 refused (401, 403, 409 or 429), 4 not found.
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
