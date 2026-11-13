@@ -40,34 +40,41 @@ annotate_note() {
   return 0
 }
 
-# annotate_tests prints the test job's annotations from a failed go test log: each failed test with the 15 lines before
-# it (at most 60 lines), the failed packages, and a panic or a timeout with the 40 lines after it.
+# annotate_tests prints the test job's annotations from a failed go test log: each failed test with the indented lines
+# after it (at most 20 per test and 60 in all), the failed packages, and a panic, a timeout or a data race with the
+# next 40 lines.
 annotate_tests() {
   local log=$1
-  awk 'BEGIN { size = 16; total = 0; last = 0 }
-    {
-      buf[NR % size] = $0
-      if ($0 ~ /^--- FAIL:/ && total < 60) {
-        start = NR - 15
-        if (start < 1) start = 1
-        if (start <= last) start = last + 1
-        for (i = start; i <= NR && total < 60; i++) {
-          print buf[i % size]
-          total++
-          last = i
-        }
+  awk 'BEGIN { per = 0; total = 0 }
+    /^--- FAIL:/ {
+      per = 0
+      if (total < 60) {
+        print
+        total++
+        per = 1
       }
-    }' "$log" | annotate_note "failed tests"
+      next
+    }
+    per > 0 && (substr($0, 1, 1) == " " || substr($0, 1, 1) == "\t") {
+      if (per < 20 && total < 60) {
+        print
+        per++
+        total++
+      }
+      next
+    }
+    { per = 0 }' "$log" | annotate_note "failed tests"
   awk 'index($0, "FAIL\t") == 1' "$log" | annotate_note "failed packages"
   awk 'shown { if (n < 40) { print; n++ } next }
-    /panic:|test timed out/ { shown = 1; n = 1; print; next }' "$log" | annotate_note "panic"
+    /panic:|test timed out|WARNING: DATA RACE/ { shown = 1; n = 1; print; next }' "$log" | annotate_note "panic"
   return 0
 }
 
 # annotate_e2e prints the e2e job's annotations from a failed run's log: the last passes, the failure with the 3 lines
-# after each match (at most 40 lines), the last lines, and each *-failure.txt file the diagnostics wrote in out.
+# after each match (at most 40 lines), the last lines, and at most 5 of the *-failure.txt files the diagnostics wrote in
+# out, at most 40 lines each.
 annotate_e2e() {
-  local log=$1 out=$2 f
+  local log=$1 out=$2 f notes=0
   awk '/^PASS / { count++; pass[count % 12] = $0 }
     END {
       n = count < 12 ? count : 12
@@ -78,7 +85,11 @@ annotate_e2e() {
   tail -n 25 "$log" | annotate_note "last lines"
   for f in "$out"/*-failure.txt; do
     [ -f "$f" ] || continue
+    if [ "$notes" -ge 5 ]; then
+      break
+    fi
     head -n 40 "$f" | annotate_note "$(basename "$f")"
+    notes=$((notes + 1))
   done
   return 0
 }
