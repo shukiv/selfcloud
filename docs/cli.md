@@ -661,7 +661,8 @@ terminal the command refuses with exit 2 unless `--yes` is given; nothing is sen
 7 some of several targets done.
 
 **Not here.** The no-download flag belongs to a node and to a team folder's settings, not to a link or a grant, so no flag of
-these commands sets it.
+these commands sets it. On a node it is set with `share no-download` (above); on a team folder, with
+`folder settings set --no-download-for-viewers`.
 ## Webhooks, imports and jobs
 
 **Which credential reaches what.** The webhook routes are under `/api/v1/accounts/{acc}`, so an account key reaches them

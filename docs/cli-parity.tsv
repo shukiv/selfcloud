@@ -188,7 +188,7 @@ fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
 fn	lib/sharing/api.ts:sharedWithMe	shared	cli7	built in cli7
 fn	lib/sharing/api.ts:transferOwnership	share transfer-ownership	cli7	built in cli7
 fn	lib/sharing/api.ts:updateDropLink	link update	cli7	built in cli7
-fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	not built: the no-download and editors-can-share flags belong to a node, not to a link or a grant, and PATCH /nodes/{nod} is mv's route; undecided
+fn	lib/sharing/api.ts:updateNodeFlags	share no-download	cli7b	built in cli7b: share no-download sets no_download, share editors-can-share sets editors_can_share
 fn	lib/sharing/api.ts:updateShareLink	link update	cli7	built in cli7
 fn	lib/sharing/api.ts:updateSpaceSettings	folder settings set	cli8	built in cli8
 fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory; get <share-url> takes a link to a file (decision 142)
