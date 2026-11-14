@@ -86,6 +86,13 @@ function seed(children: Node[], root: Node = ROOT) {
 const rowOf = (name: string) => screen.getByRole("row", { name });
 const rowOrder = () => [...document.querySelectorAll("tbody tr[data-id]")].map((r) => r.getAttribute("aria-label"));
 
+// The table's first draw can be the narrow one: antd reads the window's width in an effect after mount, and the Modified
+// column draws only once the width is known. Wait for the wide table before reading it, so a check never lands on the
+// first, narrow draw.
+async function wide() {
+  await screen.findByRole("columnheader", { name: /Modified/ });
+}
+
 let undo: (() => void) | null = null;
 let anchorClick: ReturnType<typeof vi.spyOn> | null = null;
 
@@ -116,7 +123,7 @@ describe("the visitor's folder is a table", () => {
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
     expect(await screen.findByRole("columnheader", { name: /Name/ })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: /Size/ })).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: /Modified/ })).toBeTruthy();
+    expect(await screen.findByRole("columnheader", { name: /Modified/ })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Your access" })).toBeNull();
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(rowOf("brief.txt").querySelector(".icon")).toBeTruthy();
@@ -128,6 +135,7 @@ describe("the visitor's folder is a table", () => {
   it("a file row's Download asks the attachment link only on its click", async () => {
     seed([file("nod_brief", "brief.txt")]);
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     const button = await screen.findByRole("button", { name: "Download" });
     expect(api.visitorLink).not.toHaveBeenCalled();
     api.visitorLink.mockResolvedValue({ url: "https://content.example/brief", expires_at: "" });
@@ -139,6 +147,7 @@ describe("the visitor's folder is a table", () => {
   it("has no Download on a folder or on a no-download file", async () => {
     seed([dir("nod_sub", "Notes", "nod_root"), file("nod_brief", "brief.txt"), file("nod_lock", "secret.txt", { no_download: true })]);
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     await screen.findByRole("row", { name: "brief.txt" });
     expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
     expect(within(rowOf("Notes")).queryByRole("button", { name: "Download" })).toBeNull();
@@ -149,6 +158,7 @@ describe("the visitor's folder is a table", () => {
     seed([file("nod_lock", "secret.txt", { no_download: false })]);
     api.visitorLink.mockRejectedValue(new ApiError(403, "download_restricted", {}, 0));
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     fireEvent.click(await screen.findByRole("button", { name: "Download" }));
     expect(await screen.findByText("Downloads of this file are turned off.")).toBeTruthy();
   });
@@ -156,6 +166,7 @@ describe("the visitor's folder is a table", () => {
   it("a click on the Size header reorders the rows, folders first", async () => {
     seed([file("nod_big", "a.bin", { size: 5000 }), dir("nod_sub", "Notes", "nod_root"), file("nod_small", "z.txt", { size: 10 })]);
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     await screen.findByRole("row", { name: "a.bin" });
     expect(rowOrder()).toEqual(["Notes", "a.bin", "z.txt"]);
     fireEvent.click(screen.getByRole("button", { name: "Size" }));
@@ -167,6 +178,7 @@ describe("the visitor's folder is a table", () => {
   it("Enter opens the focused row and the arrows move the focus", async () => {
     seed([dir("nod_sub", "Notes", "nod_root"), file("nod_brief", "brief.txt")]);
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     const first = await screen.findByRole("row", { name: "Notes" });
     expect(first.getAttribute("tabindex")).toBe("0");
     fireEvent.keyDown(first, { key: "ArrowDown" });
@@ -231,6 +243,7 @@ describe("the visitor's view and sort are kept per browser", () => {
     seed([file("nod_clip", "clip.webm", { mime_type: "video/webm" }), file("nod_song", "song.mp3", { mime_type: "audio/mpeg" }), file("nod_brief", "brief.txt")]);
     api.visitorLink.mockResolvedValue({ url: "https://content.example/x", expires_at: "" });
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
+    await wide();
     fireEvent.click(await screen.findByRole("button", { name: "Play media" }));
     expect(await screen.findByRole("heading", { name: "clip.webm" })).toBeTruthy();
     expect(await screen.findByText("playlist of clip.webm")).toBeTruthy();
@@ -238,6 +251,8 @@ describe("the visitor's view and sort are kept per browser", () => {
     // Back to the folder, the other order: the last media file of the ascending order is first now.
     fireEvent.click(screen.getByRole("button", { name: "Plans" }));
     await screen.findByRole("row", { name: "clip.webm" });
+    // The folder's table is drawn again from scratch, so its width is read again: wait for the wide table once more.
+    await wide();
     fireEvent.click(screen.getByRole("button", { name: "Name" }));
     fireEvent.click(screen.getByRole("button", { name: "Play media" }));
     expect(await screen.findByRole("heading", { name: "song.mp3" })).toBeTruthy();

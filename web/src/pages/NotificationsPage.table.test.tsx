@@ -93,7 +93,8 @@ describe("notifications are one table (tl5, decision 138)", () => {
     const when = await within(r).findByRole("columnheader", { name: "When" });
     expect(when.getAttribute("aria-sort")).toBe("descending");
     expect(within(r).getByRole("columnheader", { name: "Message" })).toBeTruthy();
-    expect(within(r).getByRole("columnheader", { name: "Status" })).toBeTruthy();
+    // Status is a secondary column: it shows once the breakpoint is known, which is after the table's first draw.
+    expect(await within(r).findByRole("columnheader", { name: "Status" })).toBeTruthy();
   });
 
   it("makes each notice a row with the notice's test id, and says its status as text", async () => {
