@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState, type FormEvent } from "react";
-import { Button, Checkbox, Input, Radio, Typography } from "antd";
+import { Button, Checkbox, Radio, Typography } from "antd";
+// The deep import keeps Input's statics, TextArea among them, off the first load.
+import Input from "antd/es/input/Input";
 import { ApiError } from "../lib/api";
 import { establish, isConfirmByEmail, signIn } from "../lib/auth";
 import { keepChoice, saveKeepChoice } from "../lib/signin";

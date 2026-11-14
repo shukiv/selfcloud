@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Input } from "antd";
+// The deep import keeps Input's statics, TextArea among them, off the first load.
+import Password from "antd/es/input/Password";
 import { Eye, EyeOff } from "lucide-react";
 import { useT } from "../lib/i18n";
 
@@ -22,7 +23,7 @@ export default function PasswordField({
 }) {
   const { t } = useT();
   return (
-    <Input.Password
+    <Password
       id={id}
       value={value}
       autoComplete={autoComplete}

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState, type FormEvent } from "react";
-import { Button, Input, Typography } from "antd";
+import { Button, Typography } from "antd";
+// The deep import keeps Input's statics, TextArea among them, off the first load.
+import Input from "antd/es/input/Input";
 import { forgotPassword } from "../lib/auth";
 import { errorMessage, type Message } from "../lib/errors";
 import { useT } from "../lib/i18n";
