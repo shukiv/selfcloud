@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { theme as antdTheme } from "antd";
 import { session, type Session } from "../../lib/session";
 import { resetUserStores } from "../../lib/store";
 import { setLang } from "../../lib/i18n";
@@ -19,6 +20,7 @@ import { ApiError } from "../../lib/apiError";
 import { treePlace } from "../../lib/files/treePlace";
 import { brand, brandLoaded } from "../../lib/brand";
 import { DEFAULT_ACCENT } from "../../theme/tokens";
+import { sidebarRow } from "../../theme/sidebarRow";
 
 const mocks = vi.hoisted(() => ({
   loadFolders: vi.fn(async () => []),
@@ -328,9 +330,10 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  // Decision 69: with no New drawn (an admin page), the gap New leaves stays, 10 px (6 px on a finger), so the first item
-  // is not on the top bar's edge. On a files page New is drawn and there is no gap.
-  it("keeps the gap New leaves on an admin page, 10 px, and 6 px on a finger; a files page has no gap", async () => {
+  // Decision 69: with no New drawn (an admin page), the gap New leaves stays, so the first item is not on the top bar's edge.
+  // On a files page New is drawn and there is no gap. Decision 185: the gap is S, the sider's inline padding plus the rows'
+  // inline margin, on a mouse and a finger alike (decision 109's 10 px and 6 px are gone).
+  it("keeps the gap New leaves on an admin page, the side space S, on a mouse and a finger alike; a files page has no gap", async () => {
     signIn("admin");
     renderShell("/admin/tenants");
     // Decision 109: the brand's block carries the gap, so the menu starts a gap below it.
@@ -339,7 +342,9 @@ describe("the folder tree in the sidebar", () => {
       if (!el) throw new Error("no brand yet");
       return el;
     });
-    expect(gap.style.marginBlockEnd).toBe("10px");
+    const siderPad = () => parseFloat((document.querySelector<HTMLElement>(".shell-sider")?.style.padding ?? "").split(/\s+/)[1]);
+    const edgeOf = (coarse: boolean) => siderPad() + sidebarRow(antdTheme.getDesignToken(), coarse).inline;
+    expect(gap.style.marginBlockEnd).toBe(`${edgeOf(false)}px`);
     expect(document.querySelector('.shell-sider [data-testid="new-button"]')).toBeNull();
     cleanup();
     const plain = window.matchMedia;
@@ -352,7 +357,7 @@ describe("the folder tree in the sidebar", () => {
         if (!el) throw new Error("no brand yet");
         return el;
       });
-      expect(finger.style.marginBlockEnd).toBe("6px");
+      expect(finger.style.marginBlockEnd).toBe(`${edgeOf(true)}px`);
     } finally {
       window.matchMedia = plain;
     }
@@ -362,10 +367,10 @@ describe("the folder tree in the sidebar", () => {
     treePlace.set({ folder: "fld_p", chain: [] });
     renderShell("/files/fld_p");
     await waitFor(() => expect(document.querySelector('[data-testid="new-button"]')).not.toBeNull());
-    // Decision 109: on a files page New follows the brand block, one edge (10 px) below it; the block keeps its own top edge.
+    // Decision 109: on a files page New follows the brand block, one edge below it; the block keeps its own top edge (S, decision 185).
     const brandBlock = document.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
-    expect(brandBlock?.style.paddingBlockStart).toBe("10px");
-    expect(brandBlock?.style.marginBlockEnd).toBe("10px");
+    expect(brandBlock?.style.paddingBlockStart).toBe(`${edgeOf(false)}px`);
+    expect(brandBlock?.style.marginBlockEnd).toBe(`${edgeOf(false)}px`);
     restore();
   });
 

@@ -1124,6 +1124,98 @@ describe("the sidebar's menu takes the row metrics (decision 81)", () => {
   }
 });
 
+// Decision 185: every part of the expanded sidebar starts and ends at one edge. The brand block, New's block and the storage
+// card take the rows' inline margin (row.inline), and the brand's space above and below is S, the sider's inline padding plus
+// that margin, on a mouse and a finger alike. The expected values are read from the same tokens and the shell's own padding,
+// not written as numbers. The collapsed rail is unchanged: its brand, New and storage styles are snapshotted.
+describe("the sidebar's parts take one edge (decision 185)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+    myStorage.set(null);
+  });
+
+  // inlinePad reads the inline padding the shell wrote on the sider or the drawer body ("0 12px 16px"), the same value S is
+  // computed from.
+  const inlinePad = (el: HTMLElement | null) => parseFloat((el?.style.padding ?? "").split(/\s+/)[1]);
+
+  for (const lang of ["en", "he"] as const) {
+    for (const coarse of [false, true]) {
+      it(`the brand, New's block and the card take the rows' margin, and the brand the space S (${lang}, ${coarse ? "finger" : "mouse"})`, async () => {
+        const original = window.matchMedia;
+        window.matchMedia = (query: string) => ({ ...original(query), matches: coarse && query.includes("pointer: coarse") }) as MediaQueryList;
+        try {
+          await setLang(lang);
+          signIn("member");
+          folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+          myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+          renderShell("/files");
+          const nav = await openNav();
+          const row = sidebarRow(antdTheme.getDesignToken(), coarse);
+          const edge = inlinePad(nav.querySelector<HTMLElement>(".ant-drawer-body")) + row.inline;
+          const brand = within(nav).getByTestId("sidebar-brand");
+          expect(brand.style.marginInline).toBe(`${row.inline}px`);
+          expect(brand.style.paddingBlockStart).toBe(`${edge}px`);
+          expect(brand.style.marginBlockEnd).toBe(`${edge}px`);
+          // The reserved box is the wordmark's height at the drawer's content width, rounded up, so nothing jumps on load.
+          const width = parseFloat(nav.querySelector<HTMLElement>(".ant-drawer-content-wrapper")?.style.width ?? "");
+          expect(brand.style.minHeight).toBe(`${Math.ceil(((width - 2 * edge) * 38) / 211)}px`);
+          const newBlock = (await within(nav).findByTestId("new-button")).closest("div");
+          expect(newBlock?.style.marginInline).toBe(`${row.inline}px`);
+          const card = await within(nav).findByTestId("storage-card");
+          expect(card.style.marginInline).toBe(`${row.inline}px`);
+        } finally {
+          window.matchMedia = original;
+          await setLang("en");
+        }
+      });
+    }
+  }
+
+  it("the desktop sider keeps the same edge, at its own width", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+      renderShell("/files");
+      const sider = document.querySelector<HTMLElement>(".shell-sider");
+      if (!sider) throw new Error("no sider");
+      const row = sidebarRow(antdTheme.getDesignToken(), false);
+      const edge = inlinePad(sider) + row.inline;
+      const brand = within(sider).getByTestId("sidebar-brand");
+      expect(brand.style.marginInline).toBe(`${row.inline}px`);
+      expect(brand.style.paddingBlockStart).toBe(`${edge}px`);
+      expect(brand.style.marginBlockEnd).toBe(`${edge}px`);
+      const width = parseFloat(sider.style.width);
+      expect(brand.style.minHeight).toBe(`${Math.ceil(((width - 2 * edge) * 38) / 211)}px`);
+      const newBlock = (await within(sider).findByTestId("new-button")).closest("div");
+      expect(newBlock?.style.marginInline).toBe(`${row.inline}px`);
+      const card = await within(sider).findByTestId("storage-card");
+      expect(card.style.marginInline).toBe(`${row.inline}px`);
+    });
+  });
+
+  // The rail is unchanged by decision 185: its brand block keeps the old edges and no inline margin, its New the centred round
+  // button's wrapper, and its storage the icon link's colour alone.
+  it("the folded rail keeps its brand, New and storage styles unchanged", async () => {
+    await wideScreen(async () => {
+      window.localStorage.setItem("selfcloud.navRail", "1");
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+      renderShell("/files");
+      const brand = await screen.findByTestId("sidebar-brand");
+      expect(brand.style.cssText).toMatchInlineSnapshot(`"flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-width: 0px; min-height: 32px; padding-block-start: 10px; margin-block-end: 10px;"`);
+      const newBlock = (await screen.findByTestId("new-button")).closest("div");
+      expect(newBlock?.style.cssText).toMatchInlineSnapshot(`"display: flex; justify-content: center; margin-block-start: 6px;"`);
+      const rail = await screen.findByTestId("storage-rail");
+      expect(rail.style.cssText).toMatchInlineSnapshot(`"color: rgb(255, 255, 255);"`);
+    });
+  });
+});
+
 // wf1, decision 91: the sidebar's New menu takes its document entries from documentKinds, with the place on screen, the office
 // editing switch and the impersonation (Shell.tsx). The wiring is checked here at the sidebar, where a viewer and a commenter see
 // the menu: FilesPage shows no New menu to them. Each case also checks a plain entry of the menu.

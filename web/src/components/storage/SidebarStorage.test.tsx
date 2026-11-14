@@ -6,12 +6,17 @@ import type { ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
+import { theme as antdTheme } from "antd";
 import { setLang } from "../../lib/i18n";
 import type { MeStorage } from "../../lib/storage/logic";
 import { SIDEBAR } from "../../theme/tokens";
 import { currentMark } from "../../theme/currentMark";
+import { sidebarRow } from "../../theme/sidebarRow";
 import SidebarStorage, { StorageRail, storageTitle } from "./SidebarStorage";
 import { formatBytes } from "../../lib/files/format";
+
+// The rows' inline margin (decision 185): the card takes it too, so its edges are the rows' edges.
+const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
 
 // The stylesheet's text, read from the web root that vitest runs in: the vitest run does not load CSS, and a ?raw import is empty.
 const indexCss = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
@@ -36,7 +41,7 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("with a limit: the caption, a 6 px bar in the accent colour, and the figures line", () => {
-    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const caption = screen.getByText("Storage");
     expect(caption.style.fontSize).toBe("12px");
     expect(caption.style.color).toBe("rgb(169, 193, 230)");
@@ -51,7 +56,7 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("with no limit: the caption and the used line, no bar and no percent", () => {
-    draw(<SidebarStorage my={s(153 * MB, 0, null)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(153 * MB, 0, null)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     expect(screen.getByText("Storage")).toBeTruthy();
     expect(screen.getByText(`${formatBytes(153 * MB, "en")} used`)).toBeTruthy();
     expect(document.querySelector('[data-testid="sidebar-meter"]')).toBeNull();
@@ -59,25 +64,25 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("counts the bytes reserved for uploads, as the Storage page does: the bar is at 61%", () => {
-    draw(<SidebarStorage my={s(GB * 1.2, GB * 0.02, 2 * GB)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(GB * 1.2, GB * 0.02, 2 * GB)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
     expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.inlineSize).toBe("61%");
   });
 
   it("draws the bar at the same figure as the line: 99.6% reads 99% and the bar is not full", () => {
-    draw(<SidebarStorage my={s(996, 0, 1000)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(996, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
     expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.inlineSize).toBe("99%");
     expect(screen.getByText(`${formatBytes(996, "en")} of ${formatBytes(1000, "en")} used`)).toBeTruthy();
   });
 
   it("is the warning colour from 80%, and the error colour at 100% and over", () => {
-    const { unmount } = draw(<SidebarStorage my={s(850, 0, 1000)} sidebar={SIDEBAR} />);
+    const { unmount } = draw(<SidebarStorage my={s(850, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const warning = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
     expect(warning?.getAttribute("data-level")).toBe("warning");
     expect(warning?.firstElementChild instanceof HTMLElement && warning.firstElementChild.style.background).toBe("rgb(255, 169, 64)");
     unmount();
-    const over = draw(<SidebarStorage my={s(1000, 0, 1000)} sidebar={SIDEBAR} />);
+    const over = draw(<SidebarStorage my={s(1000, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const danger = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
     expect(danger?.getAttribute("data-level")).toBe("danger");
     expect(danger?.firstElementChild instanceof HTMLElement && danger.firstElementChild.style.background).toBe("rgb(255, 107, 107)");
@@ -85,14 +90,14 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("shows the caption alone while the figures are not read yet", () => {
-    draw(<SidebarStorage my={null} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={null} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     expect(screen.getByText("Storage")).toBeTruthy();
     expect(document.querySelector('[data-testid="sidebar-meter"]')).toBeNull();
     expect(screen.queryByText(/used/)).toBeNull();
   });
 
   it("is one link to /storage, named by the caption and the figures line", () => {
-    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const link = screen.getByRole("link", { name: `Storage ${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used` });
     expect(link.getAttribute("href")).toBe("/storage");
     // The bar is decorative: it is not part of the name.
@@ -100,12 +105,12 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("with no limit the link's name is the caption and the used line", () => {
-    draw(<SidebarStorage my={s(153 * MB, 0, null)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(153 * MB, 0, null)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     expect(screen.getByRole("link", { name: `Storage ${formatBytes(153 * MB, "en")} used` })).toBeTruthy();
   });
 
   it("is the owner's card: radius 4, padding 12, the card background and its 1 px border", () => {
-    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const card = screen.getByTestId("storage-card");
     expect(card.style.borderRadius).toBe("4px");
     expect(card.style.padding).toBe("12px");
@@ -117,8 +122,15 @@ describe("the sidebar's storage card (decision 181)", () => {
     expect(rule(indexCss, ".shell-storage-card:focus-visible")).toContain("outline");
   });
 
+  // Decision 185: the card takes the rows' inline margin, so it starts and ends where the menu's rows and the tree's rows do.
+  it("takes the rows' inline margin, so its edges are the rows' edges (decision 185)", () => {
+    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
+    const card = screen.getByTestId("storage-card");
+    expect(card.style.marginInline).toBe(`${ROW_INLINE}px`);
+  });
+
   it("on the Storage page it is the current place: aria-current page and the border in the mark colour", () => {
-    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} selected />);
+    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} selected />);
     const card = screen.getByTestId("storage-card");
     expect(card.getAttribute("aria-current")).toBe("page");
     // The border takes the sidebar's mark colour (currentMark), the yellow on the default blue.
@@ -128,14 +140,14 @@ describe("the sidebar's storage card (decision 181)", () => {
   });
 
   it("off the Storage page it is not current: no aria-current, the card's own border", () => {
-    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} />);
+    draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const card = screen.getByTestId("storage-card");
     expect(card.getAttribute("aria-current")).toBeNull();
     expect(card.style.border).toBe(`1px solid ${SIDEBAR.cardBorder}`);
   });
 
   it("the figures keep their colours on the Storage page: the mark is the border, not a fill", () => {
-    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
+    draw(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} inline={ROW_INLINE} selected />);
     expect(screen.getByText("Storage").style.color).toBe("rgb(169, 193, 230)");
     const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
     expect(line.style.color).toBe("rgb(255, 255, 255)");

@@ -2,15 +2,20 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { theme as antdTheme } from "antd";
 import { setLang } from "../../lib/i18n";
 import { myFilesPlace, placeOfHere, type BlankKind, type NewPlace } from "../../lib/files/newPlace";
 import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { ThemeProvider, antdTokens } from "../../theme/theme";
+import { sidebarRow } from "../../theme/sidebarRow";
 import { contrast } from "../../lib/brand";
 import SidebarNew from "./SidebarNew";
 import { MemoryRouter, useLocation } from "react-router-dom";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
+
+// The rows' inline margin (decision 185): New's block takes it too, so New starts at the rows' edge.
+const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
 
 // Probe shows the address the menu navigated to (the gallery's, from a template).
 function Probe() {
@@ -25,7 +30,7 @@ function renderNew(place: NewPlace | null, collapsed = false, coarse = false, do
   const utils = render(
     <MemoryRouter initialEntries={["/files"]}>
       <Probe />
-      <SidebarNew place={place} failure={failure} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />
+      <SidebarNew place={place} failure={failure} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} inline={ROW_INLINE} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />
     </MemoryRouter>,
   );
   return { ...utils, onPick, onFolder, onDocument };
@@ -149,7 +154,8 @@ describe("the sidebar's New button", () => {
 
   // Decision 69, restored by decision 177: the button is as wide as its text, not the sidebar's width, and it is capped at the
   // sidebar's width so a long translation is cut with an ellipsis rather than pushing the sidebar. Its content starts at the
-  // start edge, the plus in the rows' icon column.
+  // start edge, the plus in the rows' icon column. Decision 185: the block takes the rows' inline margin, so the plus's indent
+  // from the block's own edge is the rows' indent alone (--sc-icon-col, 24 px).
   it("is as wide as its text, and no wider than the sidebar", () => {
     renderNew(myFilesPlace("fld_mine"));
     const button = screen.getByTestId("new-button");
@@ -157,12 +163,30 @@ describe("the sidebar's New button", () => {
     expect(button.style.maxInlineSize).toBe("100%");
     expect(button.style.minInlineSize).toBe("0px");
     expect(button.style.justifyContent).toBe("flex-start");
-    expect(button.style.paddingInlineStart).toBe("var(--sc-icon-col, 28px)");
+    expect(button.style.paddingInlineStart).toBe("var(--sc-icon-col, 24px)");
     expect(button.style.paddingInlineEnd).toBe("24px");
     const tip = screen.getByTestId("new-tip");
     expect(tip.style.display).toBe("inline-flex");
     expect(tip.style.inlineSize).toBe("");
     expect(tip.parentElement?.style.justifyContent).toBe("flex-start");
+  });
+
+  // Decision 185: New's block takes the rows' inline margin, so the button starts where the rows start (and its plus stays in
+  // the rows' icon column, the indent above read from the block's edge).
+  it("its block takes the rows' inline margin, so New starts at the rows' edge (decision 185)", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const block = screen.getByTestId("new-button").closest("div");
+    expect(block?.style.marginInline).toBe(`${ROW_INLINE}px`);
+  });
+
+  // Decision 185 leaves the folded rail unchanged: the round button's wrapper keeps its centred flex and its 6 px top margin,
+  // with no inline margin.
+  it("the folded rail's New wrapper keeps its own styles (decision 185)", () => {
+    renderNew(myFilesPlace("fld_mine"), true);
+    const block = screen.getByTestId("new-button").closest("div");
+    expect(block?.style.marginBlockStart).toBe("6px");
+    expect(block?.style.justifyContent).toBe("center");
+    expect(block?.style.marginInline).toBe("");
   });
 
   // Decision 172: a dropdown arrow after the word, at the button's end side, the same size and stroke as the plus and never
@@ -227,7 +251,7 @@ describe("the sidebar's New button", () => {
       render(
         <ThemeProvider>
           <MemoryRouter>
-            <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
+            <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} inline={ROW_INLINE} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
           </MemoryRouter>
         </ThemeProvider>,
       );

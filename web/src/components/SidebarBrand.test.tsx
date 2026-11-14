@@ -1,39 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { render } from "@testing-library/react";
+import { theme as antdTheme } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import SidebarBrand from "./SidebarBrand";
 import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
+import { sidebarRow } from "../theme/sidebarRow";
 
-// The brand at the top of the sidebar (decision 109). Expanded: the wordmark, the custom logo, or the name as text. Folded to the
-// rail: the SelfCloud mark for every name (decision 119), or the custom logo small. Its block is the one the New button
-// sits under: a 10 px top edge (6 px on a finger), then the picture, then a 10 px gap (6 px on a finger).
+// The brand at the top of the sidebar (decision 109, its edge replaced by decision 185). Expanded: the wordmark (or the tile
+// logo where the wordmark would not read) fills the block's width, the custom logo is centred at up to 42 px high, or the name
+// as text. The block takes the rows' inline margin, so every part of the sidebar starts at one edge, and the space above the
+// picture and below the block is S, the sider's inline padding plus that margin, on a mouse and a finger alike. Folded to the
+// rail: the SelfCloud mark for every name (decision 119), or the custom logo small, with the rail's own edges unchanged.
 const SIDEBAR_BLUE = "#053D8E";
-function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", background = SIDEBAR_BLUE) {
-  return render(<SidebarBrand collapsed={collapsed} coarse={coarse} text={text} background={background} />);
+// The desktop sider's inline padding and width (Shell.tsx). The block's content width is the width less S at each side.
+const SIDE_PAD = 12;
+const SIDE_WIDTH = 264;
+function metrics(coarse: boolean) {
+  const row = sidebarRow(antdTheme.getDesignToken(), coarse);
+  return { row, edge: SIDE_PAD + row.inline };
 }
+function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", background = SIDEBAR_BLUE, width = SIDE_WIDTH) {
+  const { row, edge } = metrics(coarse);
+  return render(<SidebarBrand collapsed={collapsed} coarse={coarse} text={text} background={background} inline={row.inline} edge={edge} width={width} />);
+}
+// reserved is the height the wordmark will have at the block's content width (211 x 38), rounded up, so the box keeps its
+// height when the brand loads (decision 185).
+const reserved = (width: number, edge: number) => Math.ceil(((width - 2 * edge) * 38) / 211);
 
-describe("SidebarBrand (decision 109)", () => {
+describe("SidebarBrand (decisions 109 and 185)", () => {
   beforeEach(() => brandLoaded.set(true));
   afterEach(() => {
     brandLoaded.set(false);
     brand.set({ name: "", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
   });
 
-  it("shows the wordmark at the top, 38 px high, for the artwork on the default blue", () => {
+  it("shows the wordmark filling the block's width, for the artwork on the default blue", () => {
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
     const { container } = renderBrand(false);
     const img = container.querySelector("img");
     expect(img?.getAttribute("src")).toBe("/brand/wordmark.svg");
-    expect(img?.getAttribute("height")).toBe("38");
     expect(img?.getAttribute("alt")).toBe("SelfCloud");
+    expect(img?.style.width).toBe("100%");
+    expect(img?.style.height).toBe("auto");
+    expect(img?.style.display).toBe("block");
   });
 
-  // The wordmark's letters are white, so on a light sidebar the tile logo is drawn instead (decision 109).
+  // The wordmark's letters are white, so on a light sidebar the tile logo is drawn instead (decision 109), filling the width too.
   it("shows the tile logo, not the wordmark, when a light accent makes the sidebar too light for white", () => {
     brand.set({ name: "SelfCloud", accent: "#FFF9C4", logo_url: null, artwork: true });
     const { container } = renderBrand(false, false, "#0D2142", "#FFF9C4");
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/brand/logo");
+    expect(img?.style.width).toBe("100%");
+    expect(img?.style.height).toBe("auto");
   });
 
   // The rail's mark takes the sidebar's ink, which is chosen against the sidebar: dark on a light brand, white on the blue.
@@ -62,10 +82,22 @@ describe("SidebarBrand (decision 109)", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("shows a custom logo in the same place, and small in the rail", () => {
+  // Decision 185: an uploaded logo keeps its aspect, centred in the block, at most as wide as the block and 42 px high.
+  it("shows a custom logo centred, at most 42 px high and as wide as the block, and small in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", artwork: false });
-    expect(renderBrand(false).container.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");
-    expect(renderBrand(true).container.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");
+    const expanded = renderBrand(false).container;
+    const img = expanded.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/brand/logo");
+    expect(img?.style.maxWidth).toBe("100%");
+    expect(img?.style.maxHeight).toBe("42px");
+    expect(img?.style.objectFit).toBe("contain");
+    expect(img?.style.width).toBe("auto");
+    expect(img?.style.height).toBe("auto");
+    expect(expanded.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("center");
+    const rail = renderBrand(true).container.querySelector("img");
+    expect(rail?.getAttribute("src")).toBe("/brand/logo");
+    expect(rail?.getAttribute("height")).toBe("28");
+    expect(rail?.style.maxWidth).toBe("40px");
   });
 
   // A logo URL goes through safeLogo before it reaches an image: an unsafe one shows no picture at all.
@@ -76,17 +108,18 @@ describe("SidebarBrand (decision 109)", () => {
     expect(container.textContent).toBe("Acme Drive");
   });
 
-  it("shows a custom name as text, and the mark in the rail", () => {
+  it("shows a custom name as text at the start edge, and the mark in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
     const expanded = renderBrand(false).container;
     expect(expanded.textContent).toBe("Acme Drive");
     expect(expanded.querySelector("img")).toBeNull();
+    expect(expanded.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("flex-start");
     const rail = renderBrand(true).container;
     expect(rail.textContent).toBe("");
     expect(rail.querySelector('[role="img"]')?.getAttribute("style")).toContain("/brand/mark.svg");
   });
 
-  // Before the server's answer nothing is drawn, and the block keeps its height so nothing moves when the brand arrives.
+  // Before the server's answer nothing is drawn, and the block keeps the wordmark's height so nothing moves when the brand arrives.
   it("draws no name and no picture before the brand is loaded, and keeps the space", () => {
     brandLoaded.set(false);
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
@@ -94,31 +127,56 @@ describe("SidebarBrand (decision 109)", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toBe("");
     const block = container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
-    expect(block?.style.minHeight).toBe("38px");
-    expect(block?.style.marginBlockEnd).toBe("10px");
+    const { edge } = metrics(false);
+    expect(block?.style.minHeight).toBe(`${reserved(SIDE_WIDTH, edge)}px`);
+    expect(block?.style.marginBlockEnd).toBe(`${edge}px`);
   });
 
   // The reserved space is the height the loaded brand takes, so the sidebar does not move when the info arrives (the w2 e2e drag
-  // depends on it: a move of 58 px shifted the rows under a press).
+  // depends on it: a move of 58 px shifted the rows under a press). Decision 185: the wordmark fills the width, so the height is
+  // the content width x 38/211 rounded up, 42 px at the desktop's 232 px content, with S (16 px) above and below.
   it("reserves the height the loaded brand takes, so nothing moves when it arrives", () => {
     const box = (el: HTMLElement | null) => [el?.style.minHeight, el?.style.paddingBlockStart, el?.style.marginBlockEnd];
     brandLoaded.set(false);
     brand.set({ name: "", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
-    const reserved = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
+    const reservedBox = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
     brandLoaded.set(true);
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
     const loaded = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
-    expect(reserved).toEqual(["38px", "10px", "10px"]);
-    expect(loaded).toEqual(reserved);
+    expect(reservedBox).toEqual(["42px", "16px", "16px"]);
+    expect(loaded).toEqual(reservedBox);
   });
 
-  it("keeps the 10 px edges on a mouse and 6 px on a finger", () => {
+  // Decision 185 replaces decision 109's 10 px (6 px on a finger) edge: the block's top and bottom space is S on a mouse and a
+  // finger alike, and its inline margin is the rows' own, so the brand starts where the rows start.
+  it("keeps the side space S above and below, and the rows' inline margin, on a mouse and a finger alike", () => {
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
-    const mouse = renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
-    expect(mouse?.style.paddingBlockStart).toBe("10px");
-    expect(mouse?.style.marginBlockEnd).toBe("10px");
-    const finger = renderBrand(false, true).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
-    expect(finger?.style.paddingBlockStart).toBe("6px");
-    expect(finger?.style.marginBlockEnd).toBe("6px");
+    for (const coarse of [false, true]) {
+      const { row, edge } = metrics(coarse);
+      const { container, unmount } = renderBrand(false, coarse);
+      const block = container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+      expect(block?.style.paddingBlockStart).toBe(`${edge}px`);
+      expect(block?.style.marginBlockEnd).toBe(`${edge}px`);
+      expect(block?.style.marginInline).toBe(`${row.inline}px`);
+      unmount();
+    }
+  });
+
+  // The phone drawer is wider than the sider (280 px), so its reserved wordmark height is read at that width.
+  it("reserves the wordmark's height at the drawer's width too", () => {
+    brandLoaded.set(false);
+    const { container } = renderBrand(false, false, "#FFFFFF", SIDEBAR_BLUE, 280);
+    const block = container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+    const { edge } = metrics(false);
+    expect(block?.style.minHeight).toBe(`${reserved(280, edge)}px`);
+  });
+
+  // Decision 185 leaves the collapsed rail unchanged: its block keeps the old edges, its 32 px mark box and no inline margin.
+  it("the folded rail's brand block keeps its own styles, on a mouse and a finger", () => {
+    brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
+    const mouse = renderBrand(true).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+    expect(mouse?.style.cssText).toMatchInlineSnapshot(`"flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-width: 0px; min-height: 32px; padding-block-start: 10px; margin-block-end: 10px;"`);
+    const finger = renderBrand(true, true).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+    expect(finger?.style.cssText).toMatchInlineSnapshot(`"flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-width: 0px; min-height: 32px; padding-block-start: 6px; margin-block-end: 6px;"`);
   });
 });
