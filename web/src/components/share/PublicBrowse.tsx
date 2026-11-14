@@ -1,21 +1,50 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Alert, Button } from "antd";
-import { useT } from "../../lib/i18n";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Alert, Dropdown, theme as antdTheme } from "antd";
+import { ArrowUpDown, ChevronRight, Download, LayoutGrid, List, Play } from "lucide-react";
+import { useLang, useT } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import type { Node } from "../../lib/files/types";
 import { visitorChildren, visitorLink, visitorNode } from "../../lib/sharing/api";
 import { crumbsTo, previewKind, type NodeRef } from "../../lib/sharing/anyone";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
+import { nextSort, sortNodes, type SortDir, type SortKey } from "../../lib/files/sort";
+import { DEFAULT_PREFS, parsePrefs, type ViewPrefs } from "../../lib/files/viewPrefs";
+import { isPlayable } from "../../lib/files/queue";
+import { useListKeys } from "../../lib/lists";
 import type { Link } from "../files/MediaPlayer";
-import { PlayMark } from "../files/KindMarks";
 import HeadDownload from "../files/HeadDownload";
 import EmptyState from "../EmptyState";
+import IconButton from "../IconButton";
+import Listing, { type RowAct } from "../files/Listing";
 
 // The player and its playlist load when a video or audio file opens.
 const MediaPlaylist = lazy(() => import("../files/MediaPlaylist"));
+
+// The visitor's view and sort are kept per browser under the share's own key, never the owner's selfcloud.files (pb1).
+// Storage can be blocked, so every access is guarded and the defaults apply when nothing can be read.
+const PREF_SHARE = "selfcloud.share.view";
+
+function readSharePrefs(): ViewPrefs {
+  try {
+    return parsePrefs(window.localStorage.getItem(PREF_SHARE));
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+function writeSharePrefs(prefs: ViewPrefs): void {
+  try {
+    window.localStorage.setItem(PREF_SHARE, JSON.stringify(prefs));
+  } catch {
+    // Not saved; the choice lasts for this page.
+  }
+}
+
+// The visitor's selection is always empty: a link's visitor selects nothing (pb1).
+const NO_SELECTION: Set<string> = new Set();
 
 // asLink reads a visitor link's answer: its address. The server's end time is not read: a player decides from what it
 // sees, not from a clock (lib/files/media.ts).
@@ -33,6 +62,8 @@ interface MediaSeed {
 // or a file with a preview and a Download button. The bearer credential is held by the page and passed in; this
 // component never stores it. A 401 means the credential ended, and a 404 means the link is dead: both are handed to
 // the page, which decides what to do.
+// A folder is listed as My files lists it (pb1): the same table and tiles, in the visitor mode of the listing, with a
+// Download on every file that allows it, a Play for the folder's media, and a view and sort kept per browser.
 // A video or audio file plays in the same playlist the viewer uses (MediaPlaylist), over the folder the link reaches. Its
 // files are read a page at a time under the visitor's credential, and no link is asked for a file until it plays.
 export interface PublicBrowseProps {
@@ -43,6 +74,8 @@ export interface PublicBrowseProps {
 
 export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps) {
   const { t } = useT();
+  const lang = useLang();
+  const { token: theme } = antdTheme.useToken();
   // The nodes the visitor has seen. A path is always made of these, since the visitor only moves down from the root,
   // so nothing above the root is ever asked for.
   const cache = useRef(new Map<string, Node>());
@@ -69,6 +102,15 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   const [downloadRestricted, setDownloadRestricted] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The view and sort, and the row the keyboard's focus is on (pb1).
+  const [prefs, setPrefs] = useState<ViewPrefs>(readSharePrefs);
+  const [focusID, setFocusID] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const changePrefs = (next: ViewPrefs): void => {
+    setPrefs(next);
+    writeSharePrefs(next);
+  };
 
   // lost turns a refused call into the page's answer: an ended credential, or a dead link. Anything else is shown as a
   // failure here, with the one generic message.
@@ -147,7 +189,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     );
   };
 
-  // downloadNow starts a download of a file of the playlist. The link is asked for on the click, not before.
+  // downloadNow starts a download of a file. The link is asked for on the click, not before.
   const downloadNow = async (n: Node): Promise<void> => {
     try {
       const { url } = await visitorLink(tokenRef.current, n.id, "attachment");
@@ -180,6 +222,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
       setMediaDownload(null);
       setDownloadURL(null);
       setDownloadRestricted(false);
+      setFocusID(null);
       if (node.kind === "dir") {
         const read = await allChildren(id);
         // A move that is no longer the latest must not change what the visitor's next file is seeded from, so the listing
@@ -229,8 +272,76 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   const kind = current ? previewKind(current.mime_type) : null;
   const playing = current !== null && current.kind !== "dir" && media !== null;
 
+  // ---- The folder's listing (pb1): My files' table and tiles, in the visitor mode. ----
+
+  // The children in the visitor's sort: folders first, then the files, each group by the key.
+  const sorted = sortNodes(children, prefs.sort.key, prefs.sort.dir, lang);
+  const ids = sorted.map((n) => n.id);
+  const rovingID = focusID !== null && ids.includes(focusID) ? focusID : (ids[0] ?? null);
+
+  // A plain click, a double click or Enter opens the item: a visitor selects nothing.
+  const openAt = (i: number): void => {
+    const n = sorted[i];
+    if (n) void show(n.id);
+  };
+
+  // tileColumns is the number of tiles in one row of the grid, read from the grid the last render drew (1 until measured).
+  const tileColumns = (): number => {
+    const grid = listRef.current?.querySelector('[role="presentation"]');
+    if (!grid) return 1;
+    return Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length);
+  };
+  const focusRow = (id: string): void => {
+    setFocusID(id);
+    listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)?.focus();
+  };
+  const onKey = useListKeys({
+    ids,
+    focusID: rovingID,
+    focusRow,
+    onOpen: (id) => void show(id),
+    columns: prefs.view === "grid" ? tileColumns() : 1,
+    dir: document.documentElement.dir === "rtl" ? "rtl" : "ltr",
+  });
+
+  // rowActs gives a file its Download icon: the attachment link is asked for on the click only (downloadNow), and a refusal
+  // shows the downloads-off notice. A folder has none, and neither has a file marked no-download.
+  const rowActs = (n: Node): RowAct[] =>
+    n.kind === "file" && n.no_download !== true
+      ? [{ key: "download", label: t("files.act.download"), icon: <Download size={18} aria-hidden="true" focusable="false" />, enabled: true, run: () => void downloadNow(n) }]
+      : [];
+
+  const hasMedia = sorted.some(isPlayable);
+  // playFirst opens the first media file of the current order in the folder's playlist.
+  const playFirst = (): void => {
+    const first = sorted.find(isPlayable);
+    if (first) void show(first.id);
+  };
+  // The view toggle shows the view it switches to, as My files' toolbar does.
+  const switchTo = prefs.view === "list" ? { to: "grid" as const, label: t("files.view.grid") } : { to: "list" as const, label: t("files.view.list") };
+  // The sort menu lists the fields, then the direction, as My files' does; choosing a field keeps the direction.
+  const sortMenu = {
+    selectable: true,
+    selectedKeys: [`sort:${prefs.sort.key}`, `dir:${prefs.sort.dir}`],
+    items: [
+      { key: "sort:name", label: t("files.sort.name") },
+      { key: "sort:modified", label: t("files.sort.modified") },
+      { key: "sort:size", label: t("files.sort.size") },
+      { type: "divider" as const, key: "sort-divider" },
+      { key: "dir:asc", label: t("files.sort.asc") },
+      { key: "dir:desc", label: t("files.sort.desc") },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key.startsWith("sort:")) changePrefs({ ...prefs, sort: { key: key.slice(5) as SortKey, dir: prefs.sort.dir } });
+      else changePrefs({ ...prefs, sort: { key: prefs.sort.key, dir: key.slice(4) as SortDir } });
+    },
+  };
+
+  // The path lists only the ancestors, from the link's root down to the parent; the heading names the current place once.
+  const ancestors = trail.slice(0, -1);
+
   return (
-    <div>
+    <div className="public-browse">
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBottom: 12 }} />}
 
       {busy && current === null && (
@@ -241,19 +352,19 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
 
       {current !== null && (
         <>
-          {trail.length > 0 && (
-            <nav className="crumbs" aria-label={t("share.open.path")} style={{ marginBottom: 8 }}>
-              <ol style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: 0, padding: 0, listStyle: "none" }}>
-                {trail.map((crumb, i) => (
+          {ancestors.length > 0 && (
+            <nav
+              className="crumbs"
+              aria-label={t("share.open.path")}
+              style={{ marginBottom: 8, "--sc-crumb-ink": theme.colorTextDescription, "--sc-crumb-hover": theme.colorText } as CSSProperties}
+            >
+              <ol>
+                {ancestors.map((crumb, i) => (
                   <li key={crumb.id}>
-                    {i === trail.length - 1 ? (
-                      <span aria-current="location">{crumb.name}</span>
-                    ) : (
-                      <Button type="link" style={{ padding: 0 }} onClick={() => void show(crumb.id)}>
-                        {crumb.name}
-                      </Button>
-                    )}
-                    {i < trail.length - 1 && <span aria-hidden="true"> / </span>}
+                    <button type="button" onClick={() => void show(crumb.id)}>
+                      <bdi>{crumb.name}</bdi>
+                    </button>
+                    {i < ancestors.length - 1 && <ChevronRight className="icon-dir crumb-sep" size={14} aria-hidden="true" />}
                   </li>
                 ))}
               </ol>
@@ -264,23 +375,56 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px" }}>{(playing && mediaNow ? mediaNow : current).name}</h1>
 
           {current.kind === "dir" ? (
-            children.length === 0 ? (
-              <EmptyState text={t("share.open.empty")} />
-            ) : (
-              <ul className="rows" style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
-                {children.map((child) => (
-                  <li key={child.id} className="row" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                    <Button type="link" style={{ padding: 0 }} onClick={() => void show(child.id)}>
-                      {child.name}
-                    </Button>
-                    <span style={{ color: "var(--ant-color-text-secondary)" }}>
-                      {child.kind === "dir" ? t("share.open.folder") : t("share.open.file")}
-                    </span>
-                    {(kindOf(child) === "video" || kindOf(child) === "audio") && <PlayMark kind={kindOf(child) as "video" | "audio"} />}
-                  </li>
-                ))}
-              </ul>
-            )
+            <>
+              {/* The toolbar row, as My files draws its own: Play, a spacer, the sort menu in tiles, and the view toggle. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                {hasMedia && <IconButton label={t("files.act.playMedia")} icon={<Play size={16} aria-hidden="true" />} onClick={playFirst} />}
+                <span style={{ flex: "1 1 auto" }} />
+                {prefs.view === "grid" && (
+                  <Dropdown trigger={["click"]} menu={sortMenu}>
+                    <IconButton label={t("files.sort.label")} icon={<ArrowUpDown size={16} aria-hidden="true" />} />
+                  </Dropdown>
+                )}
+                <IconButton
+                  data-testid="view-toggle"
+                  data-view={switchTo.to}
+                  label={switchTo.label}
+                  icon={switchTo.to === "grid" ? <LayoutGrid size={16} aria-hidden="true" /> : <List size={16} aria-hidden="true" />}
+                  onClick={() => changePrefs({ ...prefs, view: switchTo.to })}
+                />
+              </div>
+              {children.length === 0 ? (
+                <EmptyState text={t("share.open.empty")} />
+              ) : (
+                <Listing
+                  visitor
+                  items={sorted}
+                  view={prefs.view}
+                  selected={NO_SELECTION}
+                  focusID={rovingID}
+                  sortKey={prefs.sort.key}
+                  sortDir={prefs.sort.dir}
+                  renameID={null}
+                  renameValue=""
+                  renameError={null}
+                  label={current.name}
+                  onRowClick={openAt}
+                  onRowDoubleClick={(id) => void show(id)}
+                  onSelectAll={() => {}}
+                  onSort={(key) => changePrefs({ ...prefs, sort: nextSort(prefs.sort, key) })}
+                  onRenameChange={() => {}}
+                  onRename={() => {}}
+                  onKeyDown={onKey}
+                  onFocusItem={(i) => {
+                    const id = ids[i];
+                    if (id) setFocusID(id);
+                  }}
+                  rowActs={rowActs}
+                  stickyTop={0}
+                  containerRef={listRef}
+                />
+              )}
+            </>
           ) : playing && media ? (
             <>
               {/* The head row: the playlist button (drawn by MediaPlaylist into toggleSlot) sits beside Download, as in the viewer. */}

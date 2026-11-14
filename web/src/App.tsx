@@ -240,7 +240,7 @@ function Public({ view }: { view: View }) {
     case "sign-in": return <SignInPage />;
     case "share-link":
       return (
-        <AuthLayout>
+        <AuthLayout variant="share">
           <Suspense fallback={<PageLoading />}>
             <OpenLinkPage />
           </Suspense>

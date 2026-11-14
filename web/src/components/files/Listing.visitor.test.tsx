@@ -150,7 +150,7 @@ describe("Listing visitor: the tiles", () => {
 describe("Listing without visitor: today's behaviour", () => {
   it("keeps the role column, the More button and the folder's drop attributes", () => {
     undo = desktopViewport();
-    const { container } = render(<Listing {...props()} />);
+    render(<Listing {...props()} />);
     expect(screen.getByRole("columnheader", { name: "Your access" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /More actions for/ }).length).toBeGreaterThan(0);
     expect(rowOf("n0").getAttribute("data-drop-dir")).toBe("n0");

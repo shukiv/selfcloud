@@ -14,7 +14,9 @@ import ThemeMenu from "./ThemeMenu";
 // The page every signed-out screen shares. From md (768px) up it is split: a left half with the brand
 // and a three-line headline, and a right half with the form. Below md only the form shows, with the
 // brand above the card. Nothing links out. Layout is in the .auth-* rules of index.css.
-export default function AuthLayout({ children }: { children: ReactNode }) {
+// variant="share" is the open-link page's share variant (pb1): a narrower brand side, and a card that grows while it
+// holds a folder or a file. The sign-in pages keep the halves as they were.
+export default function AuthLayout({ children, variant }: { children: ReactNode; variant?: "share" }) {
   const { t } = useT();
   const { token } = antdTheme.useToken();
   const b = useStore(brand);
@@ -39,7 +41,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#main">
         {t("app.skip")}
       </a>
-      <main id="main" tabIndex={-1} className="auth-layout" style={{ background: token.colorBgLayout }}>
+      <main id="main" tabIndex={-1} className={`auth-layout${variant === "share" ? " auth-layout--share" : ""}`} style={{ background: token.colorBgLayout }}>
         <div className="auth-side" style={{ background: token.colorFillQuaternary }}>
           <div className="auth-side-inner">
             <div className="auth-brand">{brandMark}</div>

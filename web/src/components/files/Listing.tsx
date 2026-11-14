@@ -101,6 +101,9 @@ export interface ListingProps {
   onRowContext?: (id: string, index: number, x: number, y: number, keyboardOrigin?: HTMLElement) => void;
   // cutIDs are the items a cut has taken: they are shown dimmed until they are pasted or the cut is cancelled.
   cutIDs?: Set<string>;
+  // visitor is a visitor of a link: no selection, no owner's data, no drag. The row icons are drawn on every row at once
+  // (a phone has no hover), the tiles show the type icon instead of a thumbnail, and the More button gives way to the icons.
+  visitor?: boolean;
   // stickyTop is where the list's column header is pinned: under the shell's header and the toolbar's row.
   stickyTop?: number;
   containerRef?: Ref<HTMLDivElement>;
@@ -401,6 +404,7 @@ interface FileCellProps {
   renaming: boolean;
   renameValue: string;
   renameError: string | null;
+  visitor: boolean;
   H: FileHandlers;
 }
 
@@ -504,13 +508,13 @@ const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H
 });
 
 // FileNameCell is the name cell of a list row: the row's icon (or a mouse's checkbox in its place), the name, its marks.
-const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming, renameValue, renameError, H }: FileCellProps) {
+const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming, renameValue, renameError, visitor, H }: FileCellProps) {
   const { t } = useT();
   return (
     // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
     // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
-      {coarse ? (
+      {coarse || visitor ? (
         <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
       ) : (
         <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
@@ -533,48 +537,65 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
           <bdi>{n.name}</bdi>
         </span>
       )}
-      {/* The marks: a link, a kind, a star. They do not wrap, and an empty group takes no room (index.css, .row-marks:empty). */}
+      {/* The marks: a link, a kind, a star. They do not wrap, and an empty group takes no room (index.css, .row-marks:empty).
+          A visitor has none of the owner's marks: the link and the star describe the owner's links and stars, not theirs. */}
       <span className="row-marks" style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "none", whiteSpace: "nowrap" }}>
-        <LinkBadge node={n} />
+        {!visitor && <LinkBadge node={n} />}
         <KindMarks node={n} />
-        <StarMark node={n} />
+        {!visitor && <StarMark node={n} />}
       </span>
       <RenameError error={renaming ? renameError : null} />
     </span>
   );
 });
 
+// RowActIcons draws the icons the page built for a row. A files action that is not enabled is one the item's menu does not
+// offer, so it is not drawn (unlike a preset list's disabled action, which is one on its way).
+function RowActIcons({ n, tab, H }: { n: Node; tab: number; H: FileHandlers }) {
+  return (
+    <>
+      {H.acts(n)
+        .filter((a) => a.enabled)
+        .map((a) => (
+          <IconButton
+            key={a.key}
+            label={a.label}
+            icon={a.icon}
+            tabIndex={tab}
+            onClick={(e) => {
+              e.stopPropagation();
+              H.settle(n.id);
+              H.act(n, a.key);
+            }}
+            onKeyDown={keysStop}
+            onDoubleClick={(e) => e.stopPropagation()}
+          />
+        ))}
+    </>
+  );
+}
+
 // FileRowEnd is a list row's end: the page's row icons (drawn with a mouse, where the row is hovered, selected or focused) and the
 // ⋮ button. sig is the row's actions as text, given for a selected or focused row: it is not read, but a change in it draws the
 // row's end again, so an icon follows the page's actions. A row that is only hovered reads the actions when it draws its icons.
-const FileRowEnd = memo(function FileRowEnd({ n, selected, focused, coarse, H }: { n: Node; selected: boolean; focused: boolean; coarse: boolean; sig: string; H: FileHandlers }) {
+// A visitor's row (pb1) has no ⋮ button and its icons are drawn at once, on every row, for a mouse and a finger alike.
+const FileRowEnd = memo(function FileRowEnd({ n, selected, focused, coarse, visitor, H }: { n: Node; selected: boolean; focused: boolean; coarse: boolean; visitor: boolean; sig: string; H: FileHandlers }) {
   const tab = focused ? 0 : -1;
+  if (visitor) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+        <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end" }}>
+          <RowActIcons n={n} tab={tab} H={H} />
+        </span>
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
       {!coarse && (
         <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end", minWidth: ROW_ICON_PX * ROW_ICONS }}>
           <RowActs id={n.id} show={selected || focused}>
-            {() =>
-              // A files action that is not enabled is one the item's menu does not offer, so it is not drawn (unlike a
-              // preset list's disabled action, which is one on its way).
-              H.acts(n)
-                .filter((a) => a.enabled)
-                .map((a) => (
-                  <IconButton
-                    key={a.key}
-                    label={a.label}
-                    icon={a.icon}
-                    tabIndex={tab}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      H.settle(n.id);
-                      H.act(n, a.key);
-                    }}
-                    onKeyDown={keysStop}
-                    onDoubleClick={(e) => e.stopPropagation()}
-                  />
-                ))
-            }
+            {() => <RowActIcons n={n} tab={tab} H={H} />}
           </RowActs>
         </span>
       )}
@@ -632,8 +653,8 @@ function TileCheck({ n, selected, H }: { n: Node; selected: boolean; H: FileHand
 }
 
 // rowDomAttrs gives a row or a tile its role, name, selection state, roving focus and handlers. Both views use it, so the keyboard
-// model is the same in each.
-function rowDomAttrs(n: Node, selected: boolean, focused: boolean, RH: RowHandlers) {
+// model is the same in each. A visitor's row takes no drop (pb1): there is nothing to drag, and nowhere to drop it.
+function rowDomAttrs(n: Node, selected: boolean, focused: boolean, RH: RowHandlers, visitor = false) {
   return {
     role: "row",
     "aria-label": n.name,
@@ -641,7 +662,7 @@ function rowDomAttrs(n: Node, selected: boolean, focused: boolean, RH: RowHandle
     tabIndex: focused ? 0 : -1,
     "data-id": n.id,
     // A folder is a place an item can be dropped on: the page reads where from these (see useGestures). Nothing else is.
-    ...(n.kind === "dir" ? { "data-drop-folder": n.folder_id, "data-drop-dir": n.id, "data-drop-role": n.role ?? "", "data-drop-name": n.name } : {}),
+    ...(n.kind === "dir" && !visitor ? { "data-drop-folder": n.folder_id, "data-drop-dir": n.id, "data-drop-role": n.role ?? "", "data-drop-name": n.name } : {}),
     ...RH,
   };
 }
@@ -655,7 +676,7 @@ interface TileProps extends FileCellProps {
 }
 
 // FileTile is a tile of the tile view: a folder's chip or a file's card, with its box, its state and its content.
-const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coarse, renaming, renameValue, renameError, scrollMarginTop, H, RH }: TileProps) {
+const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
   const { token } = antdTheme.useToken();
   const outer = {
     position: "relative" as const,
@@ -674,7 +695,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
   if (kind === "chip") {
     return (
       <div
-        {...rowDomAttrs(n, selected, focused, RH)}
+        {...rowDomAttrs(n, selected, focused, RH, visitor)}
         role="option"
         style={{
           ...outer,
@@ -687,19 +708,19 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
           background: selected ? token.colorPrimaryBg : undefined,
         }}
       >
-        {coarse && <TileCheck n={n} selected={selected} H={H} />}
+        {coarse && !visitor && <TileCheck n={n} selected={selected} H={H} />}
         <TypeIcon n={n} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         <KindMarks node={n} />
-        <StarMark node={n} />
-        <FileMore n={n} tab={-1} H={H} />
+        {!visitor && <StarMark node={n} />}
+        {visitor ? <RowActIcons n={n} tab={-1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
         <RenameError error={renaming ? renameError : null} />
       </div>
     );
   }
   return (
     <div
-      {...rowDomAttrs(n, selected, focused, RH)}
+      {...rowDomAttrs(n, selected, focused, RH, visitor)}
       role="option"
       style={{
         ...outer,
@@ -709,23 +730,24 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
-        {coarse && <TileCheck n={n} selected={selected} H={H} />}
+        {coarse && !visitor && <TileCheck n={n} selected={selected} H={H} />}
         <TypeIcon n={n} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
-        <StarMark node={n} />
-        <FileMore n={n} tab={-1} H={H} />
+        {!visitor && <StarMark node={n} />}
+        {visitor ? <RowActIcons n={n} tab={-1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
       </div>
       {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
-          there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. */}
+          there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. A visitor's
+          tile shows the type icon alone (pb1): a thumbnail is asked for on a signed-in endpoint the visitor cannot reach. */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
-        {thumbable(n) ? (
+        {thumbable(n) && !visitor ? (
           <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />} />
         ) : (
           <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
         )}
         <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
           <KindMarks node={n} />
-          <LinkBadge node={n} />
+          {!visitor && <LinkBadge node={n} />}
         </span>
       </div>
       <RenameError error={renaming ? renameError : null} />
@@ -1089,7 +1111,11 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const inCheck = (e: { target: EventTarget }) => !!(e.target as HTMLElement).closest(".ant-table-selection-column, .row-check");
     return {
       // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
-      onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
+      // A visitor's row is no drag source (pb1): the page has no gesture, and nothing in the row starts one.
+      onDragStart: (e: ReactDragEvent<HTMLElement>) => {
+        if ((latest.current as ListingProps).visitor === true) return;
+        e.preventDefault();
+      },
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
         const id = idOf(e);
         pf.down(id, e.pointerType);
@@ -1570,7 +1596,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
   if (isItems(p)) return renderItems(p);
 
-  // ---- The files preset (My files), as it was. ----
+  // ---- The files preset (My files), as it was. A visitor of a link (pb1) gets the same table and tiles without the
+  // owner's selection, marks, thumbnails and drag; the page's row icons are drawn on every row at once. ----
+
+  const visitor = p.visitor === true;
 
   // contentOf is the props of a row's or a tile's content (FileCellProps). The rename state is passed only to the row being renamed,
   // so the other rows' content is not drawn again when a rename starts or changes.
@@ -1583,6 +1612,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       renaming,
       renameValue: renaming ? p.renameValue : "",
       renameError: renaming ? p.renameError : null,
+      visitor,
       H,
     };
   };
@@ -1600,22 +1630,27 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
   // The row end: the four icons of the page's row actions (drawn with a mouse, where the row is hovered or selected) and the
   // More button, which every row has. The icons keep their room, so a row does not move when they appear. The signature is of the
-  // actions the row draws now: only a selected or focused row draws them without a hover.
+  // actions the row draws now: only a selected or focused row draws them without a hover. A visitor's row draws its icons always,
+  // so its signature is always of them (pb1).
   const rowEnd = (n: Node) => {
     const focused = p.focusID === n.id;
     const selected = p.selected.has(n.id);
-    const sig = p.rowActs && (focused || selected) ? actsSig(H.acts(n)) : "";
-    return <FileRowEnd n={n} selected={selected} focused={focused} coarse={coarse} sig={sig} H={H} />;
+    const sig = p.rowActs && (visitor || focused || selected) ? actsSig(H.acts(n)) : "";
+    return <FileRowEnd n={n} selected={selected} focused={focused} coarse={coarse} visitor={visitor} sig={sig} H={H} />;
   };
   const nameHead = sortHead("name", t("files.col.name"));
 
   if (p.view === "list") {
+    // A visitor's actions column keeps room for the most icons any row has (at least one), not the owner's four and the ⋮ (pb1).
+    const visitorSlots = visitor ? Math.max(1, ...p.items.map((n) => H.acts(n).filter((a) => a.enabled).length)) : 0;
     const columns: ColumnsType<Node> = [
       {
         key: "name",
         ...nameHead,
-        // A mouse's select-all box sits before the label; a finger keeps the checkbox column instead.
-        title: (
+        // A mouse's select-all box sits before the label; a finger keeps the checkbox column instead. A visitor has neither.
+        title: visitor ? (
+          nameHead.title
+        ) : (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {!coarse && selectAllBox}
             {nameHead.title}
@@ -1639,20 +1674,25 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
               width: 170,
               render: (_v: unknown, n: Node) => <span style={{ fontSize: token.fontSizeSM }}>{formatDate(n.modified_at, lang)}</span>,
             },
-            {
-              key: "role",
-              // Not sortable, so not a button; the same weight as the sortable headers beside it.
-              title: <span style={{ fontWeight: 500 }}>{t("files.col.role")}</span>,
-              width: 120,
-              render: (_v: unknown, n: Node) => (
-                <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>{n.role ? t(`role.${n.role}`) : ""}</span>
-              ),
-            },
+            // The role column describes the owner's access; a visitor of a link has none to show (pb1).
+            ...(visitor
+              ? []
+              : [
+                  {
+                    key: "role",
+                    // Not sortable, so not a button; the same weight as the sortable headers beside it.
+                    title: <span style={{ fontWeight: 500 }}>{t("files.col.role")}</span>,
+                    width: 120,
+                    render: (_v: unknown, n: Node) => (
+                      <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>{n.role ? t(`role.${n.role}`) : ""}</span>
+                    ),
+                  },
+                ]),
           ]),
       {
         key: "actions",
         title: actionsHead,
-        width: coarse ? ROW_ICON_PX : ROW_ICON_PX * (ROW_ICONS + 1),
+        width: visitor ? ROW_ICON_PX * visitorSlots : coarse ? ROW_ICON_PX : ROW_ICON_PX * (ROW_ICONS + 1),
         align: "end",
         render: (_v, n) => rowEnd(n),
       },
@@ -1667,7 +1707,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         role="region"
         aria-label={p.label}
         ref={setRegion}
-        className="files-list"
+        className={`files-list${visitor ? " files-list--visitor" : ""}`}
         data-has-selection={someSelected ? "true" : "false"}
         style={bandVars}
         // A windowed list takes the focus when a row scrolls out of the window, so the arrow keys still reach it (decision 183).
@@ -1688,7 +1728,8 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           dataSource={drawn}
           components={FILES_TABLE_COMPONENTS}
           // A mouse has no checkbox column: each row's checkbox is in its icon's place (see FileNameCell). A finger keeps the column.
-          rowSelection={coarse ? {
+          // A visitor has no selection at all (pb1).
+          rowSelection={coarse && !visitor ? {
             type: "checkbox",
             columnWidth: 44,
             // The header's box is ours, not antd's: antd counts the rows it is given, which are the drawn ones (decision 183). It
@@ -1715,7 +1756,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             };
             // The row's place is its index in the whole list, not in the drawn slice (decision 183); aria-rowindex counts the header as 1.
             const i = indexOf.get(n.id) ?? 0;
-            return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH), "aria-rowindex": i + 2, style } as Record<string, unknown>;
+            return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH, visitor), "aria-rowindex": i + 2, style } as Record<string, unknown>;
           }}
         />
         </WindowCtx.Provider>
@@ -1736,7 +1777,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const card = (n: Node) => tile(n, "card");
   return (
     // The padding is the gutter a rubber band starts in, as the grid had before the bands.
-    <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={setRegion} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
+    <div role="listbox" aria-label={p.label} aria-multiselectable={visitor ? "false" : "true"} tabIndex={-1} ref={setRegion} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
       {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
       {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
     </div>

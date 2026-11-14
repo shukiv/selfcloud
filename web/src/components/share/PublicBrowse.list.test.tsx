@@ -4,6 +4,7 @@
 // that allows it, a view toggle and a sort kept per browser under the share's own key, and a path of buttons above the
 // heading. No link is asked for before a click.
 
+import { useLayoutEffect } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
@@ -17,11 +18,14 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/sharing/api", async (orig) => ({ ...(await orig<typeof import("../../lib/sharing/api")>()), ...api }));
 
-// The playlist is a stand-in: these checks are about the folder and which file opens, not about the player.
+// The playlist is a stand-in: these checks are about the folder and which file opens, not about the player. It records
+// the file it opened once, at its mount, as the heading checks' stand-in does.
 const played = vi.hoisted(() => [] as string[]);
 vi.mock("../files/MediaPlaylist", () => ({
   default: function StandIn({ start }: { start: Node }) {
-    played.push(start.id);
+    useLayoutEffect(() => {
+      played.push(start.id);
+    }, []);
     return <p>playlist of {start.name}</p>;
   },
 }));

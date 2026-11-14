@@ -186,6 +186,24 @@ a {
   }
 }
 
+/* The share variant of the signed-out layout (pb1): the open-link page gives the bigger half to the folder or file it
+   shows. The brand side is a fixed clamp of the window, and the card grows only while it holds a listing; the password
+   form, the drop page and the messages keep their 440 px. Below md nothing changes. */
+@media (min-width: 768px) {
+  .auth-layout--share .auth-side {
+    flex: 0 0 clamp(260px, 30vw, 520px);
+    padding-inline: 40px;
+  }
+
+  .auth-layout--share .auth-headline {
+    font-size: clamp(28px, 2.4vw, 40px);
+  }
+
+  .auth-layout--share .auth-card:has(.public-browse) {
+    max-width: 1200px;
+  }
+}
+
 /* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
    colours. The brand stays at the top and the storage card stays pinned at the bottom (decision 181). */
 .shell-scroll {
@@ -253,6 +271,50 @@ a {
 }
 .ant-breadcrumb .ant-breadcrumb-separator svg {
   display: block;
+}
+
+/* The visitor's path on the share page (pb1): the ancestors of the place on screen, as buttons (a visitor has no drive
+   routes), in the look of the drive's breadcrumbs (Breadcrumbs.tsx): the same chevron, colours, font size and gaps. Every
+   item and separator sits on one centre line, and the buttons carry no padding or height of their own. The colours come
+   from the page's tokens, set on the nav as variables. */
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.crumbs button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  height: auto;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--sc-crumb-ink, currentcolor);
+  cursor: pointer;
+}
+
+.crumbs button:hover {
+  color: var(--sc-crumb-hover, currentcolor);
+}
+
+.crumbs .crumb-sep {
+  display: block;
+  flex: none;
+  margin-inline: 8px;
+  color: var(--sc-crumb-ink, currentcolor);
 }
 
 /* A deeper current folder in the sidebar (decision 69, option B; decision 72): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
@@ -1454,6 +1516,11 @@ tr[data-drop-state="refused"] > td {
 
 .files-list tr[aria-selected="true"] .row-acts,
 .files-list tr:focus-within .row-acts {
+  visibility: visible;
+}
+
+/* A visitor's row icons are drawn on every row at once (pb1): a phone has no hover, and the icons are the row's only actions. */
+.files-list--visitor .row-acts {
   visibility: visible;
 }
 
