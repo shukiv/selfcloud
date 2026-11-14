@@ -251,7 +251,7 @@ route	GET /api/v1/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/accounts	account ls	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}	account show	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/audit	account audit	cli9a2	built in cli9a2
-route	GET /api/v1/accounts/{acc}/audit/export	-	u1c	planned, u1c
+route	GET /api/v1/accounts/{acc}/audit/export	account audit export	u1c	built in u1c
 route	GET /api/v1/accounts/{acc}/folders	folder ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}	folder show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	share ls	cli7	built in cli7

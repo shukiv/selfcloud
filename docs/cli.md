@@ -867,10 +867,10 @@ selfcloud account quota-warning clear --account acc_…
 
 ## Accounts
 
-`account create`, `ls`, `update` and `rm` need an installation admin key. `show`, `usage` and `audit` take a key that
-manages the account: an account key for that account, or an installation admin key. A device token is refused. A 403 from
-one of the four admin commands adds a plain-output hint that names the installation admin key; a device token's 404 on an
-account route adds the hint that the command needs an account key.
+`account create`, `ls`, `update` and `rm` need an installation admin key. `show`, `usage`, `audit` and `audit export` take
+a key that manages the account: an account key for that account, or an installation admin key. A device token is refused.
+A 403 from one of the four admin commands adds a plain-output hint that names the installation admin key; a device token's
+404 on an account route adds the hint that the command needs an account key.
 
 | Command | What it does |
 |---|---|
@@ -880,7 +880,8 @@ account route adds the hint that the command needs an account key.
 | `account update [--account ACC] [--name NAME] [--external-id ID] [--quota SIZE] [--status active\|suspended] [--yes]` | changes only what is given |
 | `account rm [--account ACC] [--yes]` | removes an account and everything in it, in the background; asks first |
 | `account usage [--account ACC]` | prints an account's usage and limits |
-| `account audit [--account ACC] [--all] [--action ACTION] [--actor ID]` | prints the audit log, newest first |
+| `account audit [--account ACC] [--all] [--action ACTION] [--actor ID] [--since TIME] [--until TIME]` | prints the audit log, newest first |
+| `account audit export [--account ACC] [--since TIME] [--until TIME] [--action ACTION] [--actor ID] [-o FILE] [--force]` | streams the audit log as CSV, to standard output or a file |
 
 `create` and `ls` name no account. Every other command takes `--account acc_...`, or `SELFCLOUD_ACCOUNT` when the flag is
 absent; a value that is not an account id is refused before any request (exit 2). `create` trims the one name and sends
@@ -904,6 +905,21 @@ external id, and `--search` matches the name or external id. `--all` follows eve
 null quota or available count prints empty. `audit` prints `TIME ACTOR ACTION TARGET OUTCOME IP`, with the actor as
 `kind:id`; `--action` and `--actor` filter it, and `--all` follows every page.
 
+`audit` and `audit export` take `--since` and `--until`: a TIME is RFC 3339 (`2026-11-01T00:00:00Z`) or a date
+(`2026-11-01`), which means midnight UTC. A value that is neither is refused before any request (exit 2), naming the flag;
+with both given, `--until` must be after `--since`. The window selects entries at or after `--since` and before `--until`,
+and is sent as RFC 3339 UTC.
+
+`audit export` streams the same log as the CSV the API writes (a UTF-8 BOM, CRLF line ends, newest first), byte for byte
+to standard output, or with `-o FILE` to a file. The body is read as it arrives, with no overall timeout; it ends when no
+byte has moved for a minute. With `-o`, the bytes land in a temporary file in FILE's directory (mode 0600), which is
+synced and renamed over FILE, so a failure leaves FILE as it was and removes the temporary file. An existing FILE is
+refused before any request (exit 2) unless `--force` replaces it; a name that is not a regular file is refused even with
+`--force`. A body that ends early is a failure (exit 1) with a plain message on standard error, and no file is left. A 429
+(an export of the account is already running) prints the server's message and a note with the wait in seconds, exits 3,
+and is not retried. `--json` is refused (exit 2): the export is CSV, not a document. `--action` and `--actor` filter it as
+they filter `audit`, and are at most 100 characters. The export itself is audited as `audit.exported`.
+
 `update` sends only the fields given. `--external-id ""` clears it, `--quota 0` removes the limit, and `--status active`
 does not ask. Suspending asks first, as does `rm`; without a terminal and without `--yes` the command refuses before any
 request (exit 2). At a terminal the person types the account's name. `rm` answers with a job, prints `job_id` and `status`,
@@ -916,6 +932,8 @@ selfcloud account ls --status active
 selfcloud account update --account acc_… --quota 20GiB
 selfcloud account usage --account acc_…
 selfcloud account audit --account acc_… --action file.read
+selfcloud account audit --account acc_… --since 2026-11-01 --until 2026-11-08
+selfcloud account audit export --account acc_… --since 2026-11-01 -o audit.csv
 selfcloud account rm --account acc_… --yes
 ```
 
