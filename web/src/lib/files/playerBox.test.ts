@@ -176,4 +176,49 @@ describe("parkBox", () => {
     placeBox(target);
     expect(box.parentElement).toBe(target);
   });
+
+  it("resumes a file that played before the park and was paused by it", () => {
+    const box = playerBox();
+    const audio = document.createElement("audio");
+    box.appendChild(audio);
+    let paused = false;
+    Object.defineProperty(audio, "paused", { get: () => paused, configurable: true });
+    Object.defineProperty(audio, "ended", { value: false, configurable: true });
+    const play = vi.fn(() => {
+      paused = false;
+      return Promise.resolve();
+    });
+    audio.play = play;
+    // The park is made on first use: take it, put the box in the target, and let the park's own move pause the file, as a
+    // re-insertion may in a browser without the state-preserving move. Leaving the page must not stop the audio.
+    parkBox();
+    const parking = box.parentElement as HTMLElement;
+    placeBox(target);
+    const append = parking.appendChild.bind(parking);
+    vi.spyOn(parking, "appendChild").mockImplementation(((node: Node) => {
+      const r = append(node);
+      if (node === box) paused = true;
+      return r;
+    }) as typeof parking.appendChild);
+    parkBox();
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses moveBefore when the park has it", () => {
+    const box = playerBox();
+    parkBox();
+    const parking = box.parentElement as HTMLElement;
+    placeBox(target);
+    const moveBefore = vi.fn((node: Node, ref: Node | null) => {
+      parking.insertBefore(node, ref);
+      return node;
+    });
+    (parking as Mover).moveBefore = moveBefore;
+    const append = vi.spyOn(parking, "appendChild");
+    parkBox();
+    expect(moveBefore).toHaveBeenCalledWith(box, null);
+    expect(append).not.toHaveBeenCalled();
+    expect(box.parentElement).toBe(parking);
+    delete (parking as Mover).moveBefore;
+  });
 });
