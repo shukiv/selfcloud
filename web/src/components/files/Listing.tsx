@@ -90,7 +90,7 @@ export interface ListingProps {
   onRename: (commit: boolean) => void;
   onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
   onFocusItem: (index: number) => void;
-  // focusRequest asks for the focus on a row, by its ID, for a key that moved it (decision 162). A row that is not drawn is
+  // focusRequest asks for the focus on a row, by its ID, for a key that moved it (decision 183). A row that is not drawn is
   // scrolled to first, then focused once it is drawn. A new request is a new seq, so the same row can be asked for again.
   focusRequest?: { id: string; seq: number };
   // rowActs gives the icons at a list row's end for one item. They are drawn with a mouse, where the row is hovered or selected.
@@ -733,7 +733,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
   );
 });
 
-// ---- The windowed list (decision 162). Above 150 loaded rows, My files' list draws only the rows near the screen. ----
+// ---- The windowed list (decision 183). Above 150 loaded rows, My files' list draws only the rows near the screen. ----
 
 // WindowCtx is what the list's table reads from Listing: whether the list is windowed, the two spacers' heights, the loaded rows
 // for aria-rowcount, and the columns a spacer row spans.
@@ -782,7 +782,7 @@ function WindowHeaderRow(props: Record<string, unknown>) {
 
 const FILES_TABLE_COMPONENTS = { table: WindowTable, header: { row: WindowHeaderRow }, body: { wrapper: WindowBody } };
 
-// rowHeights is each density's row height, measured from a drawn row. A row is one line (decision 162), so every row of a density
+// rowHeights is each density's row height, measured from a drawn row. A row is one line (decision 183), so every row of a density
 // is the same height. It is 0 until a row has been drawn.
 const rowHeights = { fine: 0, coarse: 0 };
 
@@ -1182,7 +1182,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     };
   }, []);
 
-  // ---- The window (decision 162): My files' list draws the rows near the screen once more than 150 rows are loaded. ----
+  // ---- The window (decision 183): My files' list draws the rows near the screen once more than 150 rows are loaded. ----
   const filesList = !isItems(p) && p.view === "list";
   const extRef = isItems(p) ? undefined : p.containerRef;
   const pinned = !isItems(p) && p.renameID ? rows.findIndex((r) => r.id === p.renameID) : -1;
@@ -1657,7 +1657,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         render: (_v, n) => rowEnd(n),
       },
     ];
-    // The rows drawn: every row, or the window's slice with the row being renamed in it (decision 162). The spacers hold the place
+    // The rows drawn: every row, or the window's slice with the row being renamed in it (decision 183). The spacers hold the place
     // of the rows that are not drawn, and aria-rowcount counts every loaded row.
     const shown = winActive ? shownRange(win.range, p.items.length, pinned) : { start: 0, end: p.items.length };
     const drawn = shown.start === 0 && shown.end === p.items.length ? p.items : p.items.slice(shown.start, shown.end);
@@ -1670,7 +1670,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         className="files-list"
         data-has-selection={someSelected ? "true" : "false"}
         style={bandVars}
-        // A windowed list takes the focus when a row scrolls out of the window, so the arrow keys still reach it (decision 162).
+        // A windowed list takes the focus when a row scrolls out of the window, so the arrow keys still reach it (decision 183).
         tabIndex={winActive ? -1 : undefined}
         onKeyDown={(e) => {
           if (e.target === e.currentTarget) H.keyDown(e);
@@ -1691,7 +1691,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           rowSelection={coarse ? {
             type: "checkbox",
             columnWidth: 44,
-            // The header's box is ours, not antd's: antd counts the rows it is given, which are the drawn ones (decision 162). It
+            // The header's box is ours, not antd's: antd counts the rows it is given, which are the drawn ones (decision 183). It
             // reads every loaded row, through selectAllBox.
             columnTitle: () => (
               <>
@@ -1713,7 +1713,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
               userSelect: "none" as const,
               scrollMarginTop,
             };
-            // The row's place is its index in the whole list, not in the drawn slice (decision 162); aria-rowindex counts the header as 1.
+            // The row's place is its index in the whole list, not in the drawn slice (decision 183); aria-rowindex counts the header as 1.
             const i = indexOf.get(n.id) ?? 0;
             return { ...rowDomAttrs(n, p.selected.has(n.id), p.focusID === n.id, RH), "aria-rowindex": i + 2, style } as Record<string, unknown>;
           }}

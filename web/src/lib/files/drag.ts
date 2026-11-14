@@ -106,7 +106,7 @@ export function bandSelection(items: Array<{ id: string; box: Box }>, band: Box,
   return items.filter((i) => keep.has(i.id)).map((i) => i.id);
 }
 
-// rowBoxes places every listed row in the band's coordinates, for a windowed list (decision 162). The page measures one drawn row
+// rowBoxes places every listed row in the band's coordinates, for a windowed list (decision 183). The page measures one drawn row
 // (its index and its top) and every row is one row height below or above it, so a row that is not drawn has the box it would
 // have. The boxes are in list order and span x0 to x1.
 export function rowBoxes(ids: string[], anchor: { index: number; top: number }, rowH: number, x0: number, x1: number): Array<{ id: string; box: Box }> {

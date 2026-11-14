@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The windowed list's checks (decision 162): in a folder of 1,000 files the list draws only the rows near the screen, with
+// The windowed list's checks (decision 183): in a folder of 1,000 files the list draws only the rows near the screen, with
 // spacer rows holding the place of the rest. The page scrolls to the end and back, End and Home move the focus to the first
 // and last loaded rows, a shift click from the first row to the last selects all 1,000, a band dragged to an edge scrolls
 // and selects, a row being renamed keeps its name through a scroll away and back, a row at the end of the list drops

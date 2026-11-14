@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The slice of My files' list that is drawn (decision 162): the rows on the screen, with a margin of rows either side, and the
+// The slice of My files' list that is drawn (decision 183): the rows on the screen, with a margin of rows either side, and the
 // two spacer rows that hold the place of the rest. The rule is pure: the page measures the geometry, and these functions say
 // which rows to draw. A list of 150 rows or fewer draws every row, as it did before the windowing.
 

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import Listing, { type ListingProps } from "./Listing";
 
-// My files' list view draws only the rows near the screen once more than 150 rows are loaded (decision 162). jsdom lays nothing
+// My files' list view draws only the rows near the screen once more than 150 rows are loaded (decision 183). jsdom lays nothing
 // out, so the geometry is fake: each row is 40 px, the column header 48 px, the list starts 120 px down the page, and the
 // window is 800 px high. The page's scroll is scrollY, which the fake window.scrollTo sets.
 
@@ -114,7 +114,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("My files' list view draws a slice once more than 150 rows are loaded (decision 162)", () => {
+describe("My files' list view draws a slice once more than 150 rows are loaded (decision 183)", () => {
   it("150 rows: every row is drawn, and there are no spacers", () => {
     const { container } = render(<Listing {...props(items(150))} />);
     expect(drawn(container)).toHaveLength(150);
@@ -158,7 +158,7 @@ describe("My files' list view draws a slice once more than 150 rows are loaded (
   });
 });
 
-describe("the table's row counts for a screen reader (decision 162)", () => {
+describe("the table's row counts for a screen reader (decision 183)", () => {
   it("aria-rowcount is the loaded rows plus the header, and each row's aria-rowindex is its place, the header being row 1", async () => {
     const { container } = render(<Listing {...props(items(1000))} />);
     const table = container.querySelector("table")!;
@@ -177,7 +177,7 @@ describe("the table's row counts for a screen reader (decision 162)", () => {
   });
 });
 
-describe("the page hears a row by its place in the whole list, not in the slice (decision 162)", () => {
+describe("the page hears a row by its place in the whole list, not in the slice (decision 183)", () => {
   it("a click on a drawn row reports its index in the loaded list", async () => {
     const onRowClick = vi.fn();
     const { container } = render(<Listing {...props(items(1000), { onRowClick })} />);
@@ -188,7 +188,7 @@ describe("the page hears a row by its place in the whole list, not in the slice 
   });
 });
 
-describe("the coarse pointer's select-all box reflects every loaded row (decision 162)", () => {
+describe("the coarse pointer's select-all box reflects every loaded row (decision 183)", () => {
   it("all loaded rows selected, drawn or not: the box is checked", () => {
     setCoarse(true);
     const list = items(300);
@@ -218,7 +218,7 @@ describe("the coarse pointer's select-all box reflects every loaded row (decisio
   });
 });
 
-describe("keyboard focus to a row that is not drawn (decision 162)", () => {
+describe("keyboard focus to a row that is not drawn (decision 183)", () => {
   it("a focus request for an undrawn row scrolls the page to it, then focuses it", async () => {
     const list = items(1000);
     const { container, rerender } = render(<Listing {...props(list)} />);

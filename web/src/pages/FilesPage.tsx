@@ -391,7 +391,7 @@ export default function FilesPage() {
   const signedIn = useStore(session) !== null;
   const [prefs, setPrefs] = useState<ViewPrefs>(() => readPrefs());
   const [sel, setSel] = useState<SelState>(NO_SEL);
-  // focusReq is the row the keyboard moved the focus to, with a seq for each request (focusRow, decision 162).
+  // focusReq is the row the keyboard moved the focus to, with a seq for each request (focusRow, decision 183).
   const [focusReq, setFocusReq] = useState<{ id: string; seq: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -1011,7 +1011,7 @@ export default function FilesPage() {
     }
   }
 
-  // focusRow asks the listing for the focus on a row (decision 162). A row that is not drawn is scrolled to and drawn first, which the
+  // focusRow asks the listing for the focus on a row (decision 183). A row that is not drawn is scrolled to and drawn first, which the
   // listing does. The request is state, set with the selection by the same key, so it costs no extra render.
   function focusRow(id: string | null) {
     if (!id) return;
@@ -2082,7 +2082,7 @@ export default function FilesPage() {
   const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   // Clear disables itself once the selection is empty, so the focus moves to the listing first: a disabled button drops it.
   const clearPicked = () => {
-    // The focused row may be out of the drawn rows (decision 162): then the list takes the focus.
+    // The focused row may be out of the drawn rows (decision 183): then the list takes the focus.
     (listRef.current?.querySelector<HTMLElement>("[data-id][tabindex='0']") ?? listRef.current)?.focus();
     setSelection(EMPTY);
   };

@@ -1006,7 +1006,7 @@ async function main() {
         l1Browser = null;
       }
     }
-    // Slice vr1 (decision 162): above 150 loaded rows the list draws only the rows near the screen. Its own browser with a
+    // Slice vr1 (decision 183): above 150 loaded rows the list draws only the rows near the screen. Its own browser with a
     // mouse, signed in as the member.
     if (!only || onlySet.has('vr1')) {
       const vr1Launch = await launchBrowser(await findBrowser(), join(dir, 'vr1-profile'), { mouse: true });

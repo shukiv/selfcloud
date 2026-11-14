@@ -3269,10 +3269,10 @@ describe("decision 91: the document entries follow the place and the impersonati
   });
 });
 
-// My files' list draws only the rows near the screen above 150 loaded rows (decision 162), so the keyboard and the range
+// My files' list draws only the rows near the screen above 150 loaded rows (decision 183), so the keyboard and the range
 // selection must reach rows that are not drawn. jsdom lays nothing out: each row is 40 px, the column header 48 px, the list
 // starts 120 px down the page, and the window is 800 px high. The page's scroll is scrollY, which the fake window.scrollTo sets.
-describe("a windowed listing's keys and range selection (decision 162)", () => {
+describe("a windowed listing's keys and range selection (decision 183)", () => {
   const ROW = 40;
   const HEAD = 48;
   const REGION_TOP = 120;
@@ -3340,7 +3340,7 @@ describe("a windowed listing's keys and range selection (decision 162)", () => {
   });
 });
 
-describe("a key's focus request in each view (decision 162)", () => {
+describe("a key's focus request in each view (decision 183)", () => {
   const originalScrollTo = window.scrollTo;
 
   function tile(id: string): HTMLElement | null {
