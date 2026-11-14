@@ -88,7 +88,7 @@ interface Props {
   subtitles?: { labels: string[]; active: number; onPick: (i: number) => void };
   // active says whether the keys are read here. A player kept for audio alone, with its viewer closed, reads none.
   active?: boolean;
-  // keysInBox says the player sits in the session's box on the Media page (decision 172): a key aimed outside the box is
+  // keysInBox says the player sits in the session's box on the Media page (decision 186): a key aimed outside the box is
   // the page's, not the player's. The body is the exception, where a page shortcut lands with no target of its own.
   keysInBox?: boolean;
 }

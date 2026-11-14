@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The Media page checks (slice mp1, decision 172), run inside the shared end-to-end run (run.mjs) on the shared page,
+// The Media page checks (slice mp1, decision 186), run inside the shared end-to-end run (run.mjs) on the shared page,
 // server and accounts: the sidebar's Media entry right after Starred, the page's empty state with its way back to My
 // files, a file played from My files that goes on in the mini player and then on the Media page — the same element,
 // marked, never made again — with the queue panel below it and no mini player beside it, the mini player back on My

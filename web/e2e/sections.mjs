@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The section runner's bookkeeping (decision 185), apart from the browser so node --test can exercise it
+// The section runner's bookkeeping (decision 190), apart from the browser so node --test can exercise it
 // (section.test.mjs). run.mjs supplies the recovery and the diagnostics; this module decides what a failed section
 // does to the run: it is recorded, the run goes on to the next section, and after six failed sections (or the first
 // one with SELFCLOUD_E2E_STOP_FIRST) the run stops. The summary at the end names every failed section in order.

@@ -39,7 +39,7 @@ import { thumbnailPath } from "../../lib/files/thumbnail";
 
 // MediaDock is the signed-in session drawn in the shell: the viewer (a full-window dialog with the playlist and its player)
 // while it is open, the mini player bar at the bottom of the shell once it is closed, and — while the Media page holds the
-// session (decision 172) — the page itself, with no dialog and no mini bar. One playlist and one player run for the whole
+// session (decision 186) — the page itself, with no dialog and no mini bar. One playlist and one player run for the whole
 // session: its header and playlist live in one box (playerBox) that moves between the viewer and the page's stage, so the
 // element that plays is never made again for a move. Closing the viewer only hides it, so audio goes on while the person
 // browses. The player reads its place and saves it through the signed-in person's own routes, and reads its subtitles the
@@ -94,7 +94,7 @@ export default function MediaDock() {
   // press says the browser refused to start a file for want of a press: the note shows in the mini player too.
   const [press, setPress] = useState(false);
   const node = snap.current?.node ?? null;
-  // Where the session is drawn (decision 172): the Media page holds it while the page is open — the box moves to the page's
+  // Where the session is drawn (decision 186): the Media page holds it while the page is open — the box moves to the page's
   // stage, so there is no dialog and no mini bar; else the open viewer's dialog; else the mini bar. The page wins over an
   // open viewer, so a page reached by address or Back takes the player out of the dialog.
   const placement = snap.page ? "page" : snap.viewerOpen ? "dialog" : "mini";
@@ -239,7 +239,7 @@ export default function MediaDock() {
       {/* One element for the viewer, kept mounted while it is closed: the player inside it is the session, so closing the viewer
           must not stop the audio. Open, it is a full-window dialog. Closed, it is hidden and bears no dialog role, no aria-modal
           and no test id, so nothing reads it as an open viewer, and no focus is trapped in it. The header and playlist are drawn
-          into the session's box, which this element holds unless the Media page holds it (decision 172). */}
+          into the session's box, which this element holds unless the Media page holds it (decision 186). */}
       <div
         ref={viewerRef}
         {...(viewing

@@ -10,7 +10,7 @@ import { useT } from "../lib/i18n";
 import { useMT } from "../lib/media/i18n";
 import { useStore } from "../lib/store";
 
-// Media is the page of the running session (decision 172): one tab for now, the player on its stage and the queue below.
+// Media is the page of the running session (decision 186): one tab for now, the player on its stage and the queue below.
 // The session's player box moves here while the page is open (playback.attachPage), so the element that plays is never
 // made again for the move. With no session the tab says so and offers the way back to My files. The hosts stay mounted
 // either way, so a session that starts or ends while the page is open draws into the same places.

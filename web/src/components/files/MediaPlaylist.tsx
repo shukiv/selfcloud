@@ -102,7 +102,7 @@ export interface MediaPlaylistProps {
   // the share page each give one). Given as undefined, the button keeps a row of its own above the screen; given as null,
   // the slot is not on screen yet and no button is drawn.
   toggleSlot?: HTMLElement | null;
-  // queueSlot is the Media page's place for the queue (decision 172). Given as an element, the queue is drawn into it,
+  // queueSlot is the Media page's place for the queue (decision 186). Given as an element, the queue is drawn into it,
   // below the player, with no drawer and no Playlist toggle; given as null, no queue is drawn. Undefined keeps the
   // viewer's drawer, exactly as before.
   queueSlot?: HTMLElement | null;
@@ -507,7 +507,7 @@ export default function MediaPlaylist({
   );
 
   // The queue panel, drawn once: in the viewer's drawer, or — when the Media page gives a slot — into that slot below the
-  // player (decision 172). Its props are the same either way, so the panel keeps its state across the move.
+  // player (decision 186). Its props are the same either way, so the panel keeps its state across the move.
   const queue = (
     <MediaQueue
       entries={q.entries}
@@ -646,7 +646,7 @@ export default function MediaPlaylist({
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
           {stop !== null && kind === "audio" && currentNode !== undefined && <MediaArt node={currentNode} />}
-        {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 172).
+        {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 186).
             A null slot draws no queue; the player keeps playing either way. */}
         {queueSlot === undefined ? (
           <div

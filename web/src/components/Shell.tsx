@@ -108,7 +108,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
   const main: NavItem[] = [
     ...(filesEntry ? [{ key: "/files", label: t("nav.files"), icon: icon(FolderOpen) }] : []),
     { key: "/starred", label: t("nav.starred"), icon: icon(Star) },
-    // Media is the page of the running session (decision 172), right after Starred for everyone who has Starred.
+    // Media is the page of the running session (decision 186), right after Starred for everyone who has Starred.
     { key: "/media", label: t("nav.media"), icon: icon(MonitorPlay) },
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },

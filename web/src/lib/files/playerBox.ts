@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// playerBox is the one box the media session's player lives in (decision 172). The viewer, the Media page's stage and the
+// playerBox is the one box the media session's player lives in (decision 186). The viewer, the Media page's stage and the
 // hidden parking place each hold the same box at different times: moving the box moves the player with it, so the element
 // that plays is never made again and never stops for a change of place. The box is made once, on first use, and kept for
 // the whole page; React draws the session's header and playlist into it through a portal (MediaDock).

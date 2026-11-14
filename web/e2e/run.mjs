@@ -816,7 +816,7 @@ async function main() {
   // sec2Browser is the new-browser confirmation's own browser, while its checks run (see the sec2 call).
   let sec2Browser = null;
   let page = null;
-  // runner records the failed sections and names them at the end (decision 185); it is made once the page is up.
+  // runner records the failed sections and names them at the end (decision 190); it is made once the page is up.
   let runner = null;
   let passed = false;
   try {
@@ -887,7 +887,7 @@ async function main() {
       MEMBER,
     };
 
-    // The section runner (decision 185): a failed section is recorded and the run goes on. The bookkeeping is
+    // The section runner (decision 190): a failed section is recorded and the run goes on. The bookkeeping is
     // sections.mjs's, so node --test can exercise it without a browser; the recovery and the diagnostics are the run's.
     // browserGone says the browser cannot carry on: a crashed renderer, a detached page or a closed socket. Such a run
     // stops at once, with no recovery, as today.
@@ -1019,7 +1019,7 @@ async function main() {
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
     // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
-    // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 185, for a
+    // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
     // SELFCLOUD_E2E_FAKE_FAIL=<section> makes that one section fail before its checks run: it is how the gate machinery
@@ -1041,7 +1041,7 @@ async function main() {
     if (!only || onlySet.has('w2')) await section('w2', () => w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir }), { as: 'member' });
     if (!only || onlySet.has('sd1')) await section('sd1', () => sd1Checks(h, { page, base, accountKey, teamA, teamB }), { as: 'member' });
     if (!only || onlySet.has('x2')) await section('x2', () => x2Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'member' });
-    // Slice mp1 (decision 172): the Media page hosts the running session, the same element moving to its stage. It runs
+    // Slice mp1 (decision 186): the Media page hosts the running session, the same element moving to its stage. It runs
     // on the shared page after x2, and ends signed in as the member, as x2 does.
     if (!only || onlySet.has('mp1')) await section('mp1', () => mp1Checks(h, { page, base, accountKey, accountID }), { as: 'member' });
     if (!only || onlySet.has('q4')) await section('q4', () => q4Checks(h, { page, base, accountKey, teamA }), { as: 'member' });
@@ -1346,7 +1346,7 @@ async function main() {
       passed = true;
     }
   } finally {
-    // Every failed section is named at the end, in the order they failed (decision 185). The block is printed even when a
+    // Every failed section is named at the end, in the order they failed (decision 190). The block is printed even when a
     // later check threw or a recovery ended the run, and the exit code says the run failed even when the checks after the
     // failed sections all passed.
     runner?.printSummary();

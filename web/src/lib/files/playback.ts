@@ -4,7 +4,7 @@
 // plays now, and the element that plays it. The shell keeps it while the person browses. Closing the viewer on an audio
 // file hides the viewer and leaves the audio playing in the mini player; closing it on a video, or a stop, or a sign-out or
 // a change of person, ends the session: nothing plays on, and the queue is dropped. The Media page hosts the same session
-// while it is open (decision 172): the player moves to the page's stage, and leaving the page is closing the viewer.
+// while it is open (decision 186): the player moves to the page's stage, and leaving the page is closing the viewer.
 //
 // The session is not React state, so a page change does not end it. The shell's host (MediaHost, then MediaDock) renders
 // it and reads it through subscribePlayback.
@@ -36,7 +36,7 @@ export interface PlaybackNav {
   previous: () => void;
 }
 
-// PageHosts are the Media page's places for the session (decision 172): the stage the player box moves into, and the
+// PageHosts are the Media page's places for the session (decision 186): the stage the player box moves into, and the
 // queue panel below it. The page gives them while it is open; the session draws into them instead of the viewer.
 export interface PageHosts {
   stage: HTMLElement;
