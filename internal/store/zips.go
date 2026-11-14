@@ -129,11 +129,13 @@ func (s *Store) CountAllPendingZips(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// CountPendingVisitorZips counts the unfinished zips the visitors of one account's links have made (decision 185).
-func (s *Store) CountPendingVisitorZips(ctx context.Context, accountID string) (int, error) {
+// CountLiveVisitorZips counts the live zips the visitors of one account's links have made: pending, or ready and not
+// expired (decision 185). A ready zip still holds its file until it expires, so it keeps its place in the cap; an
+// expired or failed one does not. The signed-in callers' zips are never counted here.
+func (s *Store) CountLiveVisitorZips(ctx context.Context, accountID string, now time.Time) (int, error) {
 	var n int
-	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM zips WHERE account_id = ? AND state = 'pending'
-		AND created_kind = 'share_link'`, accountID).Scan(&n)
+	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM zips WHERE account_id = ? AND created_kind = 'share_link'
+		AND state IN ('pending', 'ready') AND (expires_at IS NULL OR expires_at >= ?)`, accountID, millis(now)).Scan(&n)
 	return n, err
 }
 

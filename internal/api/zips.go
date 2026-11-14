@@ -312,12 +312,12 @@ func (s *Server) insertVisitorZip(ctx context.Context, tx *store.Tx, p *auth.Pri
 		return nil, apierr.New(apierr.Conflict, "this link already has a zip of other items; wait for it to expire").
 			With("reason", "too_many_zips_link")
 	}
-	n, err := s.store.CountPendingVisitorZips(ctx, acc)
+	n, err := s.store.CountLiveVisitorZips(ctx, acc, now)
 	if err != nil {
 		return nil, err
 	}
 	if n >= s.cfg.Zip.VisitorMaxPerAccount {
-		return nil, apierr.Newf(apierr.Conflict, "the account's visitors may have %d unfinished zips at once; wait for one to finish",
+		return nil, apierr.Newf(apierr.Conflict, "the account's visitors may have %d zips at once; wait for one to expire",
 			s.cfg.Zip.VisitorMaxPerAccount).With("reason", "too_many_zips_account")
 	}
 	return s.queueZip(ctx, tx, p, acc, nodes, now, p.ID)
