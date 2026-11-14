@@ -273,7 +273,11 @@ func TestExternalGrantRootBounds(t *testing.T) {
 	// A chain of 1002 nodes: a grant 1000 levels up is reached, one 1001 levels up is not.
 	chain := make([]*Node, 1002)
 	err = s.Write(ctx, func(tx *Tx) error {
-		parent := ""
+		root, err := tx.RootNode(ctx, a, fa.ID)
+		if err != nil {
+			return err
+		}
+		parent := root.ID
 		for i := 1001; i >= 0; i-- {
 			name := fmt.Sprintf("d%d", i)
 			n := &Node{ID: id.New("nod"), AccountID: a, FolderID: fa.ID, ParentID: parent,
