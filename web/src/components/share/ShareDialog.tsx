@@ -35,6 +35,8 @@ import PeopleCombobox from "./PeopleCombobox";
 import GeneralAccess from "./GeneralAccess";
 import RequestFiles from "./RequestFiles";
 import EmptyState from "../EmptyState";
+import DriveTextFailure from "../drive/DriveTextFailure";
+import { useExternalText } from "../../lib/share/externalText";
 
 // ShareDialog shows who has access to an item, and changes it as far as the caller may. The server checks every change;
 // the dialog only shows what the caller's role allows. A person below manager sees only its own rows (the server's
@@ -105,6 +107,7 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
   const qc = useQueryClient();
   const me = useStore(session);
   const maxDays = useStore(maxExpiryDays);
+  const ext = useExternalText();
   const key = queryKey("permissions", node.id);
 
   const permsQ = useQuery({
@@ -392,6 +395,15 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
 
   const title = t("share.title", { name: node.name });
   const roleSelectOptions = roleOptions.map((r) => ({ value: r, label: t(`role.${r}`) }));
+
+  // The dialog's outside words load with it (decision 187); until they are there it shows the loading line, never a raw key.
+  if (!ext.ready) {
+    return (
+      <Modal open title={title} onCancel={onclose} maskClosable={false} footer={null} width={720} destroyOnClose className="share-dialog">
+        {ext.failed ? <DriveTextFailure retry={ext.retry} /> : <p role="status" style={{ margin: 0 }}>{t("share.loading")}</p>}
+      </Modal>
+    );
+  }
 
   return (
     <Modal

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "antd";
+import { Button, Spin } from "antd";
 import { confirmEmailProof } from "../lib/sharing/api";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { useT } from "../lib/i18n";
 import AuthLayout from "../components/AuthLayout";
 import Alert from "../components/Alert";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
+import { useExternalText } from "../lib/share/externalText";
 import { readFragmentToken } from "./linkToken";
 
 // ProvePage redeems the token a proof mail carries, so the signed-in person's address is proved and the items people in
@@ -34,6 +36,12 @@ export default function ProvePage() {
       (err: unknown) => setError(errorMessage(err, "link")),
     );
   }, []);
+
+  // The page's own words load with it (decision 187); until they are there it draws the spinner, never a raw key.
+  const ext = useExternalText();
+  if (!ext.ready) {
+    return <AuthLayout>{ext.failed ? <DriveTextFailure retry={ext.retry} /> : <Spin />}</AuthLayout>;
+  }
 
   return (
     <AuthLayout>

@@ -1,0 +1,23 @@
+{
+  "prove.title": "Verifica tu dirección de correo",
+  "prove.done": "Tu dirección de correo está verificada.",
+  "share.external.off": "Para compartir con personas de otras cuentas, el propietario de tu cuenta puede permitirlo en Gestionar > Resumen.",
+  "share.external.option": "Compartir con {email}",
+  "share.external.optionHint": "Alguien fuera de tu cuenta",
+  "share.external.tag": "Otra cuenta",
+  "share.external.sameAccount": "{email} está en tu cuenta; compártelo con esa persona aquí.",
+  "share.external.tooMany": "Este elemento tiene el máximo de compartidos con otras cuentas permitido. Quita uno antes de añadir otro.",
+  "share.external.grantsTitle": "Personas de otras cuentas",
+  "share.external.grantRole": "{role} · añadido por {name}",
+  "shared.external.title": "De otras cuentas",
+  "shared.external.prove": "Verifica tu dirección de correo para ver lo que personas de otras cuentas comparten contigo.",
+  "shared.external.proveSend": "Enviarme un enlace",
+  "shared.external.proveSent": "Enviamos un enlace a {email}. Ábrelo en este dispositivo o en cualquier otro.",
+  "shared.external.proveFailed": "No se pudo enviar el correo de verificación. Inténtalo más tarde.",
+  "shared.external.by": "{name} · {account}",
+  "shared.external.empty": "Aún no hay nada de otras cuentas compartido contigo.",
+  "external.gone": "Este elemento no está compartido contigo, o ya no está disponible.",
+  "external.sharedBy": "Compartido por",
+  "policy.externalSharing": "Compartir con personas de otras cuentas de este servidor",
+  "policy.externalSharingHint": "Ambas cuentas deben permitirlo."
+}

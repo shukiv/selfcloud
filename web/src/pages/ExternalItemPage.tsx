@@ -3,10 +3,13 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { Spin } from "antd";
 import PublicBrowse, { sessionSource } from "../components/share/PublicBrowse";
 import EmptyState from "../components/EmptyState";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 import { useT } from "../lib/i18n";
 import { queryKey } from "../lib/query";
+import { useExternalText } from "../lib/share/externalText";
 import type { ExternalShared } from "../lib/sharing/api";
 
 // ITEM_ID is the shape of a node's ID (nod_ and 26 lowercase Crockford base32 characters, internal/id): an address that
@@ -22,9 +25,21 @@ export default function ExternalItemPage() {
   const loc = useLocation();
   const qc = useQueryClient();
   const [gone, setGone] = useState(false);
+  const ext = useExternalText();
   const id = loc.pathname.replace(/^\/x\//, "");
   const cached = qc.getQueryData<{ items: ExternalShared[]; email_proved: boolean }>(queryKey("shared-external"));
   const item = cached?.items.find((i) => i.id === id) ?? null;
+
+  // The view's own words load with it (decision 187); until they are there it draws the spinner, never a raw key.
+  if (!ext.ready) {
+    return ext.failed ? (
+      <DriveTextFailure retry={ext.retry} />
+    ) : (
+      <div role="status" style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+        <Spin />
+      </div>
+    );
+  }
 
   if (!ITEM_ID.test(id) || gone) {
     return <EmptyState text={t("external.gone")} />;

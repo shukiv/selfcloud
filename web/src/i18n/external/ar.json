@@ -1,0 +1,23 @@
+{
+  "prove.title": "أثبت عنوان بريدك الإلكتروني",
+  "prove.done": "تم إثبات عنوان بريدك الإلكتروني.",
+  "share.external.off": "للمشاركة مع أشخاص في حسابات أخرى، يمكن لمالك حسابك السماح بذلك في إدارة > نظرة عامة.",
+  "share.external.option": "المشاركة مع {email}",
+  "share.external.optionHint": "شخص خارج حسابك",
+  "share.external.tag": "حساب آخر",
+  "share.external.sameAccount": "{email} في حسابك؛ شارك مع هذا الشخص هنا.",
+  "share.external.tooMany": "هذا العنصر لديه أقصى عدد من المشاركات مع حسابات أخرى. أزل واحدة قبل إضافة أخرى.",
+  "share.external.grantsTitle": "أشخاص في حسابات أخرى",
+  "share.external.grantRole": "{role} · أضافه {name}",
+  "shared.external.title": "من حسابات أخرى",
+  "shared.external.prove": "أثبت عنوان بريدك الإلكتروني لترى ما يشاركه معك أشخاص في حسابات أخرى.",
+  "shared.external.proveSend": "أرسل لي رابطًا",
+  "shared.external.proveSent": "أرسلنا رابطًا إلى {email}. افتحه على هذا الجهاز أو أي جهاز آخر.",
+  "shared.external.proveFailed": "تعذر إرسال بريد الإثبات. حاول مرة أخرى لاحقًا.",
+  "shared.external.by": "{name} · {account}",
+  "shared.external.empty": "لا شيء من حسابات أخرى مشارك معك بعد.",
+  "external.gone": "هذا العنصر غير مشارك معك، أو لم يعد متاحًا.",
+  "external.sharedBy": "شاركه",
+  "policy.externalSharing": "المشاركة مع أشخاص في حسابات أخرى على هذا الخادم",
+  "policy.externalSharingHint": "يجب أن يسمح كلا الحسابين بذلك."
+}

@@ -8,6 +8,7 @@ import { COMBO_START, MIN_QUERY, SEARCH_DELAY, comboReducer, debounce, type Comb
 import type { DirectoryEntry } from "../../lib/files/types";
 import { useStore } from "../../lib/store";
 import { session } from "../../lib/session";
+import { useExternalText } from "../../lib/share/externalText";
 
 // PeopleCombobox finds a person or a group by name or email. It follows the ARIA combobox pattern: the input is the
 // combobox, the list is its popup, and aria-activedescendant follows the arrow keys. onpick gets the entry when one is
@@ -40,6 +41,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function PeopleCombobox({ id, label, hint, onpick, invalid = false, errorId, kind = "all", allowOutside = false, onoutside }: PeopleComboboxProps) {
   const { t, tp } = useT();
+  const ext = useExternalText();
   const [state, dispatch] = useReducer(comboReducer, COMBO_START);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -98,10 +100,11 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
   };
 
   // The outside option stands after the entries of the account: a whole address the answer does not name as a
-  // person of it. It is offered only while the account's switch is on and the answer has arrived.
+  // person of it. It is offered only while the account's switch is on, the answer has arrived and its words have
+  // loaded (decision 187); the field itself never waits for them.
   const outsideOn = allowOutside && sess?.accountExternalSharing === true;
   const outsideEmailOf = (s: ComboState): string | null => {
-    if (!outsideOn || s.status !== "ready") return null;
+    if (!outsideOn || !ext.ready || s.status !== "ready") return null;
     const q = s.query.trim();
     if (!EMAIL.test(q)) return null;
     const known = s.items.some((it) => (it.email ?? "").toLowerCase() === q.toLowerCase());
@@ -213,7 +216,7 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
       <p className="hint" id={`${id}-hint`} style={{ margin: 0, fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
         {hint}
       </p>
-      {allowOutside && !outsideOn && (
+      {allowOutside && !outsideOn && ext.ready && (
         <p className="hint" style={{ margin: 0, fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
           {t("share.external.off")}
         </p>

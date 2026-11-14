@@ -1,0 +1,23 @@
+{
+  "prove.title": "אמת את כתובת האימייל שלך",
+  "prove.done": "כתובת האימייל שלך אומתה.",
+  "share.external.off": "כדי לשתף עם אנשים בחשבונות אחרים, הבעלים של החשבון שלך יכול לאפשר זאת בניהול > סקירה.",
+  "share.external.option": "שיתוף עם {email}",
+  "share.external.optionHint": "מישהו מחוץ לחשבון שלך",
+  "share.external.tag": "חשבון אחר",
+  "share.external.sameAccount": "{email} נמצא בחשבון שלך; שתף עם אותו אדם כאן.",
+  "share.external.tooMany": "לפריט זה יש את המספר המרבי של שיתופים עם חשבונות אחרים. הסר אחד לפני הוספת אחר.",
+  "share.external.grantsTitle": "אנשים בחשבונות אחרים",
+  "share.external.grantRole": "{role} · נוסף על ידי {name}",
+  "shared.external.title": "מחשבונות אחרים",
+  "shared.external.prove": "אמת את כתובת האימייל שלך כדי לראות מה אנשים בחשבונות אחרים משתפים איתך.",
+  "shared.external.proveSend": "שלח לי קישור",
+  "shared.external.proveSent": "שלחנו קישור אל {email}. פתח אותו במכשיר זה או בכל מכשיר אחר.",
+  "shared.external.proveFailed": "לא ניתן לשלוח את אימייל האימות. נסה שוב מאוחר יותר.",
+  "shared.external.by": "{name} · {account}",
+  "shared.external.empty": "עדיין לא שותף איתך דבר מחשבונות אחרים.",
+  "external.gone": "פריט זה לא משותף איתך, או שאינו זמין עוד.",
+  "external.sharedBy": "שותף על ידי",
+  "policy.externalSharing": "שיתוף עם אנשים בחשבונות אחרים בשרת זה",
+  "policy.externalSharingHint": "שני החשבונות חייבים לאפשר זאת."
+}

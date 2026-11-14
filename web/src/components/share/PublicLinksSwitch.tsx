@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Checkbox } from "antd";
+import { Alert, Checkbox, Skeleton } from "antd";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
 import { getSharingPolicy, setSharingPolicy, type SharingPolicy } from "../../lib/sharing/api";
 import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
+import { useExternalText } from "../../lib/share/externalText";
+import DriveTextFailure from "../drive/DriveTextFailure";
 import DeletePublicLinks from "./DeletePublicLinks";
 
 // PolicyPatch is the part of the account's sharing policy one change may name: the anyone-links switch, the
@@ -38,6 +40,8 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
     },
   });
 
+  const ext = useExternalText();
+
   const shown = policy.data;
   const error = toggle.isError ? failureText(toggle.error, lang) : policy.isError && !shown ? failureText(policy.error, lang) : null;
   const notice = toggle.isSuccess ? t("policy.saved") : null;
@@ -52,6 +56,11 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
       },
     });
   };
+
+  // The switch's own words load with it (decision 187); until they are there a skeleton stands in, never a raw key.
+  if (!ext.ready) {
+    return ext.failed ? <DriveTextFailure retry={ext.retry} /> : <Skeleton active />;
+  }
 
   return (
     <section aria-labelledby="policy-public-links-title" style={{ display: "grid", gap: 8 }}>

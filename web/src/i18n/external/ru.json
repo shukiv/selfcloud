@@ -1,0 +1,23 @@
+{
+  "prove.title": "Подтвердите свой адрес электронной почты",
+  "prove.done": "Ваш адрес электронной почты подтверждён.",
+  "share.external.off": "Чтобы делиться с людьми из других аккаунтов, владелец вашего аккаунта может разрешить это в разделе Управление > Обзор.",
+  "share.external.option": "Поделиться с {email}",
+  "share.external.optionHint": "Кто-то вне вашего аккаунта",
+  "share.external.tag": "Другой аккаунт",
+  "share.external.sameAccount": "{email} в вашем аккаунте; поделитесь с этим человеком здесь.",
+  "share.external.tooMany": "У этого элемента максимум общих доступов с другими аккаунтами. Удалите один, прежде чем добавлять другой.",
+  "share.external.grantsTitle": "Люди из других аккаунтов",
+  "share.external.grantRole": "{role} · добавил {name}",
+  "shared.external.title": "Из других аккаунтов",
+  "shared.external.prove": "Подтвердите свой адрес электронной почты, чтобы видеть, чем с вами делятся люди из других аккаунтов.",
+  "shared.external.proveSend": "Отправить мне ссылку",
+  "shared.external.proveSent": "Мы отправили ссылку на {email}. Откройте её на этом или любом другом устройстве.",
+  "shared.external.proveFailed": "Не удалось отправить письмо для подтверждения. Попробуйте позже.",
+  "shared.external.by": "{name} · {account}",
+  "shared.external.empty": "Пока ничем из других аккаунтов с вами не поделились.",
+  "external.gone": "Этот элемент не открыт вам или больше недоступен.",
+  "external.sharedBy": "Поделился",
+  "policy.externalSharing": "Делиться с людьми из других аккаунтов на этом сервере",
+  "policy.externalSharingHint": "Оба аккаунта должны это разрешить."
+}

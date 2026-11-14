@@ -19,6 +19,7 @@ import { go } from "../lib/router";
 import { proveEmail, sharedExternal, sharedWithMe, type ExternalShared, type SharedNode } from "../lib/sharing/api";
 import type { Page } from "../lib/files/types";
 import { useDriveText } from "../lib/drive/driveText";
+import { useExternalText } from "../lib/share/externalText";
 import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
 import DriveTextFailure from "../components/drive/DriveTextFailure";
 
@@ -34,6 +35,7 @@ function ExternalShares({ ready }: { ready: boolean }) {
   const [note, setNote] = useState<string | null>(null);
   const [proofError, setProofError] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+  const ext = useExternalText();
 
   const q = useQuery({
     queryKey: key,
@@ -71,6 +73,10 @@ function ExternalShares({ ready }: { ready: boolean }) {
     { key: "when", title: t("files.col.modified"), secondary: true, render: (n) => <time dateTime={n.modified_at}>{formatDate(n.modified_at, lang)}</time> },
   ];
 
+  // The section's own words load with it (decision 187); until they are there a skeleton stands in, never a raw key.
+  if (!ext.ready) {
+    return ext.failed ? <DriveTextFailure retry={ext.retry} /> : <Skeleton active />;
+  }
   // A proved address waits for its items and the table's words before the section appears, so the region is found only
   // once its rows are there; until then a skeleton stands in without the heading.
   if (proved && (q.isPending || !ready)) {
