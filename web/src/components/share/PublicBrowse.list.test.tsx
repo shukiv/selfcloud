@@ -233,6 +233,7 @@ describe("the visitor's view and sort are kept per browser", () => {
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Play media" }));
     expect(await screen.findByRole("heading", { name: "clip.webm" })).toBeTruthy();
+    expect(await screen.findByText("playlist of clip.webm")).toBeTruthy();
     expect(played).toEqual(["nod_clip"]);
     // Back to the folder, the other order: the last media file of the ascending order is first now.
     fireEvent.click(screen.getByRole("button", { name: "Plans" }));
@@ -240,6 +241,7 @@ describe("the visitor's view and sort are kept per browser", () => {
     fireEvent.click(screen.getByRole("button", { name: "Name" }));
     fireEvent.click(screen.getByRole("button", { name: "Play media" }));
     expect(await screen.findByRole("heading", { name: "song.mp3" })).toBeTruthy();
+    expect(await screen.findByText("playlist of song.mp3")).toBeTruthy();
     expect(played).toEqual(["nod_clip", "nod_song"]);
   });
 
