@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The phone's offer to install the app (decision 171). Two seconds after the shell is drawn, a signed-in person on a finger
+// The phone's offer to install the app (decision 179). Two seconds after the shell is drawn, a signed-in person on a finger
 // is asked once: the browser's own install dialog where it made an offer, the iPhone/iPad instructions where Safari has none.
 // It is a labelled region at the bottom of the screen, not a modal: it takes no focus and blocks nothing, and Escape while
 // the focus is inside it answers Not now. "Not now" and the close icon hide it for fourteen days, "Don't remind me again"

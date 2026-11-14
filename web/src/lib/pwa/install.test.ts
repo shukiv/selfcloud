@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The install offer (decision 65): the menu entry follows the browser's offer, is used once, and the iPhone check reads the
-// user agent. The phone's card (decision 171) is offered by shouldOfferInstall only when every condition holds, and its
+// user agent. The phone's card (decision 179) is offered by shouldOfferInstall only when every condition holds, and its
 // dismissal is kept under one browser key for fourteen days, or for good.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,7 +89,7 @@ describe("the iPhone instructions", () => {
   });
 });
 
-describe("shouldOfferInstall, the phone's card (decision 171)", () => {
+describe("shouldOfferInstall, the phone's card (decision 179)", () => {
   const DAY = 24 * 60 * 60 * 1000;
   // Every condition holds: a signed-in person in the shell, on a finger, with a browser offer, not installed, never dismissed.
   const base = { signedIn: true, inShell: true, impersonating: false, coarsePointer: true, canInstall: true, ios: false };

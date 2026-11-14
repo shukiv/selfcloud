@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Installing the web app (decision 65). Browsers that can install fire beforeinstallprompt; the menu's entry is shown only
-// then. iPhone and iPad Safari have no prompt, so they get instructions instead. The phone's card (decision 171) offers the
+// then. iPhone and iPad Safari have no prompt, so they get instructions instead. The phone's card (decision 179) offers the
 // same install on its own, and keeps the person's choice under one browser key.
 
 import { writable } from "../store";

@@ -1124,7 +1124,7 @@ async function main() {
       return tab;
     };
     if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER, openProbe });
-    // Slice ip1 (decision 171): the phone's install card, its dismissals and the offer it uses, in its own browser with a finger.
+    // Slice ip1 (decision 179): the phone's install card, its dismissals and the offer it uses, in its own browser with a finger.
     if (!only || onlySet.has('ip1')) await ip1Checks(h, { base, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, brandName: BRAND.name });
     // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
     // sections above, which hold no sign-ins for its user, and before the full run's own checks.

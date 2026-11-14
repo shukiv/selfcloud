@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The install card's own strings (decision 171): the title, the one line, the two buttons and the link under them. They are
+// The install card's own strings (decision 179): the title, the one line, the two buttons and the link under them. They are
 // a catalogue of their own, loaded only when the card is about to show, so the main catalogues (which every page loads) do
 // not grow: the Russian one is at its size budget. The pattern is the access requests page's (lib/requests/text.ts). The
 // keys are read with the main translator once loaded; English loads with each language, as the fallback. The close icon's

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice ip1, the phone's install card (decision 171): on a finger's screen with a browser offer, the shell asks once, two
+// Slice ip1, the phone's install card (decision 179): on a finger's screen with a browser offer, the shell asks once, two
 // seconds after it is drawn, naming the installation. Not now and the close icon keep the time under one browser key,
 // "Don't remind me again" keeps the choice for good, and a reload reads either. Escape inside the card answers Not now, and
 // Install uses the browser's offer once. The offer is synthetic: a beforeinstallprompt whose prompt() answers accepted,

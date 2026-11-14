@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The phone's install card (decision 171): it appears two seconds after the shell on a coarse pointer with an offer, keeps
+// The phone's install card (decision 179): it appears two seconds after the shell on a coarse pointer with an offer, keeps
 // its words in a lazy catalogue, does not take the focus, and its three dismissals keep the choice under one browser key.
 // iPhone/iPad opens the instructions instead of the browser's dialog. The words and the instructions are preloaded here so
 // the fake clock reads them at once; the lazy path itself is tested in InstallPrompt.lazy.test.tsx.
