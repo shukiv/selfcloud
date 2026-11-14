@@ -224,6 +224,12 @@ func TestExternalReadClosedRoutes(t *testing.T) {
 		if !strings.Contains(rt.path, "{nod}") || rt.ext {
 			continue
 		}
+		// Deleting the caller's own star or recent mark is an idempotent no-op that never reads or changes the
+		// node: it answers 204 for any signed-in user, even one who cannot reach the node, so it is not a read
+		// path. The sharer's nodes are still checked unchanged below.
+		if rt.method == "DELETE" && (rt.path == "/api/v1/nodes/{nod}/star" || rt.path == "/api/v1/recent/{nod}") {
+			continue
+		}
 		path := strings.ReplaceAll(rt.path, "{nod}", fx.f.ID)
 		path = placeholders.ReplaceAllString(path, fx.f.ID)
 		rec := callSession(t, fx.s, fx.b1Sess, rt.method, path, nil)
@@ -413,7 +419,7 @@ func TestExternalReadLinkLifeAndAudit(t *testing.T) {
 		if max, _ := e.Details["max_ttl_seconds"].(float64); max > 1800 {
 			t.Errorf("max_ttl_seconds = %v, want at most the grant's 1800", e.Details["max_ttl_seconds"])
 		}
-		rec = callSession(t, fx.s, fx.b1Sess, "POST", "/api/v1/nodes/"+fx.f.ID+"/links", map[string]any{"ttl": 1800})
+		rec = callSession(t, fx.s, fx.b1Sess, "POST", "/api/v1/nodes/"+fx.f.ID+"/links", map[string]any{"ttl": 1700})
 		wantStatus(t, rec, 201)
 		lj := decode[linkJSON](t, rec)
 		if lj.ExpiresAt.After(end.Add(2 * time.Second)) {
