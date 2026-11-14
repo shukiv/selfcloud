@@ -79,6 +79,7 @@ import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
 import { createSectionRunner } from './sections.mjs';
 import { cli4Checks } from './cli4.mjs';
+import { xsChecks } from './xs.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -1018,7 +1019,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1275,6 +1276,9 @@ async function main() {
     // Slice pb1 (decision 184): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
     // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
     if (only && onlySet.has('pb1')) await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
+    // Slice xs (decisions 172-174): sharing with people in other accounts, on its own (SELFCLOUD_E2E_ONLY=xs). It signs in
+    // itself and leaves the shared page as the member. The full run reaches the same checks last, below.
+    if (only && onlySet.has('xs')) await section('xs', () => xsChecks(h, { page, base, accountID, accountKey, adminKey, sink, waitForMail, dir }), { as: 'member' });
     if (only) {
       if (runner.failures.length === 0) {
         console.log(`only ${only}: passed`);
@@ -1315,6 +1319,9 @@ async function main() {
     await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
     // Last, through the API: a restricted label and a move between team spaces. No page sees the moved file.
     await section('p5', () => p5.p5Checks(h, { base, accountKey, memberID, accountID, teamA, teamB }), { as: 'member' });
+    // Slice xs (decisions 172-174): sharing with people in other accounts. Last, so its second account and its removed
+    // grants cannot meet the tenant, admin or member lists above; it leaves the shared page as the member.
+    await section('xs', () => xsChecks(h, { page, base, accountID, accountKey, adminKey, sink, waitForMail, dir }), { as: 'member' });
 
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.
