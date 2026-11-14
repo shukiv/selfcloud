@@ -297,3 +297,17 @@ func TestMeExternalSharingField(t *testing.T) {
 		t.Fatalf("admin's fields = %+v", me)
 	}
 }
+
+// TestEmailProofLinkVerificationDoesNotProve: a user created with verification "link" and verified
+// with the returned token proved nothing — no mail went through Selfcloud (decision 172).
+func TestEmailProofLinkVerificationDoesNotProve(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	// verifiedUser creates with verification "link" and redeems the returned token.
+	_, sess := verifiedUser(t, s, key, acc.ID, "link@example.com")
+	if me := meProof(t, s, sess); me.EmailProved {
+		t.Fatal("a link-verified user reads as proved")
+	}
+}

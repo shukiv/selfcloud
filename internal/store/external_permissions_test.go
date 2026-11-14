@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -196,8 +197,8 @@ func TestNodeAccountID(t *testing.T) {
 	}
 }
 
-// TestExternalGrantRoot: the reach of a grant walks down from the node it sits on, and the topmost
-// live grant wins. An expired grant reaches nothing.
+// TestExternalGrantRoot: the reach of a grant walks down from the node it sits on, for the granted
+// address only, and the topmost live grant of that address wins. An expired grant reaches nothing.
 func TestExternalGrantRoot(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
@@ -211,28 +212,90 @@ func TestExternalGrantRoot(t *testing.T) {
 	}
 	child := extDir(t, s, a, f.ID, root.ID, "sub", u.ID)
 	grand := extDir(t, s, a, f.ID, child.ID, "deep", u.ID)
-	if _, err := s.ExternalGrantRoot(ctx, a, grand.ID); !errors.Is(err, ErrNotFound) {
+	now := Now()
+	if _, err := s.ExternalGrantRoot(ctx, a, grand.ID, "reader@x", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ungranted chain = %v, want ErrNotFound", err)
 	}
-	extGrant(t, s, a, child.ID, "guest@other.example", u.ID, Now(), nil)
-	g, err := s.ExternalGrantRoot(ctx, a, grand.ID)
-	if err != nil || g.NodeID != child.ID {
-		t.Fatalf("grant root from the grandchild = %+v, %v; want the child's grant", g, err)
+	// Two addresses hold grants on the same chain: each reads only its own.
+	extGrant(t, s, a, root.ID, "other@x", u.ID, now, nil)
+	extGrant(t, s, a, child.ID, "reader@x", u.ID, now, nil)
+	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID, "reader@x", now); err != nil || g.NodeID != child.ID {
+		t.Fatalf("reader's grant root = %+v, %v; want the child's grant", g, err)
 	}
-	// A grant above it wins: the reach starts at the topmost one.
-	extGrant(t, s, a, root.ID, "guest@other.example", u.ID, Now(), nil)
-	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID); err != nil || g.NodeID != root.ID {
-		t.Fatalf("grant root with two grants = %+v, %v; want the root's", g, err)
+	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID, "other@x", now); err != nil || g.NodeID != root.ID {
+		t.Fatalf("other's grant root = %+v, %v; want the root's grant", g, err)
 	}
-	// An expired top grant leaves the live one below it.
-	past := Now().Add(-time.Hour)
-	extGrant(t, s, a, root.ID, "guest@other.example", u.ID, Now(), &past)
-	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID); err != nil || g.NodeID != child.ID {
+	if _, err := s.ExternalGrantRoot(ctx, a, grand.ID, "third@x", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("third address = %v, want ErrNotFound", err)
+	}
+	// A live grant of the reader above wins: the reach starts at the topmost one.
+	extGrant(t, s, a, root.ID, "reader@x", u.ID, now, nil)
+	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID, "reader@x", now); err != nil || g.NodeID != root.ID {
+		t.Fatalf("grant root with two live grants = %+v, %v; want the root's", g, err)
+	}
+	// An expired grant of the reader above the live one leaves the live one.
+	past := now.Add(-time.Hour)
+	extGrant(t, s, a, root.ID, "reader@x", u.ID, now, &past)
+	if g, err := s.ExternalGrantRoot(ctx, a, grand.ID, "reader@x", now); err != nil || g.NodeID != child.ID {
 		t.Fatalf("grant root under an expired grant = %+v, %v; want the child's", g, err)
 	}
 	// The node of another account is not reached.
-	if _, err := s.ExternalGrantRoot(ctx, b, grand.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ExternalGrantRoot(ctx, b, grand.ID, "reader@x", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-account chain = %v, want ErrNotFound", err)
+	}
+}
+
+// TestExternalGrantRootBounds: the walk stays inside the account and stops at 1000 levels, so a
+// grant reaches through neither a parent of another account nor an endless chain.
+func TestExternalGrantRootBounds(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	a := newAccountRow(t, s, "A")
+	b := newAccountRow(t, s, "B")
+	u := newUserRow(t, s, a, "ann@example.com", "")
+	fa := newFolderRow(t, s, a, "Team", "team")
+	fb := newFolderRow(t, s, b, "Other", "other")
+	rootB, err := s.RootNode(ctx, b, fb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := Now()
+	extGrant(t, s, b, rootB.ID, "reader@x", u.ID, now, nil)
+	// A node of A whose parent sits in B: the walk must not cross the account.
+	cross := &Node{ID: id.New("nod"), AccountID: a, FolderID: fa.ID, ParentID: rootB.ID,
+		Name: "cross", NameKey: "cross", Kind: KindDir, CreatedAt: now, ModifiedAt: now, CreatedBy: u.ID, ModifiedBy: u.ID}
+	if err := s.Write(ctx, func(tx *Tx) error { return tx.InsertNode(ctx, cross) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ExternalGrantRoot(ctx, a, cross.ID, "reader@x", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the walk crossed accounts: %v, want ErrNotFound", err)
+	}
+	// A chain of 1002 nodes: a grant 1000 levels up is reached, one 1001 levels up is not.
+	chain := make([]*Node, 1002)
+	err = s.Write(ctx, func(tx *Tx) error {
+		parent := ""
+		for i := 1001; i >= 0; i-- {
+			name := fmt.Sprintf("d%d", i)
+			n := &Node{ID: id.New("nod"), AccountID: a, FolderID: fa.ID, ParentID: parent,
+				Name: name, NameKey: name, Kind: KindDir, CreatedAt: now, ModifiedAt: now, CreatedBy: u.ID, ModifiedBy: u.ID}
+			if err := tx.InsertNode(ctx, n); err != nil {
+				return err
+			}
+			chain[i] = n
+			parent = n.ID
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	extGrant(t, s, a, chain[1000].ID, "at1000@x", u.ID, now, nil)
+	extGrant(t, s, a, chain[1001].ID, "at1001@x", u.ID, now, nil)
+	if g, err := s.ExternalGrantRoot(ctx, a, chain[0].ID, "at1000@x", now); err != nil || g.NodeID != chain[1000].ID {
+		t.Fatalf("grant at depth 1000 = %+v, %v; want it found", g, err)
+	}
+	if _, err := s.ExternalGrantRoot(ctx, a, chain[0].ID, "at1001@x", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("grant at depth 1001 = %v, want ErrNotFound", err)
 	}
 }
 

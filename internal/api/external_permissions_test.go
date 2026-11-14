@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -17,11 +18,12 @@ import (
 
 // extPermJSON is an external grant as the API shows it.
 type extPermJSON struct {
-	Email     string     `json:"email"`
-	Role      string     `json:"role"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	CreatedAt time.Time  `json:"created_at"`
-	CreatedBy string     `json:"created_by"`
+	Email         string     `json:"email"`
+	Role          string     `json:"role"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	CreatedBy     string     `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
 }
 
 // extPolicyJSON is the external-sharing field of the account's sharing policy.
@@ -85,7 +87,7 @@ func TestExternalGrantFlow(t *testing.T) {
 	r := extGrantCall(t, s, key, fx.b.ID, map[string]any{"email": "guest@other.example", "role": "viewer"})
 	wantStatus(t, r, 200)
 	g := decode[extPermJSON](t, r)
-	if g.Email != "guest@other.example" || g.Role != "viewer" || g.CreatedBy == "" || g.ExpiresAt != nil {
+	if g.Email != "guest@other.example" || g.Role != "viewer" || g.CreatedBy == "" || g.ExpiresAt != nil || g.CreatedByName != "" {
 		t.Fatalf("grant = %+v", g)
 	}
 	list := decode[listResponse[extPermJSON]](t, call(t, s, "GET", extPath(fx.b.ID), key, nil))
@@ -94,10 +96,20 @@ func TestExternalGrantFlow(t *testing.T) {
 	}
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
 	annList := decode[listResponse[extPermJSON]](t, callSession(t, s, fx.annSess, "GET", extPath(fx.b.ID), nil))
-	if len(annList.Items) != 1 {
+	if len(annList.Items) != 1 || annList.Items[0].CreatedByName != "" {
 		t.Fatalf("a viewer's list = %+v", annList.Items)
 	}
 	wantError(t, callSession(t, s, fx.bobSess, "GET", extPath(fx.b.ID), nil), 404, apierr.NotFound)
+	// A grant made by a named user carries that name; the key's carries none.
+	fx.setPerm(t, fx.b.ID, fx.ann.ID, "manager")
+	wantStatus(t, callSession(t, s, fx.annSess, "PATCH", "/api/v1/me", map[string]any{"display_name": "Ann External"}), 200)
+	r = callSession(t, s, fx.annSess, "POST", extPath(fx.b.ID), map[string]any{"email": "named@other.example", "role": "viewer"})
+	wantStatus(t, r, 200)
+	named := decode[extPermJSON](t, r)
+	if named.CreatedBy != fx.ann.ID || named.CreatedByName != "Ann External" {
+		t.Fatalf("named grant = %+v", named)
+	}
+	wantStatus(t, call(t, s, "DELETE", extPath(fx.b.ID)+"/named@other.example", key, nil), 204)
 	// The same address again updates the grant in place.
 	exp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	r = extGrantCall(t, s, key, fx.b.ID,
@@ -366,4 +378,66 @@ func TestSharedExternal(t *testing.T) {
 	// An installation admin is refused.
 	_, adminSess := newAdminUser(t, s, admin, "admin@example.com")
 	wantError(t, callSession(t, s, adminSess, "GET", "/api/v1/shared/external", nil), 403, apierr.Forbidden)
+}
+
+// TestExternalGrantRoleOptional: the role may be left out or empty; both mean viewer.
+func TestExternalGrantRoleOptional(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureWithMailer(t, &mail.Recorder{})
+	s, key := fx.s, fx.key
+	enableExternal(t, s, key, fx.acc.ID)
+	for _, body := range []map[string]any{
+		{"email": "guest@other.example"},
+		{"email": "guest@other.example", "role": ""},
+	} {
+		r := extGrantCall(t, s, key, fx.b.ID, body)
+		wantStatus(t, r, 200)
+		if g := decode[extPermJSON](t, r); g.Role != "viewer" {
+			t.Fatalf("body %v answered role %q, want viewer", body, g.Role)
+		}
+	}
+}
+
+// TestExternalGrantNoReveal: a grant for an address no user holds anywhere answers exactly like one
+// for an address a user of another account holds, apart from the address itself.
+func TestExternalGrantNoReveal(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureWithMailer(t, &mail.Recorder{})
+	s, key := fx.s, fx.key
+	enableExternal(t, s, key, fx.acc.ID)
+	other, otherKey := newAccount(t, s, fx.admin, "Other")
+	verifiedUser(t, s, otherKey, other.ID, "taken@other.example")
+	r1 := extGrantCall(t, s, key, fx.b.ID, map[string]any{"email": "nobody@other.example", "role": "viewer"})
+	r2 := extGrantCall(t, s, key, fx.b.ID, map[string]any{"email": "taken@other.example", "role": "viewer"})
+	wantStatus(t, r1, 200)
+	wantStatus(t, r2, 200)
+	j1 := decode[map[string]any](t, r1)
+	j2 := decode[map[string]any](t, r2)
+	for _, j := range []map[string]any{j1, j2} {
+		j["email"] = ""
+		j["created_at"] = ""
+	}
+	if !reflect.DeepEqual(j1, j2) {
+		t.Fatalf("answers reveal whether the address is held: %+v vs %+v", j1, j2)
+	}
+}
+
+// TestExternalGrantOpensNoReadPath: a grant gives no reach yet. A proved user of another account,
+// both switches on, still cannot stat the granted node (decision 172; the read path is xs1b).
+func TestExternalGrantOpensNoReadPath(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	admin := adminKey(t, s)
+	accA, keyA := newAccount(t, s, admin, "Sharer")
+	fldA := newFolder(t, s, keyA, accA.ID, "Team")
+	fileA := putNode(t, s, keyA, fldA.ID, "/file.txt", "hello")
+	accB, keyB := newAccount(t, s, admin, "Recipient")
+	_, guestSess := verifiedUser(t, s, keyB, accB.ID, "guest@example.com")
+	token := proveByMail(t, s, guestSess, rec)
+	wantStatus(t, redeemProof(t, s, token), 204)
+	enableExternal(t, s, keyA, accA.ID)
+	enableExternal(t, s, keyB, accB.ID)
+	wantStatus(t, extGrantCall(t, s, keyA, fileA.ID, map[string]any{"email": "guest@example.com", "role": "viewer"}), 200)
+	wantError(t, callSession(t, s, guestSess, "GET", "/api/v1/nodes/"+fileA.ID, nil), 404, apierr.NotFound)
 }
