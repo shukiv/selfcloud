@@ -77,6 +77,7 @@ import { tl3Checks } from './tl3.mjs';
 import { tl5Checks } from './tl5.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
+import { createSectionRunner } from './sections.mjs';
 import { cli4Checks } from './cli4.mjs';
 
 const execFileP = promisify(execFile);
@@ -815,6 +816,8 @@ async function main() {
   // sec2Browser is the new-browser confirmation's own browser, while its checks run (see the sec2 call).
   let sec2Browser = null;
   let page = null;
+  // runner records the failed sections and names them at the end (decision 185); it is made once the page is up.
+  let runner = null;
   let passed = false;
   try {
     await waitForServer(base);
@@ -882,6 +885,67 @@ async function main() {
       setInput: (p, id, value) => p.setInput(`#${id}`, value),
       OWNER,
       MEMBER,
+    };
+
+    // The section runner (decision 185): a failed section is recorded and the run goes on. The bookkeeping is
+    // sections.mjs's, so node --test can exercise it without a browser; the recovery and the diagnostics are the run's.
+    // browserGone says the browser cannot carry on: a crashed renderer, a detached page or a closed socket. Such a run
+    // stops at once, with no recovery, as today.
+    const browserGone = () =>
+      page.ws.readyState !== 1 ||
+      Boolean(crashWatch?.crashes.length) ||
+      page.errors.some((e) => e.includes('renderer crashed') || e.includes('the page was detached'));
+    runner = createSectionRunner({
+      stopFirst: process.env.SELFCLOUD_E2E_STOP_FIRST === '1',
+      fakeFail: process.env.SELFCLOUD_E2E_FAKE_FAIL || null,
+      saveDiagnostics: async (name) => {
+        if (!browserGone()) await saveFailure(page, name);
+      },
+      // recover puts the page back as the next section expects it: the run's desktop size, no finger, no media
+      // emulation, no download path, no paused request, at the base URL and signed in as the section's user. A
+      // recovery that fails ends the run: the throw goes on to the run's own catch.
+      recover: async (as) => {
+        if (browserGone()) throw new Error('the browser is gone; the run stops');
+        // Two Escape presses close what a dialog or a menu left open, as the run's own presses do (keyCode too).
+        for (let i = 0; i < 2; i++) {
+          await page
+            .evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })), true`)
+            .catch(() => undefined);
+        }
+        await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+        await page.send('Emulation.setEmulatedMedia', { media: '', features: [] });
+        // The offline probe of the pwa section cuts the page's network; a failure there must not hold the next one.
+        await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+        await page.send('Page.setDownloadBehavior', { behavior: 'default' });
+        await page.send('Fetch.disable');
+        await page.goto(page.base + '/');
+        // The sign-in page turns a signed-in visitor away, so the page is signed out first; signOut returns at once when
+        // it is already signed out. 'none' leaves it there, for the sections that sign themselves in.
+        await signOut(page);
+        if (as !== 'none') await signIn(page, { owner: OWNER, member: MEMBER, admin: ADMIN }[as]);
+      },
+    });
+    // section wraps one section call. The listeners the section leaves behind are removed from the page's own
+    // bookkeeping before the failure is recorded: a snapshot taken before the section names what it added, and the
+    // listeners page.start added stay. A section that ends well removes its own listeners, as it must today.
+    const section = (name, fn, opts = {}) => {
+      const before = new Map([...page.listeners].map(([m, fns]) => [m, [...fns]]));
+      return runner.section(
+        name,
+        async () => {
+          try {
+            return await fn();
+          } catch (err) {
+            for (const [method, fns] of page.listeners) {
+              const keep = before.get(method) ?? [];
+              page.listeners.set(method, fns.filter((f) => keep.includes(f)));
+            }
+            throw err;
+          }
+        },
+        opts,
+      );
     };
 
     // Sign in as the owner, at desktop width.
@@ -955,43 +1019,48 @@ async function main() {
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
     // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 185, for a
+    // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
+    // the run names every failed section at once (the run still fails).
+    // SELFCLOUD_E2E_FAKE_FAIL=<section> makes that one section fail before its checks run: it is how the gate machinery
+    // is tested without a broken build.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
     // fb runs the file browser's checks alone (the section that owns the read-only New menu, decision 95); a full run runs them in order.
-    if (!only || onlySet.has('fb')) await fileBrowserChecks(page, { base, dir, teamA, teamB });
+    if (!only || onlySet.has('fb')) await section('fb', () => fileBrowserChecks(page, { base, dir, teamA, teamB }), { as: 'member' });
     // fbx runs the dropped-connection and resume checks alone (fileBrowserExtraChecks), so a subset can leave the same uploads a full run does.
-    if (!only || onlySet.has('fbx')) await fileBrowserExtraChecks(page, { dir, teamA });
+    if (!only || onlySet.has('fbx')) await section('fbx', () => fileBrowserExtraChecks(page, { dir, teamA }), { as: 'member' });
     if (!only) {
-      await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
-      await sortChecks(h, { page, base, accountKey, teamA });
+      await section('s4a', () => s4a.s4aChecks(h, { page, base, accountKey, teamA, dir }), { as: 'member' });
+      await section('sort', () => sortChecks(h, { page, base, accountKey, teamA }), { as: 'member' });
     }
-    if (!only || onlySet.has('s4b')) await s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused });
-    if (!only || onlySet.has('media')) await mediaChecks(h, { page, base, accountKey, teamA });
-    if (!only || onlySet.has('w1')) await w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary: await findBrowser() });
-    if (!only || onlySet.has('w2')) await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
-    if (!only || onlySet.has('sd1')) await sd1Checks(h, { page, base, accountKey, teamA, teamB });
-    if (!only || onlySet.has('x2')) await x2Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || onlySet.has('s4b')) await section('s4b', () => s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused }), { as: 'member' });
+    if (!only || onlySet.has('media')) await section('media', () => mediaChecks(h, { page, base, accountKey, teamA }), { as: 'member' });
+    if (!only || onlySet.has('w1')) await section('w1', async () => w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary: await findBrowser() }), { as: 'member' });
+    if (!only || onlySet.has('w2')) await section('w2', () => w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir }), { as: 'member' });
+    if (!only || onlySet.has('sd1')) await section('sd1', () => sd1Checks(h, { page, base, accountKey, teamA, teamB }), { as: 'member' });
+    if (!only || onlySet.has('x2')) await section('x2', () => x2Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'member' });
     // Slice mp1 (decision 172): the Media page hosts the running session, the same element moving to its stage. It runs
     // on the shared page after x2, and ends signed in as the member, as x2 does.
-    if (!only || onlySet.has('mp1')) await mp1Checks(h, { page, base, accountKey, accountID });
-    if (!only || onlySet.has('q4')) await q4Checks(h, { page, base, accountKey, teamA });
-    if (!only || onlySet.has('r7')) await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
-    if (!only || onlySet.has('r7b')) await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
-    if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
+    if (!only || onlySet.has('mp1')) await section('mp1', () => mp1Checks(h, { page, base, accountKey, accountID }), { as: 'member' });
+    if (!only || onlySet.has('q4')) await section('q4', () => q4Checks(h, { page, base, accountKey, teamA }), { as: 'member' });
+    if (!only || onlySet.has('r7')) await section('r7', () => r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir }), { as: 'member' });
+    if (!only || onlySet.has('r7b')) await section('r7b', () => r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir }), { as: 'member' });
+    if (!only || onlySet.has('d1')) await section('d1', () => d1Checks(h, { page, base, accountKey, teamA }), { as: 'member' });
     // Slice sb: the sidebar's tree rows have the menu row's metrics (decision 81). It runs on the shared page, after d1.
-    if (!only || onlySet.has('sb')) await sbChecks(h, { page, base, accountKey, teamA, accountID, memberID });
+    if (!only || onlySet.has('sb')) await section('sb', () => sbChecks(h, { page, base, accountKey, teamA, accountID, memberID }), { as: 'member' });
     // Slice zr1: a demoted maker's zip link shows the no-download refusal (decision 117). It runs on the shared page.
-    if (!only || onlySet.has('zr1e')) await zr1eChecks(h, { page, base, accountKey, accountID, memberID, dir });
-    if (!only || onlySet.has('fu7')) await fu7Checks(h, { page, base, accountKey, teamA, accountID, memberID });
+    if (!only || onlySet.has('zr1e')) await section('zr1e', () => zr1eChecks(h, { page, base, accountKey, accountID, memberID, dir }), { as: 'member' });
+    if (!only || onlySet.has('fu7')) await section('fu7', () => fu7Checks(h, { page, base, accountKey, teamA, accountID, memberID }), { as: 'member' });
     // Decision 140: a folder more than 64 levels down keeps its trail, marked with "…" (SELFCLOUD_E2E_ONLY=an2).
-    if (!only || onlySet.has('an2')) await an2Checks(h, { page, base, accountKey, teamA });
-    if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
-    if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });
+    if (!only || onlySet.has('an2')) await section('an2', () => an2Checks(h, { page, base, accountKey, teamA }), { as: 'member' });
+    if (!only || onlySet.has('d2')) await section('d2', () => d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID }), { as: 'member' });
+    if (!only || onlySet.has('i1')) await section('i1', () => i1Checks(h, { page, base, accountKey, teamA, dir }), { as: 'member' });
     // The list's checks need a mouse's hover, which a headless browser has only from its launch (see launchBrowser), and an earlier
     // section's touch emulation resets it. So l1 runs in its own browser, launched with a mouse, signed in as the member the shared page is signed in as before the sections (an editor), with the same
     // content-policy listening as the shared page; its errors count in this run.
-    if (!only || onlySet.has('l1')) {
+    if (!only || onlySet.has('l1')) await section('l1', async () => {
       const l1Launch = await launchBrowser(await findBrowser(), join(dir, 'l1-profile'), { mouse: true });
       l1Browser = l1Launch.proc;
       const l1Page = new Page(l1Launch.wsUrl);
@@ -1009,10 +1078,10 @@ async function main() {
         l1Browser.kill();
         l1Browser = null;
       }
-    }
+    }, { as: 'member' });
     // Slice vr1 (decision 183): above 150 loaded rows the list draws only the rows near the screen. Its own browser with a
     // mouse, signed in as the member.
-    if (!only || onlySet.has('vr1')) {
+    if (!only || onlySet.has('vr1')) await section('vr1', async () => {
       const vr1Launch = await launchBrowser(await findBrowser(), join(dir, 'vr1-profile'), { mouse: true });
       const vr1Page = new Page(vr1Launch.wsUrl);
       vr1Page.base = base;
@@ -1028,9 +1097,9 @@ async function main() {
         vr1Page.close();
         vr1Launch.proc.kill();
       }
-    }
+    }, { as: 'member' });
     // Slice fu5 (decision 85, the hover fault): the list's rows do not move on hover. Its own browser with a mouse, signed in as the member.
-    if (!only || onlySet.has('fu5')) {
+    if (!only || onlySet.has('fu5')) await section('fu5', async () => {
       const fu5Launch = await launchBrowser(await findBrowser(), join(dir, 'fu5-profile'), { mouse: true });
       const fu5Page = new Page(fu5Launch.wsUrl);
       fu5Page.base = base;
@@ -1044,9 +1113,9 @@ async function main() {
         fu5Page.close();
         fu5Launch.proc.kill();
       }
-    }
+    }, { as: 'member' });
     // Slice ic2 runs in its own browser with a mouse too (the tooltips open on hover), signed in as the owner for the trash.
-    if (!only || onlySet.has('ic2')) {
+    if (!only || onlySet.has('ic2')) await section('ic2', async () => {
       const ic2Launch = await launchBrowser(await findBrowser(), join(dir, 'ic2-profile'), { mouse: true });
       ic2Browser = ic2Launch.proc;
       const ic2Page = new Page(ic2Launch.wsUrl);
@@ -1061,19 +1130,19 @@ async function main() {
         ic2Browser.kill();
         ic2Browser = null;
       }
-    }
+    }, { as: 'member' });
     // l4 (decision 73): the editor from the member's menu, in the member's own browser, then the owner's break of the lock in the
-    // owner's browser. The owner signs in on the shared page.
+    // owner's browser. The owner signs in on the shared page, and the run signs the member back in afterwards.
     if (!only || onlySet.has('l4')) {
-      await l4Checks(h, { page, base, accountKey, teamA, teamB, fake, dir, ownerPage: page, signInAs: async (p) => { await signOut(p); await signIn(p, OWNER); } });
+      await section('l4', () => l4Checks(h, { page, base, accountKey, teamA, teamB, fake, dir, ownerPage: page, signInAs: async (p) => { await signOut(p); await signIn(p, OWNER); } }), { as: 'owner' });
       await signOut(page);
       await signIn(page, MEMBER);
     }
     // l6 (decision 91): New -> Document in a team folder makes a blank file and opens it in the editor, in this tab. The member
     // is an editor on Team A, so a new file there is allowed.
-    if (!only || onlySet.has('l6')) await l6Checks(h, { page, base, accountKey, teamA, fake });
+    if (!only || onlySet.has('l6')) await section('l6', () => l6Checks(h, { page, base, accountKey, teamA, fake }), { as: 'member' });
     // The sign-in box's checks (ks) run in their own browser with their own profile, so the first sign-in there is a fresh browser's.
-    if (!only || onlySet.has('ks')) {
+    if (!only || onlySet.has('ks')) await section('ks', async () => {
       const ksLaunch = await launchBrowser(await findBrowser(), join(dir, 'ks-profile'));
       ksBrowser = ksLaunch.proc;
       const ksPage = new Page(ksLaunch.wsUrl);
@@ -1087,9 +1156,9 @@ async function main() {
         ksBrowser.kill();
         ksBrowser = null;
       }
-    }
+    }, { as: 'member' });
     // The web follow-ups of fu3a (decision 76): the invitation dialog's focus, in its own browser.
-    if (!only || onlySet.has('fu3a')) {
+    if (!only || onlySet.has('fu3a')) await section('fu3a', async () => {
       const fuLaunch = await launchBrowser(await findBrowser(), join(dir, 'fu3a-profile'));
       const fuPage = new Page(fuLaunch.wsUrl);
       fuPage.base = base;
@@ -1101,37 +1170,38 @@ async function main() {
         fuPage.close();
         fuLaunch.proc.kill();
       }
-    }
+    }, { as: 'member' });
     // Slice fu3b (decision 77): the list's first frames and place changes, sampled frame by frame in its own browser.
-    if (!only || onlySet.has('fu3b')) await fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER });
+    if (!only || onlySet.has('fu3b')) await section('fu3b', async () => fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER }), { as: 'member' });
     // Slice oe1 (decision 102): a finger opens an office file in the same tab, full page, and Close goes back.
-    if (!only || onlySet.has('oe1')) await oe1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
+    if (!only || onlySet.has('oe1')) await section('oe1', async () => oe1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo }), { as: 'member' });
     // Slice nt2 (decision 108): the template gallery at a phone's width, a reload, a tap on a built-in and the file it makes.
     // Slice nt2 (decision 108): the New menu at a desktop width, Blank opens its file, and the chord Alt+C then F makes a folder.
-    if (!only || onlySet.has('nt2menu')) await nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo, fake });
-    if (!only || onlySet.has('nt2gallery')) await nt2GalleryChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
+    if (!only || onlySet.has('nt2menu')) await section('nt2menu', async () => nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo, fake }), { as: 'member' });
+    if (!only || onlySet.has('nt2gallery')) await section('nt2gallery', async () => nt2GalleryChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo }), { as: 'member' });
     // Slice ks1 (decision 174): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
-    if (!only || onlySet.has('ks1')) await ks1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
+    if (!only || onlySet.has('ks1')) await section('ks1', async () => ks1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo }), { as: 'member' });
     // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
     // The page is signed in as the member here (the sections above sign the member in last).
-    if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });
+    if (!only || onlySet.has('st')) await section('st', () => stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir }), { as: 'member' });
     // Slice cli4 (decision 125): a terminal's device sign-in is approved on /cli-approve, listed on Signed-in devices, and signed out.
-    if (!only || onlySet.has('cli4')) await cli4Checks(h, { page, base, MEMBER });
+    if (!only || onlySet.has('cli4')) await section('cli4', () => cli4Checks(h, { page, base, MEMBER }), { as: 'member' });
     // Slice em1 (decision 111): the empty states are antd's Empty. The member's empty pages and one compact case.
-    if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir });
+    if (!only || onlySet.has('em1')) await section('em1', () => em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir }), { as: 'member' });
     // The read-only code viewer (slice ce1, decision 115): the member's own files, in light, dark, Hebrew and at 375 px.
-    if (!only || onlySet.has('ce1')) await ce1Checks(h, { page, base, accountKey, MEMBER, teamB, locked: ce1Locked });
+    if (!only || onlySet.has('ce1')) await section('ce1', () => ce1Checks(h, { page, base, accountKey, MEMBER, teamB, locked: ce1Locked }), { as: 'member' });
     // The code editor and its save (slice ce2b-1, decision 124): the pencil, the editor page, Ctrl+S, the conflict and Hebrew.
-    if (!only || onlySet.has('ce2b-1')) await ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale });
-    if (!only || onlySet.has('ce2b-2')) await ce2b2Checks(h, { page, base, accountKey, stale: ce2b2Stale, taken: ce2b2Taken });
-    if (!only || onlySet.has('ce3')) await ce3Checks(h, { page, base, accountKey, ended: ce3Ended });
+    if (!only || onlySet.has('ce2b-1')) await section('ce2b-1', () => ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale }), { as: 'member' });
+    if (!only || onlySet.has('ce2b-2')) await section('ce2b-2', () => ce2b2Checks(h, { page, base, accountKey, stale: ce2b2Stale, taken: ce2b2Taken }), { as: 'member' });
+    if (!only || onlySet.has('ce3')) await section('ce3', () => ce3Checks(h, { page, base, accountKey, ended: ce3Ended }), { as: 'member' });
     // The editor takes a file's version from the node's answer when a proxy drops the content's ETag (slice et1, decision 135).
-    if (!only || onlySet.has('et1')) await et1Checks(h, { page, base, accountKey });
-    if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
-    if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || onlySet.has('x6')) await x6Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || onlySet.has('pwa')) await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
+    if (!only || onlySet.has('et1')) await section('et1', () => et1Checks(h, { page, base, accountKey }), { as: 'member' });
+    if (!only || onlySet.has('d3')) await section('d3', () => d3Checks(h, { page, ADMIN, MEMBER }), { as: 'member' });
+    if (!only || onlySet.has('x3')) await section('x3', () => x3Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'member' });
+    // x4 signs the page out at its end; x6 signs the member in itself.
+    if (!only || onlySet.has('x4')) await section('x4', () => x4Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'none' });
+    if (!only || onlySet.has('x6')) await section('x6', () => x6Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'member' });
+    if (!only || onlySet.has('pwa')) await section('pwa', () => pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl }), { as: 'member' });
     // The share target (slice pwa2, decision 82): the manifest, the share post with and without the worker, and the page.
     // openProbe opens a tab in the shared browser for a cross-site probe. It shares the profile, so the service worker and the
     // member's sign-in are there, and its requests go to its own list, not the shared page's, which the end of the run checks
@@ -1147,12 +1217,12 @@ async function main() {
       }
       return tab;
     };
-    if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER, openProbe });
+    if (!only || onlySet.has('pwa2')) await section('pwa2', () => pwa2Checks(h, { page, base, check, MEMBER, openProbe }), { as: 'member' });
     // Slice ip1 (decision 179): the phone's install card, its dismissals and the offer it uses, in its own browser with a finger.
-    if (!only || onlySet.has('ip1')) await ip1Checks(h, { base, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, brandName: BRAND.name });
+    if (!only || onlySet.has('ip1')) await section('ip1', async () => ip1Checks(h, { base, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, brandName: BRAND.name }), { as: 'member' });
     // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
     // sections above, which hold no sign-ins for its user, and before the full run's own checks.
-    if (!only || onlySet.has('sec2')) {
+    if (!only || onlySet.has('sec2')) await section('sec2', async () => {
       const sec2Launch = await launchBrowser(await findBrowser(), join(dir, 'sec2-profile'));
       sec2Browser = sec2Launch.proc;
       const sec2Page = new Page(sec2Launch.wsUrl);
@@ -1166,81 +1236,85 @@ async function main() {
         sec2Browser.kill();
         sec2Browser = null;
       }
-    }
+    }, { as: 'member' });
     // Slice myfiles: the member's star, open and recent checks, run alone (SELFCLOUD_E2E_ONLY=myfiles), signed in as the
     // member the run leaves the shared page as. The full run reaches the same checks below.
-    if (only && onlySet.has('myfiles')) await owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
+    if (only && onlySet.has('myfiles')) await section('myfiles', () => owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }), { as: 'member' });
     // Slice fu10 (decision 96): the sections that use the people field, run on their own (SELFCLOUD_E2E_ONLY=share, owner-group
     // or fu10). Each one signs in itself; the full run reaches the same checks in its own order below.
-    if (only && onlySet.has('share')) await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
+    if (only && onlySet.has('share')) await section('share', () => sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail }), { as: 'owner' });
     if (only && onlySet.has('owner-group')) {
       await signOut(page);
       await signIn(page, OWNER);
-      await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
+      await section('owner-group', () => owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE }), { as: 'owner' });
     }
-    if (only && onlySet.has('fu10')) await peopleFocusChecks(page, { base, accountID, accountKey, MEMBER, OWNER, check });
+    if (only && onlySet.has('fu10')) await section('fu10', () => peopleFocusChecks(page, { base, accountID, accountKey, MEMBER, OWNER, check }), { as: 'owner' });
     // The installation admin's checks (admin: the tenants list, a new tenant and its key) and slice tl1's tables, each on its
     // own as the admin (SELFCLOUD_E2E_ONLY=admin, tl1 or admin,tl1). The full run reaches both below, in its own order. Slice se3's
     // Settings page runs the same way (SELFCLOUD_E2E_ONLY=se3).
     if (only && (onlySet.has('admin') || onlySet.has('tl1') || onlySet.has('se3'))) {
       await signOut(page);
       await signIn(page, ADMIN);
-      if (onlySet.has('admin')) await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
-      if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
-      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused });
+      if (onlySet.has('admin')) await section('admin', () => owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT }), { as: 'admin' });
+      if (onlySet.has('tl1')) await section('tl1', () => tl1Checks(h, { page, base, adminKey, accountID, accountKey }), { as: 'admin' });
+      if (onlySet.has('se3')) await section('se3', () => se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused }), { as: 'admin' });
     }
     // Slice tl3 (decision 122): the owner's tables, on their own as the owner (SELFCLOUD_E2E_ONLY=tl3). The full run reaches
     // them after the owner's management pages.
     if (only && onlySet.has('tl3')) {
       await signOut(page);
       await signIn(page, OWNER);
-      await tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null });
+      await section('tl3', () => tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null }), { as: 'owner' });
     }
     // Slice tl5 (decision 138): the requests and the notifications are tables, checked as the owner (SELFCLOUD_E2E_ONLY=tl5).
     if (only && onlySet.has('tl5')) {
       await signOut(page);
       await signIn(page, OWNER);
-      await tl5Checks(h, { page });
+      await section('tl5', () => tl5Checks(h, { page }), { as: 'owner' });
     }
     // Slice pb1 (decision 184): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
     // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
-    if (only && onlySet.has('pb1')) await linkChecks(page, { base, accountID, accountKey }, h);
+    if (only && onlySet.has('pb1')) await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
     if (only) {
-      console.log(`only ${only}: passed`);
-      passed = true;
+      if (runner.failures.length === 0) {
+        console.log(`only ${only}: passed`);
+        passed = true;
+      }
       return;
     }
-    const mine = await owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
-    await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
+    // myFilesChecks answers the ids the owner's Shared with me checks need; if it failed, they fail too and are reported.
+    const mine = await section('myfiles', () => owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }), { as: 'member' });
+    await section('share', () => sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail }), { as: 'owner' });
 
     // The owner's management pages, then the installation admin's, then a member who opens the owner's pages.
     await signOut(page);
     await signIn(page, OWNER);
-    await owner.sharedWithOwnerChecks(page, h, mine);
-    await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
-    await owner.p1OwnerChecks(page, h, { MEMBER });
-    await p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID });
-    await p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID });
-    await tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null });
-    await tl5Checks(h, { page });
+    await section('owner-shared', () => owner.sharedWithOwnerChecks(page, h, mine), { as: 'owner' });
+    await section('owner-group', () => owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE }), { as: 'owner' });
+    await section('owner-p1', () => owner.p1OwnerChecks(page, h, { MEMBER }), { as: 'owner' });
+    await section('p3-owner', () => p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID }), { as: 'owner' });
+    await section('p4-owner', () => p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID }), { as: 'owner' });
+    await section('tl3', () => tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null }), { as: 'owner' });
+    await section('tl5', () => tl5Checks(h, { page }), { as: 'owner' });
     await signOut(page);
     await signIn(page, ADMIN);
-    await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
+    await section('admin', () => owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT }), { as: 'admin' });
     // Slice tl1: the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
-    await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
+    await section('tl1', () => tl1Checks(h, { page, base, adminKey, accountID, accountKey }), { as: 'admin' });
     // Slice se3 (decision 143): the Settings page, on the admin's session.
-    await se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused });
+    await section('se3', () => se3Checks(h, { page, base, adminKey, ADMIN, refused: se3Refused }), { as: 'admin' });
     await signOut(page);
     await signIn(page, MEMBER);
-    await owner.memberNotFound(page, h);
-    await owner.p1MemberChecks(page, h, { dir, writeFile, randomBytes, join });
-    await p3.p3MemberChecks(page, h, { teamA, teamB, ...p3ids });
-    await p4.p4MemberChecks(page, h, { teamA, teamB });
-    await owner.signInLinkChecks(page, h, { base, accountID, accountKey, memberID, teamA, MEMBER });
-    await owner.switchChecks(page, h, { base, accountID, accountKey, OWNER, MEMBER, signIn });
-    await linkChecks(page, { base, accountID, accountKey }, h);
+    await section('member-notfound', () => owner.memberNotFound(page, h), { as: 'member' });
+    await section('owner-p1-member', () => owner.p1MemberChecks(page, h, { dir, writeFile, randomBytes, join }), { as: 'member' });
+    await section('p3-member', () => p3.p3MemberChecks(page, h, { teamA, teamB, ...p3ids }), { as: 'member' });
+    await section('p4-member', () => p4.p4MemberChecks(page, h, { teamA, teamB }), { as: 'member' });
+    // The sign-in link's section ends signed out; the switch section ends as the owner it switched to.
+    await section('signin-link', () => owner.signInLinkChecks(page, h, { base, accountID, accountKey, memberID, teamA, MEMBER }), { as: 'none' });
+    await section('switch', () => owner.switchChecks(page, h, { base, accountID, accountKey, OWNER, MEMBER, signIn }), { as: 'owner' });
+    await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
     // Last, through the API: a restricted label and a move between team spaces. No page sees the moved file.
-    await p5.p5Checks(h, { base, accountKey, memberID, accountID, teamA, teamB });
+    await section('p5', () => p5.p5Checks(h, { base, accountKey, memberID, accountID, teamA, teamB }), { as: 'member' });
 
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.
@@ -1267,9 +1341,16 @@ async function main() {
     const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/') && !u.startsWith(pdfViewer) && !editorPage(u));
     check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
-    console.log('e2e passed');
-    passed = true;
+    if (runner.failures.length === 0) {
+      console.log('e2e passed');
+      passed = true;
+    }
   } finally {
+    // Every failed section is named at the end, in the order they failed (decision 185). The block is printed even when a
+    // later check threw or a recovery ended the run, and the exit code says the run failed even when the checks after the
+    // failed sections all passed.
+    runner?.printSummary();
+    if (runner?.exitCode) process.exitCode = runner.exitCode;
     // The page as the failure left it, kept for CI (diag.mjs). Only a failed run keeps it.
     if (!passed) await saveFailure(page, 'run');
     // A crash is explained with the browser's own memory figures, read before the browser is stopped and its cgroup goes.
