@@ -167,7 +167,7 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 	if err := writeEmailTx(ctx, tx, u); err != nil {
 		return nil, err
 	}
-	it, err := s.issueToken(ctx, tx, u, store.PurposeEmailChange, now)
+	it, err := s.issueToken(ctx, tx, u, store.PurposeEmailChange, mailedToKey(req.method, req.email), now)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +267,10 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		if err := tx.UseVerification(ctx, v.ID, at); errors.Is(err, store.ErrNotFound) {
 			return errBadLink
 		} else if err != nil {
+			return err
+		}
+		// The confirmation was mailed to the new address, which is now the one in use: it proves it.
+		if err := proveMailedAddress(ctx, tx, v, found, at); err != nil {
 			return err
 		}
 		if err := voidAddressTokens(ctx, tx, found.ID); err != nil {

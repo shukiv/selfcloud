@@ -244,7 +244,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 		if in.Verification == methodNone {
 			return nil
 		}
-		if issued, err = s.issueToken(ctx, tx, u, store.PurposeVerify, now); err != nil {
+		if issued, err = s.issueToken(ctx, tx, u, store.PurposeVerify, mailedToKey(in.Verification, u.Email), now); err != nil {
 			return err
 		}
 		if in.Verification == methodLink {
@@ -773,7 +773,7 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 			}
 			return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.verify", u.ID, map[string]any{"method": methodNone}))
 		}
-		if it, err = s.issueToken(ctx, tx, u, store.PurposeVerify, now); err != nil {
+		if it, err = s.issueToken(ctx, tx, u, store.PurposeVerify, mailedToKey(in.Method, u.Email), now); err != nil {
 			return err
 		}
 		if in.Method == methodLink {
@@ -844,7 +844,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 				return err
 			}
 		}
-		if it, err = s.issueToken(ctx, tx, u, store.PurposeReset, now); err != nil {
+		if it, err = s.issueToken(ctx, tx, u, store.PurposeReset, mailedToKey(in.Method, u.Email), now); err != nil {
 			return err
 		}
 		if in.Method == methodLink {
@@ -886,7 +886,7 @@ func (s *Server) addUser(ctx context.Context, r *http.Request, tx *store.Tx, u *
 	if method == methodNone {
 		return nil, nil
 	}
-	it, err := s.issueToken(ctx, tx, u, store.PurposeVerify, now)
+	it, err := s.issueToken(ctx, tx, u, store.PurposeVerify, mailedToKey(method, u.Email), now)
 	if err != nil {
 		return nil, err
 	}

@@ -75,6 +75,9 @@ type sharingPolicyJSON struct {
 	Comments bool `json:"comments"`
 	// WhoViewed is the account's who-viewed switch (decision 51). Off by default; off refuses the viewers route.
 	WhoViewed bool `json:"who_viewed"`
+	// ExternalSharing is the account's switch for sharing with other accounts (decision 172). Off by default; off
+	// refuses new external grants and hides the shared-with list, and keeps the grants already made.
+	ExternalSharing bool `json:"external_sharing"`
 }
 
 // toShareLinkJSON shows a stored link. node is the node the listing is about; sharer says whether the
@@ -1026,30 +1029,37 @@ func (s *Server) handleGetSharingPolicy(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
+	external, err := s.store.ExternalSharing(r.Context(), acc.ID)
+	if err != nil {
+		return err
+	}
 	n, err := s.store.CountAnyoneLinks(r.Context(), acc.ID, time.Now())
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments, WhoViewed: whoViewed})
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments, WhoViewed: whoViewed,
+		ExternalSharing: external})
 	return nil
 }
 
 // handleUpdateSharingPolicy sets the account's switches: the one for links that anyone can open, and the one for
 // comments (decision 39). Either may be given alone. Turning the links switch off pauses those links at once; turning it
 // back on revives them. Turning comments off keeps every comment. The who-viewed switch (decision 51) is audited as
-// account.sharing_policy with the detail who_viewed. Only the account's owner or key may change them, as for any
-// account setting.
+// account.sharing_policy with the detail who_viewed. The external-sharing switch (decision 172) is audited the same way
+// with the detail external_sharing; turning it off keeps the grants already made. Only the account's owner or key may
+// change them, as for any account setting.
 func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		PublicLinks *bool `json:"public_links"`
-		Comments    *bool `json:"comments"`
-		WhoViewed   *bool `json:"who_viewed"`
+		PublicLinks     *bool `json:"public_links"`
+		Comments        *bool `json:"comments"`
+		WhoViewed       *bool `json:"who_viewed"`
+		ExternalSharing *bool `json:"external_sharing"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if in.PublicLinks == nil && in.Comments == nil && in.WhoViewed == nil {
-		return apierr.New(apierr.InvalidRequest, "public_links, comments or who_viewed must be true or false")
+	if in.PublicLinks == nil && in.Comments == nil && in.WhoViewed == nil && in.ExternalSharing == nil {
+		return apierr.New(apierr.InvalidRequest, "public_links, comments, who_viewed or external_sharing must be true or false")
 	}
 	acc, err := s.managedAccount(r)
 	if err != nil {
@@ -1082,8 +1092,17 @@ func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Reques
 			}
 			// The sentence of account.sharing_policy (web) names no switch, so the change reads as "changed the sharing
 			// settings" there, and the detail names the switch. A sentence of its own is the web's (r7).
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.sharing_policy", acc.ID,
+				map[string]any{"who_viewed": *in.WhoViewed})); err != nil {
+				return err
+			}
+		}
+		if in.ExternalSharing != nil {
+			if err := tx.SetExternalSharing(ctx, acc.ID, *in.ExternalSharing, store.Now()); err != nil {
+				return err
+			}
 			return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.sharing_policy", acc.ID,
-				map[string]any{"who_viewed": *in.WhoViewed}))
+				map[string]any{"external_sharing": *in.ExternalSharing}))
 		}
 		return nil
 	})
@@ -1102,10 +1121,15 @@ func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return err
 	}
+	external, err := s.store.ExternalSharing(ctx, acc.ID)
+	if err != nil {
+		return err
+	}
 	n, err := s.store.CountAnyoneLinks(ctx, acc.ID, time.Now())
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments, WhoViewed: whoViewed})
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments, WhoViewed: whoViewed,
+		ExternalSharing: external})
 	return nil
 }

@@ -43,6 +43,8 @@ const (
 	// one once the change applies, which carries no link (decision 89).
 	PurposeEmailChange  = "email_change"
 	PurposeEmailChanged = "email_changed"
+	// PurposeEmailProof is the link that proves control of the address in use (decision 172).
+	PurposeEmailProof = "email_proof"
 )
 
 // Purposes lists every purpose. Every one needs an English template, and the filename pattern for
@@ -59,6 +61,7 @@ var Purposes = []string{
 	PurposeDeviceConfirm,
 	PurposeEmailChange,
 	PurposeEmailChanged,
+	PurposeEmailProof,
 }
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.

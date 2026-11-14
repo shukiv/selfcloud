@@ -114,6 +114,9 @@ type UsersConfig struct {
 	// VerifyURLTemplate builds the verification link. {public_url} and {token} are replaced;
 	// the token is URL-escaped and sits in the fragment, so it stays out of server logs.
 	VerifyURLTemplate string `yaml:"verify_url_template"`
+	// ProveURLTemplate builds the link that proves control of an address (decision 172), with the same
+	// placeholders. The token sits in the fragment, as the verification link's does.
+	ProveURLTemplate string `yaml:"prove_url_template"`
 	// ResetURLTemplate builds the password-reset link, with the same placeholders.
 	ResetURLTemplate string `yaml:"reset_url_template"`
 	// EmailChangeURLTemplate builds the link that confirms a new address (decision 89), with the same placeholders.
@@ -832,6 +835,7 @@ func Defaults() *Config {
 			VerificationTTL:          Duration(72 * time.Hour),
 			ResetTTL:                 Duration(time.Hour),
 			VerifyURLTemplate:        "{public_url}/verify#token={token}",
+			ProveURLTemplate:         "{public_url}/prove#token={token}",
 			ResetURLTemplate:         "{public_url}/reset#token={token}",
 			EmailChangeURLTemplate:   "{public_url}/email-change#token={token}",
 			SignInLinkTTL:            Duration(60 * time.Second),
@@ -1040,6 +1044,7 @@ func (c *Config) Validate() error {
 	}
 	for name, tmpl := range map[string]string{
 		"users.verify_url_template":         c.Users.VerifyURLTemplate,
+		"users.prove_url_template":          c.Users.ProveURLTemplate,
 		"users.reset_url_template":          c.Users.ResetURLTemplate,
 		"users.email_change_url_template":   c.Users.EmailChangeURLTemplate,
 		"users.sign_in_url_template":        c.Users.SignInURLTemplate,

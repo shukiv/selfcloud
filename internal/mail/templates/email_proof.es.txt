@@ -1,0 +1,8 @@
+Subject: Verifica tu dirección de correo
+
+Abre este enlace para demostrar que esta dirección es tuya:
+
+{{.URL}}
+
+El enlace funciona una sola vez y caduca el {{.ExpiresAt}}.
+Si no esperabas este mensaje, puedes ignorarlo.

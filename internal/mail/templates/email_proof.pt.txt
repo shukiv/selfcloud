@@ -1,0 +1,8 @@
+Subject: Prove o seu endereço de e-mail
+
+Abra esta ligação para provar que este endereço é seu:
+
+{{.URL}}
+
+A ligação funciona uma só vez e expira a {{.ExpiresAt}}.
+Se não esperava esta mensagem, pode ignorá-la.

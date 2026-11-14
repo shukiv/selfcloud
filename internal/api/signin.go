@@ -38,6 +38,16 @@ func loginScope(account string) string {
 // One message covers all of them, so a link reveals nothing about its history.
 var errBadLink = apierr.New(apierr.InvalidRequest, "the link is not valid or has expired")
 
+// proveMailedAddress marks the user's address proved when the verification was mailed to it and the
+// address is still the one in use (decision 172). A token returned to the caller or made by a command
+// was mailed to no address and proves nothing. It runs inside the redemption's own transaction.
+func proveMailedAddress(ctx context.Context, tx *store.Tx, v *store.Verification, u *store.User, at time.Time) error {
+	if v.MailedTo == "" || v.MailedTo != u.EmailKey {
+		return nil
+	}
+	return tx.SetEmailProof(ctx, u.ID, v.MailedTo, at)
+}
+
 // checkPassword checks a password someone is setting. See recovery.CheckPassword.
 func checkPassword(p string) error {
 	return recovery.CheckPassword(p)
@@ -190,6 +200,9 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if err := tx.DeleteVerifications(ctx, found.ID, store.PurposeVerify, v.ID); err != nil {
+			return err
+		}
+		if err := proveMailedAddress(ctx, tx, v, found, at); err != nil {
 			return err
 		}
 		u = found
@@ -575,7 +588,7 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 					continue
 				}
 			}
-			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, now)
+			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, emailKey(u.Email), now)
 			if err != nil {
 				return err
 			}
@@ -680,6 +693,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err := tx.DeleteVerifications(ctx, found.ID, store.PurposeReset, ""); err != nil {
 			return err
 		}
+		if err := proveMailedAddress(ctx, tx, v, found, at); err != nil {
+			return err
+		}
 		c, err := recovery.EndSessions(ctx, tx, found, "password_reset")
 		if err != nil {
 			return err
@@ -752,6 +768,11 @@ type meResponse struct {
 	PersonalFolderID *string `json:"personal_folder_id"`
 	// PublicLinks is the account's switch for links that anyone can open. False for an installation admin.
 	PublicLinks bool `json:"public_links"`
+	// EmailProved says the user proved control of the address in use (decision 172). False for an installation admin.
+	EmailProved bool `json:"email_proved"`
+	// AccountExternalSharing is the account's switch for sharing with other accounts (decision 172). False for an
+	// installation admin.
+	AccountExternalSharing bool `json:"account_external_sharing"`
 	// MustChangePassword is set when an admin typed this user's password. Until the user changes it, only the
 	// change-password route and this one are open to the user (decision 41).
 	MustChangePassword bool `json:"must_change_password"`
@@ -804,7 +825,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 // session's CSRF token. GET /me and PATCH /me both answer with it.
 func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 	sess := sessionOf(r)
-	out := meResponse{User: toUserJSON(u), CSRFToken: sess.CSRFToken, MustChangePassword: u.MustChangePassword}
+	out := meResponse{User: toUserJSON(u), CSRFToken: sess.CSRFToken, MustChangePassword: u.MustChangePassword,
+		EmailProved: u.EmailProved()}
 	if sess.ImpersonatorID != "" {
 		out.Impersonation = &impersonationJSON{EndsAt: sess.CreatedAt.Add(impersonationTTL)}
 	}
@@ -823,6 +845,11 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 			return meResponse{}, err
 		}
 		out.PublicLinks = on
+		external, err := s.store.ExternalSharing(r.Context(), acc.ID)
+		if err != nil {
+			return meResponse{}, err
+		}
+		out.AccountExternalSharing = external
 		pf, err := s.store.PersonalFolder(r.Context(), u.AccountID, u.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return meResponse{}, err

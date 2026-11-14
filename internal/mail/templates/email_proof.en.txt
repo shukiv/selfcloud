@@ -1,0 +1,8 @@
+Subject: Prove your email address
+
+Open this link to prove that this address is yours:
+
+{{.URL}}
+
+The link works once and expires at {{.ExpiresAt}}.
+If you did not expect this message, you can ignore it.

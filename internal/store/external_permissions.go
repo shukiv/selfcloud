@@ -84,9 +84,25 @@ func (s *Store) ExternalPermissions(ctx context.Context, accountID, nodeID strin
 
 // CountExternalPermissions counts the grants a node holds, whatever their expiry.
 func (s *Store) CountExternalPermissions(ctx context.Context, nodeID string) (int, error) {
+	return countExternalPermissions(ctx, s.r, nodeID)
+}
+
+// CountExternalPermissions is Store.CountExternalPermissions read inside the transaction.
+func (tx *Tx) CountExternalPermissions(ctx context.Context, nodeID string) (int, error) {
+	return countExternalPermissions(ctx, tx.q, nodeID)
+}
+
+func countExternalPermissions(ctx context.Context, q querier, nodeID string) (int, error) {
 	var n int
-	err := s.r.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_permissions WHERE node_id = ?", nodeID).Scan(&n)
+	err := q.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_permissions WHERE node_id = ?", nodeID).Scan(&n)
 	return n, err
+}
+
+// ExternalPermissionOn returns the grant a node holds for the address key. It returns ErrNotFound
+// if there is none.
+func (tx *Tx) ExternalPermissionOn(ctx context.Context, nodeID, emailKey string) (*ExternalPermission, error) {
+	return scanExternalPermission(tx.q.QueryRowContext(ctx, `SELECT `+externalGrantCols+`
+		FROM external_permissions WHERE node_id = ? AND email_key = ?`, nodeID, emailKey))
 }
 
 // NodeAccountID returns the account a node belongs to. It returns ErrNotFound if there is no such
@@ -116,8 +132,17 @@ func (s *Store) ExternalGrantRoot(ctx context.Context, accountID, nodeID string)
 
 // ExternalSharing returns the account's switch for sharing with other accounts (decision 172).
 func (s *Store) ExternalSharing(ctx context.Context, accountID string) (bool, error) {
+	return externalSharing(ctx, s.r, accountID)
+}
+
+// ExternalSharing is Store.ExternalSharing read inside the transaction.
+func (tx *Tx) ExternalSharing(ctx context.Context, accountID string) (bool, error) {
+	return externalSharing(ctx, tx.q, accountID)
+}
+
+func externalSharing(ctx context.Context, q querier, accountID string) (bool, error) {
 	var on int64
-	err := s.r.QueryRowContext(ctx, "SELECT external_sharing FROM accounts WHERE id = ?", accountID).Scan(&on)
+	err := q.QueryRowContext(ctx, "SELECT external_sharing FROM accounts WHERE id = ?", accountID).Scan(&on)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	}

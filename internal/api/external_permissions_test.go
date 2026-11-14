@@ -290,7 +290,8 @@ func TestSharedExternal(t *testing.T) {
 	if it.CreatedBy != "" || it.OwnerID != "" || it.FolderID != "" {
 		t.Fatalf("item carries fields a link's visitor does not see: %+v", it)
 	}
-	// A grant made by a named sharer shows that name.
+	// A grant made by a named sharer shows that name; an update by another caller keeps the origin.
+	wantStatus(t, call(t, s, "DELETE", extPath(fileA.ID)+"/guest@example.com", keyA, nil), 204)
 	sharer, sharerSess := verifiedUser(t, s, keyA, accA.ID, "sharer@example.com")
 	wantStatus(t, call(t, s, "PUT", "/api/v1/nodes/"+fileA.ID+"/permissions/"+sharer.ID, keyA,
 		map[string]any{"role": "manager"}), 200)
@@ -300,6 +301,11 @@ func TestSharedExternal(t *testing.T) {
 		map[string]any{"email": "guest@example.com", "role": "viewer"}), 200)
 	if l := shared(guestSess); len(l.Items) != 1 || l.Items[0].SharedByName != "The Sharer" {
 		t.Fatalf("list with a named sharer = %+v", l)
+	}
+	wantStatus(t, extGrantCall(t, s, keyA, fileA.ID,
+		map[string]any{"email": "guest@example.com", "role": "viewer"}), 200)
+	if l := shared(guestSess); len(l.Items) != 1 || l.Items[0].SharedByName != "The Sharer" {
+		t.Fatalf("list after another caller's update = %+v", l)
 	}
 	// The sharer's switch off hides the grant.
 	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+accA.ID+"/sharing-policy", keyA,

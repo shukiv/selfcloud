@@ -365,7 +365,7 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 			}
 			enabled = true
 		}
-		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeReset, ttl, tmpl, cfg.PublicURL, now)
+		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeReset, "", ttl, tmpl, cfg.PublicURL, now)
 		if err != nil {
 			return err
 		}
@@ -890,7 +890,7 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 				return err
 			}
 		}
-		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeVerify, ttl, tmpl, cfg.PublicURL, now)
+		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeVerify, "", ttl, tmpl, cfg.PublicURL, now)
 		if err != nil {
 			return err
 		}

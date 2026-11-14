@@ -47,6 +47,7 @@ var wantFields = map[string][]string{
 
 	PurposeEmailChange:  {"ExpiresAt", "URL"},
 	PurposeEmailChanged: {},
+	PurposeEmailProof:   {"ExpiresAt", "URL"},
 }
 
 // mailData carries every field any purpose uses, so one value can render each template.

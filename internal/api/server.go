@@ -463,6 +463,10 @@ func New(opts Options) (*Server, error) {
 			// Each address gets one reset an hour that the account cap does not count, so one
 			// caller who uses up an account's cap on repeats cannot stop its users' first resets.
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
+			// Email proofs (decision 172): a user asks for at most three proof mails an hour.
+			"email.proof": newLimiterRate(3, time.Hour),
+			// External grants (decision 172): a caller makes at most twenty a minute.
+			"external.share": newLimiter(20),
 			// Asking for access, per user: each request mails the managers of the item, so a flood of them
 			// is refused.
 			"access.request": newLimiterRate(20, time.Hour),
@@ -742,12 +746,14 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/auth/cli/devices", handle: s.handleCLIDevices, session: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/auth/cli/devices/{dev}", handle: s.handleCLIDeviceRevoke, session: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/email-change/confirm", handle: s.handleConfirmEmailChange, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/email-proof", handle: s.handleRedeemEmailProof, sameSite: true, imp: impRefuse},
 		// Go back ends an impersonation and restores the admin's session. It checks its own CSRF token, because the
 		// impersonation may be past its hour, and a route that required a live session could not run then.
 		{method: http.MethodPost, path: "/api/v1/auth/impersonation/end", handle: s.handleEndImpersonation, sameSite: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true, imp: impAllow, mustChange: true},
 		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true, imp: impRefuse, mustChange: true},
+		{method: http.MethodPost, path: "/api/v1/me/email-proof", handle: s.handleRequestEmailProof, session: true, imp: impRefuse},
 
 		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true, imp: impAllow},
@@ -779,7 +785,11 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/external-permissions", handle: s.handleListExternalPermissions, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/external-permissions", handle: s.handleSetExternalPermission, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/external-permissions/{email}", handle: s.handleRemoveExternalPermission, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/shared/external", handle: s.handleSharedExternal, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},

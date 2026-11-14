@@ -1,0 +1,8 @@
+Subject: Prouvez votre adresse e-mail
+
+Ouvrez ce lien pour prouver que cette adresse est la vôtre :
+
+{{.URL}}
+
+Le lien ne fonctionne qu'une fois et expire le {{.ExpiresAt}}.
+Si ce message ne vous est pas destiné, vous pouvez l'ignorer.

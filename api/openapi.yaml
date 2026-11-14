@@ -2655,6 +2655,31 @@ paths:
               schema: { $ref: "#/components/schemas/User" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/auth/email-proof:
+    post:
+      tags: [Auth]
+      operationId: redeemEmailProof
+      summary: Complete an email-proof link
+      description: |
+        Proves that the user controls the address in use (decision 172). The link works once and
+        lasts 24 hours. An unknown, used or expired link, or one whose address the user no longer
+        holds, gets `invalid_request`, whatever its history; a disabled user gets `user_disabled`.
+        Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              additionalProperties: false
+              properties:
+                token: { type: string, description: The token from the link's fragment. }
+      responses:
+        "204": { description: The address is proved. }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/auth/sign-in-link:
     post:
       tags: [Auth]
@@ -3150,6 +3175,32 @@ paths:
       responses:
         "204":
           description: Changed. Sessions were replaced.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/me/email-proof:
+    post:
+      tags: [Auth]
+      operationId: requestEmailProof
+      summary: Mail a link that proves your email address
+      description: |
+        Mails the signed-in user a link that proves control of the address in use (decision 172).
+        Session only, and refused while impersonating. A proved user gets `200` with `proved` true
+        and no mail. Otherwise the answer is `202`: `sent` says whether the mail went out. With no
+        mailer configured nothing is sent and no link is made. A new request voids the user's older
+        proof links. At most three requests an hour per user, and the mail draws on the account's
+        and the address's mail budgets.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The address is already proved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailProofAnswer" }
+        "202":
+          description: A proof mail was sent, or could not be sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailProofAnswer" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/folders/{fld}/children:
@@ -4744,8 +4795,11 @@ paths:
         Turning `public_links` off pauses every link that anyone can open, at once; turning it on
         revives them. Turning `comments` off closes every comment route for the account and keeps the comments;
         turning it on shows them again. The account's owner or key may change either. Audited as
-        `account.sharing_policy` (the who-viewed switch is in its detail, `who_viewed`) and `account.comments_policy`.
+        `account.sharing_policy` (the who-viewed switch is in its detail, `who_viewed`, and the external-sharing
+        switch in `external_sharing`) and `account.comments_policy`.
         The who-viewed switch is off by default; it changes nothing that is recorded, only whether the viewers route answers.
+        The external-sharing switch (decision 172) is off by default; turning it off refuses new external grants and
+        hides the shared-with list, and keeps the grants already made.
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -4868,6 +4922,75 @@ paths:
       responses:
         "204": { description: Removed. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/external-permissions:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Permissions]
+      operationId: listExternalPermissions
+      summary: List the external grants a node holds
+      description: |
+        The grants of the node to email addresses of other accounts (decision 172). Any role on the
+        node reads them, as the internal permission list is read; a delegated token gets `forbidden`.
+        The list is shown while the account's external-sharing switch is off: the switch keeps the
+        grants already made.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The grants, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalPermissionList" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Permissions]
+      operationId: setExternalPermission
+      summary: Grant a node to an email address of another account
+      description: |
+        Needs the same right as setting an internal permission: manager on the node, or an editor
+        when the node allows editors to share, or an account key. The account's `external_sharing`
+        switch must be on, or the answer is `forbidden` with `details.reason` `external_sharing_off`.
+        The role is `viewer` only. The address is checked as a sign-in address is, and an address of
+        the account itself is `invalid_request` with `details.reason` `same_account`. The answer is
+        the same whether or not the address names a user anywhere: a grant names an address, not a
+        user. `expires_at` follows the same rule as an internal permission. A members-only team space
+        admits a grant on its root only (`conflict`). A node holds at most 100 grants; a new address
+        past that is `conflict` with `details.reason` `too_many_external`, and an address already
+        granted is updated in place, keeping its origin. Delegated tokens never manage permissions.
+        At most twenty calls a minute per caller.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExternalPermissionSet" }
+      responses:
+        "200":
+          description: The grant as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalPermission" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/external-permissions/{email}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - name: email
+        in: path
+        required: true
+        schema: { type: string }
+        description: The granted address.
+    delete:
+      tags: [Permissions]
+      operationId: removeExternalPermission
+      summary: Remove an external grant
+      description: |
+        Needs the same right as setting one. Works while the account's external-sharing switch is
+        off: the switch keeps the grants, and they are still removed. An address the node does not
+        hold is `not_found`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/shared:
     get:
       tags: [Permissions]
@@ -4899,6 +5022,28 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SharedList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/shared/external:
+    get:
+      tags: [Permissions]
+      operationId: listSharedExternal
+      summary: List what other accounts shared with your address
+      description: |
+        The live grants other accounts made to the caller's proved email address (decision 172),
+        newest first, up to 500. Both accounts' `external_sharing` switches must be on. Each item
+        carries the fields a link's visitor sees — `created_by`, `owner_id` and `folder_id` are
+        empty — with the grant's role, the sharer account's name, the display name of the user that
+        made the grant (empty for a key), and the grant's expiry. Trashed nodes and expired grants
+        are left out. A user only: an account key and an installation admin get `forbidden`. A
+        delegated token, an impersonation, an unproved address and a switched-off account all get
+        the empty list; `email_proved` says whether the caller's address is proved.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The shared nodes, and whether the caller's address is proved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalSharedList" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/star:
     parameters:
@@ -7776,7 +7921,7 @@ components:
 
     SharingPolicy:
       type: object
-      required: [public_links, anyone_links, comments, who_viewed]
+      required: [public_links, anyone_links, comments, who_viewed, external_sharing]
       additionalProperties: false
       properties:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
@@ -7785,6 +7930,8 @@ components:
           minimum: 0
           description: How many of the account's links that anyone can open have not ended, live or paused by public_links.
         comments: { type: boolean, description: "Comments are on in the account. Off refuses every comment route and keeps the comments (decision 39). Default on." }
+        who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
+        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 172). Off refuses new external grants and hides the shared-with list, and keeps the grants already made. Default off." }
 
     SharingPolicyUpdate:
       type: object
@@ -7794,6 +7941,7 @@ components:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
         comments: { type: boolean, description: Comments are on in the account. }
         who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
+        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 172). Default off." }
 
     ViewerList:
       type: object
@@ -7859,6 +8007,74 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Permission" }
         next_cursor: { type: string }
+
+    EmailProofAnswer:
+      type: object
+      required: [proved, sent]
+      additionalProperties: false
+      properties:
+        proved: { type: boolean, description: The address in use is already proved. Then no mail is sent. }
+        sent: { type: boolean, description: A proof mail went out. False with no mailer configured, or when the send failed. }
+
+    ExternalPermission:
+      type: object
+      required: [email, role, expires_at, created_at, created_by]
+      additionalProperties: false
+      properties:
+        email: { type: string, description: The granted address, as it was given. }
+        role: { type: string, enum: [viewer], description: External grants are viewer only (decision 172). }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the grant ends, or null for one that never ends. Expired ones grant nothing.
+        created_at: { type: string, format: date-time, description: When the grant was first made; an update keeps it. }
+        created_by: { type: string, description: The ID of the caller who first made the grant; an update keeps it. }
+
+    ExternalPermissionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalPermission" }
+
+    ExternalPermissionSet:
+      type: object
+      required: [email, role]
+      additionalProperties: false
+      properties:
+        email: { type: string, maxLength: 254, description: A bare address of another account. }
+        role: { type: string, enum: [viewer] }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the grant ends; in the future and within sharing.max_expiry of now (0 means no cap). Absent or null for one that never ends.
+
+    ExternalSharedItem:
+      description: |
+        A node another account shared with the caller's address. It carries the fields a link's
+        visitor sees: `created_by`, `owner_id` and `folder_id` are empty, and the names, star,
+        colour, description and shortcut target are absent. `role` is the grant's role.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          required: [account_name, shared_by_name, expires_at]
+          properties:
+            account_name: { type: string, description: The sharer account's name. }
+            shared_by_name: { type: string, description: "The display name of the user that made the grant; empty for a key or a user that is gone." }
+            expires_at:
+              type: [string, "null"]
+              format: date-time
+              description: When the grant ends, or null for one that never ends.
+
+    ExternalSharedList:
+      type: object
+      required: [items, email_proved]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalSharedItem" }
+        email_proved: { type: boolean, description: Whether the caller's address in use is proved (decision 172). }
 
     Grant:
       type: object
@@ -9065,6 +9281,12 @@ components:
         public_links:
           type: boolean
           description: The account's switch for links that anyone can open. False for an installation admin.
+        email_proved:
+          type: boolean
+          description: The user proved control of the address in use (decision 172). False for an installation admin.
+        account_external_sharing:
+          type: boolean
+          description: The account's switch for sharing with other accounts (decision 172). False for an installation admin.
         must_change_password:
           type: boolean
           description: Set when an installation admin typed this user's password. Until the user changes it, only the change-password route, GET /me and sign-out are open (decision 41).
