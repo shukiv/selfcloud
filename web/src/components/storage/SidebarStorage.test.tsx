@@ -60,7 +60,7 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     expect(bar?.style.blockSize).toBe("4px");
     expect(bar?.style.borderRadius).toBe("2px");
     expect(bar?.style.background).toBe("rgba(0, 0, 0, 0.35)");
-    expect(bar?.style.boxShadow).toBe("inset 0 0 0 1px rgb(169, 193, 230)");
+    expect(bar?.style.boxShadow).toBe(`inset 0 0 0 1px ${SIDEBAR.caption}`);
     expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.background).toBe("rgb(254, 204, 0)");
     const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
     expect(line.style.fontSize).toBe("12px");
@@ -166,7 +166,7 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     expect(line.style.color).toBe(onActive);
     const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
     expect(bar?.style.background).toBe("rgba(0, 0, 0, 0.35)");
-    expect(bar?.style.boxShadow).toBe(`inset 0 0 0 1px ${onActive}`);
+    expect(bar?.style.boxShadow).toBe(`inset 0 0 0 1px ${SIDEBAR.onActive}`);
     expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.background).toBe(onActive);
     // The on-active ink reads on the active fill, as the selected menu row's text does.
     expect(contrast(SIDEBAR.onActive, SIDEBAR.active)).toBeGreaterThanOrEqual(4.5);

@@ -510,11 +510,11 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(fonts.every((f) => f === '14px'), `every menu row has one font size, 14 px (${fonts.join(', ')})`);
     await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
     console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team })}`);
-    // New fits its content (decision 69, restored by decision 177): narrower than the sidebar's content, its start edge at the
-    // content's start where the rows' icon column starts, its plus and word in the rows' columns, and the arrow inside after the word.
+    // New fits its content (decision 69, restored by decision 177): narrower than the sidebar's content, its start edge at the rows'
+    // start edge (decision 185), its plus and word in the rows' columns, and the arrow inside after the word.
     const newWidth = geo.newBox ? geo.newBox.r - geo.newBox.l : 0;
     const contentWidth = geo.newParent ? geo.newParent.r - geo.newParent.l : 0;
-    check(geo.newBox !== null && geo.newParent !== null && newWidth < contentWidth - 8 && Math.abs(geo.newBox.l - geo.newParent.l) <= 1 && near(off.new.icon) && near(off.new.name), `the New button is narrower than the sidebar's content and its start edge is the rows' icon column start (${JSON.stringify({ box: geo.newBox, content: geo.newParent, iconOffset: off.new.icon, nameOffset: off.new.name })})`);
+    check(geo.newBox !== null && geo.newParent !== null && newWidth < contentWidth - 8 && Math.abs(geo.newBox.l - geo.newParent.l) <= 1 && near(off.new.icon) && near(off.new.name), `the New button is narrower than the sidebar's content and its start edge is the rows' start edge (${JSON.stringify({ box: geo.newBox, content: geo.newParent, iconOffset: off.new.icon, nameOffset: off.new.name })})`);
     check(geo.newArrow !== null && geo.newBox !== null && geo.new.name !== null && geo.newArrow.l >= geo.newBox.l - 0.5 && geo.newArrow.r <= geo.newBox.r + 0.5 && geo.newArrow.l >= geo.new.name.r - 0.5, `the dropdown arrow is inside the New button, after the word (${JSON.stringify({ arrow: geo.newArrow, box: geo.newBox, word: geo.new.name })})`);
     // A size reads digits then unit, left to right, in English (decision 67): the sidebar line's first size.
     const lineEn = await sizeAt(page, LINE, false);
@@ -526,9 +526,9 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const geoHe = await rowGeometry(page);
     const offHe = columns(geoHe, true);
     check(near(offHe.mine.icon) && near(offHe.mine.name), `in Hebrew My files' icon and name line up with Starred's (${JSON.stringify(offHe.mine)})`);
-    // In Hebrew the order mirrors (decision 177): the button starts at the content's right edge, its plus in the icon column, and
+    // In Hebrew the order mirrors (decision 177): the button starts at the rows' right edge, its plus in the icon column, and
     // the arrow at the left end, after the word.
-    check(geoHe.newBox !== null && geoHe.newParent !== null && Math.abs(geoHe.newBox.r - geoHe.newParent.r) <= 1 && near(offHe.new.icon) && near(offHe.new.name), `in Hebrew the New button starts at the content's start edge, mirrored, its plus in the rows' icon column (${JSON.stringify({ box: geoHe.newBox, content: geoHe.newParent, iconOffset: offHe.new.icon })})`);
+    check(geoHe.newBox !== null && geoHe.newParent !== null && Math.abs(geoHe.newBox.r - geoHe.newParent.r) <= 1 && near(offHe.new.icon) && near(offHe.new.name), `in Hebrew the New button starts at the rows' start edge, mirrored, its plus in the rows' icon column (${JSON.stringify({ box: geoHe.newBox, content: geoHe.newParent, iconOffset: offHe.new.icon })})`);
     check(geoHe.newArrow !== null && geoHe.newBox !== null && geoHe.new.name !== null && geoHe.newArrow.l >= geoHe.newBox.l - 0.5 && geoHe.newArrow.r <= geoHe.newBox.r + 0.5 && geoHe.newArrow.r <= geoHe.new.name.l + 0.5, `in Hebrew the arrow is inside the New button, at the left end after the word (${JSON.stringify({ arrow: geoHe.newArrow, box: geoHe.newBox, word: geoHe.name })})`);
     const cardHe = await cardGeometry(page);
     check(cardHe.card !== null && cardHe.belowMenu && cardHe.rowInline !== null && cardNear(cardHe.card.l, cardHe.sider.l + cardHe.padL + cardHe.rowInline) && cardNear(cardHe.card.r, cardHe.sider.r - cardHe.padR - cardHe.rowInline), `in Hebrew the storage block keeps the rows' edges and sits below the menu (${JSON.stringify({ card: cardHe.card, below: cardHe.belowMenu, rowInline: cardHe.rowInline })})`);

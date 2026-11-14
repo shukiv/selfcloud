@@ -294,7 +294,7 @@ describe("Escape in the sidebar's New menu (decision 95)", () => {
     const utils = render(
       <MemoryRouter>
         <div onKeyDown={parentKey}>
-          <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
+          <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} inline={ROW_INLINE} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
         </div>
       </MemoryRouter>,
     );
