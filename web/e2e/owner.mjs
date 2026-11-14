@@ -258,7 +258,8 @@ export async function p1MemberChecks(page, h, { dir, writeFile, randomBytes, joi
   h.check(!!alert, `the member's upload over its limit is refused, with the message (${alert})`);
   h.check(!(await page.evaluate(`!!document.querySelector(${q(rowSel('p1-over.bin'))})`)), 'the refused file is not listed in My files');
 
-  await h.clickNav(page, 'Storage');
+  // The Storage page is opened from the storage card pinned below the menu (decision 181's card), not a menu row.
+  await h.clickOn(page, '[data-testid="storage-card"]');
   // The Storage page is mock-up A (decision 79): the meter's bar says "X of LIMIT used: parts" in its text alternative.
   const meterAlt = `document.querySelector('main .storage-card .storage-bar[role="img"]')?.getAttribute('aria-label') ?? ''`;
   await page.waitFor(`location.pathname === '/storage' && (${meterAlt}).includes(' used: ')`);
