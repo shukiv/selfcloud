@@ -22,6 +22,7 @@ import { treePlace } from "../lib/files/treePlace";
 import { officeEdit } from "../lib/files/editor";
 import { officeConvert } from "../lib/files/convert";
 import { PREF_FILES } from "../lib/files/viewPrefs";
+import { DENSITY_KEY_PREFIX, writeDensity } from "../lib/files/density";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -3377,5 +3378,57 @@ describe("a key's focus request in each view (decision 183)", () => {
     fireEvent.keyDown(first, { key: "ArrowDown" });
     await waitFor(() => expect(document.activeElement?.getAttribute("data-id")).toBe("n1"));
     expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+});
+
+// The density toggle (decision 185): compact rows with a mouse in the list view, kept per person in this browser. The toggle
+// shows the density it switches to, as the view toggle shows the view it switches to.
+describe("the density toggle (decision 185)", () => {
+  const original = window.matchMedia;
+  const key = `${DENSITY_KEY_PREFIX}u1`;
+  afterEach(() => {
+    window.matchMedia = original;
+    // The choice is put back, so later tests see the rows they expect.
+    act(() => {
+      writeDensity("u1", "comfortable");
+    });
+    window.localStorage.removeItem(key);
+  });
+
+  it("shows in the list view with a mouse; a click flips it and stores the choice under the person's key", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const toggle = screen.getByTestId("density-toggle");
+    expect(toggle.getAttribute("data-density")).toBe("compact");
+    expect(toggle.getAttribute("aria-label")).toBe("Compact rows");
+    fireEvent.click(toggle);
+    const flipped = screen.getByTestId("density-toggle");
+    expect(flipped.getAttribute("data-density")).toBe("comfortable");
+    expect(flipped.getAttribute("aria-label")).toBe("Comfortable rows");
+    expect(window.localStorage.getItem(key)).toBe("compact");
+    expect(document.querySelector(".files-list")?.classList.contains("list--compact")).toBe(true);
+    expect(document.querySelector(".files-list .ant-table-small")).not.toBeNull();
+  });
+
+  it("is not shown in the tile view", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(screen.getByTestId("view-toggle"));
+    await waitFor(() => expect(screen.queryByTestId("density-toggle")).toBeNull());
+    // The view is put back, so later tests see the list they expect.
+    fireEvent.click(screen.getByTestId("view-toggle"));
+    await screen.findByRole("row", { name: "alpha.txt" });
+  });
+
+  it("is not shown with a finger, and a stored compact choice keeps the full rows", async () => {
+    act(() => {
+      writeDensity("u1", "compact");
+    });
+    window.matchMedia = (query: string) => ({ ...original(query), matches: query === "(pointer: coarse)" || query.includes("min-width") }) as MediaQueryList;
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByTestId("density-toggle")).toBeNull();
+    expect(document.querySelector(".files-list")?.classList.contains("list--compact")).toBe(false);
+    expect(document.querySelector(".files-list .ant-table-middle")).not.toBeNull();
   });
 });

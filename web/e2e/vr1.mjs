@@ -3,7 +3,8 @@
 // The windowed list's checks (decision 183): in a folder of 1,000 files the list draws only the rows near the screen, with
 // spacer rows holding the place of the rest. The page scrolls to the end and back, End and Home move the focus to the first
 // and last loaded rows, a shift click from the first row to the last selects all 1,000, a band dragged to an edge scrolls
-// and selects, a row being renamed keeps its name through a scroll away and back, a row at the end of the list drops
+// and selects, a row being renamed keeps its name through a scroll away and back, the density toggle shortens the rows
+// with the last row still reachable and the choice kept through a reload (decision 185), a row at the end of the list drops
 // on a folder in the tree, and a folder of 150 rows draws every row while one of 151 draws a window. The click that selects
 // one row is timed at 300 and 1,000 loaded rows and printed. The folders it makes are removed at the end.
 const q = (v) => JSON.stringify(v);
@@ -248,6 +249,29 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
     check(true, 'the typed name is still there when the list scrolls back');
     await press(page, 'input.rename', 'Escape');
     await page.waitFor(`!document.querySelector('input.rename')`, 5000);
+
+    // Compact rows (decision 185): the toggle shortens every row, the window keeps the last row reachable by scrolling to the
+    // end with no gap at the bottom, the choice survives a reload under the person's own key, and switching back restores the
+    // full rows. The list is read to its end again afterwards, for the drop check below.
+    const comfortableH = await page.evaluate(`document.querySelector('.files-list [role="row"][data-id]')?.getBoundingClientRect().height ?? 0`);
+    await page.evaluate(`document.querySelector('[data-testid="density-toggle"]')?.click(), true`);
+    await page.waitFor(`!!document.querySelector('.files-list.list--compact')`, 10000);
+    await sleep(400);
+    const compactH = await page.evaluate(`document.querySelector('.files-list [role="row"][data-id]')?.getBoundingClientRect().height ?? 0`);
+    check(compactH > 0 && compactH < comfortableH, `compact rows are shorter than comfortable (${comfortableH} to ${compactH})`);
+    await page.evaluate(`window.scrollTo(0, document.documentElement.scrollHeight), true`);
+    await page.waitFor(`!!document.querySelector(${q(rowSel(file(999)))})`, 15000);
+    const compactEnd = await page.evaluate(`(() => { const rows = [...document.querySelectorAll('.files-list [role="row"][data-id]')]; const last = rows[rows.length - 1]; const r = last.getBoundingClientRect(); const list = document.querySelector('.files-list').getBoundingClientRect(); const spacers = [...document.querySelectorAll('.files-list tr[data-spacer]')].map((s) => s.getBoundingClientRect().height); return { last: last.getAttribute('aria-label'), bottom: r.bottom, rowH: r.height, drawn: rows.length, topSpacer: spacers[0] ?? -1, bottomSpacer: spacers[1] ?? -1, listBottom: list.bottom }; })()`);
+    check(compactEnd.last === file(999) && compactEnd.bottom <= 800, `the last row is still reachable at the end in compact (${JSON.stringify(compactEnd)})`);
+    check(Math.abs(compactEnd.topSpacer + compactEnd.drawn * compactEnd.rowH + compactEnd.bottomSpacer - 1000 * compactEnd.rowH) < 1 && Math.abs(compactEnd.listBottom - compactEnd.bottom) < 4, `the compact window leaves no gap at the bottom (${JSON.stringify(compactEnd)})`);
+    const densityStored = () => page.evaluate(`Object.keys(localStorage).filter((k) => k.startsWith('selfcloud.density.')).map((k) => localStorage.getItem(k)).join(',')`);
+    check((await densityStored()) === 'compact', `the compact choice is stored under the person's key (${await densityStored()})`);
+    await openFolder(page, `/files/${teamA}/${rootID}`, file(0));
+    check((await page.evaluate(`!!document.querySelector('.files-list.list--compact') && document.querySelector('[data-testid="density-toggle"]')?.dataset.density === 'comfortable'`)) === true, 'after a reload the list is still compact');
+    await page.evaluate(`document.querySelector('[data-testid="density-toggle"]')?.click(), true`);
+    await page.waitFor(`!document.querySelector('.files-list.list--compact')`, 10000);
+    check((await densityStored()) === 'comfortable', `switching back stores comfortable (${await densityStored()})`);
+    await loadTo(page, 1000);
 
     // A row at the end of the list drops on a folder in the tree, after the list has been scrolled there.
     await page.evaluate(`window.scrollTo(0, document.documentElement.scrollHeight), true`);
