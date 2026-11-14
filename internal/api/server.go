@@ -598,7 +598,7 @@ func New(opts Options) (*Server, error) {
 		// The brand is built as a change builds it: from the settings in use and the pictures.
 		brand := brandOptions(s.settings(), pics)
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
-			BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
+			PublicURL: cfg.PublicURL, BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
 			IconFile: brand.Icon, LogoFile: brand.Logo}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}

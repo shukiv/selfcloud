@@ -40,6 +40,14 @@ const (
 	// brandPlaceholder is the text the offline page carries where the installation's name goes; the server replaces it
 	// when it serves the page, so the page the worker caches shows the name.
 	brandPlaceholder = "__SELFCLOUD_BRAND__"
+	// ogImagePath is the link-preview picture chat apps fetch when a link to the app is shared (decision 172).
+	ogImagePath = "/brand/og-image.png"
+)
+
+// The preview picture's size: the large card chat apps show is 1200 by 630 pixels (decision 172).
+const (
+	ogWidth  = 1200
+	ogHeight = 630
 )
 
 // brandHTML is the name for the offline page, escaped for HTML.
@@ -66,6 +74,15 @@ var iconSpecs = []iconSpec{
 type icon struct {
 	data []byte
 	etag string
+}
+
+// ogImage is the link-preview picture (decision 172): its bytes, the validator that answers a repeat request with 304, and
+// the first 12 hex digits of the bytes' SHA-256. The og:image address carries that hash, so a changed brand gives a new
+// address: chat apps cache previews by address.
+type ogImage struct {
+	data []byte
+	etag string
+	hash string
 }
 
 // brandInfo is the installation's name and accent, for the manifest and the icons. artwork says the installation shows the
@@ -102,9 +119,9 @@ func parseHexColour(s string) (color.RGBA, bool) {
 	return color.RGBA{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n), A: 255}, true
 }
 
-// isPWAPath reports whether p is the manifest, one of the icons, or one of the brand's SVG files.
+// isPWAPath reports whether p is the manifest, one of the icons, the link-preview picture, or one of the brand's SVG files.
 func isPWAPath(p string) bool {
-	if p == manifestPath || isBrandSVGPath(p) {
+	if p == manifestPath || p == ogImagePath || isBrandSVGPath(p) {
 		return true
 	}
 	for _, s := range iconSpecs {
@@ -155,6 +172,32 @@ func drawIcon(spec iconSpec, accent color.RGBA, art iconArt) *image.RGBA {
 // blend mixes a channel of the accent with white by a: 0 keeps the accent, 1 is white.
 func blend(c uint8, a float64) uint8 {
 	return uint8(float64(c)*(1-a) + 255*a + 0.5)
+}
+
+// drawOGImage draws the link-preview picture (decision 172): the accent as the background with the brand's 512 pixel icon
+// art centred on it, the same art and accent the icons are drawn with, and nothing else. The name is in og:title; the
+// server has no font to draw it with.
+func drawOGImage(b brandInfo, art iconArt) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, ogWidth, ogHeight))
+	draw.Draw(img, img.Bounds(), image.NewUniform(b.accent), image.Point{}, draw.Src)
+	ic := drawIcon(iconSpec{path: ogImagePath, size: fullIconPixels}, b.accent, art)
+	x0, y0 := (ogWidth-fullIconPixels)/2, (ogHeight-fullIconPixels)/2
+	draw.Draw(img, image.Rect(x0, y0, x0+fullIconPixels, y0+fullIconPixels), ic, image.Point{}, draw.Over)
+	return img
+}
+
+// buildOGImage draws the preview picture and encodes it as a PNG. Its validator is built as the icons' are, and its hash is
+// the first 12 hex digits of the bytes' SHA-256, which the og:image address carries (decision 172).
+func buildOGImage(b brandInfo, art iconArt) (ogImage, error) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, drawOGImage(b, art)); err != nil {
+		return ogImage{}, err
+	}
+	sum := sha256.Sum256([]byte(b.hex + "\n" + art.label + "\n" + art.sum + "\n" + ogImagePath +
+		"\nrender=" + strconv.Itoa(iconRenderer)))
+	data := buf.Bytes()
+	hash := sha256.Sum256(data)
+	return ogImage{data: data, etag: `"` + hex.EncodeToString(sum[:16]) + `"`, hash: hex.EncodeToString(hash[:6])}, nil
 }
 
 // iconRenderer is the version of how the icons' pixels are drawn: the scaler, the geometry and the mark. It is in every icon's
@@ -263,8 +306,8 @@ func manifestFor(b brandInfo) webManifest {
 	}
 }
 
-// servePWA answers the manifest, an icon or one of the brand's SVG files, from the brand b. It reports false when p is none
-// of them.
+// servePWA answers the manifest, an icon, the link-preview picture or one of the brand's SVG files, from the brand b. It
+// reports false when p is none of them.
 func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) bool {
 	p := r.URL.Path
 	if p == manifestPath {
@@ -291,6 +334,16 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) boo
 		hd.Set("Content-Security-Policy", h.policy(""))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
+		return true
+	}
+	if p == ogImagePath {
+		// The preview picture is public as the icons are: a chat app's server fetches it with no sign-in (decision 172).
+		hd := w.Header()
+		hd.Set("Content-Type", "image/png")
+		hd.Set("Cache-Control", "no-cache")
+		hd.Set("ETag", b.og.etag)
+		hd.Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, "og-image.png", time.Time{}, bytes.NewReader(b.og.data))
 		return true
 	}
 	ic, ok := b.icons[p]

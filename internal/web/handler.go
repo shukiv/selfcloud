@@ -47,6 +47,11 @@ var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/rea
 // script and link tags. The server replaces every occurrence with a fresh nonce per response.
 const cspNoncePlaceholder = "__SELFCLOUD_CSP_NONCE__"
 
+// ogPlaceholder is the comment the build writes where the link-preview tags go, right after the title. The server replaces
+// the whole comment with the tags (decision 172); a comment keeps the page valid HTML for the build and for a page with no
+// server.
+const ogPlaceholder = "<!--__SELFCLOUD_OG__-->"
+
 // Options configure a Handler.
 type Options struct {
 	// ContentURL is content_url, or empty. Its origin is allowed for images, video, audio and frames,
@@ -55,6 +60,9 @@ type Options struct {
 	// OfficeURL is office.discovery_url, or empty when office editing is off. Its origin is allowed for the editor's
 	// frame, and as the target of the editor's form post (form-action), because the editor is Collabora's page.
 	OfficeURL string
+	// PublicURL is public_url, already trimmed of its trailing slash, or empty. The link-preview tags name it as the
+	// installation's address; without it they carry no address and no picture (decision 172).
+	PublicURL string
 	// BrandName and BrandAccent are ui.brand.name and ui.brand.accent. They name the installed app and colour its icons
 	// and manifest (decision 65).
 	BrandName   string
@@ -74,6 +82,9 @@ type Handler struct {
 	origins string
 	// officeOrigin is the origin of the office editor, with a leading space, or empty when office editing is off.
 	officeOrigin string
+	// publicURL is the installation's address for the link-preview tags, or empty (decision 172). It comes only from the
+	// config, never from a request's Host header, which the client controls.
+	publicURL string
 	// page is index.html split at the nonce placeholder, with the name's placeholder still in it, or nil when the build has
 	// none. Each brand holds its own copy with the name in it.
 	page []string
@@ -90,6 +101,8 @@ type Brand struct {
 	icons map[string]icon
 	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decisions 109 and 119).
 	svgs map[string]brandSVG
+	// og is the link-preview picture at /brand/og-image.png, rebuilt with the icons (decision 172).
+	og ogImage
 	// index is the handler's page with the name in it, or nil when the build has none. Joining the parts with a nonce gives
 	// the page for that response.
 	index []string
@@ -119,15 +132,53 @@ func (h *Handler) BuildBrand(o BrandOptions) (*Brand, error) {
 	if err != nil {
 		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
 	}
-	b := &Brand{info: info, icons: icons, svgs: brandSVGs(info, pick.favicon), notes: pick.notes}
+	og, err := buildOGImage(info, pick.art)
+	if err != nil {
+		return nil, fmt.Errorf("web: cannot draw the link-preview image: %w", err)
+	}
+	b := &Brand{info: info, icons: icons, svgs: brandSVGs(info, pick.favicon), og: og, notes: pick.notes}
 	if h.page != nil {
-		// The title and the noscript text carry the installation's name before any script runs (decision 109).
+		// The title and the noscript text carry the installation's name before any script runs (decision 109), and the
+		// link-preview tags name it for the chat apps a link is shared in (decision 172).
+		tags := ogTags(info.name, h.publicURL, og.hash)
 		b.index = make([]string, len(h.page))
 		for i, part := range h.page {
-			b.index[i] = strings.ReplaceAll(part, brandPlaceholder, brandHTML(info.name))
+			part = strings.ReplaceAll(part, brandPlaceholder, brandHTML(info.name))
+			b.index[i] = strings.ReplaceAll(part, ogPlaceholder, tags)
 		}
 	}
 	return b, nil
+}
+
+// ogTags builds the link-preview tags every page carries (decision 172): the installation's name, a short description, and
+// with a public address the page's address and the preview picture. Every page gets the same tags: a preview is fetched by a
+// third-party server, so no file name, folder name or share token goes in them. The address comes only from the config's
+// public_url; without it the tags carry no address and no picture, and the card is the small one.
+func ogTags(name, publicURL, hash string) string {
+	n := brandHTML(name)
+	desc := brandHTML(name + ": files, folders and sharing in your own drive.")
+	tags := []string{
+		`<meta name="description" content="` + desc + `">`,
+		`<meta property="og:type" content="website">`,
+		`<meta property="og:site_name" content="` + n + `">`,
+		`<meta property="og:title" content="` + n + `">`,
+		`<meta property="og:description" content="` + desc + `">`,
+	}
+	if publicURL != "" {
+		u := brandHTML(publicURL)
+		tags = append(tags,
+			`<meta property="og:url" content="`+u+`/">`,
+			`<meta property="og:image" content="`+u+ogImagePath+`?v=`+hash+`">`,
+			`<meta property="og:image:type" content="image/png">`,
+			`<meta property="og:image:width" content="`+strconv.Itoa(ogWidth)+`">`,
+			`<meta property="og:image:height" content="`+strconv.Itoa(ogHeight)+`">`,
+			`<meta property="og:image:alt" content="`+n+`">`,
+			`<meta name="twitter:card" content="summary_large_image">`,
+		)
+	} else {
+		tags = append(tags, `<meta name="twitter:card" content="summary">`)
+	}
+	return strings.Join(tags, "\n")
 }
 
 // UseBrand swaps in a brand BuildBrand built: the next request is served from it.
@@ -166,7 +217,7 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, publicURL: opts.PublicURL}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
