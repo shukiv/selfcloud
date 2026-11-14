@@ -953,7 +953,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1198,6 +1198,9 @@ async function main() {
       await signIn(page, OWNER);
       await tl5Checks(h, { page });
     }
+    // Slice pb1 (decision 172): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
+    // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
+    if (only && onlySet.has('pb1')) await linkChecks(page, { base, accountID, accountKey }, h);
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;

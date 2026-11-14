@@ -3,8 +3,12 @@
 // suite, word for word, so the PASS lists before and after the flip agree for this part. The helpers of run.mjs are
 // passed in as h (h.check, h.api, h.signIn, h.signOut, h.navigateTo, h.setInput, h.OWNER, h.MEMBER, and the rest).
 // Selectors follow the React DOM: antd alerts (.ant-alert), the share dialog's ids and names, and the visitor page's
-// classes (.rows, .crumbs, .public-preview, .dropzone).
+// classes (.files-list, .crumbs, .public-preview, .dropzone, and .rows for the drop page's sent files).
 
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { publicLinksDeleteAllChecks } from './shareDialog.mjs';
 
 const q = (v) => JSON.stringify(v);
@@ -22,6 +26,9 @@ export async function linkChecks(page, { base, accountID, accountKey }, h) {
   // An image, so the visitor's file view has a preview: a real one-pixel PNG, so the browser draws it without an error.
   const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
   await h.rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Fplan.png`, accountKey, pixel, 'image/png');
+  // A subfolder two levels down, so the visitor's path has a button and a separator to line up (pb1).
+  await h.api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Plans/Notes', parents: false });
+  await h.api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Plans/Notes/Deep', parents: false });
 
   // The owner shares Plans through an organisation link, and copies the URL the dialog shows once.
   if (await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`)) await h.signOut(page);
@@ -133,16 +140,81 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   h.check(true, 'a wrong password is refused with its message');
   await h.setInput(page, 'share-password', PASSWORD);
   await h.clickButton(page, 'Open');
-  await page.waitFor(`!!document.querySelector('.rows') && [...document.querySelectorAll('h1')].some((h) => h.textContent === 'Plans')`, 15000);
-  const listed = await page.evaluate(`document.querySelector('.rows').textContent`);
+  const linksBefore = page.sent.filter((r) => r.method === 'POST' && /\/api\/v1\/nodes\/[^/]+\/links$/.test(r.url)).length;
+  await page.waitFor(`!!document.querySelector('.public-browse .files-list') && [...document.querySelectorAll('h1')].some((h) => h.textContent === 'Plans')`, 15000);
+  const listed = await page.evaluate(`document.querySelector('.files-list').textContent`);
   h.check(listed.includes('brief.txt') && listed.includes('plan.png'), 'the visitor sees the folder, with no sign-in');
   const kept = await page.evaluate(`location.hash.length > 1`);
   h.check(kept, 'the secret stays in the address, so a reload works');
   const stored = await page.evaluate(`sessionStorage.getItem('selfcloud.share.secret')`);
   h.check(stored === null, 'nothing about the visit is left in session storage');
 
+  // The folder is listed as My files lists it (pb1): the table's headers, no owner columns or checkboxes, and a Download
+  // icon on every file row. No file link is asked for before a click.
+  const heads = await page.evaluate(`[...document.querySelectorAll('.files-list th')].map((th) => th.textContent)`);
+  h.check(heads.some((x) => x.includes('Name')) && heads.some((x) => x.includes('Size')) && heads.some((x) => x.includes('Modified')) && !heads.some((x) => x.includes('Your access')), "the visitor's table has Name, Size and Modified, and no owner columns");
+  const boxes = await page.evaluate(`document.querySelectorAll('.files-list input[type="checkbox"]').length`);
+  h.check(boxes === 0, "the visitor's table has no checkboxes");
+  const rowHasDownload = (name) => `!!([...document.querySelectorAll('.files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === ${q(name)})?.querySelector('button[aria-label="Download"]'))`;
+  const icons = await page.evaluate(`({ brief: ${rowHasDownload('brief.txt')}, pic: ${rowHasDownload('plan.png')}, notes: ${rowHasDownload('Notes')} })`);
+  h.check(icons.brief && icons.pic && !icons.notes, 'every file row has a Download icon, and the folder row has none');
+  const askedBefore = page.sent.filter((r) => r.method === 'POST' && /\/api\/v1\/nodes\/[^/]+\/links$/.test(r.url)).length - linksBefore;
+  h.check(askedBefore === 0, 'the folder view asks for no file link before a click');
+
+  // A file row's Download asks the attachment link on its click, and nothing else. The browser saves the file into a
+  // temporary folder, as the other download checks do.
+  const downloads = await mkdtemp(join(tmpdir(), 'pb1-downloads-'));
+  await page.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+  const linkBodies = [];
+  const watchLinks = (p) => {
+    if (p.request.method === 'POST' && /\/api\/v1\/nodes\/[^/]+\/links$/.test(p.request.url)) linkBodies.push(p.request.postData || '');
+  };
+  page.on('Network.requestWillBeSent', watchLinks);
+  await page.evaluate(`[...document.querySelectorAll('.files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === 'brief.txt').querySelector('button[aria-label="Download"]').click()`);
+  for (let i = 0; i < 100 && !linkBodies.some((b) => b.includes('"disposition":"attachment"')); i++) await sleep(100);
+  page.off('Network.requestWillBeSent', watchLinks);
+  h.check(linkBodies.length === 1 && linkBodies[0].includes('"disposition":"attachment"'), "a file row's Download asks the attachment link on its click");
+  // The saved file is waited for, so the temporary folder is gone only once the download is over.
+  for (let i = 0; i < 100 && !(await readdir(downloads)).includes('brief.txt'); i++) await sleep(100);
+  await rm(downloads, { recursive: true, force: true });
+
+  // The view toggle shows tiles, and the choice is kept under the share's own key, never the owner's.
+  await page.evaluate(`document.querySelector('[data-testid="view-toggle"]').click()`);
+  await page.waitFor(`!!document.querySelector('.public-browse [role="listbox"]') && document.querySelector('[data-testid="view-toggle"]').getAttribute('data-view') === 'list'`);
+  const keptView = await page.evaluate(`({ share: JSON.parse(localStorage.getItem('selfcloud.share.view') || '{}').view, owner: localStorage.getItem('selfcloud.files') })`);
+  h.check(keptView.share === 'grid' && keptView.owner === null, "the visitor's view is kept under the share's own key, never the owner's");
+  await page.evaluate(`document.querySelector('[data-testid="view-toggle"]').click()`);
+  await page.waitFor(`!!document.querySelector('.public-browse .files-list')`);
+  h.check(true, 'the view toggle shows the folder as tiles, and back as a table');
+
+  // At 1440x900 the share layout gives the bigger half to the folder: the brand side is narrower than the form, and the
+  // card is wider than the sign-in card's 440 px.
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  const widths = await page.evaluate(`(() => {
+    const w = (sel) => document.querySelector(sel).getBoundingClientRect().width;
+    return { side: w('.auth-side'), form: w('.auth-form'), card: w('.auth-card') };
+  })()`);
+  h.check(widths.side < widths.form && widths.card > 440, `at 1440x900 the folder has the bigger half (side ${Math.round(widths.side)}, form ${Math.round(widths.form)}, card ${Math.round(widths.card)})`);
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+
+  // Two levels down, the path's buttons and separators sit on one centre line, and a button walks back up.
+  const openRow = (name) => `[...document.querySelectorAll('.files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === ${q(name)}).click()`;
+  await page.evaluate(openRow('Notes'));
+  await page.waitFor(`[...document.querySelectorAll('h1')].some((h) => h.textContent === 'Notes')`);
+  await page.evaluate(openRow('Deep'));
+  await page.waitFor(`[...document.querySelectorAll('h1')].some((h) => h.textContent === 'Deep') && !!document.querySelector('.crumbs .crumb-sep')`);
+  const crumbGap = await page.evaluate(`(() => {
+    const b = document.querySelector('.crumbs button').getBoundingClientRect();
+    const s = document.querySelector('.crumbs .crumb-sep').getBoundingClientRect();
+    return Math.abs((b.top + b.height / 2) - (s.top + s.height / 2));
+  })()`);
+  h.check(crumbGap <= 1, `the path's button and its chevron sit on one centre line (${crumbGap.toFixed(2)} px apart)`);
+  await page.evaluate(`[...document.querySelectorAll('.crumbs button')].find((b) => b.textContent === 'Plans').click()`);
+  await page.waitFor(`[...document.querySelectorAll('h1')].some((h) => h.textContent === 'Plans') && !document.querySelector('.crumbs')`);
+  h.check(true, 'a path button walks back to the folder it names');
+
   // The visitor previews the picture: the preview is a signed link, and it has a Download button.
-  await page.evaluate(`[...document.querySelectorAll('.rows button')].find((b) => b.textContent === 'plan.png').click(), true`);
+  await page.evaluate(openRow('plan.png'));
   await page.waitFor(`!!document.querySelector('img.public-preview')`, 15000);
   const src = await page.evaluate(`document.querySelector('img.public-preview').getAttribute('src')`);
   h.check(src.includes('/api/v1/links/'), 'the file opens with a preview from a signed link');
