@@ -422,9 +422,11 @@ func TestExternalGrantNoReveal(t *testing.T) {
 	}
 }
 
-// TestExternalGrantOpensNoReadPath: a grant gives no reach yet. A proved user of another account,
-// both switches on, still cannot stat the granted node (decision 172; the read path is xs1b).
-func TestExternalGrantOpensNoReadPath(t *testing.T) {
+// TestExternalGrantOpensReadPath: a grant now opens the read path (decision 173, slice xs1b). A proved user
+// of another account, both switches on, stats the granted node at viewer. This guard was
+// TestExternalGrantOpensNoReadPath in xs1a (decision 172), which asserted the node was still not_found while
+// no read path existed; xs1b lands the read path, so the answer flips to 200.
+func TestExternalGrantOpensReadPath(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
@@ -439,5 +441,9 @@ func TestExternalGrantOpensNoReadPath(t *testing.T) {
 	enableExternal(t, s, keyA, accA.ID)
 	enableExternal(t, s, keyB, accB.ID)
 	wantStatus(t, extGrantCall(t, s, keyA, fileA.ID, map[string]any{"email": "guest@example.com", "role": "viewer"}), 200)
-	wantError(t, callSession(t, s, guestSess, "GET", "/api/v1/nodes/"+fileA.ID, nil), 404, apierr.NotFound)
+	stat := callSession(t, s, guestSess, "GET", "/api/v1/nodes/"+fileA.ID, nil)
+	wantStatus(t, stat, 200)
+	if j := decode[nodeJSON](t, stat); j.Role != "viewer" {
+		t.Fatalf("the granted node's role = %q, want viewer", j.Role)
+	}
 }
