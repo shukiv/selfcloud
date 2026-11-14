@@ -59,13 +59,22 @@ type User struct {
 	// PendingEmail is the address a change of email is waiting to have confirmed (decision 89). "" when
 	// there is none. The address in Email stays in use until it is confirmed.
 	PendingEmail string
+	// EmailProvedKey is the key of the address whose control was proved by a mailed link (decision 172),
+	// and EmailProvedAt when. The proof follows the address: a change of address leaves the user unproved
+	// until the new one is proved. "" when no address was proved.
+	EmailProvedKey string
+	EmailProvedAt  *time.Time
 	// LastSignInAt is when the user last signed in: set by InsertSession for a session of the user's own, never by a
 	// sign-in-as (decision 114). nil when the user has not signed in. It is read only; InsertUser does not write it.
 	LastSignInAt *time.Time
 }
 
+// EmailProved reports whether the address in use is the one whose control was proved.
+func (u *User) EmailProved() bool { return u.EmailProvedKey != "" && u.EmailProvedKey == u.EmailKey }
+
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
-	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password, pending_email`
+	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password, pending_email,
+	email_proved_key, email_proved_at`
 
 // userSelectCols is userCols for reads, with the end of the newest live email-change link as pending_until. A pending
 // address is shown only while its link is live (decision 89): scanUser drops it once the link has expired. The last
@@ -75,13 +84,14 @@ const userSelectCols = userCols + `, (SELECT MAX(v.expires_at) FROM verification
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
-	var acc, ext, pw, pending sql.NullString
-	var verified, until, lastSignIn sql.NullInt64
+	var acc, ext, pw, pending, provedKey sql.NullString
+	var verified, until, lastSignIn, provedAt sql.NullInt64
 	var created, updated int64
 	var quota sql.NullInt64
 	var mustChange int64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending, &until, &lastSignIn)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending,
+		&provedKey, &provedAt, &until, &lastSignIn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -95,6 +105,8 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	}
 	u.PasswordHash = pw.String
 	u.VerifiedAt = fromNullMillis(verified)
+	u.EmailProvedKey = provedKey.String
+	u.EmailProvedAt = fromNullMillis(provedAt)
 	u.LastSignInAt = fromNullMillis(lastSignIn)
 	u.CreatedAt = fromMillis(created)
 	u.UpdatedAt = fromMillis(updated)
@@ -269,10 +281,11 @@ func (s *Store) queryUsers(ctx context.Context, query string, args []any) ([]*Us
 // account.
 func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO users (`+userCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, nullString(u.AccountID), nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
 		u.Role, u.Status, nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.CreatedAt),
-		millis(u.UpdatedAt), nullInt(u.QuotaBytes), boolInt(u.MustChangePassword), nullString(u.PendingEmail))
+		millis(u.UpdatedAt), nullInt(u.QuotaBytes), boolInt(u.MustChangePassword), nullString(u.PendingEmail),
+		nullString(u.EmailProvedKey), nullMillis(u.EmailProvedAt))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -323,6 +336,14 @@ func (tx *Tx) WriteUserEmail(ctx context.Context, u *User) error {
 	return err
 }
 
+// SetEmailProof marks the address keyed emailKey as proved for the user, at at (decision 172). It is
+// written in the same transaction as the redemption of the mailed link that proves it. It returns
+// ErrNotFound if there is no such user.
+func (tx *Tx) SetEmailProof(ctx context.Context, userID, emailKey string, at time.Time) error {
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET email_proved_key = ?, email_proved_at = ?
+		WHERE id = ?`, emailKey, millis(at), userID))
+}
+
 // DeleteUser removes a user of accountID ("" for an admin), with its sessions and tokens. It returns ErrNotFound
 // if there is no such user.
 func (tx *Tx) DeleteUser(ctx context.Context, accountID, id string) error {
@@ -344,14 +365,18 @@ type Verification struct {
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	CreatedAt time.Time
+	// MailedTo is the key of the address the token was mailed to (decision 172). "" when the token was
+	// returned to the caller or made by a command: using it then proves no address.
+	MailedTo string
 }
 
 // InsertVerification adds v.
 func (tx *Tx) InsertVerification(ctx context.Context, v *Verification) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO verifications
-		(id, user_id, purpose, token_hash, expires_at, used_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		v.ID, v.UserID, v.Purpose, v.TokenHash, millis(v.ExpiresAt), nullMillis(v.UsedAt), millis(v.CreatedAt))
+		(id, user_id, purpose, token_hash, expires_at, used_at, created_at, mailed_to)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.ID, v.UserID, v.Purpose, v.TokenHash, millis(v.ExpiresAt), nullMillis(v.UsedAt), millis(v.CreatedAt),
+		nullString(v.MailedTo))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -364,9 +389,10 @@ func (tx *Tx) VerificationByHash(ctx context.Context, hash []byte) (*Verificatio
 	var v Verification
 	var expires, created int64
 	var used sql.NullInt64
-	err := tx.q.QueryRowContext(ctx, `SELECT id, user_id, purpose, token_hash, expires_at, used_at, created_at
+	var mailed sql.NullString
+	err := tx.q.QueryRowContext(ctx, `SELECT id, user_id, purpose, token_hash, expires_at, used_at, created_at, mailed_to
 		FROM verifications WHERE token_hash = ?`, hash).
-		Scan(&v.ID, &v.UserID, &v.Purpose, &v.TokenHash, &expires, &used, &created)
+		Scan(&v.ID, &v.UserID, &v.Purpose, &v.TokenHash, &expires, &used, &created, &mailed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -376,6 +402,7 @@ func (tx *Tx) VerificationByHash(ctx context.Context, hash []byte) (*Verificatio
 	v.ExpiresAt = fromMillis(expires)
 	v.UsedAt = fromNullMillis(used)
 	v.CreatedAt = fromMillis(created)
+	v.MailedTo = mailed.String
 	return &v, nil
 }
 
@@ -391,6 +418,65 @@ func (tx *Tx) UseVerification(ctx context.Context, id string, at time.Time) erro
 func (tx *Tx) DeleteVerifications(ctx context.Context, userID, purpose, keepID string) error {
 	_, err := tx.q.ExecContext(ctx,
 		"DELETE FROM verifications WHERE user_id = ? AND purpose = ? AND id != ?", userID, purpose, keepID)
+	return err
+}
+
+// EmailProof is a single-use token mailed to a user's address to prove control of it (decision 172).
+// It names the address it was mailed to, so a later change of address leaves it proving nothing.
+type EmailProof struct {
+	ID        string
+	UserID    string
+	EmailKey  string
+	TokenHash []byte
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
+// InsertEmailProof adds p.
+func (tx *Tx) InsertEmailProof(ctx context.Context, p *EmailProof) error {
+	_, err := tx.q.ExecContext(ctx, `INSERT INTO email_proofs
+		(id, user_id, email_key, token_hash, expires_at, used_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.UserID, p.EmailKey, p.TokenHash, millis(p.ExpiresAt), nullMillis(p.UsedAt), millis(p.CreatedAt))
+	if isUniqueViolation(err) {
+		return ErrConflict
+	}
+	return err
+}
+
+// EmailProofByHash returns the proof with the given token hash. It returns ErrNotFound if there is
+// none.
+func (tx *Tx) EmailProofByHash(ctx context.Context, hash []byte) (*EmailProof, error) {
+	var p EmailProof
+	var expires, created int64
+	var used sql.NullInt64
+	err := tx.q.QueryRowContext(ctx, `SELECT id, user_id, email_key, token_hash, expires_at, used_at, created_at
+		FROM email_proofs WHERE token_hash = ?`, hash).
+		Scan(&p.ID, &p.UserID, &p.EmailKey, &p.TokenHash, &expires, &used, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.ExpiresAt = fromMillis(expires)
+	p.UsedAt = fromNullMillis(used)
+	p.CreatedAt = fromMillis(created)
+	return &p, nil
+}
+
+// UseEmailProof marks the proof with the given ID used at the given time. A token that is already
+// used is ErrNotFound, so two concurrent redemptions cannot both succeed.
+func (tx *Tx) UseEmailProof(ctx context.Context, id string, at time.Time) error {
+	return rowsAffected(tx.q.ExecContext(ctx,
+		"UPDATE email_proofs SET used_at = ? WHERE id = ? AND used_at IS NULL", millis(at), id))
+}
+
+// DeleteEmailProofs removes the user's proof tokens, except keepID. An empty keepID removes all of
+// them, so only the newest proof mail works.
+func (tx *Tx) DeleteEmailProofs(ctx context.Context, userID, keepID string) error {
+	_, err := tx.q.ExecContext(ctx, "DELETE FROM email_proofs WHERE user_id = ? AND id != ?", userID, keepID)
 	return err
 }
 
