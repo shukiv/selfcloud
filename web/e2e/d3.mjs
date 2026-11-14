@@ -3,8 +3,8 @@
 // Slice d3 (decision 69, the owner's option B for the current place). At 1440 wide a tree row and a menu item look alike in every
 // state: the same text colour, weight and size, and the same hover background. The current place has no background; it has a
 // 3 px bar at its start edge and its text in the sidebar's mark colour (the yellow on the default blue), in the folder tree, on the
-// menu's own pages, on the Storage row and in the rail. The bar is on the right in Hebrew. With SELFCLOUD_E2E_SHOTS set (a folder),
-// the run saves the pictures of each state.
+// menu's own pages and in the rail; the storage card marks its page with its border, not a fill (decision 171). The bar is on the
+// right in Hebrew. With SELFCLOUD_E2E_SHOTS set (a folder), the run saves the pictures of each state.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
@@ -17,6 +17,8 @@ const MARK = 'rgb(254, 204, 0)';
 const TEXT = 'rgb(255, 255, 255)';
 const HOVER = 'rgba(255, 255, 255, 0.1)';
 const CLEAR = 'rgba(0, 0, 0, 0)';
+// The storage card's own tint (theme/tokens.ts SIDEBAR.card): a white overlay, the same on every brand (decision 171).
+const CARD_TINT = 'rgba(255, 255, 255, 0.08)';
 // Decision 72: a top-level place is filled with the sidebar's active colour (the yellow), and its text is the on-active colour.
 // The on-active text the page draws for this brand (media.mjs onActiveInk: textOn(SIDEBAR.active) for the e2e's custom accent).
 const ONACTIVE = await onActiveInk();
@@ -244,21 +246,24 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     check(otherHover !== null && otherHover.background === HOVER && otherHover.color === TEXT, `on hover another row takes the hover background (${show(otherHover)})`);
     await unhover(page);
 
-    // The Storage row, selected on its page: its title takes the mark colour, the figures stay the caption colour, the bar is normal.
-    // The figures' colour is read first, on this page, where the row is not selected; the caption is the brand's, so it is not hard-coded.
-    const plainLine = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span:last-child'); return t ? getComputedStyle(t).color : null; })()`);
+    // The storage card, current on its page (decision 171): its border takes the mark colour, the caption and the figures keep
+    // their colours (the mark is the border, not a fill), and the card keeps its own tint with no bar. The colours are read first,
+    // on this page, where the card is not current; the caption is the brand's, so it is not hard-coded.
+    const plainCaption = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-caption'); return t ? getComputedStyle(t).color : null; })()`);
+    const plainLine = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
     await navigateTo(page, '/storage');
-    // The Storage row is selected once the page has committed: the check waits for the selected entry, not for the old row.
-    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('.shell-sider .shell-menu .ant-menu-item.shell-storage-item.ant-menu-item-selected')`, 20000);
+    // The card is current once the page has committed: the check waits for aria-current page, not for the old menu row.
+    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('.shell-sider .shell-storage-card[aria-current="page"]')`, 20000);
     await markSidebar(page);
-    const storage = '.shell-sider .shell-menu .ant-menu-item.shell-storage-item';
-    const title = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span'); const s = getComputedStyle(t); return { colour: s.color }; })()`);
-    const line = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span:last-child'); return t ? getComputedStyle(t).color : null; })()`);
-    await sleep(500); // the fill fades in over 0.3 s (the menu's transition)
+    const storage = '.shell-sider .shell-storage-card';
+    const caption = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-caption'); return t ? getComputedStyle(t).color : null; })()`);
+    const line = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
+    const border = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-card'); return t ? getComputedStyle(t).borderTopColor : null; })()`);
+    await sleep(500); // the border settles over the card's transition
     await settled(page, storage);
     const storageStyle = await styleOf(page, storage);
-    check(title.colour === ONACTIVE && storageStyle.background === MARK && noBar(storageStyle), `the Storage row on its page: title in the mark colour, with the 3 px bar (${title.colour}; ${show(storageStyle)})`);
-    check(line === ONACTIVE, `the Storage figures take the on-active colour when the row is filled (${line})`);
+    check(border === BAR && storageStyle.background === CARD_TINT && noBar(storageStyle), `the storage card on its page: the border in the mark colour, the card's own tint, no bar (${border}; ${show(storageStyle)})`);
+    check(caption === plainCaption && line === plainLine, `the storage card's caption and figures keep their colours when it is current (${caption} / ${plainCaption}; ${line} / ${plainLine})`);
     await snap('d3-storage-light.png');
 
     // Dark theme: the current item keeps the mark on the dark page (the sidebar is the brand's in both themes).

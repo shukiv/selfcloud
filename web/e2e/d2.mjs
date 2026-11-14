@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice d2: the sidebar's New button and the storage block (decision 66). A member's browser is measured at 1280 wide: the New
-// icon and its word line up with the rows' icons and names (within a pixel), in English and mirrored in Hebrew, and every row has
+// Slice d2: the sidebar's New button and the storage card (decisions 66 and 171). A member's browser is measured at 1280 wide: the New
+// icon and its word line up with the rows' icons and names (within a pixel), in English and mirrored in Hebrew, and every menu row has
 // one font size. New fits its text, narrower than the sidebar's content, with a dropdown arrow after the word (decision 177).
 // New folder from Starred makes the folder in My files, and Upload files from inside a folder puts the file there;
-// a folder the member cannot add to shows its entries disabled, with the reason. The storage line matches the Storage page, and
-// the bar takes its three colours at the member's limit (set through the API, and put back before the section ends). The
-// collapsed rail has a round New with a tooltip, the phone drawer has New at its top, and the toolbar has its New only on a phone.
-// The current place (decision 69, option B) has no background: its text reads at 4.5:1 or more on the sidebar, and its bar at 3:1 or
-// more (the sidebar's rule, theme/currentMark.ts); the Storage bar keeps its track, edge and fill.
+// a folder the member cannot add to shows its entries disabled, with the reason. The storage card is pinned below the menu: its line
+// matches the Storage page, and the bar takes its three colours at the member's limit (set through the API, and put back before the
+// section ends). The collapsed rail has a round New with a tooltip and a storage icon link, the phone drawer has New at its top and the
+// card at its foot, and the toolbar has its New only on a phone. The current place (decision 69, option B) has no background: its text
+// reads at 4.5:1 or more on the sidebar, and its bar at 3:1 or more (the sidebar's rule, theme/currentMark.ts); the storage card keeps
+// its track, edge and fill, and marks the Storage page by its border, not a fill.
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
+import { setLanguage, setPhone, setTheme } from './media.mjs';
 import { menuHeaderText } from './menu.mjs';
 import { newMenuKeyChecks } from './newKeys.mjs';
 
@@ -24,8 +25,8 @@ const SHARE_LEVELS = { ok: 0.5, warning: 0.85 };
 // The bar's fill, as the computed style reads it (the accent is the sidebar's yellow; the others are the warning and error).
 const FILL = { ok: 'rgb(254, 204, 0)', warning: 'rgb(255, 169, 64)', danger: 'rgb(255, 107, 107)' };
 
-// rowGeometry reads the four rows the columns are measured on, and the font of each row's name. Each reading is a box: its icon
-// and its name, as the screen draws them.
+// rowGeometry reads the rows the columns are measured on, and the font of each row's name. Each reading is a box: its icon
+// and its name, as the screen draws them. The storage card is not a menu row (decision 171); it is measured by cardGeometry.
 const rowGeometry = (page) =>
   page.evaluate(`(() => {
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right }; };
@@ -37,17 +38,40 @@ const rowGeometry = (page) =>
     // My files is the tree's first row; its label is translated in Hebrew, so the row is found by place, not by text.
     const mine = tree('My files') ?? document.querySelector('[data-testid="folder-tree"] .tree-row');
     const team = tree('Team A');
-    const storage = document.querySelector('.shell-menu .shell-storage-item');
     return {
       new: { icon: box(newB?.querySelector('svg')), name: box(newB?.querySelector('span')), fs: fs(newB?.querySelector('span')) },
       starred: { icon: box(starred?.querySelector('svg')), name: box(starred?.querySelector('.ant-menu-title-content')), fs: fs(starred?.querySelector('.ant-menu-title-content')) },
       mine: { icon: box(mine?.querySelector('a svg')), name: box(mine?.querySelector('a bdi')), fs: fs(mine?.querySelector('a bdi')) },
       team: { icon: box(team?.querySelector('a svg')), name: box(team?.querySelector('a bdi')), fs: fs(team?.querySelector('a bdi')) },
-      storage: { icon: box(storage?.querySelector('svg')), name: box(storage?.querySelector('.shell-storage > span')), fs: fs(storage?.querySelector('.shell-storage > span')) },
       newBox: box(newB),
       // decision 177: New is as wide as its content again (decision 69), with a dropdown arrow at its end, after the word.
       newParent: box(newB?.closest('[data-testid="new-tip"]')?.parentElement),
       newArrow: box(newB?.querySelectorAll('svg')?.[1]),
+    };
+  })()`);
+
+// cardGeometry reads the storage card (decision 171): its box, the sider's content box, the caption and the figures line and their
+// fonts, and the menu's last row, so the check can say the card is pinned below the menu at the sider's foot. The card's inline edges
+// are the sider's content edges (its 12 px padding), and its caption and figures are 12 px, not the menu rows' 14.
+const cardGeometry = (page) =>
+  page.evaluate(`(() => {
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+    const fs = (el) => (el ? getComputedStyle(el).fontSize : null);
+    const sider = document.querySelector('.shell-sider');
+    const card = document.querySelector('.shell-sider [data-testid="storage-card"]');
+    const scroll = document.querySelector('.shell-sider .shell-scroll');
+    const caption = card?.querySelector('.shell-storage-caption');
+    const line = card?.querySelector('.shell-storage-line');
+    const items = [...document.querySelectorAll('.shell-menu .ant-menu-item')];
+    const last = items[items.length - 1];
+    const cs = sider ? getComputedStyle(sider) : null;
+    return {
+      card: box(card), sider: box(sider), scroll: box(scroll), lastRow: box(last),
+      padL: cs ? parseFloat(cs.paddingLeft) : null, padR: cs ? parseFloat(cs.paddingRight) : null, padB: cs ? parseFloat(cs.paddingBottom) : null,
+      captionFs: fs(caption), lineFs: fs(line),
+      href: card?.getAttribute('href') ?? null,
+      belowMenu: !!(card && last && card.getBoundingClientRect().top >= last.getBoundingClientRect().bottom - 1),
+      outsideScroll: !!(card && scroll && !scroll.contains(card)),
     };
   })()`);
 
@@ -58,7 +82,7 @@ function columns(g, rtl) {
   const at = (box) => (box ? (rtl ? box.r : box.l) : null);
   const base = rtl && !g.starred.icon ? g.team : g.starred;
   const ref = { icon: at(base.icon), name: at(base.name) };
-  const rows = { new: g.new, mine: g.mine, team: g.team, storage: g.storage };
+  const rows = { new: g.new, mine: g.mine, team: g.team };
   const out = {};
   for (const [key, row] of Object.entries(rows)) {
     out[key] = { icon: at(row.icon) === null ? null : Math.round((at(row.icon) - ref.icon) * 10) / 10, name: at(row.name) === null ? null : Math.round((at(row.name) - ref.name) * 10) / 10 };
@@ -113,18 +137,20 @@ async function settledLine(page) {
   throw new Error('the sidebar never read the storage figures');
 }
 
-// The line is null until the figures are read: before that the block holds its title alone.
+// The line is null until the figures are read: before that the card holds its caption alone. The width is the fill's inline
+// percentage (the bar and the figures take the same figure, storagePercent).
 const storageLine = (page) =>
   page.evaluate(`(() => {
-    const meter = document.querySelector('.shell-sider [data-testid="sidebar-meter"]');
-    const item = document.querySelector('.shell-menu .shell-storage-item');
-    const spans = item ? item.querySelectorAll('.shell-storage > span') : [];
-    const line = meter ? meter.nextElementSibling : spans.length > 1 ? spans[spans.length - 1] : null;
+    const card = document.querySelector('.shell-sider [data-testid="storage-card"]');
+    const meter = card ? card.querySelector('[data-testid="sidebar-meter"]') : null;
+    const caption = card ? card.querySelector('.shell-storage-caption') : null;
+    const line = card ? card.querySelector('.shell-storage-line') : null;
     return {
       figures: line ? getComputedStyle(line).color : null,
       level: meter?.dataset.level ?? null,
       fill: meter?.firstElementChild ? getComputedStyle(meter.firstElementChild).backgroundColor : null,
-      title: item?.querySelector('.shell-storage > span')?.textContent.trim() ?? null,
+      width: meter?.firstElementChild ? meter.firstElementChild.style.inlineSize : null,
+      caption: caption?.textContent.trim() ?? null,
       line: line?.textContent.trim() ?? null,
     };
   })()`);
@@ -170,10 +196,11 @@ function measureSize(selector, exact) {
   return { size: plain(m[0]), digit: x(m.index), unit: x(m.index + m[0].length - m[2].length) };
 }
 const sizeAt = (page, selector, exact) => page.evaluate(`(${measureSize.toString()})(${q(selector)}, ${exact})`);
-const LINE = '.shell-menu .shell-storage-item .shell-storage > span:last-child';
-// The selected tree row and the selected Storage row (the current place), and the bar inside the Storage row.
+const LINE = '.shell-storage-card .shell-storage-line';
+// The selected tree row and the storage card on the Storage page (the current place), and the bar inside the card.
 const TREE_ROW = '[data-testid="folder-tree"] [role="treeitem"][aria-current="location"] > .tree-row';
-const SEL_ROW = '.shell-menu .shell-storage-item.ant-menu-item-selected';
+const SEL_ROW = '.shell-storage-card[aria-current="page"]';
+const CARD = '.shell-storage-card';
 const TREE_MARK = TREE_ROW;
 // noBarIn says the element has no bar: its ::before draws nothing (decision 72: a filled top-level place has no bar).
 const noBarIn = (page, sel) =>
@@ -220,14 +247,15 @@ const barOf = (page, sel) =>
     const [hi, lo] = [lum(bar.slice(0, 3)), lum(bg.slice(0, 3))].sort((x, y) => y - x);
     return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el, '::before').backgroundColor, bg: bg.slice(0, 3).map(Math.round) };
   })()`);
-// onMark reads the Storage row's title and figures on the sidebar, and the bar's track, edge and fill, as the Storage block draws them.
+// onMark reads the storage card's caption and figures on the card (which sits on the sidebar), and the bar's track, edge and fill,
+// as the card draws them (decision 171). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
 const onMark = (page) =>
   Promise.all([
-    contrastOf(page, `${SEL_ROW} .shell-storage > span:first-child`, 'color', [SEL_ROW]),
-    contrastOf(page, `${SEL_ROW} .shell-storage > span:last-child`, 'color', [SEL_ROW]),
-    contrastOf(page, METER, 'backgroundColor', [SIDER]),
-    contrastOf(page, `${METER} > span`, 'backgroundColor', [METER, SIDER]),
-    contrastOf(page, METER, 'boxShadow', [SIDER]),
+    contrastOf(page, `${CARD} .shell-storage-caption`, 'color', [CARD, SIDER]),
+    contrastOf(page, `${CARD} .shell-storage-line`, 'color', [CARD, SIDER]),
+    contrastOf(page, METER, 'backgroundColor', [CARD, SIDER]),
+    contrastOf(page, `${METER} > span`, 'backgroundColor', [METER, CARD, SIDER]),
+    contrastOf(page, METER, 'boxShadow', [CARD, SIDER]),
   ]).then(([title, line, track, fill, edge]) => ({ title, line, track, fill, edge }));
 // The tree's current row and the selected Storage row are drawn a moment after the page changes (the tree follows the folder the
 // listing shows), and their colours move over 0.3 s (the menu's and the links' transitions), so the colours are read once the
@@ -236,11 +264,20 @@ const waitTreeCurrent = async (page, key) => {
   await page.waitFor(`!!document.querySelector('[data-tree-key="${key}"][aria-current="location"]')`, 15000);
   await sleep(700);
 };
-// waitSelected waits for the Storage row to be the selected item (filled with the active colour, decision 72).
+// waitSelected waits for the storage card to be the current place (aria-current page, its border in the mark colour, decision 171).
 const waitSelected = async (page) => {
-  await page.waitFor(`(() => { const li = document.querySelector('${SEL_ROW}'); return !!li && getComputedStyle(li).backgroundColor === 'rgb(254, 204, 0)'; })()`, 15000);
+  await page.waitFor(`(() => { const c = document.querySelector('${CARD}'); return !!c && c.getAttribute('aria-current') === 'page'; })()`, 15000);
   await sleep(700);
 };
+// cardMark reads the card's border colour and the sidebar's mark colour (--sc-side-mark), so the check can say the border is the mark.
+const cardMark = (page) =>
+  page.evaluate(`(() => {
+    const c = document.querySelector('${CARD}');
+    if (!c) return null;
+    const mark = getComputedStyle(document.querySelector('.shell-sider-body')).getPropertyValue('--sc-side-mark').trim();
+    const n = parseInt(mark.slice(1), 16);
+    return { border: getComputedStyle(c).borderTopColor, mark: 'rgb(' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(', ') + ')' };
+  })()`);
 const showRatio = (r) => (r && typeof r.ratio === 'number' ? `${r.ratio.toFixed(2)}:1, ${r.text} on rgb(${r.bg.join(', ')})` : r ? `not a number (${JSON.stringify(r)})` : 'not read');
 
 export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID }) {
@@ -343,8 +380,12 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at61 = await storageLine(page);
-    check(at61.title === 'Storage (61% full)', `the row says the share held (${at61.title})`);
+    check(at61.caption === 'Storage' && at61.width === '61%', `the card's caption is Storage and the bar is at the share held (${at61.caption}, ${at61.width})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
+    // The card's caption and figures colours, read here where the card is not the current place, to compare with the Storage page
+    // below: the mark is the border, so the colours do not change when the card becomes current (decision 171).
+    const plainCaption = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-caption'); return t ? getComputedStyle(t).color : null; })()`);
+    const plainLineColour = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
     // The current folder has no background (decision 69, option B): its name, its arrow and its bar read on the sidebar.
     await waitTreeCurrent(page, teamA);
     const treeName = await contrastOf(page, `${TREE_ROW} a bdi`, 'color', [TREE_ROW]);
@@ -369,23 +410,23 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`(${meterAlt}).includes(' used: ')`, 15000);
     const pageLine = await page.evaluate(`(${meterAlt}).split(': ')[0] || null`);
     check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
-    // On this page the Storage row is the current place: its title and figures read on the sidebar, and the bar keeps its track and fill.
+    // On this page the storage card is the current place: its border takes the mark colour, the caption and figures keep their
+    // colours and read on the card, and the bar keeps its track and fill (decision 171).
     await waitSelected(page);
     const yEn = await onMark(page);
-    const storageBarNone = await noBarIn(page, SEL_ROW);
-    check(yEn.title !== null && yEn.title.ratio >= 4.5, `on the selected Storage row the title reads on its fill at 4.5:1 or more (${showRatio(yEn.title)})`);
-    check(yEn.line !== null && yEn.line.ratio >= 4.5, `on the selected Storage row the figures read on its fill at 4.5:1 or more (${showRatio(yEn.line)})`);
-    // Decision 69 (option B): the figures keep the caption colour when the row is selected, the same as when it is not (read above, on
-    // the files page, where the row is not selected). The caption is the brand's: blue by default, and the text colour on a brand
-    // whose sidebar the caption does not read on.
-    const onActive = await onActiveInk();
-    check(yEn.line !== null && yEn.line.text === onActive,`on the selected Storage row the figures take the on-active colour (${yEn.line?.text})`);
-    check(storageBarNone === true, `on the selected Storage row there is no bar: its fill marks it (decision 72)`);
-    // The track is not checked against the sidebar: a yellow fill keeps 3:1 against a track dark enough to read on the blue, and a track
-    // light enough to reach 3:1 against the blue leaves the yellow under 1.2:1 (computed for the default blue and the teal). The edge (the caption
-    // ring, below) is the bar's outline against the sidebar.
-    check(yEn.fill !== null && yEn.fill.ratio >= 3, `on the selected Storage row the bar's fill is 3:1 or more against its track (${showRatio(yEn.fill)})`);
-    check(yEn.edge !== null && yEn.edge.ratio >= 3, `on the selected Storage row the bar's edge is 3:1 or more against the sidebar (${showRatio(yEn.edge)})`);
+    const markEn = await cardMark(page);
+    const storageBarNone = await noBarIn(page, CARD);
+    check(markEn !== null && markEn.border === markEn.mark, `on the Storage page the card's border is the sidebar's mark colour (${JSON.stringify(markEn)})`);
+    check(yEn.title !== null && yEn.title.ratio >= 4.5, `on the storage card the caption reads on the card at 4.5:1 or more (${showRatio(yEn.title)})`);
+    check(yEn.line !== null && yEn.line.ratio >= 4.5, `on the storage card the figures read on the card at 4.5:1 or more (${showRatio(yEn.line)})`);
+    // Decision 171: the caption and the figures keep the colours they had off the Storage page (the mark is the border, not a fill).
+    check(yEn.title !== null && yEn.title.text === plainCaption, `the caption keeps its colour on the Storage page (${yEn.title?.text} / ${plainCaption})`);
+    check(yEn.line !== null && yEn.line.text === plainLineColour, `the figures keep their colour on the Storage page (${yEn.line?.text} / ${plainLineColour})`);
+    check(storageBarNone === true, `the storage card has no bar of its own: its border marks the place (decision 171)`);
+    // The fill is compared with the unfilled track it is drawn on (the pair a person compares); the edge (the caption ring) is the
+    // bar's outline against the card.
+    check(yEn.fill !== null && yEn.fill.ratio >= 3, `on the storage card the bar's fill is 3:1 or more against its track (${showRatio(yEn.fill)})`);
+    check(yEn.edge !== null && yEn.edge.ratio >= 3, `on the storage card the bar's edge is 3:1 or more against the card (${showRatio(yEn.edge)})`);
     await shotClip(page, shotsDir, 'c1-storage-en-light.png', await boxOf(page, '.ant-layout-sider', 0));
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
@@ -398,7 +439,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at85 = await storageLine(page);
     check(at85.level === 'warning' && at85.fill === FILL.warning, `from 80% the bar is the warning colour (${at85.level}, ${at85.fill})`);
-    await shotClip(page, shotsDir, 'd2-meter-85.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    await shotClip(page, shotsDir, 'd2-meter-85.png', await boxOf(page, '.shell-storage-card'));
 
     await quotaSet(api, base, accountID, accountKey, memberID, held2);
     await reload();
@@ -406,16 +447,16 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at100 = await storageLine(page);
     check(at100.level === 'danger' && at100.fill === FILL.danger, `at 100% the bar is the error colour (${at100.level}, ${at100.fill})`);
-    check(at100.title === 'Storage (100% full)', `at 100% the row says so (${at100.title})`);
-    await shotClip(page, shotsDir, 'd2-meter-100.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    check(at100.caption === 'Storage' && at100.width === '100%', `at 100% the card's bar is full (${at100.caption}, ${at100.width})`);
+    await shotClip(page, shotsDir, 'd2-meter-100.png', await boxOf(page, '.shell-storage-card'));
 
     await quotaSet(api, base, accountID, accountKey, memberID, 0);
     await reload();
     await navigateTo(page, `/files/${teamA}`);
     const none = await settledLine(page);
-    check(none.title === 'Storage' && none.level === null && none.fill === null, `with no limit the row says Storage, and there is no bar (${none.title}, ${none.level})`);
+    check(none.caption === 'Storage' && none.level === null && none.fill === null, `with no limit the card says Storage, and there is no bar (${none.caption}, ${none.level})`);
     check(none.line !== null && !none.line.includes(' of ') && none.line.endsWith(' used'), `with no limit the line says what is used (${none.line})`);
-    await shotClip(page, shotsDir, 'd2-meter-no-limit.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    await shotClip(page, shotsDir, 'd2-meter-no-limit.png', await boxOf(page, '.shell-storage-card'));
     // The limit is back as it was for the rest of the run.
     await quotaSet(api, base, accountID, accountKey, memberID, original);
     await reload();
@@ -425,17 +466,30 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="folder-tree"] .tree-row') && !!document.querySelector('.shell-menu .ant-menu-item')`, 15000);
     await size(1280, 800);
     const geo = await rowGeometry(page);
+    const cardGeo = await cardGeometry(page);
+    // The storage card is pinned below the menu, at the sider's foot (decision 171): its inline edges are the sider's content
+    // edges (the 12 px padding), it is below the menu's last row and outside the scroll region, and it links to /storage.
+    const cardNear = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
+    check(cardGeo.card !== null && cardGeo.belowMenu && cardGeo.outsideScroll && cardGeo.href === '/storage', `the storage card is pinned below the menu, outside the scroll region, and links to /storage (${JSON.stringify({ below: cardGeo.belowMenu, outside: cardGeo.outsideScroll, href: cardGeo.href })})`);
+    check(cardGeo.card !== null && cardNear(cardGeo.card.l, cardGeo.sider.l + cardGeo.padL) && cardNear(cardGeo.card.r, cardGeo.sider.r - cardGeo.padR), `the card's inline edges are the sider's content edges, 12 px in (${JSON.stringify({ card: cardGeo.card, sider: cardGeo.sider, padL: cardGeo.padL, padR: cardGeo.padR })})`);
+    check(cardGeo.card !== null && cardNear(cardGeo.card.b, cardGeo.sider.b - cardGeo.padB), `the card sits at the sider's foot, above its bottom padding (${JSON.stringify({ cardB: cardGeo.card?.b, siderB: cardGeo.sider?.b, padB: cardGeo.padB })})`);
+    check(cardGeo.captionFs === '12px' && cardGeo.lineFs === '12px', `the card's caption and figures are 12 px (${cardGeo.captionFs}, ${cardGeo.lineFs})`);
+    // Clicking the card opens the Storage page (decision 171), at this 1280x800 window.
+    await page.evaluate(`document.querySelector('.shell-sider [data-testid="storage-card"]').click(), true`);
+    await page.waitFor(`location.pathname === '/storage'`, 15000);
+    check(true, 'clicking the storage card opens the Storage page');
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
     await shotClip(page, shotsDir, 'd2-new-1280.png', { x: 0, y: 0, w: 264, h: 220 });
     await size(1440, 900);
     const off = columns(geo, false);
     const near = (v) => v !== null && Math.abs(v) <= 1;
     check(near(off.mine.icon) && near(off.mine.name), `My files' icon and name line up with Starred's, within a pixel (${JSON.stringify(off.mine)})`);
     check(near(off.team.icon) && near(off.team.name), `Team A's icon and name line up with Starred's, within a pixel (${JSON.stringify(off.team)})`);
-    check(near(off.storage.icon) && near(off.storage.name), `the Storage block's icon and name line up with Starred's, within a pixel (${JSON.stringify(off.storage)})`);
-    const fonts = [geo.new.fs, geo.starred.fs, geo.mine.fs, geo.team.fs, geo.storage.fs];
-    check(fonts.every((f) => f === '14px'), `every row has one font size, 14 px (${fonts.join(', ')})`);
+    const fonts = [geo.new.fs, geo.starred.fs, geo.mine.fs, geo.team.fs];
+    check(fonts.every((f) => f === '14px'), `every menu row has one font size, 14 px (${fonts.join(', ')})`);
     await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
-    console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team, storage: geo.storage })}`);
+    console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team })}`);
     // New fits its content (decision 69, restored by decision 177): narrower than the sidebar's content, its start edge at the
     // content's start where the rows' icon column starts, its plus and word in the rows' columns, and the arrow inside after the word.
     const newWidth = geo.newBox ? geo.newBox.r - geo.newBox.l : 0;
@@ -452,17 +506,18 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const geoHe = await rowGeometry(page);
     const offHe = columns(geoHe, true);
     check(near(offHe.mine.icon) && near(offHe.mine.name), `in Hebrew My files' icon and name line up with Starred's (${JSON.stringify(offHe.mine)})`);
-    check(near(offHe.storage.icon) && near(offHe.storage.name), `in Hebrew the Storage block lines up with Starred (${JSON.stringify(offHe.storage)})`);
     // In Hebrew the order mirrors (decision 177): the button starts at the content's right edge, its plus in the icon column, and
     // the arrow at the left end, after the word.
     check(geoHe.newBox !== null && geoHe.newParent !== null && Math.abs(geoHe.newBox.r - geoHe.newParent.r) <= 1 && near(offHe.new.icon) && near(offHe.new.name), `in Hebrew the New button starts at the content's start edge, mirrored, its plus in the rows' icon column (${JSON.stringify({ box: geoHe.newBox, content: geoHe.newParent, iconOffset: offHe.new.icon })})`);
     check(geoHe.newArrow !== null && geoHe.newBox !== null && geoHe.new.name !== null && geoHe.newArrow.l >= geoHe.newBox.l - 0.5 && geoHe.newArrow.r <= geoHe.newBox.r + 0.5 && geoHe.newArrow.r <= geoHe.new.name.l + 0.5, `in Hebrew the arrow is inside the New button, at the left end after the word (${JSON.stringify({ arrow: geoHe.newArrow, box: geoHe.newBox, word: geoHe.name })})`);
+    const cardHe = await cardGeometry(page);
+    check(cardHe.card !== null && cardHe.belowMenu && cardNear(cardHe.card.l, cardHe.sider.l + cardHe.padL) && cardNear(cardHe.card.r, cardHe.sider.r - cardHe.padR), `in Hebrew the storage card keeps the sider's content edges and sits below the menu (${JSON.stringify({ card: cardHe.card, below: cardHe.belowMenu })})`);
     // A size keeps its order inside the Hebrew sentence (decision 67): digits, then the unit, left to right. Read on the sidebar's
     // line, on a file's size cell in the listing, and on the Storage page's figure.
     const lineHe = await sizeAt(page, LINE, false);
     check(lineHe !== null && lineHe.digit < lineHe.unit, `in Hebrew the storage line draws its digits, then the unit, left to right (${JSON.stringify(lineHe)})`);
     await snap('d2-desktop-he-light.png');
-    await shotClip(page, shotsDir, 'b1-he-storage-line.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    await shotClip(page, shotsDir, 'b1-he-storage-line.png', await boxOf(page, '.shell-storage-card'));
     await navigateTo(page, `/files/${myFolder}`);
     await page.waitFor(`!!document.querySelector('[role="row"][aria-label="${uploadName}"]')`, 15000);
     const cellHe = await sizeAt(page, `[role="row"][aria-label="${uploadName}"]`, true);
@@ -480,13 +535,13 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`document.documentElement.dir === 'rtl' && document.documentElement.lang === 'ar'`, 15000);
     const lineAr = await sizeAt(page, LINE, false);
     check(lineAr !== null && lineAr.digit > lineAr.unit, `in Arabic the storage line keeps its right-to-left order, digits first (${JSON.stringify(lineAr)})`);
-    await shotClip(page, shotsDir, 'b1-ar-storage-line.png', await boxOf(page, '.shell-menu .shell-storage-item'));
-    // The Storage page in Arabic: the selected row's title and figures read on the sidebar there too.
+    await shotClip(page, shotsDir, 'b1-ar-storage-line.png', await boxOf(page, '.shell-storage-card'));
+    // The Storage page in Arabic: the storage card's caption and figures read on the card there too.
     await navigateTo(page, '/storage');
-    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('${SEL_ROW} .shell-storage > span:last-child')`, 15000);
+    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('${SEL_ROW} .shell-storage-line')`, 15000);
     await waitSelected(page);
     const yAr = await onMark(page);
-    check(yAr.title !== null && yAr.title.ratio >= 4.5 && yAr.line !== null && yAr.line.ratio >= 4.5, `in Arabic the selected Storage row reads on the sidebar at 4.5:1 or more (title ${showRatio(yAr.title)}; figures ${showRatio(yAr.line)})`);
+    check(yAr.title !== null && yAr.title.ratio >= 4.5 && yAr.line !== null && yAr.line.ratio >= 4.5, `in Arabic the storage card reads on the card at 4.5:1 or more (caption ${showRatio(yAr.title)}; figures ${showRatio(yAr.line)})`);
     await shotClip(page, shotsDir, 'c1-storage-ar-light.png', await boxOf(page, '.ant-layout-sider', 0));
     await setLanguage(page, 'English');
     await page.waitFor(`document.documentElement.dir === 'ltr'`, 15000);
@@ -577,16 +632,40 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
     // The folded rail's round New, by real key presses, opened with Space.
     await newMenuKeyChecks(page, check, { button: '.ant-layout-sider-collapsed [data-testid="new-button"]', label: 'folded, Team A, writable, Space', opener: 'Space' });
+    // The folded rail's storage icon link (decision 171): a HardDrive named by the storage title, which its tooltip shows. The
+    // limit is set to 61% so the title carries a share; on the Storage page the icon is the current place.
+    const heldFold = await heldOf(page);
+    await quotaSet(api, base, accountID, accountKey, memberID, Math.floor(heldFold / 0.61));
+    await reload();
+    await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="storage-rail"]')`, 15000);
+    const railLink = await page.evaluate(`(() => { const a = document.querySelector('.ant-layout-sider-collapsed [data-testid="storage-rail"]'); return { label: a.getAttribute('aria-label'), href: a.getAttribute('href'), current: a.getAttribute('aria-current') }; })()`);
+    check(railLink.label === 'Storage (61% full)' && railLink.href === '/storage' && railLink.current === null, `folded, the storage icon is a link to /storage named by the share held (${JSON.stringify(railLink)})`);
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 500, button: 'none', buttons: 0 });
+    await sleep(200);
+    await hover(page, '.ant-layout-sider-collapsed [data-testid="storage-rail"]');
+    const railTip = await page.waitFor(`[...document.querySelectorAll('.ant-tooltip')].some((t) => t.textContent.trim() === 'Storage (61% full)')`, 10000).then(() => true, () => false);
+    check(railTip, 'folded, the storage icon shows its name and share in a tooltip');
+    await shotClip(page, shotsDir, 'd2-collapsed-storage.png', await boxOf(page, '.ant-layout-sider', 0));
+    await page.evaluate(`document.querySelector('.ant-layout-sider-collapsed [data-testid="storage-rail"]').click(), true`);
+    await page.waitFor(`location.pathname === '/storage'`, 15000);
+    // The current place commits a frame after the address changes: wait for the icon's aria-current, not the address alone.
+    const railCurrent = await page.waitFor(`document.querySelector('.ant-layout-sider-collapsed [data-testid="storage-rail"]')?.getAttribute('aria-current') === 'page'`, 10000).then(() => true, () => false);
+    check(railCurrent, 'folded, on the Storage page the storage icon is the current place');
+    await quotaSet(api, base, accountID, accountKey, memberID, original);
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]')`, 15000);
     await clickOn(page, '[data-testid="rail-toggle"]');
     await page.waitFor(`!document.querySelector('.ant-layout-sider-collapsed')`, 15000);
 
     // ---- Phone: the drawer holds New at its top, and the toolbar keeps its New. The phone emulation is a coarse pointer, so
-    // the Storage row is a finger's target: at least 44 px tall.
+    // the storage card is a finger's target: at least 44 px tall.
     await setPhone(page, true);
     await size(390, 800);
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('[data-testid="nav-open"]')`, 15000);
-    const phoneToolbar = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New' || b.getAttribute('aria-label') === 'New')`);
+    // The toolbar's New appears once the place is read (canMakeFolder/canUploadHere), a frame after the shell's menu button: wait
+    // for it, not the menu button alone.
+    const phoneToolbar = await page.waitFor(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New' || b.getAttribute('aria-label') === 'New')`, 15000).then(() => true, () => false);
     check(phoneToolbar, 'at 390 the toolbar keeps its New');
     await snap('d2-phone-toolbar.png');
     await page.evaluate(`document.querySelector('[data-testid="nav-open"]').click(), true`);
@@ -595,11 +674,11 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(drawerTop.n < drawerTop.t, `the drawer shows New at its top, above the tree (${JSON.stringify(drawerTop)})`);
     // The drawer's New at 390 px, by real key presses (the drawer keeps the focus inside it while it is open).
     await newMenuKeyChecks(page, check, { button: '.ant-drawer-open [data-testid="new-button"]', label: '390 px, drawer, Team A, writable, Enter' });
-    await page.waitFor(`!!document.querySelector('.ant-drawer-open .shell-storage-item')`, 15000);
-    // The drawn height is 56 px with the figures, so the height alone would pass without the rule (which matters before the figures
-    // are read, when the row is its title alone). The row's declared minimum is what the rule sets, so both are checked.
-    const storageRow = await page.evaluate(`(() => { const el = document.querySelector('.ant-drawer-open .shell-storage-item'); return { coarse: window.matchMedia('(pointer: coarse)').matches, h: el.getBoundingClientRect().height, min: parseFloat(getComputedStyle(el).minBlockSize) }; })()`);
-    check(storageRow.coarse && storageRow.h >= 44 && storageRow.min >= 44, `on a coarse pointer the Storage row is at least 44 px tall, and its minimum says so (${JSON.stringify(storageRow)})`);
+    await page.waitFor(`!!document.querySelector('.ant-drawer-open [data-testid="storage-card"]')`, 15000);
+    // The drawn height is the card with its caption and figures, so the height alone would pass without the rule (which matters
+    // before the figures are read, when the card is its caption alone). The card's declared minimum is what the rule sets, so both are checked.
+    const storageRow = await page.evaluate(`(() => { const el = document.querySelector('.ant-drawer-open [data-testid="storage-card"]'); return { coarse: window.matchMedia('(pointer: coarse)').matches, h: el.getBoundingClientRect().height, min: parseFloat(getComputedStyle(el).minBlockSize) }; })()`);
+    check(storageRow.coarse && storageRow.h >= 44 && storageRow.min >= 44, `on a coarse pointer the storage card is at least 44 px tall, and its minimum says so (${JSON.stringify(storageRow)})`);
     await snap('d2-phone-drawer.png');
     await page.evaluate(`document.querySelector('.ant-drawer-close').click(), true`);
     await page.waitFor(`!document.querySelector('.ant-drawer-open')`, 10000);

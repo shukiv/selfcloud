@@ -66,17 +66,17 @@ async function pair(page, check, label) {
   return m;
 }
 
-// storageFit reads the Storage entry of the sidebar on the screen: its bar and its figures, and whether the entry scrolls sideways
-// (a clipped row). Null when the entry is not drawn.
+// storageFit reads the storage card of the sidebar on the screen (decision 171): its bar and its figures, its height, and whether
+// the card scrolls sideways (a clipped row). Null when the card is not drawn.
 const storageFit = (page) =>
   page.evaluate(`(() => {
     const scope = ${SCOPE};
     const side = scope?.querySelector('.shell-sider-body') ?? scope;
-    const item = scope?.querySelector('.shell-menu .shell-storage-item');
+    const item = scope?.querySelector('[data-testid="storage-card"]');
     if (!side || !item) return null;
-    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; };
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width, height: r.height }; };
     const meter = item.querySelector('[data-testid="sidebar-meter"]');
-    const figures = [...item.querySelectorAll('span')].find((s) => s.style.fontSize === '12px');
+    const figures = item.querySelector('.shell-storage-line');
     return { side: box(side), item: box(item), scroll: item.scrollWidth - item.clientWidth, meter: box(meter), figures: box(figures) };
   })()`);
 
@@ -150,13 +150,15 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   // The drawer slides in: its rows are measured once it has stopped.
   await sleep(700);
   const phone = await pair(page, check, 'phone drawer');
-  // The Storage entry on a finger: its bar and figures are inside the sidebar, and the entry is not clipped (no sideways scroll).
+  // The storage card on a finger: its bar and figures are inside the sidebar, the card is not clipped (no sideways scroll), and it
+  // is a finger's target, at least 44 px tall (decision 171).
   const fit = await storageFit(page);
-  check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the Storage entry shows its bar and figures (${JSON.stringify(fit)})`);
+  check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the storage card shows its bar and figures (${JSON.stringify(fit)})`);
   if (fit && fit.meter && fit.figures) {
     const inside = (b) => b.left >= fit.side.left - TOL && b.right <= fit.side.right + TOL;
-    check(fit.scroll <= 0, `on a finger the Storage entry is not clipped sideways (scroll ${fit.scroll}px)`);
-    check(inside(fit.meter) && inside(fit.figures), `on a finger the Storage bar and figures are inside the sidebar (bar ${fit.meter.left}-${fit.meter.right}, figures ${fit.figures.left}-${fit.figures.right}, sidebar ${fit.side.left}-${fit.side.right})`);
+    check(fit.scroll <= 0, `on a finger the storage card is not clipped sideways (scroll ${fit.scroll}px)`);
+    check(inside(fit.meter) && inside(fit.figures), `on a finger the storage bar and figures are inside the sidebar (bar ${fit.meter.left}-${fit.meter.right}, figures ${fit.figures.left}-${fit.figures.right}, sidebar ${fit.side.left}-${fit.side.right})`);
+    check(fit.item.height >= 44 - TOL, `on a finger the storage card is at least 44 px tall (${fit.item.height})`);
   }
   if (phone) {
     const short = [...phone.treeRows, ...phone.menuRows].filter((r) => r.height < 44 - TOL);
