@@ -462,8 +462,12 @@ var remoteCommands = []remoteCommand{
 		help: `  account usage [--account ACCOUNT]
                                  an account's usage and limits
 `, run: manage.AccountUsage},
+	{name: "account audit export", route: "GET /api/v1/accounts/{acc}/audit/export",
+		help: `  account audit export [--account ACCOUNT] [--since TIME] [--until TIME] [--action ACTION] [--actor ID] [-o FILE] [--force]
+                                 the audit log as CSV, streamed to standard output or a file
+`, run: manage.AccountAuditExport},
 	{name: "account audit", route: "GET /api/v1/accounts/{acc}/audit",
-		help: `  account audit [--account ACCOUNT] [--all] [--action ACTION] [--actor ID]
+		help: `  account audit [--account ACCOUNT] [--all] [--action ACTION] [--actor ID] [--since TIME] [--until TIME]
                                  an account's audit log, newest first
 `, run: manage.AccountAudit},
 	{name: "account key create", route: "POST /api/v1/accounts/{acc}/keys",

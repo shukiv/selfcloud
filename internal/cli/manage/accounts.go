@@ -3,15 +3,23 @@
 package manage
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
@@ -570,14 +578,55 @@ func auditViews(items []json.RawMessage) ([]auditView, error) {
 	return views, nil
 }
 
-// AccountAudit is `selfcloud account audit [--account ACC] [--all] [--action ACTION] [--actor ID]`.
+// auditTime reads a --since or --until value: an RFC 3339 instant, or a date, which means midnight UTC.
+func auditTime(flag, value string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse("2006-01-02", value); err == nil {
+		return t, nil
+	}
+	return time.Time{}, exitcode.Usagef("%s must be an RFC 3339 time or a date (YYYY-MM-DD), not %q", flag, value)
+}
+
+// auditWindow adds --since and --until to the query as RFC 3339 UTC instants. When both are given, until must be after
+// since.
+func auditWindow(q url.Values, since, until string) error {
+	var s, u time.Time
+	var err error
+	if since != "" {
+		if s, err = auditTime("--since", since); err != nil {
+			return err
+		}
+	}
+	if until != "" {
+		if u, err = auditTime("--until", until); err != nil {
+			return err
+		}
+	}
+	if since != "" && until != "" && !u.After(s) {
+		return exitcode.Usagef("--until must be after --since")
+	}
+	if since != "" {
+		q.Set("since", s.UTC().Format(time.RFC3339Nano))
+	}
+	if until != "" {
+		q.Set("until", u.UTC().Format(time.RFC3339Nano))
+	}
+	return nil
+}
+
+// AccountAudit is `selfcloud account audit [--account ACC] [--all] [--action ACTION] [--actor ID] [--since TIME]
+// [--until TIME]`.
 func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	c := begin("account audit", true, stdout, stderr)
 	var all bool
-	var action, actor string
+	var action, actor, since, until string
 	c.Set.BoolVar(&all, "all", false, "follow the cursor and print every page")
 	c.Set.StringVar(&action, "action", "", "only entries with this `action`")
 	c.Set.StringVar(&actor, "actor", "", "only entries by this actor `id`")
+	c.Set.StringVar(&since, "since", "", "only entries at or after this `time` (RFC 3339 or YYYY-MM-DD)")
+	c.Set.StringVar(&until, "until", "", "only entries before this `time` (RFC 3339 or YYYY-MM-DD)")
 	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
@@ -598,6 +647,9 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 	}
 	if actor != "" {
 		q.Set("actor", actor)
+	}
+	if err := auditWindow(q, since, until); err != nil {
+		return c.fail(err)
 	}
 	cn, err := c.Connect()
 	if err != nil {
@@ -632,4 +684,133 @@ func AccountAudit(args []string, stdout, stderr io.Writer) int {
 		return c.fail(err)
 	}
 	return exitcode.OK
+}
+
+// auditExportStall is the export's stall limit: the body ends when no byte has moved for this long, as a download's does.
+const auditExportStall = time.Minute
+
+// AccountAuditExport is `selfcloud account audit export [--account ACC] [--since TIME] [--until TIME] [--action ACTION]
+// [--actor ID] [-o FILE] [--force]`. It streams the audit log as the CSV the API writes, to standard output or to a file.
+func AccountAuditExport(args []string, stdout, stderr io.Writer) int {
+	c := begin("account audit export", true, stdout, stderr)
+	var since, until, action, actor, dest string
+	var force bool
+	c.Set.StringVar(&since, "since", "", "only entries at or after this `time` (RFC 3339 or YYYY-MM-DD)")
+	c.Set.StringVar(&until, "until", "", "only entries before this `time` (RFC 3339 or YYYY-MM-DD)")
+	c.Set.StringVar(&action, "action", "", "only entries with this `action`")
+	c.Set.StringVar(&actor, "actor", "", "only entries by this actor `id`")
+	c.Set.StringVar(&dest, "o", "", "write the CSV to this `file` instead of standard output")
+	c.Set.BoolVar(&force, "force", false, "replace the file when it exists")
+	pos, code, ok := c.Parse(args)
+	if !ok {
+		return code
+	}
+	if err := cmdkit.NoArgs("account audit export", pos); err != nil {
+		return c.fail(err)
+	}
+	if c.G.JSON {
+		return c.fail(exitcode.Usagef("account audit export writes CSV, not JSON; --json is not used"))
+	}
+	if utf8.RuneCountInString(action) > 100 || utf8.RuneCountInString(actor) > 100 {
+		return c.fail(exitcode.Usagef("--action and --actor may be at most 100 characters"))
+	}
+	q := url.Values{}
+	q.Set("format", "csv")
+	if action != "" {
+		q.Set("action", action)
+	}
+	if actor != "" {
+		q.Set("actor", actor)
+	}
+	if err := auditWindow(q, since, until); err != nil {
+		return c.fail(err)
+	}
+	acc, err := c.AccountID()
+	if err != nil {
+		return c.fail(err)
+	}
+	if dest != "" {
+		if err := checkExportDest(dest, force); err != nil {
+			return c.fail(err)
+		}
+	}
+	cn, err := c.Connect()
+	if err != nil {
+		return c.fail(err)
+	}
+	resp, err := cn.Client.Stream(context.Background(), client.Request{
+		Method: http.MethodGet, Path: accountRoute(acc) + "/audit/export", Query: q,
+	}, auditExportStall)
+	if err != nil {
+		code := c.fail(err)
+		var ae *client.APIError
+		if !c.G.JSON && errors.As(err, &ae) && ae.Status == http.StatusTooManyRequests && ae.RetryAfter > 0 {
+			seconds := int((ae.RetryAfter + time.Second - 1) / time.Second)
+			_, _ = fmt.Fprintf(c.Stderr, "selfcloud: note: try again in %d seconds\n", seconds)
+		}
+		return code
+	}
+	defer resp.Body.Close()
+	if dest == "" {
+		if _, err := io.Copy(c.Stdout, resp.Body); err != nil {
+			return c.fail(err)
+		}
+		return exitcode.OK
+	}
+	if err := writeExportFile(dest, force, resp.Body); err != nil {
+		return c.fail(err)
+	}
+	return exitcode.OK
+}
+
+// checkExportDest refuses a destination that is taken, unless force is set and it is a regular file, as files get does.
+func checkExportDest(dest string, force bool) error {
+	fi, err := os.Lstat(dest)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("cannot read the destination: %w", err)
+	case !fi.Mode().IsRegular():
+		return exitcode.Usagef("%s is at the destination and is not a regular file, so it is not replaced", dest)
+	case !force:
+		return exitcode.Usagef("%s exists at the destination; pass --force to replace it", dest)
+	}
+	return nil
+}
+
+// writeExportFile writes the body to a temporary file in the destination's directory, mode 0600, syncs it and renames it
+// over the destination. Any failure removes the temporary file and leaves the destination as it was.
+func writeExportFile(dest string, force bool, body io.Reader) error {
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".audit-export-*.tmp")
+	if err != nil {
+		return fmt.Errorf("cannot make a temporary file beside %s: %w", dest, err)
+	}
+	name := tmp.Name()
+	done := false
+	defer func() {
+		if !done {
+			_ = tmp.Close()
+			_ = os.Remove(name)
+		}
+	}()
+	if _, err := io.Copy(tmp, body); err != nil {
+		return fmt.Errorf("cannot write the export: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("cannot sync the export: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("cannot close the export: %w", err)
+	}
+	if !force {
+		if err := checkExportDest(dest, false); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(name, dest); err != nil {
+		return fmt.Errorf("cannot move the export to %s: %w", dest, err)
+	}
+	done = true
+	return nil
 }
