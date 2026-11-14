@@ -149,10 +149,14 @@ export async function xsChecks(h, ctx) {
 
     // Phone width: neither the item page nor Shared with me scrolls sideways.
     await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    // The breakpoint listener lays the table out again for the phone only after the metrics change, so a measure in the next
+    // breath can catch the desktop draw. Wait for the page to fit, then measure; a page that never fits still fails below.
+    await page.waitFor(`document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0`, 5000).catch(() => {});
     const itemOverflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     check(itemOverflow <= 0, `the /x page does not scroll sideways at phone width (overflow ${itemOverflow}px)`);
     await h.navigateTo(page, '/shared');
     await page.waitFor(`location.pathname === '/shared' && !!document.getElementById('shared-external-title')`, 15000);
+    await page.waitFor(`document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0`, 5000).catch(() => {});
     const sharedOverflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     check(sharedOverflow <= 0, `Shared with me does not scroll sideways at phone width (overflow ${sharedOverflow}px)`);
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
