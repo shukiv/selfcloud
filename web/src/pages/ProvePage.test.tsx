@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ThemeProvider } from "../theme/theme";
 import { setLang } from "../lib/i18n";
-import { fail, stubFetch, type Call } from "../test/fetchStub";
+import { fail, stubFetch } from "../test/fetchStub";
 import ProvePage from "./ProvePage";
 
 const BAD_LINK = "This link has expired or was already used. Ask whoever invited you to send a new one.";
