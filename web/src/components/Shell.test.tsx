@@ -1061,7 +1061,7 @@ describe("the sidebar's document entries follow the place, the role and the impe
   });
 });
 
-// ks1, decision 169: the shell answers "/" (focus the search box), "?" and Ctrl+/ (the keyboard shortcuts list). The list is a
+// ks1, decision 174: the shell answers "/" (focus the search box), "?" and Ctrl+/ (the keyboard shortcuts list). The list is a
 // lazy dialog; the account menu offers it with its key hint, and a finger does not see the entry.
 describe("the shell's global keys and shortcuts list (ks1)", () => {
   beforeEach(async () => {

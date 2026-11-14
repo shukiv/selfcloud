@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice ks1 (decision 169): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
+// Slice ks1 (decision 174): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
 // At a desktop width "/" focuses the top bar's search box and types nothing; Ctrl+/ opens the list, Escape closes it and
 // gives the focus back to the control it was on, and Ctrl+/ again toggles it closed. The account menu's entry names its key
 // and opens the same list. In Hebrew the list is right to left and titled in Hebrew, while its key caps keep their Latin

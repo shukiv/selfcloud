@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The shell's global keys and the keyboard shortcuts list (ks1, decision 169). The reader is pure, as the listing's
+// The shell's global keys and the keyboard shortcuts list (ks1, decision 174). The reader is pure, as the listing's
 // (lib/files/keys.ts) and the New chord's (lib/files/newShortcut.ts) are: it takes the key, whether the key is blocked
 // (a text field or an open overlay, read by chordBlocked), and the shell's state, and says what to do. The table below is
 // the list the dialog draws: only shortcuts the code answers are named, each with the handler that answers it.

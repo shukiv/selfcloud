@@ -60,7 +60,7 @@ const NotificationsBell = lazy(() => import("./notifications/Bell"));
 const IosInstallDialog = lazy(() => import("./pwa/IosInstallDialog"));
 // The folder tree is a lazy chunk: the sidebar loads it when a person who has a drive is signed in.
 const FolderTree = lazy(() => import("./files/FolderTree"));
-// The keyboard shortcuts list is a lazy chunk: it is loaded when the list is first opened (ks1, decision 169).
+// The keyboard shortcuts list is a lazy chunk: it is loaded when the list is first opened (ks1, decision 174).
 const ShortcutsDialog = lazy(() => import("./ShortcutsDialog"));
 
 // The platform the key hints are drawn for: Apple's systems show the command sign (as the files page's menus do).
@@ -221,7 +221,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
   // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
   const [iosFor, setIosFor] = useState<string | null>(null);
-  // The keyboard shortcuts list (ks1, decision 169): opened by its keys or by the account menu, closed by Escape or its close.
+  // The keyboard shortcuts list (ks1, decision 174): opened by its keys or by the account menu, closed by Escape or its close.
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const who = me?.user.id ?? null;
   const iosOpen = iosDialogOpen(iosFor, who);
@@ -245,7 +245,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     setIosFor(null);
     setShortcutsOpen(false);
   }, [location.pathname]);
-  // The shell's global keys (ks1, decision 169): "/" focuses the search box, "?" shows the keyboard shortcuts list, and
+  // The shell's global keys (ks1, decision 174): "/" focuses the search box, "?" shows the keyboard shortcuts list, and
   // Ctrl+/ (Command+/ on a Mac) toggles it. The reader is pure (lib/shortcuts.ts); the block is the New chord's own
   // (chordBlocked: a text field or an open overlay). The list itself is an overlay, so the reader is told it is open: the
   // toggle still closes it. A key another handler has already answered is left alone.
@@ -595,7 +595,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       </span>
     </span>
   );
-  // The keyboard shortcuts list's entry (ks1, decision 169), with its key at the right as the files page's menus draw theirs.
+  // The keyboard shortcuts list's entry (ks1, decision 174), with its key at the right as the files page's menus draw theirs.
   // A finger has no keyboard to speak of, so the entry is not shown there.
   const shortcutsEntry = {
     key: "shortcuts",

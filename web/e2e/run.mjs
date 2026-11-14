@@ -1085,7 +1085,7 @@ async function main() {
     // Slice nt2 (decision 108): the New menu at a desktop width, Blank opens its file, and the chord Alt+C then F makes a folder.
     if (!only || onlySet.has('nt2menu')) await nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo, fake });
     if (!only || onlySet.has('nt2gallery')) await nt2GalleryChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
-    // Slice ks1 (decision 169): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
+    // Slice ks1 (decision 174): the shell's global keys and the keyboard shortcuts list, in its own browser with a mouse.
     if (!only || onlySet.has('ks1')) await ks1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
     // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
     // The page is signed in as the member here (the sections above sign the member in last).

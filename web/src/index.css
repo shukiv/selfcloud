@@ -1302,7 +1302,7 @@ tr[data-drop-state="refused"] > td {
   content: attr(data-hint);
 }
 
-/* The keyboard shortcuts list (ks1, decision 169): each row is its name and its keys, the keys at the row's end. The caps are
+/* The keyboard shortcuts list (ks1, decision 174): each row is its name and its keys, the keys at the row's end. The caps are
    drawn from the theme's tokens (the variables are set on the list by ShortcutsDialog), with a heavier bottom edge as a key
    has. A right-to-left page mirrors the rows; the caps themselves keep their Latin order (dir on each chord). */
 .shortcuts-list {

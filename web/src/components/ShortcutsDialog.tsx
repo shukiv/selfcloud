@@ -80,7 +80,7 @@ function Keys({ row }: { row: ShortcutRow }) {
   );
 }
 
-// ShortcutsDialog is the keyboard shortcuts list (ks1, decision 169): a lazy chunk, mounted only while it is open, as the
+// ShortcutsDialog is the keyboard shortcuts list (ks1, decision 174): a lazy chunk, mounted only while it is open, as the
 // sidebar's New folder dialog is. It names only the shortcuts the code answers (lib/shortcuts.ts), grouped, each row with
 // its keys as caps. The strings are a catalogue of their own, loaded with the dialog (lib/shortcutsText.ts). The focus
 // returns to where it was before the list opened: the dialog unmounts on close, so the return is made here rather than

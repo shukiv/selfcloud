@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The keyboard shortcuts list's own strings (ks1, decision 169): the group titles and the row names. They are a catalogue of
+// The keyboard shortcuts list's own strings (ks1, decision 174): the group titles and the row names. They are a catalogue of
 // their own, loaded with the dialog, so the main catalogues (which every page loads) do not grow. The pattern is the access
 // requests page's (lib/requests/text.ts). The keys are read with the main translator once loaded; English loads with each
 // language, as the fallback.
