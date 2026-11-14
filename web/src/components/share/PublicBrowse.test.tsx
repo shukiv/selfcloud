@@ -53,8 +53,8 @@ describe("the folder the visitor opens", () => {
     });
 
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Slow" }));
-    fireEvent.click(screen.getByRole("button", { name: "Fast" }));
+    fireEvent.click(await screen.findByRole("row", { name: "Slow" }));
+    fireEvent.click(screen.getByRole("row", { name: "Fast" }));
 
     expect(await screen.findByRole("heading", { name: "Fast" })).toBeTruthy();
     expect(await screen.findByText("Early")).toBeTruthy();

@@ -58,11 +58,11 @@ describe("the heading when another video opens", () => {
     api.visitorLink.mockImplementation(async (_t: string, id: string) => ({ url: `https://content.example/${id}`, expires_at: live }));
     mounts.length = 0;
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "a.webm" }));
+    fireEvent.click(await screen.findByRole("row", { name: "a.webm" }));
     await vi.waitFor(() => expect(mounts).toHaveLength(1), { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "Folder" }));
-    await screen.findByRole("button", { name: "b.webm" });
-    fireEvent.click(screen.getByRole("button", { name: "b.webm" }));
+    await screen.findByRole("row", { name: "b.webm" });
+    fireEvent.click(screen.getByRole("row", { name: "b.webm" }));
     await vi.waitFor(() => expect(mounts).toHaveLength(2), { timeout: 5000 });
     expect(mounts[0]).toBe("a.webm");
     expect(mounts[1]).toBe("b.webm");

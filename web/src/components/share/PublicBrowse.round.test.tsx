@@ -112,17 +112,17 @@ describe("the heading on a share", () => {
     api.visitorChildren.mockResolvedValue({ items: [a, b], next_cursor: null });
     api.visitorLink.mockImplementation(async (_t: string, id: string) => ({ url: `https://content.example/${id}`, expires_at: live }));
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "a.webm" }));
+    fireEvent.click(await screen.findByRole("row", { name: "a.webm" }));
     await vi.waitFor(() => expect(document.querySelector("video")?.getAttribute("src")).toBe("https://content.example/nod_a"), { timeout: 5000 });
     // Back to the folder, then the other video: record every heading the page shows while it opens.
     fireEvent.click(screen.getByRole("button", { name: "Folder" }));
-    await screen.findByRole("button", { name: "b.webm" });
+    await screen.findByRole("row", { name: "b.webm" });
     const seen: string[] = [];
     const heading = () => document.querySelector("h1")?.textContent ?? "";
     seen.push(heading());
     const watch = new MutationObserver(() => seen.push(heading()));
     watch.observe(document.body, { subtree: true, childList: true, characterData: true });
-    fireEvent.click(screen.getByRole("button", { name: "b.webm" }));
+    fireEvent.click(screen.getByRole("row", { name: "b.webm" }));
     await vi.waitFor(() => expect(document.querySelector("video")?.getAttribute("src")).toBe("https://content.example/nod_b"), { timeout: 5000 });
     watch.disconnect();
     expect(seen).not.toContain("a.webm");
@@ -138,7 +138,7 @@ describe("the heading on a share, playing", () => {
     api.visitorChildren.mockResolvedValue({ items: [a, b], next_cursor: null });
     api.visitorLink.mockImplementation(async (_t: string, id: string) => ({ url: `https://content.example/${id}`, expires_at: live }));
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "a.webm" }));
+    fireEvent.click(await screen.findByRole("row", { name: "a.webm" }));
     const video = await vi.waitFor(() => {
       const el = document.querySelector("video");
       if (!el || el.getAttribute("src") !== "https://content.example/nod_a") throw new Error("a not playing yet");
