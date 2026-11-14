@@ -178,11 +178,13 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   for (let i = 0; i < 100 && !(await readdir(downloads)).includes('brief.txt'); i++) await sleep(100);
   await rm(downloads, { recursive: true, force: true });
 
-  // The view toggle shows tiles, and the choice is kept under the share's own key, never the owner's.
+  // The view toggle shows tiles, and the choice is kept under the share's own key; the owner's key is left as it was (earlier
+  // sections of a full run may have set it, so it is read before the toggle and compared after).
+  const ownerBefore = await page.evaluate(`localStorage.getItem('selfcloud.files')`);
   await page.evaluate(`document.querySelector('[data-testid="view-toggle"]').click()`);
   await page.waitFor(`!!document.querySelector('.public-browse [role="listbox"]') && document.querySelector('[data-testid="view-toggle"]').getAttribute('data-view') === 'list'`);
   const keptView = await page.evaluate(`({ share: JSON.parse(localStorage.getItem('selfcloud.share.view') || '{}').view, owner: localStorage.getItem('selfcloud.files') })`);
-  h.check(keptView.share === 'grid' && keptView.owner === null, "the visitor's view is kept under the share's own key, never the owner's");
+  h.check(keptView.share === 'grid' && keptView.owner === ownerBefore, `the visitor's view is kept under the share's own key, never the owner's (share ${keptView.share}, owner key unchanged: ${keptView.owner === ownerBefore})`);
   await page.evaluate(`document.querySelector('[data-testid="view-toggle"]').click()`);
   await page.waitFor(`!!document.querySelector('.public-browse .files-list')`);
   h.check(true, 'the view toggle shows the folder as tiles, and back as a table');
