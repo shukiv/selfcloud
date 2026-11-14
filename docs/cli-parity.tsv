@@ -39,10 +39,10 @@ fn	lib/cli.ts:cliApprove	-	cli4	the approval page /cli-approve, with a signed-in
 fn	lib/cli.ts:cliDevices	-	cli4	the Signed-in devices page (/devices)
 fn	lib/cli.ts:cliLookup	-	cli4	the approval page /cli-approve, with a signed-in session and CSRF token
 fn	lib/cli.ts:cliRevokeDevice	-	cli4	the Signed-in devices page's revoke icon (/devices)
-fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (decision 130): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` keeps the unsaved text in a temporary file and names it instead of copying it (decision 169)
+fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (decision 130): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` keeps the unsaved text in a temporary file and names it instead of copying it (decision 173)
 fn	lib/code/read.ts:readHead	-	-	the browser viewer's range read of a file's first bytes: the code viewer's sniff and its text
-fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with If-Match set to the node's etag (decision 135); the CLI's `edit` reads the same way (decision 169)
-fn	lib/code/save.ts:saveText	-	ce3c	the browser editor's save: a PUT with If-Match and the stored type unchanged; the CLI's `edit` saves the same way (decision 169)
+fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with If-Match set to the node's etag (decision 135); the CLI's `edit` reads the same way (decision 173)
+fn	lib/code/save.ts:saveText	-	ce3c	the browser editor's save: a PUT with If-Match and the stored type unchanged; the CLI's `edit` saves the same way (decision 173)
 fn	lib/comments/api.ts:createComment	comment add	cli11c	built in cli11c
 fn	lib/comments/api.ts:deleteComment	-	-	browser session only: the server refuses every token on this route
 fn	lib/comments/api.ts:editComment	-	-	browser session only: the server refuses every token on this route
@@ -426,7 +426,7 @@ route	PUT /api/v1/accounts/{acc}/imports/archive	import archive set	cli10	built 
 route	PUT /api/v1/accounts/{acc}/quota-warning	account quota-warning set	cli9a1	built in cli9a1
 route	PUT /api/v1/accounts/{acc}/templates	template folder set	cli11g	built in cli11g
 route	PUT /api/v1/folders/{fld}/hidden	folder hide	cli8	built in cli8
-route	PUT /api/v1/nodes/{nod}/content	edit	ce3c	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142); the CLI's `edit` saves the same way (decision 169)
+route	PUT /api/v1/nodes/{nod}/content	edit	ce3c	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142); the CLI's `edit` saves the same way (decision 173)
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	label set	cli11f	built in cli11f
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	share grant	cli7	built in cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature

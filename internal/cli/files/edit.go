@@ -36,7 +36,7 @@ type editSaved struct {
 }
 
 // Edit is `selfcloud edit NODE | --folder FOLDER PATH`: open a small text file in the person's editor, then save it
-// with If-Match if it changed (decision 169). A file that changed on the server after it was opened is not overwritten:
+// with If-Match if it changed (decision 173). A file that changed on the server after it was opened is not overwritten:
 // the edited text is kept in a temporary file and its path is printed (exit 8).
 func Edit(args []string, stdout, stderr io.Writer) int {
 	set := conn.NewFlagSet("edit")
