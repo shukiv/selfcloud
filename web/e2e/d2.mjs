@@ -51,8 +51,10 @@ const rowGeometry = (page) =>
   })()`);
 
 // cardGeometry reads the storage card (decision 181): its box, the sider's content box, the caption and the figures line and their
-// fonts, and the menu's last row, so the check can say the card is pinned below the menu at the sider's foot. The card's inline edges
-// are the sider's content edges (its 12 px padding), and its caption and figures are 12 px, not the menu rows' 14.
+// fonts, and the menu's last row, so the check can say the card is pinned below the menu at the sider's foot. The menu sits in the
+// scroll region and may scroll its last row out of sight, so belowMenu reads the menu as shown: the smaller of the last row's bottom
+// and the scroll region's bottom. The card's inline edges are the sider's content edges (its 12 px padding), and its caption and
+// figures are 12 px, not the menu rows' 14.
 const cardGeometry = (page) =>
   page.evaluate(`(() => {
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
@@ -70,7 +72,7 @@ const cardGeometry = (page) =>
       padL: cs ? parseFloat(cs.paddingLeft) : null, padR: cs ? parseFloat(cs.paddingRight) : null, padB: cs ? parseFloat(cs.paddingBottom) : null,
       captionFs: fs(caption), lineFs: fs(line),
       href: card?.getAttribute('href') ?? null,
-      belowMenu: !!(card && last && card.getBoundingClientRect().top >= last.getBoundingClientRect().bottom - 1),
+      belowMenu: !!(card && last && scroll && card.getBoundingClientRect().top >= Math.min(last.getBoundingClientRect().bottom, scroll.getBoundingClientRect().bottom) - 1),
       outsideScroll: !!(card && scroll && !scroll.contains(card)),
     };
   })()`);
@@ -468,7 +470,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const geo = await rowGeometry(page);
     const cardGeo = await cardGeometry(page);
     // The storage card is pinned below the menu, at the sider's foot (decision 181): its inline edges are the sider's content
-    // edges (the 12 px padding), it is below the menu's last row and outside the scroll region, and it links to /storage.
+    // edges (the 12 px padding), it is outside the scroll region, and it links to /storage. The menu sits in the scroll region
+    // and may scroll, so the card is below the menu as shown: the smaller of the last row's bottom and the scroll region's bottom.
     const cardNear = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
     check(cardGeo.card !== null && cardGeo.belowMenu && cardGeo.outsideScroll && cardGeo.href === '/storage', `the storage card is pinned below the menu, outside the scroll region, and links to /storage (${JSON.stringify({ below: cardGeo.belowMenu, outside: cardGeo.outsideScroll, href: cardGeo.href })})`);
     check(cardGeo.card !== null && cardNear(cardGeo.card.l, cardGeo.sider.l + cardGeo.padL) && cardNear(cardGeo.card.r, cardGeo.sider.r - cardGeo.padR), `the card's inline edges are the sider's content edges, 12 px in (${JSON.stringify({ card: cardGeo.card, sider: cardGeo.sider, padL: cardGeo.padL, padR: cardGeo.padR })})`);
