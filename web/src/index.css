@@ -755,6 +755,30 @@ a {
   min-height: 0;
   height: 100%;
 }
+/* The Media page's hosts (decision 172): the player box keeps the viewer's flex chain, but the page has no fixed height to
+   fill, so the stage gives the player a room of its own — an audio's cover does not collapse and a video's picture does not
+   grow past the window. The queue panel scrolls within its own bound, as the drawer's list does. Empty hosts take no room. */
+.media-page-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.media-page-stage .media-stage[data-kind="audio"] {
+  height: 400px;
+  max-height: 60vh;
+}
+.media-page-stage .media-stage[data-kind="video"] {
+  height: min(60vh, 540px);
+}
+.media-page-queue {
+  margin-top: 12px;
+}
+.media-page-queue:empty {
+  margin-top: 0;
+}
+.media-page-queue .media-queue {
+  max-height: 420px;
+}
 .media-queue {
   border: 1px solid;
   border-radius: 8px;

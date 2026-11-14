@@ -1342,6 +1342,7 @@
   "recent.clearMessage": "Your Recent list is emptied. Files and folders are not changed.",
   "recent.remove": "Remove",
   "nav.starred": "Starred",
+  "nav.media": "Media",
   "recent.clearAction": "Clear all",
   "nav.recent": "Recent",
   "star.mark": "Starred",

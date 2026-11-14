@@ -45,6 +45,7 @@ const SharedPage = lazy(() => import("./pages/SharedPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const OpenLinkPage = lazy(() => import("./pages/OpenLinkPage"));
 const StarredPage = lazy(() => import("./pages/StarredPage"));
+const MediaPage = lazy(() => import("./pages/MediaPage"));
 const RecentPage = lazy(() => import("./pages/RecentPage"));
 const StoragePage = lazy(() => import("./pages/StoragePage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
@@ -71,13 +72,13 @@ const DevicesPage = lazy(() => import("./pages/DevicesPage"));
 // agree on what an address means.
 type View =
   | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change"
-  | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
+  | "files" | "node" | "starred" | "media" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
   | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "devices" | "cli-approve" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change", "cli-approve"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "media", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
@@ -98,6 +99,7 @@ export function viewFor(path: string): View {
     case "/s": return "share-link";
     case "/shared": return "shared";
     case "/starred": return "starred";
+    case "/media": return "media";
     case "/recent": return "recent";
     case "/requests": return "requests";
     case "/trash": return "trash";
@@ -358,6 +360,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "requests": return <RequestsPage />;
     case "notfound": return <NotFoundPage />;
     case "starred": return <StarredPage />;
+    case "media": return <MediaPage />;
     case "recent": return <RecentPage />;
     case "storage": return <StoragePage />;
     case "search": return <SearchPage />;

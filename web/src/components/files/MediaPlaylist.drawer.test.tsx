@@ -239,9 +239,14 @@ describe("MediaPlaylist with the queue in a page slot", () => {
     };
     const { rerender, container } = render(<MediaPlaylist {...props} />);
     await flush();
+    // The player reports null while it mounts (its element state settles a tick after the ref); the move is what must
+    // never report it gone. The count is taken once the element has been reported, and the moves are judged from there.
+    await waitFor(() => expect(onElement.mock.calls.some(([v]) => v !== null)).toBe(true));
     const video = container.querySelector("video") as HTMLVideoElement;
     expect(video).not.toBeNull();
-    expect(onElement).toHaveBeenCalledWith(video);
+    const first = onElement.mock.calls.findIndex(([v]) => v !== null);
+    expect(onElement.mock.calls[first][0]).toBe(video);
+    const from = onElement.mock.calls.length;
     const slot = document.createElement("div");
     document.body.appendChild(slot);
     rerender(<MediaPlaylist {...props} queueSlot={slot} />);
@@ -249,7 +254,15 @@ describe("MediaPlaylist with the queue in a page slot", () => {
     expect(container.querySelector("video")).toBe(video);
     expect(slot.querySelector('[data-testid="media-queue"]')).not.toBeNull();
     expect(container.querySelector("[data-media-drawer]")).toBeNull();
-    expect(onElement.mock.calls.some(([v]) => v === null)).toBe(false);
+    // And back: the drawer returns with the queue in it, and the player is still the same element.
+    rerender(<MediaPlaylist {...props} />);
+    await flush();
+    expect(container.querySelector("video")).toBe(video);
+    expect(container.querySelector("[data-media-drawer]")).not.toBeNull();
+    expect(container.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    const later = onElement.mock.calls.slice(from);
+    expect(later.some(([v]) => v === null)).toBe(false);
+    expect(later.filter(([v]) => v !== null).every(([v]) => v === video)).toBe(true);
     slot.remove();
   });
 });

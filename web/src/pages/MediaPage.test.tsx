@@ -49,7 +49,7 @@ describe("the Media page", () => {
     await screen.findByText("Nothing is playing");
     const page = getPlayback().page;
     expect(page).not.toBeNull();
-    expect(page!.stage).toBe(screen.getByTestId("media-stage"));
+    expect(page!.stage).toBe(screen.getByTestId("media-page-stage"));
     expect(page!.queue).toBe(screen.getByTestId("media-page-queue"));
     view.unmount();
     expect(getPlayback().page).toBeNull();
@@ -61,7 +61,7 @@ describe("the Media page", () => {
     renderPage();
     await waitFor(() => expect(getPlayback().page).not.toBeNull());
     expect(screen.queryByText("Nothing is playing")).toBeNull();
-    expect(screen.getByTestId("media-stage")).toBeTruthy();
+    expect(screen.getByTestId("media-page-stage")).toBeTruthy();
     expect(screen.getByTestId("media-page-queue")).toBeTruthy();
   });
 

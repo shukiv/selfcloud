@@ -7,7 +7,7 @@ import { parkBox, placeBox, playerBox } from "./playerBox";
 // page's stage and the hidden parking place without its element being made again. These tests move it between targets
 // of their own, and park it between cases.
 
-type Mover = HTMLElement & { moveBefore?: (node: Node, ref: Node | null) => Node };
+type Mover = HTMLElement & { moveBefore?: (node: Node, ref: Node | null) => void };
 
 let target: HTMLDivElement;
 

@@ -57,6 +57,8 @@ interface Props {
   tracks?: SubtitleTrack[];
   // active says the viewer shows the player, so its keys are read. A player kept on the page for audio alone is not active.
   active?: boolean;
+  // keysInBox says the player sits in the session's box on the Media page, so a key aimed outside the box is the page's.
+  keysInBox?: boolean;
   // art is the audio file's stage above its bar: the cover, the name and the tags (MediaArt). Nothing for a video.
   art?: ReactNode;
 }
@@ -83,6 +85,7 @@ export default function MediaPlayer({
   onElement,
   tracks,
   active = true,
+  keysInBox = false,
   art,
 }: Props) {
   const el = useRef<HTMLMediaElement | null>(null);
@@ -408,6 +411,7 @@ export default function MediaPlayer({
         onNeedPress={setNeedPress}
         subtitles={kind === "video" && subs.labels.length > 0 ? { ...subs, onPick: pickTrack } : undefined}
         active={active}
+        keysInBox={keysInBox}
       />
     </div>
   );

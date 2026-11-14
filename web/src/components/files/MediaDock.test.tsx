@@ -6,7 +6,7 @@
 import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
-import { attachPage, closeViewer, getPlayback, showViewer, startPlayback, stopPlayback } from "../../lib/files/playback";
+import { attachPage, closeViewer, getPlayback, showViewer, startPlayback, stopPlayback, subscribePlayback } from "../../lib/files/playback";
 import { Pager } from "../../lib/files/pager";
 import { session, type Session } from "../../lib/session";
 import type { Node } from "../../lib/files/types";
@@ -566,7 +566,7 @@ describe("the Media page hosts the session", () => {
 
   beforeEach(() => {
     stage = document.createElement("div");
-    stage.setAttribute("data-testid", "media-stage");
+    stage.setAttribute("data-testid", "media-page-stage");
     queue = document.createElement("div");
     queue.setAttribute("data-testid", "media-page-queue");
     document.body.append(stage, queue);
@@ -619,10 +619,18 @@ describe("the Media page hosts the session", () => {
 
   it("dialog to page to mini keeps the same element, and never reports it gone", async () => {
     const a = file("a.ogg", "audio/ogg");
+    // Every report of the element the session plays, in order. The player reports null while it mounts; the moves are
+    // judged from the first report of the element itself: none of them may drop it or make it again.
+    const reports: (HTMLMediaElement | null)[] = [];
+    const unwatch = subscribePlayback(() => reports.push(getPlayback().media));
     render(<MediaHost />);
     act(() => startPlayback({ start: a, folder: folderOf([a]) }));
     const audio = await element("audio");
     fireEvent.loadedMetadata(audio);
+    await waitFor(() => expect(reports.some((m) => m !== null)).toBe(true));
+    const first = reports.findIndex((m) => m !== null);
+    expect(reports[first]).toBe(audio);
+    const from = reports.length;
     pause.mockClear();
     attach();
     expect(stage.querySelector("audio")).toBe(audio);
@@ -637,6 +645,10 @@ describe("the Media page hosts the session", () => {
     expect(getPlayback().media).toBe(audio);
     expect(getPlayback().seed).not.toBeNull();
     expect(pause).not.toHaveBeenCalled();
+    const later = reports.slice(from);
+    unwatch();
+    expect(later.some((m) => m === null)).toBe(false);
+    expect(later.filter((m) => m !== null).every((m) => m === audio)).toBe(true);
   });
 
   it("a page attached under an open viewer takes the player out of the dialog, and leaving closes the viewer", async () => {

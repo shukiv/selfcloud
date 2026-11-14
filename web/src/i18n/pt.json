@@ -1342,6 +1342,7 @@
   "recent.clearMessage": "A lista de Recentes será esvaziada. Os ficheiros e as pastas não são alterados.",
   "recent.remove": "Remover",
   "nav.starred": "Favoritos",
+  "nav.media": "Multimédia",
   "recent.clearAction": "Limpar tudo",
   "nav.recent": "Recentes",
   "star.mark": "Favorito",

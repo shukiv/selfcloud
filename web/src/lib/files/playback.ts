@@ -3,7 +3,8 @@
 // playback holds the one media session of the signed-in person: the playlist a video or audio file opened, the file that
 // plays now, and the element that plays it. The shell keeps it while the person browses. Closing the viewer on an audio
 // file hides the viewer and leaves the audio playing in the mini player; closing it on a video, or a stop, or a sign-out or
-// a change of person, ends the session: nothing plays on, and the queue is dropped.
+// a change of person, ends the session: nothing plays on, and the queue is dropped. The Media page hosts the same session
+// while it is open (decision 172): the player moves to the page's stage, and leaving the page is closing the viewer.
 //
 // The session is not React state, so a page change does not end it. The shell's host (MediaHost, then MediaDock) renders
 // it and reads it through subscribePlayback.
@@ -13,6 +14,7 @@ import type { Pager } from "./pager";
 import { get } from "../store";
 import { session, sessionKey } from "../session";
 import { registerBusy } from "../pwa/busy";
+import { parkBox } from "./playerBox";
 
 // PlaybackSeed is what the viewer plays: the file it starts with, the folder's files (read a page at a time) or the
 // selection the person chose.
@@ -34,6 +36,13 @@ export interface PlaybackNav {
   previous: () => void;
 }
 
+// PageHosts are the Media page's places for the session (decision 172): the stage the player box moves into, and the
+// queue panel below it. The page gives them while it is open; the session draws into them instead of the viewer.
+export interface PageHosts {
+  stage: HTMLElement;
+  queue: HTMLElement;
+}
+
 export interface PlaybackSnapshot {
   // id counts the sessions started. The host keys its player by it, so a new session is a new player.
   id: number;
@@ -44,6 +53,9 @@ export interface PlaybackSnapshot {
   seed: PlaybackSeed | null;
   // viewerOpen says the viewer is on screen; with it closed, only the mini player shows the session.
   viewerOpen: boolean;
+  // page is the Media page's hosts while that page is open, or null. With them, the session draws on the page, and
+  // neither the dialog nor the mini player shows it.
+  page: PageHosts | null;
   current: NowPlaying | null;
   media: HTMLMediaElement | null;
   nav: PlaybackNav | null;
@@ -55,7 +67,7 @@ registerBusy(() => {
   return !!m && !m.paused && !m.ended;
 });
 
-const IDLE: PlaybackSnapshot = { id: 0, key: "", seed: null, viewerOpen: false, current: null, media: null, nav: null };
+const IDLE: PlaybackSnapshot = { id: 0, key: "", seed: null, viewerOpen: false, page: null, current: null, media: null, nav: null };
 
 let snapshot: PlaybackSnapshot = IDLE;
 // onClosedFn is the page's callback. It is told the file on screen once, when the viewer closes, so the page can move the
@@ -76,6 +88,23 @@ export function subscribePlayback(fn: () => void): () => void {
   listeners.add(fn);
   return () => {
     listeners.delete(fn);
+  };
+}
+
+// attachPage gives the Media page's hosts to the session and returns the page's detach. The player box moves into the
+// stage at once (MediaDock reads the page on every render). The detach parks the box before the hosts leave the page,
+// clears the page, and closes the viewer one microtask later: a mount that detaches and attaches again in the same tick
+// (StrictMode's double effect) is not a leave, so the session goes on. A detach of hosts the session no longer holds (a
+// newer page attached meanwhile) does nothing.
+export function attachPage(hosts: PageHosts): () => void {
+  set({ page: hosts });
+  return () => {
+    if (snapshot.page !== hosts) return;
+    parkBox();
+    set({ page: null });
+    queueMicrotask(() => {
+      if (snapshot.page === null) closeViewer();
+    });
   };
 }
 
@@ -133,7 +162,8 @@ export function stopPlayback(): void {
 
 function endPlayback(): void {
   tellClosed();
-  set(IDLE);
+  // The page keeps its hosts: the Media page stays open with its empty state, ready for the next session.
+  set({ ...IDLE, page: snapshot.page });
 }
 
 // A change of person (a sign-out, a sign-in as someone else, or a new session token) ends the session. The first value

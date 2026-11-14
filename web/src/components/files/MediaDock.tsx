@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { Alert, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
@@ -23,6 +24,7 @@ import {
 } from "../../lib/files/playback";
 import { isPopupTarget, refusedPlay } from "../../lib/files/mediaKeys";
 import { formatTime, clamp } from "../../lib/files/mediaKeys";
+import { placeBox, playerBox } from "../../lib/files/playerBox";
 import { bindMediaSession, setPlaybackState } from "../../lib/files/mediaSession";
 import { readTracks, type SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
@@ -36,10 +38,12 @@ import { displayArtist, displayTitle, hasCover, loadTags, seedTags, subscribeTag
 import { thumbnailPath } from "../../lib/files/thumbnail";
 
 // MediaDock is the signed-in session drawn in the shell: the viewer (a full-window dialog with the playlist and its player)
-// while it is open, and the mini player bar at the bottom of the shell once it is closed. One playlist and one player run
-// for the whole session: closing the viewer only hides it, so audio goes on while the person browses. The player reads its
-// place and saves it through the signed-in person's own routes, and reads its subtitles the same way. Share pages have
-// their own playlist (PublicBrowse), with none of this.
+// while it is open, the mini player bar at the bottom of the shell once it is closed, and — while the Media page holds the
+// session (decision 172) — the page itself, with no dialog and no mini bar. One playlist and one player run for the whole
+// session: its header and playlist live in one box (playerBox) that moves between the viewer and the page's stage, so the
+// element that plays is never made again for a move. Closing the viewer only hides it, so audio goes on while the person
+// browses. The player reads its place and saves it through the signed-in person's own routes, and reads its subtitles the
+// same way. Share pages have their own playlist (PublicBrowse), with none of this.
 
 // FOCUSABLE lists what Tab stops at inside the viewer.
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -90,7 +94,11 @@ export default function MediaDock() {
   // press says the browser refused to start a file for want of a press: the note shows in the mini player too.
   const [press, setPress] = useState(false);
   const node = snap.current?.node ?? null;
-  const viewing = snap.viewerOpen;
+  // Where the session is drawn (decision 172): the Media page holds it while the page is open — the box moves to the page's
+  // stage, so there is no dialog and no mini bar; else the open viewer's dialog; else the mini bar. The page wins over an
+  // open viewer, so a page reached by address or Back takes the player out of the dialog.
+  const placement = snap.page ? "page" : snap.viewerOpen ? "dialog" : "mini";
+  const viewing = placement === "dialog";
   const canDownload = node ? downloadAllowed(node) : false;
   // The tags of the file on screen (decision 56): its title and artist show when they are read, and its name until then.
   const tags = useTagState(node?.id ?? "");
@@ -165,13 +173,20 @@ export default function MediaDock() {
       subtitlesOf={subtitlesSession}
       onElement={setMedia}
       onNav={(nav: PlaybackNav) => setNav(nav)}
-      active={viewing}
+      active={placement !== "mini"}
       toggleSlot={toggleSlot}
+      queueSlot={snap.page ? snap.page.queue : undefined}
     />
   ) : null;
 
   const viewerRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
+  // The session's box is moved to its place after every draw: the Media page's stage while the page holds it, else this
+  // element (the dialog when open, hidden when mini). A move that pauses a playing file resumes it (playerBox.placeBox).
+  useLayoutEffect(() => {
+    const target = snap.page ? snap.page.stage : viewerRef.current;
+    if (target !== null) placeBox(target);
+  });
   // The viewer takes the focus on its container, not on Close, so a Space press reaches the player when it opens.
   useEffect(() => {
     if (viewing) viewerRef.current?.focus();
@@ -223,7 +238,8 @@ export default function MediaDock() {
     <>
       {/* One element for the viewer, kept mounted while it is closed: the player inside it is the session, so closing the viewer
           must not stop the audio. Open, it is a full-window dialog. Closed, it is hidden and bears no dialog role, no aria-modal
-          and no test id, so nothing reads it as an open viewer, and no focus is trapped in it. */}
+          and no test id, so nothing reads it as an open viewer, and no focus is trapped in it. The header and playlist are drawn
+          into the session's box, which this element holds unless the Media page holds it (decision 172). */}
       <div
         ref={viewerRef}
         {...(viewing
@@ -235,39 +251,50 @@ export default function MediaDock() {
             : { display: "none" }
         }
       >
-        {viewing && (
+        {createPortal(
           <>
-            <header className="media-viewer-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
-              {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
-              <IconButton label={t("files.preview.close")} onClick={() => closeViewer()} icon={<X size={18} aria-hidden="true" focusable="false" />} />
-              {/* An audio file's cover, title and artist are on its stage (MediaArt), so the header keeps the buttons and the count. */}
-              {audio ? (
-                <span className="media-spacer" />
-              ) : (
-                // The name is one line that ends in an ellipsis; its full text is in the title.
-                <p
-                  className="media-head-name"
-                  title={node ? displayTitle(node.name, tags) : ""}
-                  style={{ flex: "1 1 0", margin: 0, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                >
-                  <bdi dir="auto">{node ? displayTitle(node.name, tags) : ""}</bdi>
-                </p>
-              )}
-              {/* A playlist's count reads left to right in every language, as "2 / 5". */}
-              <span aria-live="polite" dir="ltr" data-testid="media-count" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {pos.position} / {pos.total}
-              </span>
-              {/* The Playlist button is drawn into this slot by MediaPlaylist (toggleSlot), beside Download. */}
-              <span ref={setToggleSlot} className="media-toggle-slot" style={{ display: "contents" }} />
-              {canDownload && <HeadDownload label={t("files.act.download")} onClick={() => void download()} />}
-            </header>
-            {node && refused === node.id && <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />}
-          </>
+            {placement !== "mini" && (
+              <>
+                <header className="media-viewer-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
+                  {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. On the page
+                      the X ends the session ("Stop and close"); in the dialog it only closes the viewer. */}
+                  <IconButton
+                    label={placement === "page" ? t("files.mini.close") : t("files.preview.close")}
+                    onClick={() => (placement === "page" ? stopPlayback() : closeViewer())}
+                    icon={<X size={18} aria-hidden="true" focusable="false" />}
+                  />
+                  {/* An audio file's cover, title and artist are on its stage (MediaArt), so the header keeps the buttons and the count. */}
+                  {audio ? (
+                    <span className="media-spacer" />
+                  ) : (
+                    // The name is one line that ends in an ellipsis; its full text is in the title.
+                    <p
+                      className="media-head-name"
+                      title={node ? displayTitle(node.name, tags) : ""}
+                      style={{ flex: "1 1 0", margin: 0, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    >
+                      <bdi dir="auto">{node ? displayTitle(node.name, tags) : ""}</bdi>
+                    </p>
+                  )}
+                  {/* A playlist's count reads left to right in every language, as "2 / 5". */}
+                  <span aria-live="polite" dir="ltr" data-testid="media-count" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {pos.position} / {pos.total}
+                  </span>
+                  {/* The Playlist button is drawn into this slot by MediaPlaylist (toggleSlot), beside Download. On the page the
+                      queue has its own place below the player, so no button is drawn here. */}
+                  <span ref={setToggleSlot} className="media-toggle-slot" style={{ display: "contents" }} />
+                  {canDownload && <HeadDownload label={t("files.act.download")} onClick={() => void download()} />}
+                </header>
+                {node && refused === node.id && <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />}
+              </>
+            )}
+            {/* Not clipped here: an open playlist drawer's shadow reaches past this box (decision 72). The closed drawer is clipped by the screen. */}
+            <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "visible" }}>{playlist}</div>
+          </>,
+          playerBox(),
         )}
-        {/* Not clipped here: an open playlist drawer's shadow reaches past this box (decision 72). The closed drawer is clipped by the screen. */}
-        <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "visible" }}>{playlist}</div>
       </div>
-      {!viewing && (
+      {placement === "mini" && (
         <MiniPlayer
           name={node?.name ?? ""}
           nod={node?.id ?? ""}

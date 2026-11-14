@@ -102,6 +102,10 @@ export interface MediaPlaylistProps {
   // the share page each give one). Given as undefined, the button keeps a row of its own above the screen; given as null,
   // the slot is not on screen yet and no button is drawn.
   toggleSlot?: HTMLElement | null;
+  // queueSlot is the Media page's place for the queue (decision 172). Given as an element, the queue is drawn into it,
+  // below the player, with no drawer and no Playlist toggle; given as null, no queue is drawn. Undefined keeps the
+  // viewer's drawer, exactly as before.
+  queueSlot?: HTMLElement | null;
 }
 
 export default function MediaPlaylist({
@@ -121,6 +125,7 @@ export default function MediaPlaylist({
   onNav,
   active = true,
   toggleSlot,
+  queueSlot,
 }: MediaPlaylistProps) {
   const { t } = useT();
   const palette = usePaletteOrLight();
@@ -501,10 +506,54 @@ export default function MediaPlaylist({
     />
   );
 
+  // The queue panel, drawn once: in the viewer's drawer, or — when the Media page gives a slot — into that slot below the
+  // player (decision 172). Its props are the same either way, so the panel keeps its state across the move.
+  const queue = (
+    <MediaQueue
+      entries={q.entries}
+      currentId={currentId}
+      repeat={q.repeat}
+      shuffle={q.shuffle}
+      capped={q.capped || (paged && folder.cut)}
+      moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
+      busy={busy}
+      candidates={candidates}
+      adding={adding}
+      playing={playing}
+      onAddOpen={() => setAdding((v) => !v)}
+      onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
+      onLoadMore={() => void loadMore()}
+      onPlay={(id) => {
+        const entry = qRef.current.entries.find((e) => e.node.id === id);
+        if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
+      }}
+      onRemove={removeEntry}
+      onMove={(id, delta) => commit(move(qRef.current, id, delta))}
+      onShuffle={() => void shuffleToggle()}
+      onRepeat={() => commit(cycleRepeat(qRef.current))}
+      saved={
+        saved ? (
+          <MediaPlaylists
+            queue={q.entries}
+            onOpen={(entries) => {
+              // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
+              // the list, so it would otherwise leave the player with no file to show.
+              setFromSaved(true);
+              const next = replaceQueueEntries(qRef.current, entries);
+              const first = next.entries.find((e) => e.mark === "ok");
+              if (first) pick(choose(next, first.node.id));
+              else commit(next);
+            }}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   return (
     <div className="media-playlist" data-testid="media-playlist">
       <div className="media-main">
-        {toggleSlot === undefined ? <div className="media-toolbar">{toggle}</div> : toggleSlot ? createPortal(toggle, toggleSlot) : null}
+        {queueSlot === undefined && (toggleSlot === undefined ? <div className="media-toolbar">{toggle}</div> : toggleSlot ? createPortal(toggle, toggleSlot) : null)}
         <div className={`media-screen${drawer ? " media-screen--drawer" : ""}`} data-testid="media-screen">
           {stop === "end" ? (
             <p role="status">{t("files.media.ended")}</p>
@@ -590,69 +639,38 @@ export default function MediaPlaylist({
               onSave={saveRef.current ? (pos, dur) => saveRef.current?.(currentNode, pos, dur) : undefined}
               onElement={onElement}
               active={active}
+              keysInBox={queueSlot !== undefined}
               nav={{ next, previous }}
               art={kind === "audio" ? <MediaArt node={currentNode} /> : undefined}
             />
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
           {stop !== null && kind === "audio" && currentNode !== undefined && <MediaArt node={currentNode} />}
-        <div
-          id={DRAWER_ID}
-          className={`media-drawer${drawer ? "" : " media-drawer--closed"}`}
-          data-media-drawer=""
-          data-open={drawer ? "true" : "false"}
-          {...(drawer ? {} : { inert: "" })}
-          style={{ background: palette.card, color: palette.text, borderColor: palette.line }}
-        >
-          <div className="media-drawer-head">
-            <Button
-              ref={closeRef}
-              className="media-btn media-drawer-close"
-              aria-label={t("files.media.closePlaylist")}
-              onClick={closeDrawer}
-              icon={<X size={18} aria-hidden="true" />}
-            />
+        {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 172).
+            A null slot draws no queue; the player keeps playing either way. */}
+        {queueSlot === undefined ? (
+          <div
+            id={DRAWER_ID}
+            className={`media-drawer${drawer ? "" : " media-drawer--closed"}`}
+            data-media-drawer=""
+            data-open={drawer ? "true" : "false"}
+            {...(drawer ? {} : { inert: "" })}
+            style={{ background: palette.card, color: palette.text, borderColor: palette.line }}
+          >
+            <div className="media-drawer-head">
+              <Button
+                ref={closeRef}
+                className="media-btn media-drawer-close"
+                aria-label={t("files.media.closePlaylist")}
+                onClick={closeDrawer}
+                icon={<X size={18} aria-hidden="true" />}
+              />
+            </div>
+            {queue}
           </div>
-          <MediaQueue
-            entries={q.entries}
-            currentId={currentId}
-            repeat={q.repeat}
-            shuffle={q.shuffle}
-            capped={q.capped || (paged && folder.cut)}
-            moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
-            busy={busy}
-            candidates={candidates}
-            adding={adding}
-            playing={playing}
-            onAddOpen={() => setAdding((v) => !v)}
-            onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
-            onLoadMore={() => void loadMore()}
-            onPlay={(id) => {
-              const entry = qRef.current.entries.find((e) => e.node.id === id);
-              if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
-            }}
-            onRemove={removeEntry}
-            onMove={(id, delta) => commit(move(qRef.current, id, delta))}
-            onShuffle={() => void shuffleToggle()}
-            onRepeat={() => commit(cycleRepeat(qRef.current))}
-            saved={
-              saved ? (
-                <MediaPlaylists
-                  queue={q.entries}
-                  onOpen={(entries) => {
-                    // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
-                    // the list, so it would otherwise leave the player with no file to show.
-                    setFromSaved(true);
-                    const next = replaceQueueEntries(qRef.current, entries);
-                    const first = next.entries.find((e) => e.mark === "ok");
-                    if (first) pick(choose(next, first.node.id));
-                    else commit(next);
-                  }}
-                />
-              ) : undefined
-            }
-          />
-        </div>
+        ) : queueSlot !== null ? (
+          createPortal(queue, queueSlot)
+        ) : null}
         </div>
 
         {/* One message for an unreadable folder: when the playlist has stopped as unreadable, its alert above says it. */}

@@ -1342,6 +1342,7 @@
   "recent.clearMessage": "La liste des récents sera vidée. Les fichiers et les dossiers ne changent pas.",
   "recent.remove": "Retirer",
   "nav.starred": "Favoris",
+  "nav.media": "Médias",
   "recent.clearAction": "Tout effacer",
   "nav.recent": "Récents",
   "star.mark": "Favori",

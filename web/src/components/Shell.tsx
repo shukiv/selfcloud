@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, t
 import { followTarget, keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import { Clock, FolderOpen, Inbox, MonitorPlay, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import IconButton from "./IconButton";
 import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -108,6 +108,8 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
   const main: NavItem[] = [
     ...(filesEntry ? [{ key: "/files", label: t("nav.files"), icon: icon(FolderOpen) }] : []),
     { key: "/starred", label: t("nav.starred"), icon: icon(Star) },
+    // Media is the page of the running session (decision 172), right after Starred for everyone who has Starred.
+    { key: "/media", label: t("nav.media"), icon: icon(MonitorPlay) },
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },
     // The Trash takes a drop from the files: an item dragged onto it is deleted (decision 104). Its name is the drop's ghost text.

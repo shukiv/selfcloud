@@ -1342,6 +1342,7 @@
   "recent.clearMessage": "Список недавних будет очищен. Файлы и папки не меняются.",
   "recent.remove": "Убрать",
   "nav.starred": "Избранное",
+  "nav.media": "Медиа",
   "recent.clearAction": "Очистить всё",
   "nav.recent": "Недавние",
   "star.mark": "В избранном",

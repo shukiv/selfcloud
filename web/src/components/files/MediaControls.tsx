@@ -7,6 +7,7 @@ import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { readNonce } from "../../csp/nonce";
 import { usePaletteOrLight } from "../../theme/theme";
+import { playerBox } from "../../lib/files/playerBox";
 import {
   HIDE_MS,
   SPEEDS,
@@ -87,9 +88,12 @@ interface Props {
   subtitles?: { labels: string[]; active: number; onPick: (i: number) => void };
   // active says whether the keys are read here. A player kept for audio alone, with its viewer closed, reads none.
   active?: boolean;
+  // keysInBox says the player sits in the session's box on the Media page (decision 172): a key aimed outside the box is
+  // the page's, not the player's. The body is the exception, where a page shortcut lands with no target of its own.
+  keysInBox?: boolean;
 }
 
-export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true }: Props) {
+export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false }: Props) {
   const { t } = useT();
   const p = usePaletteOrLight();
   const [snap, setSnap] = useState<Snap>(EMPTY);
@@ -271,6 +275,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     if (!media || !active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      if (keysInBox && e.target !== document.body && !(e.target instanceof Node && playerBox().contains(e.target))) return;
       const cmd = keyCommand(e);
       if (cmd === null || ignoredTarget(e.target, e.key)) return;
       e.preventDefault();
@@ -295,7 +300,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
       window.removeEventListener("keyup", onKeyUp);
     };
     // run and wake read the element, the kind and the stage, which are the dependencies here.
-  }, [media, kind, stage, active]);
+  }, [media, kind, stage, active, keysInBox]);
 
   const onPointerDown = () => {
     pointed.current = true;
