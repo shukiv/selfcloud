@@ -38,6 +38,7 @@ func accountCommands() []accountCommand {
 		{"account rm", AccountRm, []string{"--yes"}},
 		{"account usage", AccountUsage, nil},
 		{"account audit", AccountAudit, nil},
+		{"account audit export", AccountAuditExport, nil},
 		{"storage policy show", StoragePolicyShow, nil},
 		{"storage policy set", StoragePolicySet, []string{"--user-quota", "1GiB"}},
 		{"storage usage", StorageUsage, nil},

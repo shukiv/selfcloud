@@ -5,6 +5,7 @@ package manage
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -76,6 +77,11 @@ func table(rows ...[]string) string {
 type reply struct {
 	status int
 	body   string
+	// retryAfter is the Retry-After header the answer carries, when it is not empty.
+	retryAfter string
+	// cutShort makes the fake hijack the connection, promise the whole body in Content-Length, write half of it and
+	// close, so the reader's body ends with an unexpected EOF.
+	cutShort bool
 }
 
 type fake struct {
@@ -128,9 +134,36 @@ func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
+	if rep.cutShort {
+		f.cutShort(w, rep)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
+	if rep.retryAfter != "" {
+		w.Header().Set("Retry-After", rep.retryAfter)
+	}
 	w.WriteHeader(rep.status)
 	_, _ = io.WriteString(w, rep.body)
+}
+
+// cutShort answers with the body's first half under a Content-Length that promises the whole, then closes the
+// connection, so the client's read of the body ends with an unexpected EOF.
+func (f *fake) cutShort(w http.ResponseWriter, rep reply) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		f.t.Error("the fake's writer cannot hijack")
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		f.t.Errorf("hijack: %v", err)
+		return
+	}
+	defer conn.Close()
+	fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\nContent-Type: text/csv; charset=utf-8\r\nContent-Length: %d\r\n\r\n",
+		rep.status, http.StatusText(rep.status), len(rep.body))
+	_, _ = buf.WriteString(rep.body[:len(rep.body)/2])
+	_ = buf.Flush()
 }
 
 type result struct {

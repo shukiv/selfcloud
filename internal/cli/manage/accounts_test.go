@@ -551,6 +551,8 @@ func TestAccountErrorAnswers(t *testing.T) {
 			http.StatusForbidden, 3, false},
 		{"audit not found", AccountAudit, true, nil, "GET", accountRoute(testAcc) + "/audit",
 			http.StatusNotFound, 4, false},
+		{"audit export not found", AccountAuditExport, true, nil, "GET", accountRoute(testAcc) + "/audit/export",
+			http.StatusNotFound, 4, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
