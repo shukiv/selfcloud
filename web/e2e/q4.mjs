@@ -219,6 +219,11 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   await page.evaluate(`(document.querySelector(${q(`input[aria-label=${q(BOX)}]`)}).focus(), true)`);
   await typeKeys(page, 'budget', 30);
   await page.waitFor(`location.pathname === '/search' && location.search.includes('q=budget')`, 10000);
+  // The search page is a lazy chunk: on a loaded runner it can take longer to load and send the burst's search, so wait for
+  // that request (up to 10 s) instead of a fixed time; if the wait runs out, the count stays 0 and the check fails with it.
+  // The 700 ms after the wait lets any extra per-letter search leave before the count.
+  const until = Date.now() + 10000;
+  while (searchRequests(page) - before < 1 && Date.now() < until) await sleep(100);
   await sleep(700);
   const burst = searchRequests(page) - before;
   check(burst === 1, `typing a word sends one search for the burst, not one per letter (${burst} sent)`);
