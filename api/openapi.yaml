@@ -1306,6 +1306,14 @@ paths:
         interrupted download resumes. It does not count toward the account's quota; the stored zips are
         limited by the server's `zip.max_disk` and each account's `zip.max_disk_per_account`. A zip is for the
         caller who made it, with the credential it came in on, and no one else.
+
+        A visitor of a link that anyone can open may also make a zip, of the nodes its link reaches. The zip is
+        the link's, shared by every visitor of that link: one zip per link and root set, so a repeat of the same
+        roots answers `202` with the same job, and another root set while one lives is `409` `too_many_zips_link`.
+        Visitor zips keep their own caps (`zip.visitor_max_per_account`, `zip.visitor_max_bytes`) and half the zip
+        disk, apart from the signed-in caps so anonymous load never refuses a member's zip, and a per-address rate.
+        A visitor reads its zip only through a signed link from `POST /api/v1/zips/{zip}/links`; `GET` and
+        `DELETE /api/v1/zips/{zip}` stay closed to it (decision 185).
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -1395,6 +1403,39 @@ paths:
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "204": { description: The zip is deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/zips/{zip}/links:
+    parameters:
+      - name: zip
+        in: path
+        required: true
+        schema: { type: string, example: "zip_7k2m9q..." }
+    post:
+      tags: [Files]
+      operationId: createZipLink
+      summary: Make a signed download link for a visitor's zip
+      description: |
+        Only the link that made the zip may ask: a visitor of a link that anyone can open, on the zip its link made.
+        A signed-in maker is refused with `403` `visitor_only`; every other caller, including another link's visitor,
+        gets `404`. The zip must be ready: one still being made answers `409` `zip_not_ready` with `Retry-After`, a
+        failed one `409` `zip_failed` (a final answer), and one past its expiry `404`. Every root is re-checked for
+        access and the no-download rule, as the download is. The answer is a signed link (`GET /api/v1/links/{token}`
+        with disposition `zip`) that downloads the archive with no credential; it lives for the shorter of the
+        signed-link life and the time left to the zip's expiry, and dies with the link (decision 185).
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The signed download link.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: "The signed link; GET it with no credential to download the zip." }
+                  expires_at: { type: string, format: date-time, description: "When the signed link stops working." }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }

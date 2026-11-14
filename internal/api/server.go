@@ -536,6 +536,9 @@ func New(opts Options) (*Server, error) {
 			"tags.batch": newLimiter(120),
 			// Zips asked for, per caller: each one is a job that reads a whole subtree.
 			"zip.create": newLimiter(60),
+			// Zips asked for by link visitors, per client address: a few a minute, so one address cannot flood the queue
+			// with work that reads whole subtrees (decision 185).
+			"zip.create.visitor": newLimiter(3),
 			// Conversions (previews and exports) that start new work, per caller. A read of one already made is not charged.
 			"convert.enqueue": newLimiter(120),
 			"links.serve":     newLimiter(600),
@@ -777,9 +780,10 @@ func (s *Server) routes() []route {
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/exports", handle: s.handleCreateExport, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/exports/{drv}", handle: s.handleGetExport, auth: true, imp: impAllow},
-		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true, link: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/zips/{zip}/links", handle: s.handleCreateZipLink, auth: true, link: true, imp: impAllow, noDevice: true},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},

@@ -57,6 +57,14 @@ func (s *Store) Job(ctx context.Context, id string) (*Job, error) {
 	return scanJob(s.r.QueryRowContext(ctx, "SELECT "+jobCols+" FROM jobs WHERE id = ?", id))
 }
 
+// JobByTarget returns the most recent job of a kind for an account and target, whatever its status. A reused zip's
+// job may already have succeeded, where UnfinishedJob (queued or running only) finds nothing (decision 185).
+func (s *Store) JobByTarget(ctx context.Context, accountID, kind, target string) (*Job, error) {
+	return scanJob(s.r.QueryRowContext(ctx, "SELECT "+jobCols+` FROM jobs
+		WHERE account_id = ? AND kind = ? AND target = ?
+		ORDER BY created_at DESC, id DESC LIMIT 1`, accountID, kind, target))
+}
+
 // UnfinishedJob returns the queued or running job of a kind for an account and target.
 func (tx *Tx) UnfinishedJob(ctx context.Context, accountID, kind, target string) (*Job, error) {
 	return scanJob(tx.q.QueryRowContext(ctx, "SELECT "+jobCols+` FROM jobs

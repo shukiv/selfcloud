@@ -122,8 +122,8 @@ func TestZipVisitorReusesOneZipPerLink(t *testing.T) {
 	if again.ID != first.ID || again.Target != first.Target {
 		t.Errorf("a second credential of the link made a new job %s, want the reused %s", again.ID, first.ID)
 	}
-	// The same roots in another order are another root set, and the link already has its one zip.
-	rec := v1("POST", "/api/v1/zips", map[string]any{"nodes": []string{fx.c.ID}})
+	// Another root set the link still reaches (a child of its node) while its zip lives is refused: one zip per link.
+	rec := v1("POST", "/api/v1/zips", map[string]any{"nodes": []string{fx.deep.ID}})
 	wantStatus(t, rec, 409)
 	if !strings.Contains(rec.Body.String(), "too_many_zips_link") {
 		t.Errorf("refusal %s does not name too_many_zips_link", rec.Body.String())

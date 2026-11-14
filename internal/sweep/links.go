@@ -48,7 +48,7 @@ func (w *Sweeper) expireShareLinks(ctx context.Context, now time.Time) (int, err
 		}
 		for _, l := range due {
 			afterMillis, afterID = l.ExpiresAt.UnixMilli(), l.ID
-			files, gone, err := w.removeEndedLink(ctx, cutoff, now, l.AccountID, l.ID)
+			files, zipIDs, gone, err := w.removeEndedLink(ctx, cutoff, now, l.AccountID, l.ID)
 			if err != nil {
 				if ctx.Err() != nil {
 					return removed, ctx.Err()
@@ -70,17 +70,25 @@ func (w *Sweeper) expireShareLinks(ctx context.Context, now time.Time) (int, err
 					w.log.Error("cannot remove an uncommitted blob", "blob", up.BlobID, "error", err)
 				}
 			}
+			if w.zips != nil {
+				for _, zid := range zipIDs {
+					if err := w.zips.Remove(l.AccountID, zid); err != nil {
+						w.log.Error("cannot remove a link's zip file", "zip", zid, "error", err)
+					}
+				}
+			}
 			removed++
 		}
 	}
 }
 
-// removeEndedLink removes one ended link in a transaction. It reports whether the link was removed, and the open uploads
-// it took with it, whose files the caller removes after the commit.
-func (w *Sweeper) removeEndedLink(ctx context.Context, cutoff, now time.Time, accountID, linkID string) ([]*store.Upload, bool, error) {
+// removeEndedLink removes one ended link in a transaction. It reports whether the link was removed, the open uploads
+// it took with it, and the zips its visitors made, whose files the caller removes after the commit (decision 185).
+func (w *Sweeper) removeEndedLink(ctx context.Context, cutoff, now time.Time, accountID, linkID string) ([]*store.Upload, []string, bool, error) {
 	var (
-		gone  bool
-		files []*store.Upload
+		gone   bool
+		files  []*store.Upload
+		zipIDs []string
 	)
 	err := w.st.Write(ctx, func(tx *store.Tx) error {
 		cur, err := tx.ShareLink(ctx, accountID, linkID)
@@ -118,6 +126,15 @@ func (w *Sweeper) removeEndedLink(ctx context.Context, cutoff, now time.Time, ac
 		if err := tx.DeleteShareLink(ctx, cur.AccountID, cur.ID); err != nil {
 			return err
 		}
+		zids, err := w.st.ZipIDsOfLink(ctx, cur.AccountID, cur.ID)
+		if err != nil {
+			return err
+		}
+		for _, zid := range zids {
+			if _, err := tx.DeleteZip(ctx, cur.AccountID, zid); err != nil {
+				return err
+			}
+		}
 		err = tx.InsertAudit(ctx, &store.AuditEntry{Time: now, AccountID: cur.AccountID,
 			ActorKind: "system", ActorID: "sweep", Action: "link.expired", Target: cur.ID,
 			Folders: []string{n.FolderID},
@@ -126,8 +143,8 @@ func (w *Sweeper) removeEndedLink(ctx context.Context, cutoff, now time.Time, ac
 		if err != nil {
 			return err
 		}
-		gone, files = true, ups
+		gone, files, zipIDs = true, ups, zids
 		return nil
 	})
-	return files, gone, err
+	return files, zipIDs, gone, err
 }

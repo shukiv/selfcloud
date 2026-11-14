@@ -121,6 +121,7 @@ func (s *Server) handleDeletePublicShareLinks(w http.ResponseWriter, r *http.Req
 	ctx := r.Context()
 	var (
 		released []*store.Upload
+		zipIDs   []string
 		deleted  int
 	)
 	s.atWrite()
@@ -142,6 +143,11 @@ func (s *Server) handleDeletePublicShareLinks(w http.ResponseWriter, r *http.Req
 				return err
 			}
 			released = append(released, ups...)
+			zids, err := s.releaseLinkZips(ctx, tx, acc.ID, l.ID)
+			if err != nil {
+				return err
+			}
+			zipIDs = append(zipIDs, zids...)
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "link.delete", l.ID,
 				map[string]any{"audience": sl.Audience, "role": sl.Role, "upload_only": sl.UploadOnly}, l.FolderID)); err != nil {
 				return err
@@ -157,6 +163,7 @@ func (s *Server) handleDeletePublicShareLinks(w http.ResponseWriter, r *http.Req
 	for _, up := range released {
 		s.discardUploadFile(up)
 	}
+	s.discardZipFiles(acc.ID, zipIDs)
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted})
 	return nil
 }

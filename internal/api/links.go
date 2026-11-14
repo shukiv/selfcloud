@@ -55,6 +55,9 @@ const (
 	prevKeyName    = "signing.prev.key"
 	dispAttachment = "attachment"
 	dispInline     = "inline"
+	// dispZip names a stored zip, not a node: the token's id is a zip ID and its tag is the zip's SHA-256. Only the
+	// server signs it, for the link visitor who made the zip (decision 185).
+	dispZip = "zip"
 )
 
 // linkKeys holds the signing keys. current signs and verifies; previous only verifies.
@@ -274,8 +277,16 @@ func parseLinkToken(tok string) (linkClaims, []byte, []byte, error) {
 		return c, nil, nil, errLinkMalformed
 	}
 	parts := strings.Split(string(payload), "|")
-	if len(parts) != 4 || !id.Valid("nod", parts[0]) || !id.Valid("acc", parts[1]) ||
-		!validLinkDisposition(parts[2]) || !allDigits(parts[3]) {
+	if len(parts) != 4 || !id.Valid("acc", parts[1]) || !validLinkDisposition(parts[2]) || !allDigits(parts[3]) {
+		return c, nil, nil, errLinkMalformed
+	}
+	// A zip link names a zip; every other link names a node. The two ID kinds do not overlap, so a zip ID with a file
+	// disposition, or a node ID with the zip disposition, is malformed (decision 185).
+	idKind := "nod"
+	if parts[2] == dispZip {
+		idKind = "zip"
+	}
+	if !id.Valid(idKind, parts[0]) {
 		return c, nil, nil, errLinkMalformed
 	}
 	exp, err := strconv.ParseInt(parts[3], 10, 64)
@@ -494,6 +505,10 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return linkNotFound()
 	}
+	// A zip link names a stored zip, not a node, so it is served before any node is read (decision 185).
+	if c.disp == dispZip {
+		return s.serveZipLink(w, r, c, payload, mac)
+	}
 	n, err := s.store.Node(ctx, c.acc, c.nod)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && n.Kind != store.KindFile) {
 		return linkNotFound()
@@ -551,6 +566,69 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return s.serveFile(w, r, n, c.disp == dispInline, corpCrossOrigin)
+}
+
+// serveZipLink sends the stored zip a zip link names. It needs no credential and reads no cookie: the token is the
+// capability. The zip must be a link visitor's, ready and unexpired; the token must verify against the zip's SHA-256
+// and not have expired; the account must be active; and the link that made the zip must still be open, with every root
+// still reachable and unrestricted. Each failure is the answer a bad link gets, so a probe learns nothing (decision 185).
+func (s *Server) serveZipLink(w http.ResponseWriter, r *http.Request, c linkClaims, payload, mac []byte) error {
+	ctx := r.Context()
+	z, err := s.store.Zip(ctx, c.acc, c.nod)
+	if errors.Is(err, store.ErrNotFound) {
+		return linkNotFound()
+	}
+	if err != nil {
+		return err
+	}
+	if z.CreatedKind != string(auth.KindShareLink) || z.State != store.ZipReady || !time.Now().Before(z.ExpiresAt) {
+		return linkNotFound()
+	}
+	if !s.links.verify(payload, mac, z.SHA256) {
+		return linkNotFound()
+	}
+	if !time.Now().Before(time.Unix(c.exp, 0)) {
+		return apierr.New(apierr.LinkExpired, "the link has expired; ask for a new one")
+	}
+	acc, err := s.store.Account(ctx, c.acc)
+	if errors.Is(err, store.ErrNotFound) {
+		return linkNotFound()
+	}
+	if err != nil {
+		return err
+	}
+	switch acc.Status {
+	case store.AccountActive:
+	case store.AccountSuspended:
+		return apierr.New(apierr.AccountSuspended, "the account is suspended")
+	default:
+		return linkNotFound()
+	}
+	maker, err := s.zipMaker(ctx, z, zipPayload{})
+	if err != nil {
+		return linkNotFound()
+	}
+	var name string
+	for i, root := range z.Roots {
+		n, role, err := nodeAccessWith(ctx, s.store, maker, root)
+		if err != nil {
+			return linkNotFound()
+		}
+		restricted, err := s.copyRestricted(ctx, s.store, n, role)
+		if err != nil {
+			return err
+		}
+		if restricted {
+			return linkNotFound()
+		}
+		if i == 0 && len(z.Roots) == 1 {
+			name = n.Name + ".zip"
+		}
+	}
+	if name == "" {
+		name = "download.zip"
+	}
+	return s.serveZipFile(w, r, z, name, corpCrossOrigin)
 }
 
 // contentGate refuses, on the content origin, every request that is not for a signed link. That

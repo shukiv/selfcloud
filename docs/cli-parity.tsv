@@ -431,6 +431,7 @@ route	POST /api/v1/trash/empty	trash empty	cli5	built in cli5
 route	POST /api/v1/uploads	put	cli6	built in cli6
 route	POST /api/v1/uploads/{upl}/commit	put	cli6	built in cli6
 route	POST /api/v1/zips	zip create	cli12	built in cli12
+route	POST /api/v1/zips/{zip}/links	-	-	a visitor's signed link to the zip its link made, asked in the browser; the CLI's zip commands act as a signed-in member
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7

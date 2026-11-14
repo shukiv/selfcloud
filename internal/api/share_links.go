@@ -824,7 +824,10 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 		return notFound("link")
 	}
 	ctx := r.Context()
-	var released []*store.Upload
+	var (
+		released []*store.Upload
+		zipIDs   []string
+	)
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		l, err := tx.ShareLink(ctx, p.AccountID, linkID)
@@ -872,6 +875,11 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 			return err
 		}
 		released = ups
+		zids, err := s.releaseLinkZips(ctx, tx, p.AccountID, l.ID)
+		if err != nil {
+			return err
+		}
+		zipIDs = zids
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.delete", l.ID,
 			map[string]any{"audience": l.Audience, "role": l.Role, "upload_only": l.UploadOnly}, n.FolderID))
 	})
@@ -881,6 +889,7 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 	for _, up := range released {
 		s.discardUploadFile(up)
 	}
+	s.discardZipFiles(p.AccountID, zipIDs)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

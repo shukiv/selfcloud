@@ -108,9 +108,10 @@ func (tx *Tx) InsertZip(ctx context.Context, z *Zip) error {
 	return nil
 }
 
-// CountPendingZips counts the unfinished zips of an account, or of one caller in it when createdBy is not "".
+// CountPendingZips counts the unfinished zips of an account, or of one caller in it when createdBy is not "". A link
+// visitor's zip is not counted: the signed-in caps and the visitors' cap are separate budgets (decision 185).
 func (s *Store) CountPendingZips(ctx context.Context, accountID, createdBy string) (int, error) {
-	q := `SELECT COUNT(*) FROM zips WHERE account_id = ? AND state = 'pending'`
+	q := `SELECT COUNT(*) FROM zips WHERE account_id = ? AND state = 'pending' AND created_kind != 'share_link'`
 	args := []any{accountID}
 	if createdBy != "" {
 		q += ` AND created_by = ?`
@@ -121,11 +122,55 @@ func (s *Store) CountPendingZips(ctx context.Context, accountID, createdBy strin
 	return n, err
 }
 
-// CountAllPendingZips counts the unfinished zips of the whole installation.
+// CountAllPendingZips counts the unfinished zips of the whole installation, leaving out the link visitors' zips.
 func (s *Store) CountAllPendingZips(ctx context.Context) (int, error) {
 	var n int
-	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM zips WHERE state = 'pending'`).Scan(&n)
+	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM zips WHERE state = 'pending' AND created_kind != 'share_link'`).Scan(&n)
 	return n, err
+}
+
+// CountPendingVisitorZips counts the unfinished zips the visitors of one account's links have made (decision 185).
+func (s *Store) CountPendingVisitorZips(ctx context.Context, accountID string) (int, error) {
+	var n int
+	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM zips WHERE account_id = ? AND state = 'pending'
+		AND created_kind = 'share_link'`, accountID).Scan(&n)
+	return n, err
+}
+
+// LiveZipOfLink returns the one live zip a link has made: its pending zip, or its ready zip that has not expired, or
+// ErrNotFound. A failed zip is not live, so the link may ask again. A link has at most one live zip (decision 185).
+func (s *Store) LiveZipOfLink(ctx context.Context, accountID, linkID string, now time.Time) (*Zip, error) {
+	z, err := scanZip(s.r.QueryRowContext(ctx, "SELECT "+zipCols+` FROM zips
+		WHERE account_id = ? AND created_by = ? AND created_kind = 'share_link' AND state IN ('pending', 'ready')
+			AND (expires_at IS NULL OR expires_at >= ?)
+		ORDER BY created_at, id LIMIT 1`, accountID, linkID, millis(now)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	z.Roots, err = s.zipRoots(ctx, z.ID)
+	return z, err
+}
+
+// ZipIDsOfLink returns the IDs of every zip a link has made, in any state, so deleting the link removes them all.
+func (s *Store) ZipIDsOfLink(ctx context.Context, accountID, linkID string) ([]string, error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT id FROM zips WHERE account_id = ? AND created_by = ?
+		AND created_kind = 'share_link' ORDER BY created_at, id`, accountID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ZipDiskUse returns the bytes of the ready zips and the bytes reserved by the unfinished ones.

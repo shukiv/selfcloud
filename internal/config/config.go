@@ -274,6 +274,12 @@ type ZipConfig struct {
 	// MaxUnfinished is how many unfinished zips the installation may have at once. Each one holds its open file and
 	// its entry list in memory until it finishes, so this bounds the memory.
 	MaxUnfinished int `yaml:"max_unfinished"`
+	// VisitorMaxPerAccount is how many unfinished zips the visitors of one account's links may have at once, counted
+	// apart from the signed-in callers' MaxPerAccount so a busy link cannot spend a member's budget (decision 185).
+	VisitorMaxPerAccount int `yaml:"visitor_max_per_account"`
+	// VisitorMaxBytes is the most bytes of files a link visitor's zip may hold. It is the visitor's own cap, refused
+	// as MaxBytes is, and a visitor's zip also keeps to half the disk budgets a signed-in caller may use in full.
+	VisitorMaxBytes ByteSize `yaml:"visitor_max_bytes"`
 }
 
 // validateZip checks the zip block.
@@ -292,6 +298,12 @@ func validateZip(z ZipConfig, bad func(string, ...any)) {
 	}
 	if z.MaxPerPrincipal < 1 || z.MaxPerAccount < z.MaxPerPrincipal || z.MaxUnfinished < z.MaxPerAccount {
 		bad("zip.max_per_principal, zip.max_per_account and zip.max_unfinished must be 1 or more, each at least the one before")
+	}
+	if z.VisitorMaxPerAccount < 1 {
+		bad("zip.visitor_max_per_account must be 1 or more")
+	}
+	if z.VisitorMaxBytes <= 0 {
+		bad("zip.visitor_max_bytes must be positive")
 	}
 }
 
@@ -801,7 +813,8 @@ func Defaults() *Config {
 			MaxConvertBytes: 500 * MiB},
 		Zip: ZipConfig{MaxEntries: 100_000, MaxBytes: 10 * GiB, MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB,
 			TTL:             Duration(24 * time.Hour),
-			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8},
+			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8,
+			VisitorMaxPerAccount: 3, VisitorMaxBytes: 10 * GiB},
 		Search: SearchConfig{Enabled: true, MaxQueryBytes: 200, MaxTerms: 8,
 			Timeout: Duration(2 * time.Second), RatePerMinute: 60,
 			FullTextMaxBytes: ByteSize(50 << 20), TextMaxBytes: ByteSize(1 << 20),

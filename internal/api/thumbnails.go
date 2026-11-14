@@ -221,10 +221,10 @@ func (s *Server) serveThumbLink(w http.ResponseWriter, r *http.Request, n *store
 	return s.writeThumbnail(w, r, n.AccountID, d, corpCrossOrigin)
 }
 
-// validLinkDisposition is validDisposition with the thumbnail kinds added. Only the server signs a thumb_ link, and
-// handleCreateLink still accepts only validDisposition.
+// validLinkDisposition is validDisposition with the thumbnail kinds and the zip kind added. Only the server signs a
+// thumb_ or zip link, and handleCreateLink still accepts only validDisposition.
 func validLinkDisposition(d string) bool {
-	if validDisposition(d) {
+	if validDisposition(d) || d == dispZip {
 		return true
 	}
 	if rest, ok := strings.CutPrefix(d, previewDispPrefix); ok {
