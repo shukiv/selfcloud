@@ -196,6 +196,9 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'permission.set':
     case 'permission.remove':
     case 'permission.expired':
+    case 'permission.external.set':
+    case 'permission.external.remove':
+    case 'user.email_proved':
     case 'node.trash':
     case 'node.restore':
     case 'node.purge':
