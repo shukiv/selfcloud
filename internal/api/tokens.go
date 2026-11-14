@@ -455,6 +455,12 @@ func callerLive(p *auth.Principal, d *store.Delegation, now time.Time) bool {
 	if p.Kind == auth.KindUser && (!d.UserFound || d.UserStatus != store.UserActive) {
 		return false
 	}
+	// A user who must change its password may not act through a job (decision 171). A request principal carries the
+	// flag fresh from this same read and is refused by checkImpersonation with its 403; a job's principal is rebuilt
+	// from the queued payload without the flag, so this is the point that stops the job at its next turn.
+	if p.Kind == auth.KindUser && d.UserMustChangePassword && !p.MustChangePassword {
+		return false
+	}
 	return true
 }
 

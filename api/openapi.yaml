@@ -3308,9 +3308,10 @@ paths:
         quota and the disk for the bytes it brings (owner's decision, 2026-10-29). When the account cannot
         take a drop visitor's bytes, the answer is one generic `quota_exceeded` (507) with the message
         "this link cannot take the file now" and no `details`: no numbers and no scope, whatever the
-        refusal was. A drop link that is paused (its switch off, a members-only space, or a trashed node)
-        answers `not_found`, and keeps the visitor's upload until its normal expiry, so the visitor can
-        resume when the link is back. A link that is deleted, expired or reset ends the upload.
+        refusal was. A drop link that is paused (its switch off, a members-only space, a trashed node, or a
+        creator who must change its password) answers `not_found`, and keeps the visitor's upload until its
+        normal expiry, so the visitor can resume when the link is back. A link that is deleted, expired or
+        reset ends the upload.
 
         Quota: creation reserves the declared length against the account. The account's used
         bytes, its reserved bytes and this length must fit in `quota_bytes`, or the answer is
@@ -3685,6 +3686,10 @@ paths:
         the snapshot that was trashed, deleted or moved fails the job with `source_changed` (in
         `error`), and nothing becomes visible. A rename or new content is copied as it is read. A file
         created after the snapshot is not copied.
+        The job checks its caller again at each batch and at the publish: a caller that may no longer act
+        — revoked, disabled, or a user who must change its password — fails the job with `forbidden` and
+        the text "the caller of this copy no longer has access; nothing was copied". A user who must change
+        its password may not queue a copy at all; once it changes the password, a new copy it queues runs.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -7474,7 +7479,7 @@ components:
           description: The node the link sits on, when that is not the node asked about. Null on the node itself.
         created_by: { type: string, description: "Sharers only: the user or account key that made the link." }
         visitors: { type: integer, description: "Sharers only: members who hold a live visit to the link." }
-        paused: { type: boolean, description: "Sharers only: true while policy pauses the link, so it grants nothing." }
+        paused: { type: boolean, description: "Sharers only: true while policy pauses the link, or its creator must change its password, so it grants nothing." }
         password_set: { type: boolean, description: "Sharers only: an anyone link has a password. The password itself is never shown." }
 
     ShareLinkList:
@@ -7497,7 +7502,7 @@ components:
         upload_only: { type: boolean }
         expires_at: { type: [string, "null"], format: date-time }
         created_at: { type: string, format: date-time }
-        paused: { type: boolean, description: "True while policy pauses the link, or its item or an ancestor is in the trash." }
+        paused: { type: boolean, description: "True while policy pauses the link, its creator must change its password, or its item or an ancestor is in the trash." }
         password_set: { type: boolean }
         created_by: { type: string, description: "The user or account key that made the link." }
         created_by_kind: { type: string, enum: [user, account_key] }

@@ -939,13 +939,18 @@ func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) err
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		now := time.Now()
-		cur, err := tx.ShareLink(ctx, l.AccountID, l.ID)
+		st, err := tx.ShareLinkStateByID(ctx, l.AccountID, l.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return dead
 		}
 		if err != nil {
 			return err
 		}
+		// A link whose creator must change its password is paused, as policy pauses one (decision 171).
+		if st.CreatorPaused {
+			return dead
+		}
+		cur := &st.Link
 		if !bytes.Equal(cur.SecretHash, hash) || cur.Audience != store.AudienceOrganisation {
 			return dead
 		}

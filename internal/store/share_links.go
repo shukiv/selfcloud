@@ -120,15 +120,22 @@ func scanShareLink(row interface{ Scan(...any) error }) (*ShareLink, error) {
 // root only. It reads the link's folder as lf and its node as ln.
 const linkPolicySQL = `(lf.kind = 'personal' OR lf.allow_links = 1) AND (lf.members_only = 0 OR ln.parent_id IS NULL)`
 
+// linkCreatorPausedSQL is the condition under which a link is paused because the user who made it must change
+// its password (decision 171). It reads the link as sl and is self-contained: it looks the creator up in users
+// itself, so every query that reads the live/paused rule can use it without a join of its own. A link made by an
+// account key, or by a user whose flag is clear, is not paused by it; clearing the flag revives the link.
+const linkCreatorPausedSQL = `(sl.created_kind = 'user' AND EXISTS (SELECT 1 FROM users cu
+	WHERE cu.id = sl.created_by AND cu.account_id = sl.account_id AND cu.must_change_password = 1))`
+
 // linkLiveSQL is the condition under which a visit to an organisation link still gives its role. It
 // reads the link as sl, the member's visit as v, the link's node as ln and its folder as lf, and takes
 // the time in Unix milliseconds. It is false once the link is expired, reset after the visit, on a
-// trashed node, or paused by policy. A deleted link has no visit left, since visits go with it. A
-// trashed ancestor of the link's node needs no check here: the access walk refuses every node below
-// it, and a listing reaches only through that walk.
+// trashed node, paused by policy, or made by a user who must change its password. A deleted link has no
+// visit left, since visits go with it. A trashed ancestor of the link's node needs no check here: the
+// access walk refuses every node below it, and a listing reaches only through that walk.
 const linkLiveSQL = `sl.audience = 'organisation' AND sl.role IS NOT NULL
 	AND (sl.expires_at IS NULL OR sl.expires_at > ?) AND v.visited_at > sl.credentials_at
-	AND ln.trashed_at IS NULL AND ` + linkPolicySQL
+	AND ln.trashed_at IS NULL AND ` + linkPolicySQL + ` AND NOT ` + linkCreatorPausedSQL
 
 // InsertShareLink adds l. A second link of the same kind on a node is ErrConflict: a node has one
 // access link and one drop link.
@@ -200,21 +207,22 @@ type ShareLinkState struct {
 	MembersOnly   bool   // the team space admits links on its root only
 	AccountStatus string
 	PublicLinks   bool // the account's switch for links that anyone can open
+	CreatorPaused bool // the user who made the link must change its password (decision 171)
 }
 
 const shareLinkStateSQL = `SELECT ` + shareLinkCols + `,
 	ln.folder_id, ln.trashed_at IS NOT NULL, ln.parent_id IS NULL, lf.kind, lf.allow_links, lf.members_only,
-	ac.status, ac.public_links
+	ac.status, ac.public_links, ` + linkCreatorPausedSQL + `
 	FROM share_links sl JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
 	JOIN accounts ac ON ac.id = sl.account_id`
 
 func scanShareLinkState(row interface{ Scan(...any) error }) (*ShareLinkState, error) {
 	var (
-		st                                         ShareLinkState
-		trashed, root, allow, members, publicLinks int64
+		st                                                        ShareLinkState
+		trashed, root, allow, members, publicLinks, creatorPaused int64
 	)
 	err := scanLinkRow(row, &st.Link, &st.FolderID, &trashed, &root, &st.FolderKind, &allow, &members,
-		&st.AccountStatus, &publicLinks)
+		&st.AccountStatus, &publicLinks, &creatorPaused)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -226,6 +234,7 @@ func scanShareLinkState(row interface{ Scan(...any) error }) (*ShareLinkState, e
 	st.AllowLinks = allow == 1
 	st.MembersOnly = members == 1
 	st.PublicLinks = publicLinks == 1
+	st.CreatorPaused = creatorPaused == 1
 	return &st, nil
 }
 
@@ -254,7 +263,8 @@ func (tx *Tx) DeleteShareLink(ctx context.Context, accountID, id string) error {
 }
 
 // ChainShareLinks lists the links on nodeID and on each of its ancestors, the node's own first, with
-// their visitor counts and whether policy pauses them. Links that have expired at now are left out.
+// their visitor counts and whether policy or a must-change creator pauses them. Links that have expired
+// at now are left out.
 func (s *Store) ChainShareLinks(ctx context.Context, accountID, nodeID string, now time.Time) ([]*ShareLinkView, error) {
 	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE chain(id, parent, depth) AS (
 			SELECT id, parent_id, 0 FROM nodes WHERE account_id = ? AND id = ?
@@ -264,6 +274,7 @@ func (s *Store) ChainShareLinks(ctx context.Context, accountID, nodeID string, n
 		SELECT `+shareLinkCols+`,
 			(SELECT COUNT(*) FROM share_link_visits v WHERE v.link_id = sl.id AND v.visited_at > sl.credentials_at),
 			NOT ((sl.audience = 'organisation' OR ac.public_links = 1) AND `+linkPolicySQL+`)
+				OR `+linkCreatorPausedSQL+`
 		FROM chain c JOIN share_links sl ON sl.node_id = c.id AND sl.account_id = ?
 		JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
 		JOIN accounts ac ON ac.id = sl.account_id
@@ -482,6 +493,7 @@ func (s *Store) AccountShareLinks(ctx context.Context, accountID string, now tim
 			COALESCE(NULLIF(cu.display_name, ''), cu.email, ''),
 			(SELECT COUNT(*) FROM share_link_visits v WHERE v.link_id = sl.id AND v.visited_at > sl.credentials_at),
 			NOT ((sl.audience = 'organisation' OR ac.public_links = 1) AND `+linkPolicySQL+`)
+				OR `+linkCreatorPausedSQL+`
 				OR ln.trashed_at IS NOT NULL
 				OR EXISTS (WITH RECURSIVE up(id, parent) AS (
 					SELECT ln.id, ln.parent_id UNION ALL

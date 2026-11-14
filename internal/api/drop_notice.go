@@ -79,8 +79,8 @@ func (s *Server) notifyDrop(ctx context.Context, l *store.ShareLink, now time.Ti
 	}
 	to, subject, body, ok := s.dropMail(ctx, l, count)
 	if !ok {
-		// The creator may not receive this mail (gone, not active, or no longer a manager). The count is dropped
-		// with nothing mailed, so the files are not reported again.
+		// The creator may not receive this mail (gone, not active, no longer a manager, or must change its
+		// password). The count is dropped with nothing mailed, so the files are not reported again.
 		return
 	}
 	if err := s.chargeAll(charge{"mail.drop.account", l.AccountID}, charge{"mail.drop.target", emailKey(to)}); err != nil {
@@ -93,13 +93,14 @@ func (s *Server) notifyDrop(ctx context.Context, l *store.ShareLink, now time.Ti
 	}
 }
 
-// dropMail renders the mail for a link's creator. ok is false when the creator is not to be mailed.
+// dropMail renders the mail for a link's creator. ok is false when the creator is not to be mailed: gone,
+// not active, no longer a manager, or a user who must change its password (decision 171).
 func (s *Server) dropMail(ctx context.Context, l *store.ShareLink, count int) (to, subject, body string, ok bool) {
 	if l.CreatedKind != store.CreatorUser {
 		return "", "", "", false
 	}
 	u, err := s.store.User(ctx, l.AccountID, l.CreatedBy)
-	if err != nil || u.Status != store.UserActive {
+	if err != nil || u.Status != store.UserActive || u.MustChangePassword {
 		return "", "", "", false
 	}
 	n, err := s.store.Node(ctx, l.AccountID, l.NodeID)
