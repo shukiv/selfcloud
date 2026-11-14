@@ -143,7 +143,7 @@ space ("My files"), and a group can hold users.
 |---|---|
 | Desktop sync app (streaming or mirroring) | Skip as a native app for now. New (t): a WebDAV endpoint, so operating systems and rclone can mount Selfcloud. A dedicated client can follow |
 | Offline access in the browser | New, later: a service worker can cache recent files; not before the interface is stable |
-| Mobile apps | Built (pwa1, pwa2; decisions 65 and 82): an installable web app, part 1 (install, fast start, offline page, update offer) and part 2 (share to Selfcloud on Android and desktop Chrome), files only. Native apps are separate products |
+| Mobile apps | Built (pwa1, pwa2; decisions 65 and 82): an installable web app, part 1 (install, fast start, offline page, update offer) and part 2 (share to Selfcloud on Android and desktop Chrome), files only; the phone's card that offers the install after sign-in is decision 179. Native apps are separate products |
 | Phone photo backup | Skip: needs a native app |
 
 ## 10. Storage
