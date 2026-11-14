@@ -16,6 +16,16 @@ const mailBody = (m) => m.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, 
 
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
 
+// clickRowText is one real click on a visitor's listing row, by its name. The share page's folder view is the node listing
+// (decision 184): the row is a tr[data-id] named by its aria-label, and the click lands on its name cell, not the actions cell.
+async function clickRowText(page, name) {
+  const p = await page.evaluate(`(() => { const row = [...document.querySelectorAll('.public-browse .files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === ${q(name)}); if (!row) return null; row.scrollIntoView({ block: 'center' }); const cell = [...row.querySelectorAll('td')].find((td) => td.textContent.includes(${q(name)})); const r = (cell ?? row).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  if (!p) throw new Error(`no row ${name}`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y });
+  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', buttons: 0, clickCount: 1 });
+}
+
 // outsideOption finds the combobox option that offers a share with an address of another account.
 const outsideOption = (email) =>
   `[...document.querySelectorAll('[role="listbox"] [role="option"]')].find((o) => o.textContent.includes(${q('Share with ' + email)}))`;
@@ -121,13 +131,13 @@ export async function xsChecks(h, ctx) {
   try {
     await page.evaluate(`document.querySelector(${q(rowSel('D'))}).click(), true`);
     await page.waitFor(`location.pathname === '/x/${dID}'`, 15000);
-    await page.waitFor(`[...document.querySelectorAll('.rows button')].some((b) => b.textContent === 'note.txt')`, 15000);
+    await page.waitFor(`[...document.querySelectorAll('.public-browse .files-list tr[data-id]')].some((r) => r.getAttribute('aria-label') === 'note.txt')`, 15000);
     check(true, 'the outside directory opens at /x with its file');
     const xByline = await page.evaluate(`document.body.textContent`);
     check(xByline.includes('Shared by') && xByline.includes(h.OWNER.name) && xByline.includes(accountName), 'the /x page names who shared the item and from which account');
 
     // Opening the file asks for no link yet: the link is deferred to the download click.
-    await page.evaluate(`[...document.querySelectorAll('.rows button')].find((b) => b.textContent === 'note.txt').click(), true`);
+    await clickRowText(page, 'note.txt');
     await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Download')`, 15000);
     check(linkAnswers.length === 0 && thumbs.length === 0, `opening the directory and the file asks for no link and no thumbnail (${linkAnswers.length} links, ${thumbs.length} thumbnails)`);
 
