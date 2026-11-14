@@ -422,9 +422,9 @@ func TestExternalGrantNoReveal(t *testing.T) {
 	}
 }
 
-// TestExternalGrantOpensReadPath: a grant now opens the read path (decision 173, slice xs1b). A proved user
+// TestExternalGrantOpensReadPath: a grant now opens the read path (decision 188, slice xs1b). A proved user
 // of another account, both switches on, stats the granted node at viewer. This guard was
-// TestExternalGrantOpensNoReadPath in xs1a (decision 172), which asserted the node was still not_found while
+// TestExternalGrantOpensNoReadPath in xs1a (decision 187), which asserted the node was still not_found while
 // no read path existed; xs1b lands the read path, so the answer flips to 200.
 func TestExternalGrantOpensReadPath(t *testing.T) {
 	t.Parallel()

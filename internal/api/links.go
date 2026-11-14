@@ -322,7 +322,7 @@ type linkJSON struct {
 }
 
 // externalLinkMaxLife is the longest a signed link an external reader makes may live, whatever the grant has left
-// (decision 173): an hour. A grant that outlives the hour still cannot mint a link that does.
+// (decision 188): an hour. A grant that outlives the hour still cannot mint a link that does.
 const externalLinkMaxLife = time.Hour
 
 // signedLinkLife is the longest a signed link made by this request may live, whatever it asks for: the time its
@@ -351,7 +351,7 @@ func signedLinkLife(r *http.Request) (time.Duration, error) {
 		}
 		life = min(life, left)
 	}
-	// An external reader's signed links live at most an hour, and at most as long as the grant (decision 173). A
+	// An external reader's signed links live at most an hour, and at most as long as the grant (decision 188). A
 	// grant that has already ended is refused here, as a credential that has ended is.
 	if p.Kind == auth.KindExternal && p.Ext != nil {
 		life = min(life, externalLinkMaxLife)
@@ -457,7 +457,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 		details := map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
 			"expires_at": expires.Format(time.RFC3339)}
 		// An external reader's mint names the reader's address and account, so the sharer's audit log says who
-		// outside the account made the link (decision 173). The actor is the reader, in the item's account.
+		// outside the account made the link (decision 188). The actor is the reader, in the item's account.
 		if p.Kind == auth.KindExternal && p.Ext != nil {
 			details["reader_email"] = p.Ext.ReaderEmail
 			details["reader_account"] = p.Ext.ReaderAccountID

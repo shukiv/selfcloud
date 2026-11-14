@@ -299,7 +299,7 @@ func TestMeExternalSharingField(t *testing.T) {
 }
 
 // TestEmailProofLinkVerificationDoesNotProve: a user created with verification "link" and verified
-// with the returned token proved nothing — no mail went through Selfcloud (decision 172).
+// with the returned token proved nothing — no mail went through Selfcloud (decision 187).
 func TestEmailProofLinkVerificationDoesNotProve(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})

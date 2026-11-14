@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Sharing with people in other accounts on the same server (xs, decisions 172-174), end to end. The owner of one
+// Sharing with people in other accounts on the same server (xs, decisions 187-189), end to end. The owner of one
 // account turns on the switch in Manage > Overview and shares a directory with an address of another account through
 // the share dialog. The reader of that address proves it by a mailed link, sees the item under Shared with me with its
 // sharer and account, opens it at /x and downloads a file through one deferred link. Removing the grant, and turning

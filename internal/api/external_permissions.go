@@ -13,7 +13,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// maxExternalGrants is how many external grants one node holds (decision 172).
+// maxExternalGrants is how many external grants one node holds (decision 187).
 const maxExternalGrants = 100
 
 // externalSharedLimit bounds the list of nodes other accounts shared with the caller.
@@ -36,7 +36,7 @@ func toExternalPermissionJSON(p *store.ExternalPermission) externalPermissionJSO
 }
 
 // handleListExternalPermissions lists the grants a node holds. Any role on the node reads them, as
-// the internal permission list is read; a delegated token reads none (decision 172).
+// the internal permission list is read; a delegated token reads none (decision 187).
 func (s *Server) handleListExternalPermissions(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if p != nil && p.Token != nil {
@@ -71,7 +71,7 @@ func (s *Server) handleListExternalPermissions(w http.ResponseWriter, r *http.Re
 // handleSetExternalPermission grants a node to an email address of another account, as viewer only.
 // The role may be left out or empty, which mean viewer. The account's switch must be on. The answer
 // is the same whether or not the address names a user anywhere: a grant names an address, not a user
-// (decision 172).
+// (decision 187).
 func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Email     string     `json:"email"`
@@ -174,7 +174,7 @@ func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Requ
 }
 
 // handleRemoveExternalPermission removes the grant a node holds for an address. It works while the
-// switch is off: turning the switch off keeps the grants, and they are still removed (decision 172).
+// switch is off: turning the switch off keeps the grants, and they are still removed (decision 187).
 func (s *Server) handleRemoveExternalPermission(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if p.Token != nil {
@@ -209,7 +209,7 @@ func (s *Server) handleRemoveExternalPermission(w http.ResponseWriter, r *http.R
 }
 
 // externalSharedItem is a node another account shared with the caller: the fields a link's visitor
-// sees, and the grant's own (decision 172).
+// sees, and the grant's own (decision 187).
 type externalSharedItem struct {
 	nodeJSON
 	AccountName  string     `json:"account_name"`
@@ -225,7 +225,7 @@ type externalSharedList struct {
 
 // handleSharedExternal lists the nodes other accounts shared with the caller's proved address. Both
 // accounts' switches must be on. A delegated token, an impersonation, an unproved address and a
-// switched-off account all get the empty list; an installation admin is refused (decision 172).
+// switched-off account all get the empty list; an installation admin is refused (decision 187).
 func (s *Server) handleSharedExternal(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if err := callerCheck(p); err != nil {

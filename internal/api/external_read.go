@@ -11,7 +11,7 @@ import (
 )
 
 // externalPrincipal builds the external reader's principal for a request, or returns nil to leave the caller as
-// it authenticated (decision 173). It is called only on the routes that carry the ext flag, and only after the
+// it authenticated (decision 188). It is called only on the routes that carry the ext flag, and only after the
 // caller has authenticated. A signed-in user becomes an external reader of the node when every condition holds:
 //
 //   - it is an ordinary user session: not an admin, not a delegated token, not an impersonation, and not a user

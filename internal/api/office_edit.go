@@ -13,7 +13,7 @@ import (
 // of the account's live locks serves every item of a listing.
 func (s *Server) withEditing(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {
 	// An outsider cannot open the editor, and is not told when a member is editing (decision 73 for a link's
-	// visitor, decision 173 for an external reader).
+	// visitor, decision 188 for an external reader).
 	if len(items) == 0 || p.Outsider() {
 		return nil
 	}

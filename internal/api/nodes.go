@@ -175,7 +175,7 @@ type nodeJSON struct {
 }
 
 // nodeJSONFor is toNodeJSON as the caller may see it. An outsider — a visitor of a link that anyone can open, or a
-// reader of another account's grant (decision 173) — sees no user IDs, and the root of its reach has no parent: it
+// reader of another account's grant (decision 188) — sees no user IDs, and the root of its reach has no parent: it
 // is not told where the item sits.
 func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
 	out := toNodeJSON(n)

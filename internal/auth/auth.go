@@ -50,7 +50,7 @@ const (
 	// gives, through the routes that allow it (see server.go).
 	KindShareLink Kind = "share_link"
 	// KindExternal is a signed-in user of one account reading an item another account shared to its proved
-	// email address (decision 173). It is built per request, only on the routes that allow it (see server.go),
+	// email address (decision 188). It is built per request, only on the routes that allow it (see server.go),
 	// and reaches only what the grant gives. It is never a key and never a member of the item's account.
 	KindExternal Kind = "external_user"
 )
@@ -77,7 +77,7 @@ type Principal struct {
 	// the database on every request.
 	Link *LinkScope
 	// Ext is set for KindExternal: the granted root the reader reaches from, the role the grant gives, and
-	// who the reader is. It is read from the grant on every request (decision 173).
+	// who the reader is. It is read from the grant on every request (decision 188).
 	Ext *ExternalScope
 	// Impersonator is set for a session that an installation admin began by signing in as this user
 	// (decision 41). It is the admin's user ID. Such a session is refused every route that is not
@@ -106,7 +106,7 @@ type LinkScope struct {
 	ExpiresAt time.Time
 }
 
-// ExternalScope is what a grant of another account gives its reader (decision 173): the granted root the
+// ExternalScope is what a grant of another account gives its reader (decision 188): the granted root the
 // reader reaches from, with everything below it, and the role the grant gives there. The reader's own account,
 // user and address are kept so the read can be audited in the item's account. ExpiresAt is the grant's end,
 // which bounds any signed link the reader makes; nil when the grant does not expire.
@@ -177,7 +177,7 @@ func (p *Principal) ManagesAccount(accountID string) bool {
 }
 
 // Outsider reports whether p reads from outside the item's own membership: a visitor of a link that anyone
-// can open, or a reader of another account's grant (decision 173). Both see the item as an outsider does — no
+// can open, or a reader of another account's grant (decision 188). Both see the item as an outsider does — no
 // creator, owner or folder, no badges or thumbnails, and no shortcut.
 func (p *Principal) Outsider() bool {
 	return p != nil && (p.Kind == KindShareLink || p.Kind == KindExternal)

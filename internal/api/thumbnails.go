@@ -235,7 +235,7 @@ func validLinkDisposition(d string) bool {
 }
 
 // withThumbnails sets has_thumbnail on the image files among items: true when a thumbnail of the smallest size is ready.
-// An outsider gets none (decision 24 for a link's visitor, decision 173 for an external reader: an outsider sees no more
+// An outsider gets none (decision 24 for a link's visitor, decision 188 for an external reader: an outsider sees no more
 // than the item's own content), and other kinds get none. It is one query per batch of nodes, so a listing page costs one read.
 func (s *Server) withThumbnails(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {
 	if p == nil || p.Outsider() {

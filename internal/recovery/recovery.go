@@ -41,7 +41,7 @@ func DefaultLifetime(users config.UsersConfig, purpose string) (time.Duration, s
 
 // Issue makes a token of purpose for u, inside tx. It voids the user's earlier tokens of that purpose, so only the
 // newest one works. mailedTo is the key of the address the token is mailed to, or "" when it is returned to the
-// caller or made by a command: only a mailed token proves an address when it is used (decision 172).
+// caller or made by a command: only a mailed token proves an address when it is used (decision 187).
 func Issue(ctx context.Context, tx *store.Tx, u *store.User, purpose, mailedTo string, ttl time.Duration, tmpl, publicURL string,
 	now time.Time) (*Token, error) {
 	if err := tx.DeleteVerifications(ctx, u.ID, purpose, ""); err != nil {

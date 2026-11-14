@@ -1,4 +1,4 @@
--- External sharing (design section 8, decision 172): a grant of a node to an email address of another
+-- External sharing (design section 8, decision 187): a grant of a node to an email address of another
 -- account, and the proof that an address belongs to the user who holds it. Nothing here opens a read
 -- path across accounts; the reach is a later slice's. Both switches are off by default.
 --

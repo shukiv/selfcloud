@@ -59,7 +59,7 @@ type User struct {
 	// PendingEmail is the address a change of email is waiting to have confirmed (decision 89). "" when
 	// there is none. The address in Email stays in use until it is confirmed.
 	PendingEmail string
-	// EmailProvedKey is the key of the address whose control was proved by a mailed link (decision 172),
+	// EmailProvedKey is the key of the address whose control was proved by a mailed link (decision 187),
 	// and EmailProvedAt when. The proof follows the address: a change of address leaves the user unproved
 	// until the new one is proved. "" when no address was proved.
 	EmailProvedKey string
@@ -336,7 +336,7 @@ func (tx *Tx) WriteUserEmail(ctx context.Context, u *User) error {
 	return err
 }
 
-// SetEmailProof marks the address keyed emailKey as proved for the user, at at (decision 172). It is
+// SetEmailProof marks the address keyed emailKey as proved for the user, at at (decision 187). It is
 // written in the same transaction as the redemption of the mailed link that proves it. It returns
 // ErrNotFound if there is no such user.
 func (tx *Tx) SetEmailProof(ctx context.Context, userID, emailKey string, at time.Time) error {
@@ -365,7 +365,7 @@ type Verification struct {
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	CreatedAt time.Time
-	// MailedTo is the key of the address the token was mailed to (decision 172). "" when the token was
+	// MailedTo is the key of the address the token was mailed to (decision 187). "" when the token was
 	// returned to the caller or made by a command: using it then proves no address.
 	MailedTo string
 }
@@ -421,7 +421,7 @@ func (tx *Tx) DeleteVerifications(ctx context.Context, userID, purpose, keepID s
 	return err
 }
 
-// EmailProof is a single-use token mailed to a user's address to prove control of it (decision 172).
+// EmailProof is a single-use token mailed to a user's address to prove control of it (decision 187).
 // It names the address it was mailed to, so a later change of address leaves it proving nothing.
 type EmailProof struct {
 	ID        string

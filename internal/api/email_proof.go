@@ -16,7 +16,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// emailProofTTL is how long a proof link works (decision 172).
+// emailProofTTL is how long a proof link works (decision 187).
 const emailProofTTL = 24 * time.Hour
 
 // emailProofJSON is the answer to a request for a proof mail: whether the address is already proved,
@@ -28,7 +28,7 @@ type emailProofJSON struct {
 
 // handleRequestEmailProof mails the signed-in user a link that proves control of the address in use.
 // A proved user is told so at once and gets no mail. The request is a browser's: a key or a token
-// does not reach it, and an impersonation is refused (decision 172).
+// does not reach it, and an impersonation is refused (decision 187).
 func (s *Server) handleRequestEmailProof(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	ctx := r.Context()
@@ -103,7 +103,7 @@ func (s *Server) sendProof(ctx context.Context, u *store.User, link string, expi
 }
 
 // handleRedeemEmailProof uses a proof link. Every failure answers with the one message that covers
-// them all, so a link reveals nothing about its history (decision 172). A proof of an address the
+// them all, so a link reveals nothing about its history (decision 187). A proof of an address the
 // user no longer holds proves nothing.
 func (s *Server) handleRedeemEmailProof(w http.ResponseWriter, r *http.Request) error {
 	if err := s.rateLimit("verify.ip", addressKey(r)); err != nil {

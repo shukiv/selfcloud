@@ -114,7 +114,7 @@ type UsersConfig struct {
 	// VerifyURLTemplate builds the verification link. {public_url} and {token} are replaced;
 	// the token is URL-escaped and sits in the fragment, so it stays out of server logs.
 	VerifyURLTemplate string `yaml:"verify_url_template"`
-	// ProveURLTemplate builds the link that proves control of an address (decision 172), with the same
+	// ProveURLTemplate builds the link that proves control of an address (decision 187), with the same
 	// placeholders. The token sits in the fragment, as the verification link's does.
 	ProveURLTemplate string `yaml:"prove_url_template"`
 	// ResetURLTemplate builds the password-reset link, with the same placeholders.

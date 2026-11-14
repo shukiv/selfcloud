@@ -75,7 +75,7 @@ type sharingPolicyJSON struct {
 	Comments bool `json:"comments"`
 	// WhoViewed is the account's who-viewed switch (decision 51). Off by default; off refuses the viewers route.
 	WhoViewed bool `json:"who_viewed"`
-	// ExternalSharing is the account's switch for sharing with other accounts (decision 172). Off by default; off
+	// ExternalSharing is the account's switch for sharing with other accounts (decision 187). Off by default; off
 	// refuses new external grants and hides the shared-with list, and keeps the grants already made.
 	ExternalSharing bool `json:"external_sharing"`
 }
@@ -1045,7 +1045,7 @@ func (s *Server) handleGetSharingPolicy(w http.ResponseWriter, r *http.Request) 
 // handleUpdateSharingPolicy sets the account's switches: the one for links that anyone can open, and the one for
 // comments (decision 39). Either may be given alone. Turning the links switch off pauses those links at once; turning it
 // back on revives them. Turning comments off keeps every comment. The who-viewed switch (decision 51) is audited as
-// account.sharing_policy with the detail who_viewed. The external-sharing switch (decision 172) is audited the same way
+// account.sharing_policy with the detail who_viewed. The external-sharing switch (decision 187) is audited the same way
 // with the detail external_sharing; turning it off keeps the grants already made. Only the account's owner or key may
 // change them, as for any account setting.
 func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Request) error {

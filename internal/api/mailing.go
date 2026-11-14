@@ -114,7 +114,7 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 
 // mailedToKey is the address key a token of the method proves when it is used: the address the mail
 // goes to for "email", and none for a link returned to the caller or a user verified without one
-// (decision 172).
+// (decision 187).
 func mailedToKey(method, email string) string {
 	if method == methodEmail {
 		return emailKey(email)

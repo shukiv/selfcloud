@@ -1276,7 +1276,7 @@ async function main() {
     // Slice pb1 (decision 184): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
     // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
     if (only && onlySet.has('pb1')) await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
-    // Slice xs (decisions 172-174): sharing with people in other accounts, on its own (SELFCLOUD_E2E_ONLY=xs). It signs in
+    // Slice xs (decisions 187-189): sharing with people in other accounts, on its own (SELFCLOUD_E2E_ONLY=xs). It signs in
     // itself and leaves the shared page as the member. The full run reaches the same checks last, below.
     if (only && onlySet.has('xs')) await section('xs', () => xsChecks(h, { page, base, accountID, accountKey, adminKey, sink, waitForMail, dir }), { as: 'member' });
     if (only) {
@@ -1319,7 +1319,7 @@ async function main() {
     await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
     // Last, through the API: a restricted label and a move between team spaces. No page sees the moved file.
     await section('p5', () => p5.p5Checks(h, { base, accountKey, memberID, accountID, teamA, teamB }), { as: 'member' });
-    // Slice xs (decisions 172-174): sharing with people in other accounts. Last, so its second account and its removed
+    // Slice xs (decisions 187-189): sharing with people in other accounts. Last, so its second account and its removed
     // grants cannot meet the tenant, admin or member lists above; it leaves the shared page as the member.
     await section('xs', () => xsChecks(h, { page, base, accountID, accountKey, adminKey, sink, waitForMail, dir }), { as: 'member' });
 

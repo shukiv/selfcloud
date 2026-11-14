@@ -43,7 +43,7 @@ const (
 	// one once the change applies, which carries no link (decision 89).
 	PurposeEmailChange  = "email_change"
 	PurposeEmailChanged = "email_changed"
-	// PurposeEmailProof is the link that proves control of the address in use (decision 172).
+	// PurposeEmailProof is the link that proves control of the address in use (decision 187).
 	PurposeEmailProof = "email_proof"
 )
 

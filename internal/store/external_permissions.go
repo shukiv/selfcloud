@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// ExternalPermission is a grant of a node to an email address of another account (decision 172). It
+// ExternalPermission is a grant of a node to an email address of another account (decision 187). It
 // names an address, not a user: the address may hold no user anywhere, and the grant is the same
 // either way. The role is viewer only. AccountID is the sharer's account, the node's own.
 type ExternalPermission struct {
@@ -117,7 +117,7 @@ func (s *Store) NodeAccountID(ctx context.Context, nodeID string) (string, error
 }
 
 // ExternalGrantRoot returns the topmost live grant of emailKey at or above nodeID in accountID: the
-// grant the address's reach starts from (decision 172). An expired grant reaches nothing. The walk
+// grant the address's reach starts from (decision 187). An expired grant reaches nothing. The walk
 // stays inside the account and stops at 1000 levels. It returns ErrNotFound when no live grant of
 // the address reaches the node.
 func (s *Store) ExternalGrantRoot(ctx context.Context, accountID, nodeID, emailKey string, now time.Time) (*ExternalPermission, error) {
@@ -132,7 +132,7 @@ func (s *Store) ExternalGrantRoot(ctx context.Context, accountID, nodeID, emailK
 		ORDER BY chain.depth DESC LIMIT 1`, accountID, nodeID, accountID, emailKey, millis(now)))
 }
 
-// ExternalSharing returns the account's switch for sharing with other accounts (decision 172).
+// ExternalSharing returns the account's switch for sharing with other accounts (decision 187).
 func (s *Store) ExternalSharing(ctx context.Context, accountID string) (bool, error) {
 	return externalSharing(ctx, s.r, accountID)
 }

@@ -102,7 +102,7 @@ func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeI
 		return nil, "", nodeNotFound()
 	}
 	// An outsider learns nothing of a shortcut, not even that it exists: every route answers as for an item outside
-	// its reach (decision 24 for a link's visitor, decision 173 for an external reader). Checked here, so no route can
+	// its reach (decision 24 for a link's visitor, decision 188 for an external reader). Checked here, so no route can
 	// answer with a kind-based refusal instead.
 	if p.Outsider() && n.Kind == store.KindShortcut {
 		return nil, "", nodeNotFound()
@@ -182,7 +182,7 @@ func nodeRoleIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID 
 	if p.Kind == auth.KindExternal {
 		// A reader of another account's grant reaches the granted root and everything below it, at the grant's
 		// role, and nothing else: no permission, group or implicit rule of the item's account applies to it
-		// (decision 173). The node, trash and folder checks above already ran against the item's account.
+		// (decision 188). The node, trash and folder checks above already ran against the item's account.
 		if p.Ext == nil {
 			return nil, "", apierr.New(apierr.Unauthenticated, "the credential is not valid")
 		}

@@ -19,7 +19,7 @@ import (
 // extReadFix is two accounts: a sharer A with a team space F holding /D/f.txt, a no-download /D/nd.txt, a
 // shortcut /D/sc and /h.txt outside D; and a recipient B with a proved reader (b1) and a verified-but-unproved
 // user (b2). Both switches are on and D is granted to b1's address, so b1 reaches D and everything below it
-// and nothing else (decision 173, slice xs1b).
+// and nothing else (decision 188, slice xs1b).
 type extReadFix struct {
 	s          *Server
 	rec        *mail.Recorder

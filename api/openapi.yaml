@@ -2661,7 +2661,7 @@ paths:
       operationId: redeemEmailProof
       summary: Complete an email-proof link
       description: |
-        Proves that the user controls the address in use (decision 172). The link works once and
+        Proves that the user controls the address in use (decision 187). The link works once and
         lasts 24 hours. An unknown, used or expired link, or one whose address the user no longer
         holds, gets `invalid_request`, whatever its history; a disabled user gets `user_disabled`.
         Rate-limited per client address.
@@ -3183,7 +3183,7 @@ paths:
       operationId: requestEmailProof
       summary: Mail a link that proves your email address
       description: |
-        Mails the signed-in user a link that proves control of the address in use (decision 172).
+        Mails the signed-in user a link that proves control of the address in use (decision 187).
         Session only, and refused while impersonating. A proved user gets `200` with `proved` true
         and no mail. Otherwise the answer is `202`: `sent` says whether the mail went out. With no
         mailer configured nothing is sent and no link is made. A new request voids the user's older
@@ -4798,7 +4798,7 @@ paths:
         `account.sharing_policy` (the who-viewed switch is in its detail, `who_viewed`, and the external-sharing
         switch in `external_sharing`) and `account.comments_policy`.
         The who-viewed switch is off by default; it changes nothing that is recorded, only whether the viewers route answers.
-        The external-sharing switch (decision 172) is off by default; turning it off refuses new external grants and
+        The external-sharing switch (decision 187) is off by default; turning it off refuses new external grants and
         hides the shared-with list, and keeps the grants already made.
       security: [{ bearer: [] }]
       requestBody:
@@ -4930,7 +4930,7 @@ paths:
       operationId: listExternalPermissions
       summary: List the external grants a node holds
       description: |
-        The grants of the node to email addresses of other accounts (decision 172). Any role on the
+        The grants of the node to email addresses of other accounts (decision 187). Any role on the
         node reads them, as the internal permission list is read; a delegated token gets `forbidden`.
         The list is shown while the account's external-sharing switch is off: the switch keeps the
         grants already made.
@@ -5029,7 +5029,7 @@ paths:
       operationId: listSharedExternal
       summary: List what other accounts shared with your address
       description: |
-        The live grants other accounts made to the caller's proved email address (decision 172),
+        The live grants other accounts made to the caller's proved email address (decision 187),
         newest first, up to 500. Both accounts' `external_sharing` switches must be on. Each item
         carries the fields a link's visitor sees — `created_by`, `owner_id` and `folder_id` are
         empty — with the grant's role, the sharer account's name, the display name of the user that
@@ -7931,7 +7931,7 @@ components:
           description: How many of the account's links that anyone can open have not ended, live or paused by public_links.
         comments: { type: boolean, description: "Comments are on in the account. Off refuses every comment route and keeps the comments (decision 39). Default on." }
         who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
-        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 172). Off refuses new external grants and hides the shared-with list, and keeps the grants already made. Default off." }
+        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 187). Off refuses new external grants and hides the shared-with list, and keeps the grants already made. Default off." }
 
     SharingPolicyUpdate:
       type: object
@@ -7941,7 +7941,7 @@ components:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
         comments: { type: boolean, description: Comments are on in the account. }
         who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
-        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 172). Default off." }
+        external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 187). Default off." }
 
     ViewerList:
       type: object
@@ -8022,7 +8022,7 @@ components:
       additionalProperties: false
       properties:
         email: { type: string, description: The granted address, as it was given. }
-        role: { type: string, enum: [viewer], description: External grants are viewer only (decision 172). }
+        role: { type: string, enum: [viewer], description: External grants are viewer only (decision 187). }
         expires_at:
           type: [string, "null"]
           format: date-time
@@ -8075,7 +8075,7 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/ExternalSharedItem" }
-        email_proved: { type: boolean, description: Whether the caller's address in use is proved (decision 172). }
+        email_proved: { type: boolean, description: Whether the caller's address in use is proved (decision 187). }
 
     Grant:
       type: object
@@ -9284,10 +9284,10 @@ components:
           description: The account's switch for links that anyone can open. False for an installation admin.
         email_proved:
           type: boolean
-          description: The user proved control of the address in use (decision 172). False for an installation admin.
+          description: The user proved control of the address in use (decision 187). False for an installation admin.
         account_external_sharing:
           type: boolean
-          description: The account's switch for sharing with other accounts (decision 172). False for an installation admin.
+          description: The account's switch for sharing with other accounts (decision 187). False for an installation admin.
         must_change_password:
           type: boolean
           description: Set when an installation admin typed this user's password. Until the user changes it, only the change-password route, GET /me and sign-out are open (decision 41).

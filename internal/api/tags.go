@@ -220,7 +220,7 @@ func parseTagIDs(raw string) ([]string, error) {
 }
 
 // withTags sets the tags of the audio files among items that have been read. It is one query for each batch of nodes, as
-// withThumbnails is. An outsider gets none (decision 24 for a link's visitor, decision 173 for an external reader).
+// withThumbnails is. An outsider gets none (decision 24 for a link's visitor, decision 188 for an external reader).
 func (s *Server) withTags(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {
 	if p == nil || p.Outsider() {
 		return nil

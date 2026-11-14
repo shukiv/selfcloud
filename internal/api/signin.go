@@ -39,7 +39,7 @@ func loginScope(account string) string {
 var errBadLink = apierr.New(apierr.InvalidRequest, "the link is not valid or has expired")
 
 // proveMailedAddress marks the user's address proved when the verification was mailed to it and the
-// address is still the one in use (decision 172). A token returned to the caller or made by a command
+// address is still the one in use (decision 187). A token returned to the caller or made by a command
 // was mailed to no address and proves nothing. It runs inside the redemption's own transaction.
 func proveMailedAddress(ctx context.Context, tx *store.Tx, v *store.Verification, u *store.User, at time.Time) error {
 	if v.MailedTo == "" || v.MailedTo != u.EmailKey {
@@ -768,9 +768,9 @@ type meResponse struct {
 	PersonalFolderID *string `json:"personal_folder_id"`
 	// PublicLinks is the account's switch for links that anyone can open. False for an installation admin.
 	PublicLinks bool `json:"public_links"`
-	// EmailProved says the user proved control of the address in use (decision 172). False for an installation admin.
+	// EmailProved says the user proved control of the address in use (decision 187). False for an installation admin.
 	EmailProved bool `json:"email_proved"`
-	// AccountExternalSharing is the account's switch for sharing with other accounts (decision 172). False for an
+	// AccountExternalSharing is the account's switch for sharing with other accounts (decision 187). False for an
 	// installation admin.
 	AccountExternalSharing bool `json:"account_external_sharing"`
 	// MustChangePassword is set when an admin typed this user's password. Until the user changes it, only the

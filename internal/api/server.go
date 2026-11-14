@@ -240,7 +240,7 @@ type route struct {
 	// it, so a route added later fails closed. Each kind reaches only its own routes.
 	link bool
 	drop bool
-	// ext admits the read path of another account's grant (decision 173): a signed-in user whose proved address
+	// ext admits the read path of another account's grant (decision 188): a signed-in user whose proved address
 	// holds a live grant on the node may read it through this route as an external reader. A route without the
 	// flag never builds that principal, so a route added later fails closed to the reader's own account.
 	ext bool
@@ -467,9 +467,9 @@ func New(opts Options) (*Server, error) {
 			// Each address gets one reset an hour that the account cap does not count, so one
 			// caller who uses up an account's cap on repeats cannot stop its users' first resets.
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
-			// Email proofs (decision 172): a user asks for at most three proof mails an hour.
+			// Email proofs (decision 187): a user asks for at most three proof mails an hour.
 			"email.proof": newLimiterRate(3, time.Hour),
-			// External grants (decision 172): a caller makes at most twenty a minute.
+			// External grants (decision 187): a caller makes at most twenty a minute.
 			"external.share": newLimiter(20),
 			// Asking for access, per user: each request mails the managers of the item, so a flood of them
 			// is refused.
@@ -974,7 +974,7 @@ func (s *Server) wrap(rt route) http.Handler {
 				info.session = sess
 			}
 			// On the routes that admit it, a signed-in user reading another account's granted item becomes an
-			// external reader for this request (decision 173). Any other caller, and any node the reader's own
+			// external reader for this request (decision 188). Any other caller, and any node the reader's own
 			// account holds, keeps the principal it authenticated with.
 			if rt.ext {
 				q, err := s.externalPrincipal(r, p)
