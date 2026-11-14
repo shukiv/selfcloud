@@ -1198,7 +1198,7 @@ async function main() {
       await signIn(page, OWNER);
       await tl5Checks(h, { page });
     }
-    // Slice pb1 (decision 172): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
+    // Slice pb1 (decision 184): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
     // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
     if (only && onlySet.has('pb1')) await linkChecks(page, { base, accountID, accountKey }, h);
     if (only) {
