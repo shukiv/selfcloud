@@ -40,11 +40,11 @@ const (
 	// brandPlaceholder is the text the offline page carries where the installation's name goes; the server replaces it
 	// when it serves the page, so the page the worker caches shows the name.
 	brandPlaceholder = "__SELFCLOUD_BRAND__"
-	// ogImagePath is the link-preview picture chat apps fetch when a link to the app is shared (decision 172).
+	// ogImagePath is the link-preview picture chat apps fetch when a link to the app is shared (decision 180).
 	ogImagePath = "/brand/og-image.png"
 )
 
-// The preview picture's size: the large card chat apps show is 1200 by 630 pixels (decision 172).
+// The preview picture's size: the large card chat apps show is 1200 by 630 pixels (decision 180).
 const (
 	ogWidth  = 1200
 	ogHeight = 630
@@ -76,7 +76,7 @@ type icon struct {
 	etag string
 }
 
-// ogImage is the link-preview picture (decision 172): its bytes, the validator that answers a repeat request with 304, and
+// ogImage is the link-preview picture (decision 180): its bytes, the validator that answers a repeat request with 304, and
 // the first 12 hex digits of the bytes' SHA-256. The og:image address carries that hash, so a changed brand gives a new
 // address: chat apps cache previews by address.
 type ogImage struct {
@@ -174,7 +174,7 @@ func blend(c uint8, a float64) uint8 {
 	return uint8(float64(c)*(1-a) + 255*a + 0.5)
 }
 
-// drawOGImage draws the link-preview picture (decision 172): the accent as the background with the brand's 512 pixel icon
+// drawOGImage draws the link-preview picture (decision 180): the accent as the background with the brand's 512 pixel icon
 // art centred on it, the same art and accent the icons are drawn with, and nothing else. The name is in og:title; the
 // server has no font to draw it with.
 func drawOGImage(b brandInfo, art iconArt) *image.RGBA {
@@ -187,7 +187,7 @@ func drawOGImage(b brandInfo, art iconArt) *image.RGBA {
 }
 
 // buildOGImage draws the preview picture and encodes it as a PNG. Its validator is built as the icons' are, and its hash is
-// the first 12 hex digits of the bytes' SHA-256, which the og:image address carries (decision 172).
+// the first 12 hex digits of the bytes' SHA-256, which the og:image address carries (decision 180).
 func buildOGImage(b brandInfo, art iconArt) (ogImage, error) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, drawOGImage(b, art)); err != nil {
@@ -337,7 +337,7 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) boo
 		return true
 	}
 	if p == ogImagePath {
-		// The preview picture is public as the icons are: a chat app's server fetches it with no sign-in (decision 172).
+		// The preview picture is public as the icons are: a chat app's server fetches it with no sign-in (decision 180).
 		hd := w.Header()
 		hd.Set("Content-Type", "image/png")
 		hd.Set("Cache-Control", "no-cache")

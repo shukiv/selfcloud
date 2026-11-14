@@ -48,7 +48,7 @@ var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/rea
 const cspNoncePlaceholder = "__SELFCLOUD_CSP_NONCE__"
 
 // ogPlaceholder is the comment the build writes where the link-preview tags go, right after the title. The server replaces
-// the whole comment with the tags (decision 172); a comment keeps the page valid HTML for the build and for a page with no
+// the whole comment with the tags (decision 180); a comment keeps the page valid HTML for the build and for a page with no
 // server.
 const ogPlaceholder = "<!--__SELFCLOUD_OG__-->"
 
@@ -61,7 +61,7 @@ type Options struct {
 	// frame, and as the target of the editor's form post (form-action), because the editor is Collabora's page.
 	OfficeURL string
 	// PublicURL is public_url, already trimmed of its trailing slash, or empty. The link-preview tags name it as the
-	// installation's address; without it they carry no address and no picture (decision 172).
+	// installation's address; without it they carry no address and no picture (decision 180).
 	PublicURL string
 	// BrandName and BrandAccent are ui.brand.name and ui.brand.accent. They name the installed app and colour its icons
 	// and manifest (decision 65).
@@ -82,7 +82,7 @@ type Handler struct {
 	origins string
 	// officeOrigin is the origin of the office editor, with a leading space, or empty when office editing is off.
 	officeOrigin string
-	// publicURL is the installation's address for the link-preview tags, or empty (decision 172). It comes only from the
+	// publicURL is the installation's address for the link-preview tags, or empty (decision 180). It comes only from the
 	// config, never from a request's Host header, which the client controls.
 	publicURL string
 	// page is index.html split at the nonce placeholder, with the name's placeholder still in it, or nil when the build has
@@ -101,7 +101,7 @@ type Brand struct {
 	icons map[string]icon
 	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decisions 109 and 119).
 	svgs map[string]brandSVG
-	// og is the link-preview picture at /brand/og-image.png, rebuilt with the icons (decision 172).
+	// og is the link-preview picture at /brand/og-image.png, rebuilt with the icons (decision 180).
 	og ogImage
 	// index is the handler's page with the name in it, or nil when the build has none. Joining the parts with a nonce gives
 	// the page for that response.
@@ -139,7 +139,7 @@ func (h *Handler) BuildBrand(o BrandOptions) (*Brand, error) {
 	b := &Brand{info: info, icons: icons, svgs: brandSVGs(info, pick.favicon), og: og, notes: pick.notes}
 	if h.page != nil {
 		// The title and the noscript text carry the installation's name before any script runs (decision 109), and the
-		// link-preview tags name it for the chat apps a link is shared in (decision 172).
+		// link-preview tags name it for the chat apps a link is shared in (decision 180).
 		tags := ogTags(info.name, h.publicURL, og.hash)
 		b.index = make([]string, len(h.page))
 		for i, part := range h.page {
@@ -150,7 +150,7 @@ func (h *Handler) BuildBrand(o BrandOptions) (*Brand, error) {
 	return b, nil
 }
 
-// ogTags builds the link-preview tags every page carries (decision 172): the installation's name, a short description, and
+// ogTags builds the link-preview tags every page carries (decision 180): the installation's name, a short description, and
 // with a public address the page's address and the preview picture. Every page gets the same tags: a preview is fetched by a
 // third-party server, so no file name, folder name or share token goes in them. The address comes only from the config's
 // public_url; without it the tags carry no address and no picture, and the card is the small one.
