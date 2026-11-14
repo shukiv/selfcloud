@@ -5,7 +5,7 @@ package api
 // Breaking a lock (decision 32). A manager of a file, an owner of the account and the account key may end the office
 // editor's lock on it. The lock ends at once, and the holder's next refresh or save then answers with no lock on the
 // file, so the holder never overwrites what came after the break. The break is audited as node.unlock with reason
-// "broken" and the caller. No delegated token and no share link breaks a lock: their kinds are refused before the role
+// "broken" and the caller. No delegated token and no outsider breaks a lock: their kinds are refused before the role
 // is read. The WOPI routes do not take this route, so an editor's own token cannot break its lock.
 
 import (
@@ -13,7 +13,6 @@ import (
 	"net/http"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
-	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -23,7 +22,7 @@ func (s *Server) handleBreakNodeLock(w http.ResponseWriter, r *http.Request) err
 	if err := callerCheck(p); err != nil {
 		return err
 	}
-	if p.Token != nil || p.Kind == auth.KindShareLink {
+	if p.Token != nil || p.Outsider() {
 		return apierr.New(apierr.Forbidden, "only a user or the account key may break a lock")
 	}
 	nodeID := r.PathValue("nod")

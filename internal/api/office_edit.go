@@ -12,8 +12,9 @@ import (
 // display name when the caller may see people's names (peopleNamesSeen) and the holder has one in the account. One read
 // of the account's live locks serves every item of a listing.
 func (s *Server) withEditing(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {
-	// A share link's visitor cannot open the editor, and is not told when a member is editing (decision 73).
-	if len(items) == 0 || (p != nil && p.Kind == auth.KindShareLink) {
+	// An outsider cannot open the editor, and is not told when a member is editing (decision 73 for a link's
+	// visitor, decision 173 for an external reader).
+	if len(items) == 0 || p.Outsider() {
 		return nil
 	}
 	locks, err := s.store.LiveLocksOf(ctx, accountID)

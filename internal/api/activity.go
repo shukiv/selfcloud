@@ -503,6 +503,8 @@ func activityActorOf(p *auth.Principal, r *store.ActivityRow, people *activityPe
 		return activityActor{Kind: "system"}
 	case string(auth.KindShareLink):
 		return activityActor{Kind: "visitor"}
+	case string(auth.KindExternal):
+		return activityActor{Kind: "external"}
 	}
 	return activityActor{Kind: "other"}
 }

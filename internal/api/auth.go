@@ -303,8 +303,8 @@ func auditSourceOf(r *http.Request) auditSource {
 }
 
 // clonePrincipal returns a deep value copy of p that shares nothing with it: the principal, its token scope (including
-// the folder list) and its link scope are each copied by value. A later change to the request's principal does not reach
-// the copy.
+// the folder list), its link scope and its external scope (including the grant's expiry) are each copied by value. A
+// later change to the request's principal does not reach the copy.
 func clonePrincipal(p *auth.Principal) *auth.Principal {
 	if p == nil {
 		return nil
@@ -318,6 +318,14 @@ func clonePrincipal(p *auth.Principal) *auth.Principal {
 	if p.Link != nil {
 		l := *p.Link
 		cp.Link = &l
+	}
+	if p.Ext != nil {
+		e := *p.Ext
+		if p.Ext.ExpiresAt != nil {
+			t := *p.Ext.ExpiresAt
+			e.ExpiresAt = &t
+		}
+		cp.Ext = &e
 	}
 	return &cp
 }

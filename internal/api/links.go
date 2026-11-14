@@ -321,6 +321,10 @@ type linkJSON struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
+// externalLinkMaxLife is the longest a signed link an external reader makes may live, whatever the grant has left
+// (decision 173): an hour. A grant that outlives the hour still cannot mint a link that does.
+const externalLinkMaxLife = time.Hour
+
 // signedLinkLife is the longest a signed link made by this request may live, whatever it asks for: the time its
 // delegated token has left, its visitor's credential has left, and the impersonation has left. Each applies only to a
 // caller that holds it. Every signed link (the API's, the thumbnail's and the preview's on the content origin) takes
@@ -346,6 +350,18 @@ func signedLinkLife(r *http.Request) (time.Duration, error) {
 			return 0, apierr.New(apierr.Unauthenticated, "the credential has expired; open the link again")
 		}
 		life = min(life, left)
+	}
+	// An external reader's signed links live at most an hour, and at most as long as the grant (decision 173). A
+	// grant that has already ended is refused here, as a credential that has ended is.
+	if p.Kind == auth.KindExternal && p.Ext != nil {
+		life = min(life, externalLinkMaxLife)
+		if p.Ext.ExpiresAt != nil {
+			left := time.Until(*p.Ext.ExpiresAt).Truncate(time.Second)
+			if left < time.Second {
+				return 0, apierr.New(apierr.Unauthenticated, "the grant has expired")
+			}
+			life = min(life, left)
+		}
 	}
 	// A signed link made while an installation admin is signed in as the user lives no longer than that sign-in-as
 	// (decision 41), so the viewer's preview link works and the link does not outlive the admin's hour.
@@ -438,12 +454,18 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	}
 	// A visitor's signed links are not logged one by one, so a busy link cannot flood the audit log.
 	if p.Kind != auth.KindShareLink {
+		details := map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
+			"expires_at": expires.Format(time.RFC3339)}
+		// An external reader's mint names the reader's address and account, so the sharer's audit log says who
+		// outside the account made the link (decision 173). The actor is the reader, in the item's account.
+		if p.Kind == auth.KindExternal && p.Ext != nil {
+			details["reader_email"] = p.Ext.ReaderEmail
+			details["reader_account"] = p.Ext.ReaderAccountID
+		}
 		ctx := r.Context()
 		s.atWrite()
 		err = s.store.Write(ctx, func(tx *store.Tx) error {
-			return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.link", n.ID,
-				map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
-					"expires_at": expires.Format(time.RFC3339)}, n.FolderID))
+			return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.link", n.ID, details, n.FolderID))
 		})
 		if err != nil {
 			return err

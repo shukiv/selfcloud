@@ -174,20 +174,24 @@ type nodeJSON struct {
 	targetID string
 }
 
-// nodeJSONFor is toNodeJSON as the caller may see it. A visitor of a link that anyone can open sees no user IDs,
-// and the link's own node has no parent: the visitor is not told where the link sits.
+// nodeJSONFor is toNodeJSON as the caller may see it. An outsider — a visitor of a link that anyone can open, or a
+// reader of another account's grant (decision 173) — sees no user IDs, and the root of its reach has no parent: it
+// is not told where the item sits.
 func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
 	out := toNodeJSON(n)
-	if p != nil && p.Kind == auth.KindShareLink {
+	if p.Outsider() {
 		out.CreatedBy, out.OwnerID = "", ""
 		out.FolderID, out.EditorsCanShare = "", false
 		out.Starred = nil
-		// A visitor learns nothing about a shortcut's target: no target, and no unavailable mark either.
+		// An outsider learns nothing about a shortcut's target: no target, and no unavailable mark either.
 		out.Target, out.Unavailable, out.targetID = nil, false, ""
-		// The owner's colour and description are not for a link visitor: a description may hold notes the
-		// sharer did not mean to publish. Decision 6 means the signed-in readers of the item, not visitors.
+		// The owner's colour and description are not for an outsider: a description may hold notes the
+		// sharer did not mean to publish. Decision 6 means the signed-in readers of the item, not outsiders.
 		out.Color, out.Description = "", ""
-		if p.Link != nil && n.ID == p.Link.Node {
+		switch {
+		case p.Link != nil && n.ID == p.Link.Node:
+			out.ParentID = nil
+		case p.Ext != nil && n.ID == p.Ext.Node:
 			out.ParentID = nil
 		}
 	}
@@ -591,10 +595,10 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	if err != nil {
 		return err
 	}
-	// A link visitor sees no shortcut in a listing. A filter for shortcuts therefore answers an empty page with no cursor,
-	// before any SQL runs: a cursor after a page the visitor cannot see in full would show that hidden rows exist
+	// An outsider sees no shortcut in a listing. A filter for shortcuts therefore answers an empty page with no cursor,
+	// before any SQL runs: a cursor after a page the outsider cannot see in full would show that hidden rows exist
 	// (decision 110).
-	if p.Kind == auth.KindShareLink && filter.Kind == store.KindShortcut {
+	if p.Outsider() && filter.Kind == store.KindShortcut {
 		writeJSON(w, http.StatusOK, listResponse[nodeJSON]{Items: []nodeJSON{}})
 		return nil
 	}
@@ -630,8 +634,8 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	}
 	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
 	for _, k := range kids {
-		// A link visitor sees no shortcut in a listing: a shortcut's name is the only thing it could show.
-		if p.Kind == auth.KindShareLink && k.Kind == store.KindShortcut {
+		// An outsider sees no shortcut in a listing: a shortcut's name is the only thing it could show.
+		if p.Outsider() && k.Kind == store.KindShortcut {
 			continue
 		}
 		j := nodeJSONFor(p, k)
@@ -666,14 +670,14 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	return nil
 }
 
-// childLinkBadges says which children of dir show a link badge to the caller. A visitor of a link sees none. A sharer
+// childLinkBadges says which children of dir show a link badge to the caller. An outsider sees none. A sharer
 // (a manager, or the account key) sees a badge for every live link, drop links included, as its link list does. Anyone
 // else sees a badge only for the links its listing would show: access links that the team space's policy lets through,
 // and anyone links while the account's switch is on. Children are never a folder's root, so members_only admits none.
 // One query reads the links of the listing and one reads the folder's policy.
 func (s *Server) childLinkBadges(ctx context.Context, dir *store.Node, p *auth.Principal, role string) (map[string]bool, error) {
 	out := map[string]bool{}
-	if p.Kind == auth.KindShareLink {
+	if p.Outsider() {
 		return out, nil
 	}
 	kinds, err := s.store.ChildLinkKinds(ctx, dir.AccountID, dir.ID, time.Now())

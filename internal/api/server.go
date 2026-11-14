@@ -240,6 +240,10 @@ type route struct {
 	// it, so a route added later fails closed. Each kind reaches only its own routes.
 	link bool
 	drop bool
+	// ext admits the read path of another account's grant (decision 173): a signed-in user whose proved address
+	// holds a live grant on the node may read it through this route as an external reader. A route without the
+	// flag never builds that principal, so a route added later fails closed to the reader's own account.
+	ext bool
 	// imp says whether the route may be called while the browser is signed in as a tenant user by an
 	// installation admin (decision 41). The zero value is unclassified and is refused, so a route added
 	// without it fails closed; TestEveryRouteIsClassified makes that a test failure too.
@@ -758,16 +762,16 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true, imp: impAllow},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true, imp: impAllow},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/ancestors", handle: s.handleListAncestors, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true, ext: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/ancestors", handle: s.handleListAncestors, auth: true, link: true, ext: true, imp: impAllow},
 		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true, imp: impAllow},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true, ext: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/shortcuts", handle: s.handleCreateShortcut, auth: true, imp: impAllow},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, imp: impAllow},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, ext: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, ext: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true, imp: impAllow},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true, imp: impAllow},
@@ -781,7 +785,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/media/tags", handle: s.handleTagsBatch, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true, imp: impAllow},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, imp: impAllow, noDevice: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, ext: true, imp: impAllow, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true, imp: impRefuse},
@@ -968,6 +972,22 @@ func (s *Server) wrap(rt route) http.Handler {
 			if info != nil {
 				info.principal = p
 				info.session = sess
+			}
+			// On the routes that admit it, a signed-in user reading another account's granted item becomes an
+			// external reader for this request (decision 173). Any other caller, and any node the reader's own
+			// account holds, keeps the principal it authenticated with.
+			if rt.ext {
+				q, err := s.externalPrincipal(r, p)
+				if err != nil {
+					s.writeError(w, r, err)
+					return
+				}
+				if q != nil {
+					p = q
+					if info != nil {
+						info.principal = q
+					}
+				}
 			}
 			if err := s.checkImpersonation(rt, p); err != nil {
 				s.writeError(w, r, err)

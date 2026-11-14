@@ -49,6 +49,10 @@ const (
 	// KindShareLink is a visitor who opened a link that anyone can open. It reaches only what the link
 	// gives, through the routes that allow it (see server.go).
 	KindShareLink Kind = "share_link"
+	// KindExternal is a signed-in user of one account reading an item another account shared to its proved
+	// email address (decision 173). It is built per request, only on the routes that allow it (see server.go),
+	// and reaches only what the grant gives. It is never a key and never a member of the item's account.
+	KindExternal Kind = "external_user"
 )
 
 // Roles of a signed-in user. The names match the users.role column. An admin has no account;
@@ -72,6 +76,9 @@ type Principal struct {
 	// Link is set for KindShareLink: the node the link sits on and the role it gives there, read from
 	// the database on every request.
 	Link *LinkScope
+	// Ext is set for KindExternal: the granted root the reader reaches from, the role the grant gives, and
+	// who the reader is. It is read from the grant on every request (decision 173).
+	Ext *ExternalScope
 	// Impersonator is set for a session that an installation admin began by signing in as this user
 	// (decision 41). It is the admin's user ID. Such a session is refused every route that is not
 	// classified as allowed while impersonating.
@@ -97,6 +104,19 @@ type LinkScope struct {
 	// current credentials_at, read again in the renewal's own write.
 	IssuedAt  time.Time
 	ExpiresAt time.Time
+}
+
+// ExternalScope is what a grant of another account gives its reader (decision 173): the granted root the
+// reader reaches from, with everything below it, and the role the grant gives there. The reader's own account,
+// user and address are kept so the read can be audited in the item's account. ExpiresAt is the grant's end,
+// which bounds any signed link the reader makes; nil when the grant does not expire.
+type ExternalScope struct {
+	Node            string
+	Role            string
+	ReaderAccountID string
+	ReaderUserID    string
+	ReaderEmail     string
+	ExpiresAt       *time.Time
 }
 
 // TokenScope is what a delegated token allows. A token acts as its user, when it names one, or
@@ -154,6 +174,13 @@ func (p *Principal) ManagesAccount(accountID string) bool {
 		return p.Role == RoleOwner && p.AccountID == accountID
 	}
 	return false
+}
+
+// Outsider reports whether p reads from outside the item's own membership: a visitor of a link that anyone
+// can open, or a reader of another account's grant (decision 173). Both see the item as an outsider does — no
+// creator, owner or folder, no badges or thumbnails, and no shortcut.
+func (p *Principal) Outsider() bool {
+	return p != nil && (p.Kind == KindShareLink || p.Kind == KindExternal)
 }
 
 // NewKey returns a new random API key with the given prefix, the start of it that is safe to
