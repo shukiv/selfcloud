@@ -79,6 +79,11 @@ var webhookAuditNoEvent = map[string]string{
 	"user.password_reset":     "password changes are not on the event list",
 	"user.password_set":       "password changes are not on the event list",
 	"admin.password_refused":  "a refused attempt changes nothing: no event (decision 41)",
+
+	// External sharing (decision 172): the proof is sign-in activity, and the grants reach no read path yet.
+	"user.email_proved":          "an address proof is sign-in activity, not on the event list (decision 172)",
+	"permission.external.set":    "external grants are not on the event list; no read path reaches them yet (decision 172)",
+	"permission.external.remove": "external grants are not on the event list; no read path reaches them yet (decision 172)",
 	"impersonation.start":     "sign-in activity is not on the event list; the writes made while signed in report as the user's own (decision 41)",
 	"impersonation.end":       "sign-in activity is not on the event list (decision 41)",
 	"verification.send":       "sending a verification is not a verification",
@@ -228,6 +233,7 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../store/comments.go SetCommentsOn UPDATE accounts":            {1, lockFree, "the account's comment switch (decision 39): no file changes"},
 
 	"../store/who_viewed.go SetWhoViewed UPDATE accounts":              {1, lockFree, "the account's who-viewed switch (decision 51): no file changes"},
+	"../store/external_permissions.go SetExternalSharing UPDATE accounts": {1, lockFree, "the account's external-sharing switch (decision 172): no file changes"},
 	"../store/sharing.go ClearSubtreeEditorsCanShare UPDATE nodes":     {1, lockGuarded, "the editors_can_share flag below a node: written only inside a move or a copy, and the move is refused first"},
 	"../store/sharing.go MoveFolderContents UPDATE nodes":              {2, lockGuarded, "MoveFolderContents: two statements, reported by users.go; refused while a file in the folder is open (guardFolder)"},
 	"../store/sharing.go SetSubtreeOwner UPDATE nodes":                 {1, lockGuarded, "SetSubtreeOwner: owner only, nothing reported; refused while a file below is open (guardNode)"},
