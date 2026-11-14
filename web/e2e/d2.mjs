@@ -2,7 +2,7 @@
 
 // Slice d2: the sidebar's New button and the storage block (decision 66). A member's browser is measured at 1280 wide: the New
 // icon and its word line up with the rows' icons and names (within a pixel), in English and mirrored in Hebrew, and every row has
-// one font size. New fits its text, narrower than the sidebar's content, with a dropdown arrow after the word (decision 172).
+// one font size. New fits its text, narrower than the sidebar's content, with a dropdown arrow after the word (decision 177).
 // New folder from Starred makes the folder in My files, and Upload files from inside a folder puts the file there;
 // a folder the member cannot add to shows its entries disabled, with the reason. The storage line matches the Storage page, and
 // the bar takes its three colours at the member's limit (set through the API, and put back before the section ends). The
@@ -45,7 +45,7 @@ const rowGeometry = (page) =>
       team: { icon: box(team?.querySelector('a svg')), name: box(team?.querySelector('a bdi')), fs: fs(team?.querySelector('a bdi')) },
       storage: { icon: box(storage?.querySelector('svg')), name: box(storage?.querySelector('.shell-storage > span')), fs: fs(storage?.querySelector('.shell-storage > span')) },
       newBox: box(newB),
-      // decision 172: New is as wide as its content again (decision 69), with a dropdown arrow at its end, after the word.
+      // decision 177: New is as wide as its content again (decision 69), with a dropdown arrow at its end, after the word.
       newParent: box(newB?.closest('[data-testid="new-tip"]')?.parentElement),
       newArrow: box(newB?.querySelectorAll('svg')?.[1]),
     };
@@ -436,7 +436,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(fonts.every((f) => f === '14px'), `every row has one font size, 14 px (${fonts.join(', ')})`);
     await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
     console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team, storage: geo.storage })}`);
-    // New fits its content (decision 69, restored by decision 172): narrower than the sidebar's content, its start edge at the
+    // New fits its content (decision 69, restored by decision 177): narrower than the sidebar's content, its start edge at the
     // content's start where the rows' icon column starts, its plus and word in the rows' columns, and the arrow inside after the word.
     const newWidth = geo.newBox ? geo.newBox.r - geo.newBox.l : 0;
     const contentWidth = geo.newParent ? geo.newParent.r - geo.newParent.l : 0;
@@ -453,7 +453,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const offHe = columns(geoHe, true);
     check(near(offHe.mine.icon) && near(offHe.mine.name), `in Hebrew My files' icon and name line up with Starred's (${JSON.stringify(offHe.mine)})`);
     check(near(offHe.storage.icon) && near(offHe.storage.name), `in Hebrew the Storage block lines up with Starred (${JSON.stringify(offHe.storage)})`);
-    // In Hebrew the order mirrors (decision 172): the button starts at the content's right edge, its plus in the icon column, and
+    // In Hebrew the order mirrors (decision 177): the button starts at the content's right edge, its plus in the icon column, and
     // the arrow at the left end, after the word.
     check(geoHe.newBox !== null && geoHe.newParent !== null && Math.abs(geoHe.newBox.r - geoHe.newParent.r) <= 1 && near(offHe.new.icon) && near(offHe.new.name), `in Hebrew the New button starts at the content's start edge, mirrored, its plus in the rows' icon column (${JSON.stringify({ box: geoHe.newBox, content: geoHe.newParent, iconOffset: offHe.new.icon })})`);
     check(geoHe.newArrow !== null && geoHe.newBox !== null && geoHe.new.name !== null && geoHe.newArrow.l >= geoHe.newBox.l - 0.5 && geoHe.newArrow.r <= geoHe.newBox.r + 0.5 && geoHe.newArrow.r <= geoHe.new.name.l + 0.5, `in Hebrew the arrow is inside the New button, at the left end after the word (${JSON.stringify({ arrow: geoHe.newArrow, box: geoHe.newBox, word: geoHe.name })})`);

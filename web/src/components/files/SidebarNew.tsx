@@ -15,7 +15,7 @@ import type { Sidebar } from "../../theme/tokens";
 
 // The sidebar's New button (decision 66): a raised, rounded button at the top of the sidebar, with the New menu (newMenu.ts, the one
 // list the files page's New reads too). It is as wide as its text (decision 69), its plus and word in the rows' icon and name columns
-// (--sc-icon-col, set by the shell), and a dropdown arrow at its end (decision 172). The shell does the picking and the dialog: onPick
+// (--sc-icon-col, set by the shell), and a dropdown arrow at its end (decision 177). The shell does the picking and the dialog: onPick
 // and onFolder are called from the menu's click, so the file picker opens inside the click. The chord (Alt+C, then a letter) is read
 // here too, with the menu closed: it runs the action and opens nothing.
 
@@ -200,7 +200,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
               <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} disabled={disabled} style={face}>
                 <Plus {...ic} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>
-                {/* The dropdown arrow (decision 172) sits at the end side, never shrinks, and a down arrow needs no mirror in right-to-left. */}
+                {/* The dropdown arrow (decision 177) sits at the end side, never shrinks, and a down arrow needs no mirror in right-to-left. */}
                 <ChevronDown {...ic} focusable="false" style={{ flexShrink: 0 }} />
               </Button>
             </Dropdown>

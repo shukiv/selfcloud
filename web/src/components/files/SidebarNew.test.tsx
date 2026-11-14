@@ -147,7 +147,7 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByText("Loading the folder")).toBeNull();
   });
 
-  // Decision 69, restored by decision 172: the button is as wide as its text, not the sidebar's width, and it is capped at the
+  // Decision 69, restored by decision 177: the button is as wide as its text, not the sidebar's width, and it is capped at the
   // sidebar's width so a long translation is cut with an ellipsis rather than pushing the sidebar. Its content starts at the
   // start edge, the plus in the rows' icon column.
   it("is as wide as its text, and no wider than the sidebar", () => {
