@@ -219,6 +219,6 @@ describe("parkBox", () => {
     expect(moveBefore).toHaveBeenCalledWith(box, null);
     expect(append).not.toHaveBeenCalled();
     expect(box.parentElement).toBe(parking);
-    delete (parking as Mover).moveBefore;
+    delete (parking as { moveBefore?: unknown }).moveBefore;
   });
 });

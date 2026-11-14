@@ -50,13 +50,13 @@ export function placeBox(target: HTMLElement): void {
 }
 
 // parkBox keeps the box in one hidden place on the body while no page holds it: the session's element stays in the page,
-// so audio goes on in the mini player, and the next placement takes the box from here.
+// so audio goes on in the mini player, and the next placement takes the box from here. The park is made once, and the box
+// goes to it through placeBox as to any target, so the move keeps the file playing even in a browser without moveBefore.
 export function parkBox(): void {
-  const b = playerBox();
   if (parking === null) {
     parking = document.createElement("div");
     parking.style.display = "none";
     document.body.appendChild(parking);
   }
-  if (b.parentElement !== parking) parking.appendChild(b);
+  placeBox(parking);
 }
