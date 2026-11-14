@@ -713,7 +713,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         <KindMarks node={n} />
         {!visitor && <StarMark node={n} />}
-        {visitor ? <RowActIcons n={n} tab={-1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
+        {visitor ? <RowActIcons n={n} tab={focused ? 0 : -1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
         <RenameError error={renaming ? renameError : null} />
       </div>
     );
@@ -734,7 +734,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
         <TypeIcon n={n} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         {!visitor && <StarMark node={n} />}
-        {visitor ? <RowActIcons n={n} tab={-1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
+        {visitor ? <RowActIcons n={n} tab={focused ? 0 : -1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
       </div>
       {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
           there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. A visitor's
@@ -1111,11 +1111,9 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const inCheck = (e: { target: EventTarget }) => !!(e.target as HTMLElement).closest(".ant-table-selection-column, .row-check");
     return {
       // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
-      // A visitor's row is no drag source (pb1): the page has no gesture, and nothing in the row starts one.
-      onDragStart: (e: ReactDragEvent<HTMLElement>) => {
-        if ((latest.current as ListingProps).visitor === true) return;
-        e.preventDefault();
-      },
+      // A visitor's row is no drag source for the page (pb1): it has no drop attributes and no gesture, but the browser's
+      // own drag is prevented for it as for every row.
+      onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
         const id = idOf(e);
         pf.down(id, e.pointerType);
