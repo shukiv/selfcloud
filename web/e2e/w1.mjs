@@ -756,12 +756,15 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       const lower = [panel, ...panel.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().top > innerHeight / 2).length;
       return { top: pr.top, bottom: pr.bottom, rowTop: rr ? rr.top : null, lower, scrollable: document.documentElement.scrollHeight > innerHeight, toolbarTop: document.querySelector('[data-testid="browser-toolbar"]').getBoundingClientRect().top };
     })())`).then((x) => JSON.parse(x));
-    for (const [label, width] of [['desktop', 1280], ['phone', 390]]) {
+    // Decision 185: the bar fits its own width at 375 and 360 too, with the actions that do not fit in its More.
+    for (const [label, width] of [['desktop', 1280], ['phone', 390], ['phone', 375], ['phone', 360]]) {
       await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: label === 'phone' });
       await open('List', longURL);
       await click(page, await pointOf(page, itemSel('f01.txt')));
       await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
       await sleepMs(300);
+      const fit = await page.evaluate(`({ sw: document.documentElement.scrollWidth, iw: window.innerWidth })`);
+      check(fit.sw <= fit.iw, `with a selection the page fits its window on a ${label} of ${width} px (scrollWidth ${fit.sw}, innerWidth ${fit.iw})`);
       // The page is brought to its top: the first row is measured where a person first sees it.
       await page.evaluate(`window.scrollTo(0, 0)`);
       await sleepMs(300);

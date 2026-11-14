@@ -175,6 +175,25 @@ async function inPanel(name: string): Promise<HTMLElement> {
   return within(await screen.findByTestId("selection-panel")).findByRole("button", { name });
 }
 
+// reportBarWidth installs a ResizeObserver that tells the selection bar its border-box width as soon as it is observed
+// (decision 185). jsdom has no layout, so the bar's width is stated here; the caller restores the saved observer after.
+function reportBarWidth(width: number) {
+  globalThis.ResizeObserver = class {
+    private cb: ResizeObserverCallback;
+    constructor(cb: ResizeObserverCallback) {
+      this.cb = cb;
+    }
+    observe(target: Element) {
+      this.cb(
+        [{ target, borderBoxSize: [{ inlineSize: width, blockSize: 52 }], contentRect: { width: width - 8 } } as unknown as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // submenuOf names the submenu an entry is in, for the entries the tests pick (decision 70).
 function submenuOf(name: string): "Share" | "Organize" | "Information" | undefined {
   if (["Details", "Versions"].includes(name)) return "Information";
@@ -1374,6 +1393,71 @@ describe("the selection bar at phone width", () => {
   });
 });
 
+// Decision 185: on a finger the bar shows as many of its ordered actions as fit its own width; the rest go to the top of More,
+// in order, with the same labels, icons, disabled state and run. A 360 px phone's bar is 332 px (the page's 14 px gutter each
+// side): floor((332 - 156) / 48) = 3 icons, so Move and Delete are in More.
+describe("the selection bar fits its own width (decision 185)", () => {
+  const saved = globalThis.ResizeObserver;
+  beforeEach(() => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+  });
+  afterEach(() => {
+    globalThis.ResizeObserver = saved;
+    vi.unstubAllGlobals();
+    folders.set([]);
+  });
+
+  it("a 360 px phone's bar keeps three icons, and Move and Delete go to the top of More, in order, and run from there", async () => {
+    reportBarWidth(332);
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { editors_can_share: true })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    for (const name of ["Share", "Copy link", "Download"]) expect(within(panel).getByRole("button", { name })).toBeTruthy();
+    for (const name of ["Move to…", "Delete"]) expect(within(panel).queryByRole("button", { name })).toBeNull();
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.slice(0, 2).map((i) => i.textContent?.trim())).toEqual(["Move to…", "Move to trash"]);
+    expect(items[0].getAttribute("aria-disabled")).not.toBe("true");
+    // The entry runs the same action as the icon: Move opens the destination picker.
+    fireEvent.click(items[0]);
+    expect(await screen.findByTestId("pick")).toBeTruthy();
+  });
+
+  it("a hidden action that is disabled stays disabled in More, and its entry runs nothing", async () => {
+    reportBarWidth(332);
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { editors_can_share: true }), node("n2", "beta.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    const panel = await screen.findByTestId("selection-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    const move = await screen.findByRole("menuitem", { name: "Move to…" });
+    const del = screen.getByRole("menuitem", { name: "Move to trash" });
+    expect(move.getAttribute("aria-disabled")).toBe("true");
+    expect(del.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(move);
+    expect(screen.queryByTestId("pick")).toBeNull();
+  });
+
+  it("a wide bar keeps every icon, and More holds only its own entries", async () => {
+    reportBarWidth(1200);
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { editors_can_share: true })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    for (const name of ["Share", "Copy link", "Download", "Move to…", "Delete"]) expect(within(panel).getByRole("button", { name })).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Move to…" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Move to trash" })).toBeNull();
+  });
+});
+
 // The actions sit in the top toolbar, and the same list feeds the right-click menu. Ctrl+C, Ctrl+X and Ctrl+V work within
 // the tab, Alt+Up goes up a folder, and a key typed in a field is left to the field.
 describe("the toolbar, the right-click menu and the clipboard keys", () => {
@@ -1780,20 +1864,26 @@ describe("pastes, the clipboard's lifetime, the menus and the narrow toolbar", (
     expect(get(clipboard)?.nodes.length).toBe(7);
   });
 
-  it("on a narrow window the panel keeps Share and Download as icons, and Delete goes into its More menu", async () => {
-    const original = window.matchMedia;
-    window.matchMedia = ((query: string) => ({ ...original(query), matches: false })) as typeof window.matchMedia;
+  // Decision 185: the bar fits its own width, not the window's. A 260 px bar with a mouse keeps floor((260 - 148) / 44) = 2
+  // icons (Share, Copy link); Download, Move and Delete go to the top of More, in the bar's order, ahead of its own entries.
+  it("a narrow bar keeps the first two actions as icons, and the rest go into its More menu in order", async () => {
+    const saved = globalThis.ResizeObserver;
+    reportBarWidth(260);
     try {
+      api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { editors_can_share: true })], next_cursor: undefined });
       renderAt(FOLDER);
       await screen.findByRole("row", { name: "alpha.txt" });
       fireEvent.click(rows("alpha.txt") as Element);
       const panel = await screen.findByTestId("selection-panel");
-      expect(within(panel).getByRole("button", { name: "Download" })).toBeTruthy();
+      expect(within(panel).getByRole("button", { name: "Share" })).toBeTruthy();
+      expect(within(panel).getByRole("button", { name: "Copy link" })).toBeTruthy();
+      expect(within(panel).queryByRole("button", { name: "Download" })).toBeNull();
       expect(within(panel).queryByRole("button", { name: "Delete" })).toBeNull();
       fireEvent.click(within(panel).getByRole("button", { name: "More" }));
-      expect(await screen.findByRole("menuitem", { name: "Move to trash" })).toBeTruthy();
+      const items = await screen.findAllByRole("menuitem");
+      expect(items.slice(0, 3).map((i) => i.textContent?.trim())).toEqual(["Download", "Move to…", "Move to trash"]);
     } finally {
-      window.matchMedia = original;
+      globalThis.ResizeObserver = saved;
     }
   });
 

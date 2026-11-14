@@ -374,13 +374,21 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   }
 
   // ---- 2. on a phone one tap opens a file or a folder, and the checkbox selects ----
-  await step('a phone window of 390 and of 320 pixels fits its page, in both views, with and without a selection, in English and Hebrew', async () => {
+  // Decision 185: the selection bar shows as many of its ordered actions as fit its own width; the rest are the first entries
+  // of its More menu, in order. The file picked here (pic.png in media-test) is one the signed-in owner may change, so its
+  // actions include Move and Delete. At 375 and 360 both are in More; at 320 Download is too; at 390 only Delete is.
+  const escapeKey = async () => {
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await sleep(300);
+  };
+  await step('a phone window of 390, 375, 360 and 320 pixels fits its page, in both views, with and without a selection, in English and Hebrew, and the bar keeps More inside the window', async () => {
     await setPhone(page, true);
     try {
       for (const lang of ['English', 'עברית']) {
         await open('List');
         await setLanguage(page, lang);
-        for (const width of [390, 320]) {
+        for (const width of [390, 375, 360, 320]) {
           await setWidth(page, width);
           for (const view of ['List', 'Tiles']) {
             await open(view);
@@ -395,6 +403,35 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
             await sleep(500);
             const picked = await wideElements(page);
             check(picked.scrollWidth <= width, `${lang}, ${width} px, ${view}, with a selection: the page fits its window (scrollWidth ${picked.scrollWidth}; wider: ${JSON.stringify(picked.top.slice(0, 2))})`);
+            const moreBox = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right) }; })()`);
+            check(moreBox !== null && moreBox.left >= 0 && moreBox.right <= width, `${lang}, ${width} px, ${view}, with a selection: More is inside the window (${JSON.stringify(moreBox)})`);
+            // The hidden actions are read in English, where their labels are known: the first entries of More, in the bar's
+            // order, enabled, and Move runs from there (the destination picker opens).
+            if (lang === 'English' && view === 'List') {
+              const icons = await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].map((b) => b.getAttribute('aria-label')).filter((n) => n && n !== 'Clear selection' && n !== 'More')`);
+              await page.evaluate(`document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]').click()`);
+              await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item').length > 0`, 10000);
+              await sleep(200);
+              const entries = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((x) => ({ name: x.textContent.trim(), disabled: x.classList.contains('ant-dropdown-menu-item-disabled') }))`);
+              const first = entries.slice(0, 3).map((x) => x.name);
+              const want = width === 320 ? ['Download', 'Move to…', 'Move to trash'] : width === 390 ? ['Move to trash'] : ['Move to…', 'Move to trash'];
+              check(JSON.stringify(first.slice(0, want.length)) === JSON.stringify(want), `${width} px: the bar's hidden actions are the first entries of More, in order (wanted ${JSON.stringify(want)}, got ${JSON.stringify(first)}; icons ${JSON.stringify(icons)})`);
+              const move = entries.find((x) => x.name === 'Move to…');
+              const del = entries.find((x) => x.name === 'Move to trash');
+              const moveReachable = (move !== undefined && !move.disabled) || icons.includes('Move to…');
+              const delReachable = del !== undefined && !del.disabled;
+              check(moveReachable && delReachable, `${width} px: Move and Delete are reachable and enabled, from an icon or from More (move ${JSON.stringify(move)}, delete ${JSON.stringify(del)}, icons ${JSON.stringify(icons)})`);
+              if (width === 360 && move !== undefined) {
+                await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…').click()`);
+                const pickOpened = await page.waitFor(`!!document.querySelector('[data-testid="pick"]')`, 10000).then(() => true).catch(() => false);
+                check(pickOpened, '360 px: Move runs from More (the destination picker opens)');
+                await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+                await page.waitFor(`!document.querySelector('[data-testid="pick"]')`, 10000).catch(() => undefined);
+                await sleep(300);
+              } else {
+                await escapeKey();
+              }
+            }
             await clearSelection(page);
           }
         }
