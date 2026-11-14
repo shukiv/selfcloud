@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, t
 import { followTarget, keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, Inbox, MonitorPlay, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import { Clock, Cloud, FolderOpen, Inbox, MonitorPlay, Share2, Star, Tags, Trash2, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import IconButton from "./IconButton";
 import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -71,6 +71,10 @@ const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
 const RAIL_WIDTH = 88;
+// The sider's and the drawer's inline padding, and the drawer's width (decision 185): the space S above and below the brand is this
+// padding plus the rows' inline margin, and the brand's reserved height is read at the sider's or the drawer's own width.
+const SIDE_PAD = 12;
+const DRAWER_WIDTH = 280;
 // The choice of the rail: "1" when the person folded the sidebar, "0" when it is open.
 const PREF_NAV_RAIL = "selfcloud.navRail";
 
@@ -92,7 +96,7 @@ interface NavSection {
 }
 
 // My files is the folder tree's first row, so it is an entry here only when the sidebar is folded to its icons (no tree).
-// The Storage entry is not a menu row (decision 181): it is the card pinned at the bottom of the sidebar, drawn by renderSidebar.
+// The Storage entry is not a menu row (decision 181): it is the block pinned at the bottom of the sidebar, drawn by renderSidebar.
 function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean): NavSection[] {
   if (admin) {
     return [
@@ -137,7 +141,8 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
         { key: "/manage/people", label: t("nav.people"), icon: icon(Users) },
         { key: "/manage/groups", label: t("nav.groups"), icon: icon(Users) },
         { key: "/manage/spaces", label: t("nav.spaces"), icon: icon(FolderOpen) },
-        { key: "/manage/storage", label: t("nav.manageStorage"), icon: icon(HardDrive) },
+        // Storage is the Cloud everywhere (decision 185): the sidebar row, the folded rail and this Manage entry.
+        { key: "/manage/storage", label: t("nav.manageStorage"), icon: icon(Cloud) },
         { key: "/manage/labels", label: t("nav.manageLabels"), icon: icon(Tags) },
         { key: "/manage/links", label: t("nav.links"), icon: icon(Share2) },
         { key: "/manage/audit", label: t("nav.audit"), icon: icon(Settings) },
@@ -366,7 +371,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
   // The menu's entries and its current one. My files is the tree's first row, so it is a menu entry only when the sidebar is
   // folded to icons; then it is current on the files pages where the place is the person's own space. The Storage entry is not
-  // here (decision 181): it is the card pinned at the bottom, drawn by renderSidebar.
+  // here (decision 181): it is the block pinned at the bottom, drawn by renderSidebar.
   const menuFor = (filesEntry: boolean) => {
     const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry);
     const items: MenuProps["items"] = sections.flatMap((s, i) =>
@@ -469,11 +474,14 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
 
   // The sidebar in its two forms: the tree of My files and the teams (not when folded to icons, and not for an admin, who has
-  // no drive), then the menu. Each part that scrolls is in one region; the storage card is pinned below it (decision 181).
-  const renderSidebar = (collapsedNow: boolean) => {
+  // no drive), then the menu. Each part that scrolls is in one region; the storage block is pinned below it (decision 181). width is
+  // the sider's or the drawer's own width, so the brand reserves its picture's height at the right content width (decision 185).
+  const renderSidebar = (collapsedNow: boolean, width: number) => {
     const { items, selected } = menuFor(collapsedNow);
     const newShown = (onFiles || newWhere !== null) && !admin;
     const tree = !admin && !collapsedNow;
+    // S, the space above and below the brand (decision 185): the sider's inline padding plus the rows' inline margin.
+    const edge = SIDE_PAD + row.inline;
     return (
       <div
         className="shell-sider-body"
@@ -486,14 +494,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-side-mark": currentMark(sidebar).bar,
           "--sc-side-ink": currentMark(sidebar).ink,
           "--sc-side-hover": sidebar.hover,
-          // The icon column of every row (New, the tree, the menu) from the sidebar's content edge: the row's margin and its icon
-          // indent, 28 px in, or 48 px on a finger (decisions 66 and 81).
-          "--sc-icon-col": `${row.inline + row.indent}px`,
+          // The icon column of every row (New, the tree, the menu, the storage block) from the row's own start edge: the row's icon
+          // indent, 24 px, or 44 px on a finger (decisions 66, 81 and 185). The rows' inline margin is outside it.
+          "--sc-icon-col": `${row.indent}px`,
         } as CSSProperties}
       >
-        {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decision 109). */}
-        <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} background={sidebar.bg} />
-        {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)}
+        {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decisions 109 and 185). */}
+        <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} background={sidebar.bg} inline={row.inline} edge={edge} width={width} />
+        {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} inline={row.inline} onPick={pick} onFolder={(where) => setFolderWhere(where)}
           documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn, impersonating) : []} onDocument={makeDocument} />}
         <div className="shell-scroll">
           {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
@@ -561,13 +569,13 @@ export default function Shell({ children }: { children: ReactNode }) {
             />
           </ConfigProvider>
         </div>
-        {/* The storage card is pinned below the scroll region (decision 181): the menu and the tree scroll, the card stays. Folded
+        {/* The storage block is pinned below the scroll region (decision 181): the menu and the tree scroll, the block stays. Folded
             to the rail it is one icon link. An installation admin has no storage of its own, so it has neither. */}
         {!admin &&
           (collapsedNow ? (
             <StorageRail my={storage} sidebar={sidebar} selected={onStorage} onNavigate={() => setNavOpen(false)} />
           ) : (
-            <SidebarStorage my={storage} sidebar={sidebar} selected={onStorage} onNavigate={() => setNavOpen(false)} />
+            <SidebarStorage my={storage} sidebar={sidebar} inline={row.inline} selected={onStorage} onNavigate={() => setNavOpen(false)} />
           ))}
       </div>
     );
@@ -683,11 +691,11 @@ export default function Shell({ children }: { children: ReactNode }) {
               top: 0,
               height: impersonating ? "calc(100vh - 48px)" : "100vh",
               overflow: "hidden",
-              // No top padding: New's top edge lines up with the search box's top edge (decision 69).
-              padding: collapsed ? "0 8px 16px" : "0 12px 16px",
+              // No top padding: the brand's own space S starts at the top (decision 185).
+              padding: collapsed ? "0 8px 16px" : `0 ${SIDE_PAD}px 16px`,
             }}
           >
-            {renderSidebar(collapsed)}
+            {renderSidebar(collapsed, SIDE_WIDTH)}
           </Layout.Sider>
         )}
         {/* On a phone the sidebar is this drawer, and it holds the folder tree too. It is mounted only there, so the tree is
@@ -697,16 +705,16 @@ export default function Shell({ children }: { children: ReactNode }) {
             placement={rtl ? "right" : "left"}
             open={navOpen}
             onClose={() => setNavOpen(false)}
-            width={280}
+            width={DRAWER_WIDTH}
             // The drawer's name is the sidebar's (antd names the dialog by its title, so a null title leaves it unnamed).
             title={<span className="sr-only">{t("nav.sidebar")}</span>}
             closable
             styles={{
-              body: { padding: "0 12px 16px", background: sidebar.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
+              body: { padding: `0 ${SIDE_PAD}px 16px`, background: sidebar.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
               header: { background: sidebar.bg, borderBottom: "none" },
             }}
           >
-            {renderSidebar(false)}
+            {renderSidebar(false, DRAWER_WIDTH)}
           </Drawer>
         )}
         <Layout style={{ background: token.colorBgLayout, ...(impersonating ? { height: "100%", overflow: "auto" } : {}) }}>

@@ -98,8 +98,6 @@ export const SIDEBAR = {
   text: "#FFFFFF",
   caption: "#A9C1E6",
   hover: "rgba(255, 255, 255, 0.10)",
-  card: "rgba(255, 255, 255, 0.08)",
-  cardBorder: "rgba(255, 255, 255, 0.14)",
   active: "#FECC00",
   onActive: "#0D2142",
 } as const;

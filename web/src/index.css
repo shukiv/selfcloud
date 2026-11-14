@@ -205,7 +205,7 @@ a {
 }
 
 /* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
-   colours. The brand stays at the top and the storage card stays pinned at the bottom (decision 181). */
+   colours. The brand stays at the top and the storage block stays pinned at the bottom (decision 181). */
 .shell-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -354,36 +354,43 @@ a {
   color: var(--sc-side-on-active, #0d2142);
 }
 
-/* The sidebar's rows share one icon column and one name column, and one font size (decision 66): an icon sits --sc-icon-col in
-   from the sidebar's content edge (28 px, or 48 px on a finger), and the name follows an 18 px icon and a 10 px gap. The New
-   button and the folder tree use the same number. The menu's icon column is its inline indent (Shell.tsx, decision 81): antd sets
-   the item's start padding inline, so a stylesheet rule cannot set it. The folded rail keeps the menu's own centred icons. */
+/* The sidebar's rows share one icon column and one name column, and one font size (decision 66, its edge replaced by decision
+   185): each block takes the rows' inline margin, and an icon sits --sc-icon-col in from the block's own start edge (24 px, or
+   44 px on a finger), the name following an 18 px icon and a 10 px gap. The New button, the folder tree and the storage block use
+   the same number. The menu's icon column is its inline indent (Shell.tsx, decision 81): antd sets the item's start padding
+   inline, so a stylesheet rule cannot set it. The folded rail keeps the menu's own centred icons. */
 .shell-sider-body {
-  --sc-icon-col: 28px;
+  --sc-icon-col: 24px;
   font-size: 14px;
 }
 .shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
   margin-inline-start: 10px;
 }
-/* The storage card pinned at the bottom of the sidebar (decision 181): one link to the Storage page, the caption, the bar and the
-   figures. Its layout, its colours and the current place's border are set inline by SidebarStorage; the stylesheet paints the
-   background from the card's variable, lightens it on hover, and draws the keyboard focus ring. */
+/* The storage block pinned at the bottom of the sidebar (decision 181's pin, decision 185's look): one link to the Storage page,
+   the Cloud icon and the title, the bar and the figures. Its layout and its colours are set inline by SidebarStorage; the
+   stylesheet gives it the rows' hover tint, fills the current place with the active colour as the selected menu row is (on hover
+   too), and draws the keyboard focus ring. It has no background of its own off its page. */
 .shell-storage-card {
   flex: none;
   box-sizing: border-box;
-  background: var(--sc-card-bg, rgba(255, 255, 255, 0.08));
   transition: background-color 120ms ease;
 }
 .shell-storage-card:hover {
-  background: var(--sc-card-hover);
+  background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
+}
+.shell-storage-card[aria-current="page"] {
+  background: var(--sc-side-active, #fecc00);
+}
+.shell-storage-card[aria-current="page"]:hover {
+  background: var(--sc-side-active, #fecc00);
 }
 .shell-storage-card:focus-visible {
   outline: 2px solid var(--sc-side-mark, #fecc00);
   outline-offset: 2px;
 }
 
-/* The folded rail's storage icon link (decision 181): one centred HardDrive at the bottom of the rail. On the Storage page it is
-   filled with the active colour as the rail's menu rows are (decision 72); the hover is the rows' own tint. */
+/* The folded rail's storage icon link (decision 181): one centred Cloud at the bottom of the rail (decision 185). On the Storage
+   page it is filled with the active colour as the rail's menu rows are (decision 72); the hover is the rows' own tint. */
 .shell-storage-rail {
   flex: none;
   display: flex;
@@ -421,7 +428,7 @@ a {
 }
 
 /* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer):
-   the storage card is at least 44 px tall, and the rail's icon link already is (decision 181). */
+   the storage block is at least 44 px tall, and the rail's icon link already is (decision 181). */
 @media (pointer: coarse) {
   .shell-storage-card {
     min-block-size: 44px;
@@ -440,7 +447,7 @@ a {
   box-sizing: border-box;
 }
 
-/* The desktop sidebar is a column: the brand and New at the top, the tree and menu scroll in the middle, and the storage card
+/* The desktop sidebar is a column: the brand and New at the top, the tree and menu scroll in the middle, and the storage block
    pinned at the bottom (decision 181). The rail toggle is in the top bar, not here. */
 .shell-sider {
   box-sizing: border-box;

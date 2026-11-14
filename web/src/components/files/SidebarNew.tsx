@@ -28,6 +28,9 @@ export interface SidebarNewProps {
   collapsed: boolean;
   coarse: boolean;
   sidebar: Sidebar;
+  // inline is the rows' inline margin (decision 185): the expanded block takes it, so New starts where the rows start. The folded
+  // rail's round button keeps its own centred wrapper.
+  inline: number;
   onPick: (kind: "files" | "folders", where: UploadWhere) => void;
   onFolder: (where: UploadWhere) => void;
   // documents are the blank Office documents the menu offers here (documentKinds: none unless office editing is on, decision 91).
@@ -75,7 +78,7 @@ export function useNewChord(enabled: () => boolean, run: (action: NewChordAction
   }, []);
 }
 
-export default function SidebarNew({ place, failure, collapsed, coarse, sidebar, onPick, onFolder, documents, onDocument }: SidebarNewProps) {
+export default function SidebarNew({ place, failure, collapsed, coarse, sidebar, inline, onPick, onFolder, documents, onDocument }: SidebarNewProps) {
   const { t } = useT();
   const { token } = theme.useToken();
   const reasonId = useId();
@@ -176,9 +179,9 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
     maxInlineSize: "100%",
     minInlineSize: 0,
     minBlockSize: 56,
-    // The plus starts in the icon column (the shell sets --sc-icon-col from the sidebar's content edge), and its word in the name
-    // column (18 px icon, 10 px gap), as the rows below it.
-    paddingInlineStart: "var(--sc-icon-col, 28px)",
+    // The plus starts in the icon column (the shell sets --sc-icon-col from the block's own start edge, decision 185), and its word
+    // in the name column (18 px icon, 10 px gap), as the rows below it.
+    paddingInlineStart: "var(--sc-icon-col, 24px)",
     paddingInlineEnd: 24,
     borderRadius: 16,
     border: "none",
@@ -190,8 +193,9 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
     lineHeight: "20px",
   };
   return (
-    // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
-    <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
+    // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger. The block
+    // takes the rows' inline margin, so New starts at the rows' edge (decision 185).
+    <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginInline: inline, marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine } } }}>
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}
         <Tooltip title={reason ?? undefined}>
