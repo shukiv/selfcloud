@@ -92,7 +92,7 @@ interface NavSection {
 }
 
 // My files is the folder tree's first row, so it is an entry here only when the sidebar is folded to its icons (no tree).
-// The Storage entry is not a menu row (decision 171): it is the card pinned at the bottom of the sidebar, drawn by renderSidebar.
+// The Storage entry is not a menu row (decision 181): it is the card pinned at the bottom of the sidebar, drawn by renderSidebar.
 function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean): NavSection[] {
   if (admin) {
     return [
@@ -199,7 +199,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   // The place the browser shows (written by the files page). It is marked only on the files pages.
   const place = useStore(treePlace);
   const onFiles = location.pathname.startsWith("/files");
-  // The Storage page is the current place for the storage card and the folded rail's icon link (decision 171).
+  // The Storage page is the current place for the storage card and the folded rail's icon link (decision 181).
   const onStorage = location.pathname === "/storage" || location.pathname.startsWith("/storage/");
   // The sidebar's New acts on the folder shown on a files page, and on My files everywhere else (decision 66). The pickers and the
   // new-folder dialog belong here, not to the sidebar, so a click opens the picker in the same gesture.
@@ -364,7 +364,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
   // The menu's entries and its current one. My files is the tree's first row, so it is a menu entry only when the sidebar is
   // folded to icons; then it is current on the files pages where the place is the person's own space. The Storage entry is not
-  // here (decision 171): it is the card pinned at the bottom, drawn by renderSidebar.
+  // here (decision 181): it is the card pinned at the bottom, drawn by renderSidebar.
   const menuFor = (filesEntry: boolean) => {
     const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry);
     const items: MenuProps["items"] = sections.flatMap((s, i) =>
@@ -467,7 +467,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
 
   // The sidebar in its two forms: the tree of My files and the teams (not when folded to icons, and not for an admin, who has
-  // no drive), then the menu. Each part that scrolls is in one region; the storage card is pinned below it (decision 171).
+  // no drive), then the menu. Each part that scrolls is in one region; the storage card is pinned below it (decision 181).
   const renderSidebar = (collapsedNow: boolean) => {
     const { items, selected } = menuFor(collapsedNow);
     const newShown = (onFiles || newWhere !== null) && !admin;
@@ -559,7 +559,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             />
           </ConfigProvider>
         </div>
-        {/* The storage card is pinned below the scroll region (decision 171): the menu and the tree scroll, the card stays. Folded
+        {/* The storage card is pinned below the scroll region (decision 181): the menu and the tree scroll, the card stays. Folded
             to the rail it is one icon link. An installation admin has no storage of its own, so it has neither. */}
         {!admin &&
           (collapsedNow ? (
@@ -728,7 +728,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             {isMobile && (
               <IconButton data-testid="nav-open" label={t("nav.openMenu")} onClick={() => setNavOpen(true)} icon={<MenuIcon size={18} aria-hidden="true" focusable="false" />} />
             )}
-            {/* The rail toggle starts the top bar on a wide window, just before the search box (decision 171). A phone keeps its
+            {/* The rail toggle starts the top bar on a wide window, just before the search box (decision 181). A phone keeps its
                 menu button and drawer, so it has no rail toggle. An installation admin folds the rail too. */}
             {!isMobile && (
               <IconButton

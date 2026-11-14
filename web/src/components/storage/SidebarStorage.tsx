@@ -23,7 +23,7 @@ export function storageTitle(s: MeStorage | null, t: (key: string, params?: Reco
   return percent === null ? t("nav.storage") : t("nav.storageFull", { percent: String(percent) });
 }
 
-// cardHover is the card's hover tint (decision 171): the card's white with a little more of it, so the hover lightens the card
+// cardHover is the card's hover tint (decision 181): the card's white with a little more of it, so the hover lightens the card
 // without leaving the sidebar's own colours. A card colour that is not the white tint keeps itself.
 function cardHover(card: string): string {
   const m = /^rgba\(255, 255, 255, ([0-9.]+)\)$/.exec(card);
@@ -31,7 +31,7 @@ function cardHover(card: string): string {
   return `rgba(255, 255, 255, ${Math.min(1, Math.round((Number(m[1]) + 0.06) * 100) / 100)})`;
 }
 
-// SidebarStorage is the storage card pinned at the bottom of the sidebar (decision 171): the caption, a slim bar and the figures,
+// SidebarStorage is the storage card pinned at the bottom of the sidebar (decision 181): the caption, a slim bar and the figures,
 // one link to the Storage page. With no limit it is the caption and the line that says what is used, with no bar. A null read (not
 // yet known) shows the caption alone. selected says the Storage page is the current place: the card's border takes the sidebar's
 // mark colour (currentMark), and the figures keep their colours — the mark is the border, not a fill. onNavigate closes the phone
@@ -103,7 +103,7 @@ export default function SidebarStorage({ my, sidebar, selected = false, onNaviga
   );
 }
 
-// StorageRail is the folded rail's storage icon link (decision 171): one HardDrive icon at the bottom of the rail, named by the
+// StorageRail is the folded rail's storage icon link (decision 181): one HardDrive icon at the bottom of the rail, named by the
 // storage title, which its tooltip shows. On the Storage page it is the current place: aria-current page, and the stylesheet fills
 // it with the active colour as the rail's menu rows are (decision 72). onNavigate closes the drawer (the rail is a wide window's).
 export function StorageRail({ my, sidebar, selected = false, onNavigate }: { my: MeStorage | null; sidebar: Sidebar; selected?: boolean; onNavigate?: () => void }): ReactNode {

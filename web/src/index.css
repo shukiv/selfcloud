@@ -187,7 +187,7 @@ a {
 }
 
 /* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
-   colours. The brand stays at the top and the storage card stays pinned at the bottom (decision 171). */
+   colours. The brand stays at the top and the storage card stays pinned at the bottom (decision 181). */
 .shell-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -303,7 +303,7 @@ a {
 .shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
   margin-inline-start: 10px;
 }
-/* The storage card pinned at the bottom of the sidebar (decision 171): one link to the Storage page, the caption, the bar and the
+/* The storage card pinned at the bottom of the sidebar (decision 181): one link to the Storage page, the caption, the bar and the
    figures. Its layout, its colours and the current place's border are set inline by SidebarStorage; the stylesheet paints the
    background from the card's variable, lightens it on hover, and draws the keyboard focus ring. */
 .shell-storage-card {
@@ -320,7 +320,7 @@ a {
   outline-offset: 2px;
 }
 
-/* The folded rail's storage icon link (decision 171): one centred HardDrive at the bottom of the rail. On the Storage page it is
+/* The folded rail's storage icon link (decision 181): one centred HardDrive at the bottom of the rail. On the Storage page it is
    filled with the active colour as the rail's menu rows are (decision 72); the hover is the rows' own tint. */
 .shell-storage-rail {
   flex: none;
@@ -359,7 +359,7 @@ a {
 }
 
 /* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer):
-   the storage card is at least 44 px tall, and the rail's icon link already is (decision 171). */
+   the storage card is at least 44 px tall, and the rail's icon link already is (decision 181). */
 @media (pointer: coarse) {
   .shell-storage-card {
     min-block-size: 44px;
@@ -379,7 +379,7 @@ a {
 }
 
 /* The desktop sidebar is a column: the brand and New at the top, the tree and menu scroll in the middle, and the storage card
-   pinned at the bottom (decision 171). The rail toggle is in the top bar, not here. */
+   pinned at the bottom (decision 181). The rail toggle is in the top bar, not here. */
 .shell-sider {
   box-sizing: border-box;
 }

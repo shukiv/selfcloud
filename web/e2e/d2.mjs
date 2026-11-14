@@ -26,7 +26,7 @@ const SHARE_LEVELS = { ok: 0.5, warning: 0.85 };
 const FILL = { ok: 'rgb(254, 204, 0)', warning: 'rgb(255, 169, 64)', danger: 'rgb(255, 107, 107)' };
 
 // rowGeometry reads the rows the columns are measured on, and the font of each row's name. Each reading is a box: its icon
-// and its name, as the screen draws them. The storage card is not a menu row (decision 171); it is measured by cardGeometry.
+// and its name, as the screen draws them. The storage card is not a menu row (decision 181); it is measured by cardGeometry.
 const rowGeometry = (page) =>
   page.evaluate(`(() => {
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right }; };
@@ -50,7 +50,7 @@ const rowGeometry = (page) =>
     };
   })()`);
 
-// cardGeometry reads the storage card (decision 171): its box, the sider's content box, the caption and the figures line and their
+// cardGeometry reads the storage card (decision 181): its box, the sider's content box, the caption and the figures line and their
 // fonts, and the menu's last row, so the check can say the card is pinned below the menu at the sider's foot. The card's inline edges
 // are the sider's content edges (its 12 px padding), and its caption and figures are 12 px, not the menu rows' 14.
 const cardGeometry = (page) =>
@@ -248,7 +248,7 @@ const barOf = (page, sel) =>
     return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el, '::before').backgroundColor, bg: bg.slice(0, 3).map(Math.round) };
   })()`);
 // onMark reads the storage card's caption and figures on the card (which sits on the sidebar), and the bar's track, edge and fill,
-// as the card draws them (decision 171). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
+// as the card draws them (decision 181). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
 const onMark = (page) =>
   Promise.all([
     contrastOf(page, `${CARD} .shell-storage-caption`, 'color', [CARD, SIDER]),
@@ -264,7 +264,7 @@ const waitTreeCurrent = async (page, key) => {
   await page.waitFor(`!!document.querySelector('[data-tree-key="${key}"][aria-current="location"]')`, 15000);
   await sleep(700);
 };
-// waitSelected waits for the storage card to be the current place (aria-current page, its border in the mark colour, decision 171).
+// waitSelected waits for the storage card to be the current place (aria-current page, its border in the mark colour, decision 181).
 const waitSelected = async (page) => {
   await page.waitFor(`(() => { const c = document.querySelector('${CARD}'); return !!c && c.getAttribute('aria-current') === 'page'; })()`, 15000);
   await sleep(700);
@@ -383,7 +383,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(at61.caption === 'Storage' && at61.width === '61%', `the card's caption is Storage and the bar is at the share held (${at61.caption}, ${at61.width})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
     // The card's caption and figures colours, read here where the card is not the current place, to compare with the Storage page
-    // below: the mark is the border, so the colours do not change when the card becomes current (decision 171).
+    // below: the mark is the border, so the colours do not change when the card becomes current (decision 181).
     const plainCaption = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-caption'); return t ? getComputedStyle(t).color : null; })()`);
     const plainLineColour = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
     // The current folder has no background (decision 69, option B): its name, its arrow and its bar read on the sidebar.
@@ -411,7 +411,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const pageLine = await page.evaluate(`(${meterAlt}).split(': ')[0] || null`);
     check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
     // On this page the storage card is the current place: its border takes the mark colour, the caption and figures keep their
-    // colours and read on the card, and the bar keeps its track and fill (decision 171).
+    // colours and read on the card, and the bar keeps its track and fill (decision 181).
     await waitSelected(page);
     const yEn = await onMark(page);
     const markEn = await cardMark(page);
@@ -422,7 +422,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     // Decision 171: the caption and the figures keep the colours they had off the Storage page (the mark is the border, not a fill).
     check(yEn.title !== null && yEn.title.text === plainCaption, `the caption keeps its colour on the Storage page (${yEn.title?.text} / ${plainCaption})`);
     check(yEn.line !== null && yEn.line.text === plainLineColour, `the figures keep their colour on the Storage page (${yEn.line?.text} / ${plainLineColour})`);
-    check(storageBarNone === true, `the storage card has no bar of its own: its border marks the place (decision 171)`);
+    check(storageBarNone === true, `the storage card has no bar of its own: its border marks the place (decision 181)`);
     // The fill is compared with the unfilled track it is drawn on (the pair a person compares); the edge (the caption ring) is the
     // bar's outline against the card.
     check(yEn.fill !== null && yEn.fill.ratio >= 3, `on the storage card the bar's fill is 3:1 or more against its track (${showRatio(yEn.fill)})`);
@@ -467,14 +467,14 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await size(1280, 800);
     const geo = await rowGeometry(page);
     const cardGeo = await cardGeometry(page);
-    // The storage card is pinned below the menu, at the sider's foot (decision 171): its inline edges are the sider's content
+    // The storage card is pinned below the menu, at the sider's foot (decision 181): its inline edges are the sider's content
     // edges (the 12 px padding), it is below the menu's last row and outside the scroll region, and it links to /storage.
     const cardNear = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
     check(cardGeo.card !== null && cardGeo.belowMenu && cardGeo.outsideScroll && cardGeo.href === '/storage', `the storage card is pinned below the menu, outside the scroll region, and links to /storage (${JSON.stringify({ below: cardGeo.belowMenu, outside: cardGeo.outsideScroll, href: cardGeo.href })})`);
     check(cardGeo.card !== null && cardNear(cardGeo.card.l, cardGeo.sider.l + cardGeo.padL) && cardNear(cardGeo.card.r, cardGeo.sider.r - cardGeo.padR), `the card's inline edges are the sider's content edges, 12 px in (${JSON.stringify({ card: cardGeo.card, sider: cardGeo.sider, padL: cardGeo.padL, padR: cardGeo.padR })})`);
     check(cardGeo.card !== null && cardNear(cardGeo.card.b, cardGeo.sider.b - cardGeo.padB), `the card sits at the sider's foot, above its bottom padding (${JSON.stringify({ cardB: cardGeo.card?.b, siderB: cardGeo.sider?.b, padB: cardGeo.padB })})`);
     check(cardGeo.captionFs === '12px' && cardGeo.lineFs === '12px', `the card's caption and figures are 12 px (${cardGeo.captionFs}, ${cardGeo.lineFs})`);
-    // Clicking the card opens the Storage page (decision 171), at this 1280x800 window.
+    // Clicking the card opens the Storage page (decision 181), at this 1280x800 window.
     await page.evaluate(`document.querySelector('.shell-sider [data-testid="storage-card"]').click(), true`);
     await page.waitFor(`location.pathname === '/storage'`, 15000);
     check(true, 'clicking the storage card opens the Storage page');
@@ -632,7 +632,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
     // The folded rail's round New, by real key presses, opened with Space.
     await newMenuKeyChecks(page, check, { button: '.ant-layout-sider-collapsed [data-testid="new-button"]', label: 'folded, Team A, writable, Space', opener: 'Space' });
-    // The folded rail's storage icon link (decision 171): a HardDrive named by the storage title, which its tooltip shows. The
+    // The folded rail's storage icon link (decision 181): a HardDrive named by the storage title, which its tooltip shows. The
     // limit is set to 61% so the title carries a share; on the Storage page the icon is the current place.
     const heldFold = await heldOf(page);
     await quotaSet(api, base, accountID, accountKey, memberID, Math.floor(heldFold / 0.61));

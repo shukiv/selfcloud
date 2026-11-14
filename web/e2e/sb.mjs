@@ -66,7 +66,7 @@ async function pair(page, check, label) {
   return m;
 }
 
-// storageFit reads the storage card of the sidebar on the screen (decision 171): its bar and its figures, its height, and whether
+// storageFit reads the storage card of the sidebar on the screen (decision 181): its bar and its figures, its height, and whether
 // the card scrolls sideways (a clipped row). Null when the card is not drawn.
 const storageFit = (page) =>
   page.evaluate(`(() => {
@@ -151,7 +151,7 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   await sleep(700);
   const phone = await pair(page, check, 'phone drawer');
   // The storage card on a finger: its bar and figures are inside the sidebar, the card is not clipped (no sideways scroll), and it
-  // is a finger's target, at least 44 px tall (decision 171).
+  // is a finger's target, at least 44 px tall (decision 181).
   const fit = await storageFit(page);
   check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the storage card shows its bar and figures (${JSON.stringify(fit)})`);
   if (fit && fit.meter && fit.figures) {

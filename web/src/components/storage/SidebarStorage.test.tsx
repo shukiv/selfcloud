@@ -30,7 +30,7 @@ function rule(css: string, selector: string): string {
   return css.slice(start, css.indexOf("}", start) + 1);
 }
 
-describe("the sidebar's storage card (decision 171)", () => {
+describe("the sidebar's storage card (decision 181)", () => {
   beforeEach(async () => {
     await setLang("en");
   });
@@ -152,7 +152,7 @@ describe("the sidebar's storage card (decision 171)", () => {
   });
 });
 
-describe("the folded rail's storage icon link (decision 171)", () => {
+describe("the folded rail's storage icon link (decision 181)", () => {
   beforeEach(async () => {
     await setLang("en");
   });

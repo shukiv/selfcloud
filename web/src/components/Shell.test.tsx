@@ -264,7 +264,7 @@ describe("Shell", () => {
     expect(document.querySelector(".ant-drawer-left")).toBeNull();
   });
 
-  it("folds the sidebar to the 88px rail and remembers the choice, from the top bar's toggle (decision 171)", async () => {
+  it("folds the sidebar to the 88px rail and remembers the choice, from the top bar's toggle (decision 181)", async () => {
     // A wide screen: the sidebar is the sider, not the drawer.
     const original = window.matchMedia;
     window.matchMedia = (query: string) => ({ ...original(query), matches: true }) as MediaQueryList;
@@ -885,7 +885,7 @@ describe("the sidebar's New (decision 66)", () => {
 
 // Decision 171: the storage meter is a card pinned at the bottom of the sidebar, one link to /storage; the Storage entry
 // leaves the menu (the owner's Manage entry stays). The card is outside the scroll region, so it stays while the menu scrolls.
-describe("the sidebar's storage card (decision 171)", () => {
+describe("the sidebar's storage card (decision 181)", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
