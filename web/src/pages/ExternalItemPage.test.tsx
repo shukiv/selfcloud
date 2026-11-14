@@ -21,7 +21,7 @@ function signedIn(): Session {
 }
 
 const dir = {
-  id: "nod_ext0001",
+  id: "nod_ext00000000000000000000001",
   name: "Shared folder",
   kind: "dir",
   size: 0,
@@ -31,9 +31,9 @@ const dir = {
   editors_can_share: false,
 };
 
-const file = { ...dir, id: "nod_ext0002", name: "Report.pdf", kind: "file", mime_type: "application/pdf", size: 10 };
+const file = { ...dir, id: "nod_ext00000000000000000000002", name: "Report.pdf", kind: "file", mime_type: "application/pdf", size: 10 };
 
-const child = { ...dir, id: "nod_child01", name: "Notes", kind: "dir" };
+const child = { ...dir, id: "nod_chd00000000000000000000001", name: "Notes", kind: "dir" };
 
 function renderAt(path: string, qc = createQueryClient()) {
   const view = render(
@@ -52,7 +52,7 @@ afterEach(() => session.set(null));
 describe("the external item page", () => {
   it("an item the caller cannot reach shows the gone empty state", async () => {
     stubFetch(() => fail(404, "not_found"));
-    renderAt("/x/nod_ext0001");
+    renderAt("/x/nod_ext00000000000000000000001");
     expect(await screen.findByText("This item isn't shared with you, or it is no longer available.")).toBeTruthy();
   });
 
@@ -65,11 +65,11 @@ describe("the external item page", () => {
 
   it("a folder opens through the signed-in reads: no visitor credential, no thumbnails", async () => {
     const { calls } = stubFetch((c: Call) => {
-      if (c.url === "/api/v1/nodes/nod_ext0001") return { status: 200, body: dir };
-      if (c.url.startsWith("/api/v1/nodes/nod_ext0001/children")) return { status: 200, body: { items: [child], next_cursor: null } };
+      if (c.url === "/api/v1/nodes/nod_ext00000000000000000000001") return { status: 200, body: dir };
+      if (c.url.startsWith("/api/v1/nodes/nod_ext00000000000000000000001/children")) return { status: 200, body: { items: [child], next_cursor: null } };
       return fail(404, "not_found");
     });
-    renderAt("/x/nod_ext0001");
+    renderAt("/x/nod_ext00000000000000000000001");
     expect(await screen.findByRole("heading", { name: "Shared folder" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Notes" })).toBeTruthy();
     expect(calls.every((c) => c.auth === null)).toBe(true);
@@ -79,8 +79,8 @@ describe("the external item page", () => {
 
   it("a file's Download asks the signed link only on the click", async () => {
     const { calls } = stubFetch((c: Call) => {
-      if (c.url === "/api/v1/nodes/nod_ext0002") return { status: 200, body: file };
-      if (c.url === "/api/v1/nodes/nod_ext0002/links" && c.method === "POST") {
+      if (c.url === "/api/v1/nodes/nod_ext00000000000000000000002") return { status: 200, body: file };
+      if (c.url === "/api/v1/nodes/nod_ext00000000000000000000002/links" && c.method === "POST") {
         return { status: 200, body: { url: "https://content.example/report", expires_at: new Date(Date.now() + 300_000).toISOString() } };
       }
       return fail(404, "not_found");
@@ -88,12 +88,12 @@ describe("the external item page", () => {
     const realClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {};
     try {
-      renderAt("/x/nod_ext0002");
+      renderAt("/x/nod_ext00000000000000000000002");
       const button = await screen.findByRole("button", { name: "Download" });
       expect(calls.some((c) => c.url.endsWith("/links"))).toBe(false);
       fireEvent.click(button);
-      await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/nodes/nod_ext0002/links" && c.method === "POST")).toBe(true));
-      const post = calls.find((c) => c.url === "/api/v1/nodes/nod_ext0002/links");
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/nodes/nod_ext00000000000000000000002/links" && c.method === "POST")).toBe(true));
+      const post = calls.find((c) => c.url === "/api/v1/nodes/nod_ext00000000000000000000002/links");
       expect((post?.body as { disposition: string }).disposition).toBe("attachment");
     } finally {
       HTMLAnchorElement.prototype.click = realClick;
@@ -102,17 +102,17 @@ describe("the external item page", () => {
 
   it("the byline under the name comes from the cached shared-external answer only", async () => {
     stubFetch((c: Call) => {
-      if (c.url === "/api/v1/nodes/nod_ext0001") return { status: 200, body: dir };
-      if (c.url.startsWith("/api/v1/nodes/nod_ext0001/children")) return { status: 200, body: { items: [], next_cursor: null } };
+      if (c.url === "/api/v1/nodes/nod_ext00000000000000000000001") return { status: 200, body: dir };
+      if (c.url.startsWith("/api/v1/nodes/nod_ext00000000000000000000001/children")) return { status: 200, body: { items: [], next_cursor: null } };
       return fail(404, "not_found");
     });
     const qc = createQueryClient();
     qc.setQueryData(queryKey("shared-external"), {
-      items: [{ ...file, id: "nod_ext0001", account_name: "Globex", shared_by_name: "Mia Outside", role: "viewer", expires_at: null }],
+      items: [{ ...file, id: "nod_ext00000000000000000000001", account_name: "Globex", shared_by_name: "Mia Outside", role: "viewer", expires_at: null }],
       email_proved: true,
     });
     const { calls } = { calls: [] as Call[] };
-    renderAt("/x/nod_ext0001", qc);
+    renderAt("/x/nod_ext00000000000000000000001", qc);
     expect(await screen.findByText("Mia Outside · Globex")).toBeTruthy();
     // Nothing was read for the byline: the page asked only the item's own reads.
     expect(calls).toHaveLength(0);
@@ -120,11 +120,11 @@ describe("the external item page", () => {
 
   it("with no cached answer there is no byline, and nothing is asked for one", async () => {
     const { calls } = stubFetch((c: Call) => {
-      if (c.url === "/api/v1/nodes/nod_ext0001") return { status: 200, body: dir };
-      if (c.url.startsWith("/api/v1/nodes/nod_ext0001/children")) return { status: 200, body: { items: [], next_cursor: null } };
+      if (c.url === "/api/v1/nodes/nod_ext00000000000000000000001") return { status: 200, body: dir };
+      if (c.url.startsWith("/api/v1/nodes/nod_ext00000000000000000000001/children")) return { status: 200, body: { items: [], next_cursor: null } };
       return fail(404, "not_found");
     });
-    renderAt("/x/nod_ext0001");
+    renderAt("/x/nod_ext00000000000000000000001");
     expect(await screen.findByRole("heading", { name: "Shared folder" })).toBeTruthy();
     expect(screen.queryByText(/ · /)).toBeNull();
     expect(calls.some((c) => c.url === "/api/v1/shared/external")).toBe(false);

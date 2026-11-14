@@ -9,9 +9,9 @@ import { useT } from "../lib/i18n";
 import { queryKey } from "../lib/query";
 import type { ExternalShared } from "../lib/sharing/api";
 
-// ITEM_ID is the shape of an item's address. The external ids the server gives are shorter than the drive's own, so the
-// check is the prefix and its letters alone: an address that is not an item's id reads nothing.
-const ITEM_ID = /^nod_[a-z0-9]+$/;
+// ITEM_ID is the shape of a node's ID (nod_ and 26 lowercase Crockford base32 characters, internal/id): an address that
+// is not one reads nothing.
+const ITEM_ID = /^nod_[0-9a-hjkmnp-tv-z]{26}$/;
 
 // ExternalItemPage opens an item a person in another account shared with the caller, at /x/{nod}. It reads through the
 // signed-in source (the drive's own calls, no visitor credential), and defers a file's link to the click that needs it.
