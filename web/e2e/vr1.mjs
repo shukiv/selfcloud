@@ -42,6 +42,11 @@ async function glide(page, a, b, n = 8) {
 const pointOf = (page, selector) =>
   page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
 
+// treePoint is the middle of a tree row, scrolled to the centre of the sidebar's scroll area (as fu7 does), not to its edge: a row
+// left at the edge is moved by the drag's own edge autoscroll while the pointer glides to it, and the pointer ends off the row.
+const treePoint = (page, selector) =>
+  page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+
 // drawnRows counts the rows of the list that are in the page, not the loaded rows aria-rowcount names.
 const drawnRows = (page) => page.evaluate(`document.querySelectorAll('.files-list [role="row"][data-id]').length`);
 const loadedRows = (page) => page.evaluate(`Number(document.querySelector('.files-list table')?.getAttribute('aria-rowcount') ?? 1) - 1`);
@@ -122,7 +127,10 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
   const suffix = Date.now().toString(36);
   const root = `vr1-${suffix}`;
   const small = `vr1-small-${suffix}`;
-  const target = `vr1-target-${suffix}`;
+  // The target's name starts with a Hebrew letter so it sorts last in the tree: the listing's root collation puts Latin
+  // before Hebrew, and the sort section's Hebrew folder (סדר-ארוך) before a tav. Last in the tree, it is the row the drop
+  // check drags to at the bottom of a long sidebar.
+  const target = `ת-vr1-target-${suffix}`;
   const ids = [];
   const file = (i) => `file-${String(i).padStart(3, '0')}.txt`;
   try {
@@ -134,6 +142,11 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
     const rootID = (await made(root)).id;
     const smallID = (await made(small)).id;
     await made(target);
+    // About 40 extra folders beside the target, all sorting above it, so the tree is long and the target is deep in it (below the
+    // fold), as it is in a full run after the earlier sections' folders. They are kept on purpose: they make the drop check honest,
+    // since a short tree would leave the target already in view, where the drag's edge autoscroll cannot move it. They are removed
+    // with the rest at the end.
+    for (let i = 0; i < 40; i++) await made(`vr1-pad-${String(i).padStart(2, '0')}-${suffix}`);
     // A one-request write is limited to 300 a minute per key: the seed waits for the window to refill instead of
     // failing on 429, so the folder's 1,000 rows can be made in one check.
     const putFile = async (path) => {
@@ -241,16 +254,32 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
     await page.waitFor(`!!document.querySelector(${q(rowSel(file(999)))})`, 15000);
     const treeRow = `[data-testid="folder-tree"] .tree-row[data-drop-name="${target}"]`;
     await page.waitFor(`!!document.querySelector(${q(treeRow)})`, 15000);
+    // loadTo scrolls every region to its bottom, the sidebar among them, which would leave the target mid-sidebar where the drag's
+    // edge autoscroll cannot move it. The sidebar is put back at its top so the long tree's last row is below the fold, as it is in a
+    // full run, and the point helper has to scroll to it.
+    await page.evaluate(`document.querySelector('.shell-scroll').scrollTop = 0, true`);
+    await sleep(300);
+    // to is measured first, so its scroll into the sidebar cannot stale what from measures; the tree row goes to the centre of the
+    // sidebar's scroll area, not its edge. Both points are checked on the screen and the drop point on the row before the press.
+    const to = await treePoint(page, treeRow);
     const from = await pointOf(page, `${rowSel(file(999))} .row-name`);
-    const to = await pointOf(page, treeRow);
+    const at = await page.evaluate(`(() => { const row = document.querySelector(${q(treeRow)}); const hit = document.elementFromPoint(${to.x}, ${to.y}); return { w: innerWidth, h: innerHeight, onRow: !!row && !!hit && (hit === row || row.contains(hit)) }; })()`);
+    const onScreen = (p) => !!p && p.x >= 0 && p.x < at.w && p.y >= 0 && p.y < at.h;
+    const points = JSON.stringify({ from, to, window: { w: at.w, h: at.h }, onRow: at.onRow });
+    check(onScreen(from) && onScreen(to) && at.onRow, `the drag's points are on the screen and the tree row is under the drop point (${points})`);
     await mouse(page, 'mouseMoved', from);
     await mouse(page, 'mousePressed', from);
     await glide(page, from, to);
-    await sleep(200);
-    const dropState = await page.evaluate(`document.querySelector(${q(treeRow)})?.dataset.dropState ?? null`);
+    // dropState is read while the pointer rests on the row, waited for up to 2 s (the tree may still be settling), not one read.
+    let dropState = null;
+    for (const limit = Date.now() + 2000; Date.now() < limit; ) {
+      dropState = await page.evaluate(`document.querySelector(${q(treeRow)})?.dataset.dropState ?? null`);
+      if (dropState !== null) break;
+      await sleep(100);
+    }
     await mouse(page, 'mouseReleased', to);
     await sleep(500);
-    check(dropState === 'ok', `the row at the end of the list drops on the folder in the tree (${dropState})`);
+    check(dropState === 'ok', `the row at the end of the list drops on the folder in the tree (${dropState}; ${points})`);
     const inTarget = await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent(`/${target}`)}&limit=50`, accountKey);
     check(inTarget.items.some((n) => n.name === file(999)), 'the file is in the folder it was dropped on');
 
