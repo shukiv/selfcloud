@@ -921,9 +921,35 @@ async function main() {
         await page.send('Page.setDownloadBehavior', { behavior: 'default' });
         await page.send('Fetch.disable');
         await page.goto(page.base + '/');
+        // Right after the load the app is still reading its session and can stand at /login for a moment before it moves
+        // a signed-in user on. Wait for it to settle: the account menu is present, or the page is at /login with the
+        // sign-in form and still is 500 ms later, so a momentary /login is not read as signed out.
+        await page.waitFor(
+          `(async () => {
+            if (document.querySelector('[data-testid="account-menu"]')) return true;
+            if (location.pathname === '/login' && document.getElementById('login-email')) {
+              await new Promise((r) => setTimeout(r, 500));
+              return location.pathname === '/login' && !!document.getElementById('login-email');
+            }
+            return false;
+          })()`,
+          15000,
+        );
         // The sign-in page turns a signed-in visitor away, so the page is signed out first; signOut returns at once when
         // it is already signed out. 'none' leaves it there, for the sections that sign themselves in.
         await signOut(page);
+        // Confirm the sign-out took: a signed-in app moves away from /login, so the form being there is what says the
+        // visitor is signed out. If the app moved away, sign out once more through the account menu and check again.
+        await page.goto(page.base + '/login');
+        await page.waitFor(`!!document.getElementById('login-email') || !!document.querySelector('[data-testid="account-menu"]')`, 15000);
+        if (!(await page.evaluate(`location.pathname === '/login' && !!document.getElementById('login-email')`))) {
+          await signOut(page);
+          await page.goto(page.base + '/login');
+          await page.waitFor(`!!document.getElementById('login-email') || !!document.querySelector('[data-testid="account-menu"]')`, 15000);
+          if (!(await page.evaluate(`location.pathname === '/login' && !!document.getElementById('login-email')`))) {
+            throw new Error('recovery could not sign out');
+          }
+        }
         if (as !== 'none') await signIn(page, { owner: OWNER, member: MEMBER, admin: ADMIN }[as]);
       },
     });
