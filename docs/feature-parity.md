@@ -1,6 +1,6 @@
 # Feature parity with Google Drive
 
-Status: **approved 2026-10-28** (design.md §15, decisions 11 to 13). Search limits: full text up to 50 MiB, OCR up to 10 MiB images and 20 MiB PDFs. Updated 2026-11-13.
+Status: **approved 2026-10-28** (design.md §15, decisions 11 to 13). Search limits: full text up to 50 MiB, OCR up to 10 MiB images and 20 MiB PDFs. Updated 2026-11-14.
 
 The goal is to offer what Google Drive offers, matched in function, not in look: the screens
 follow SelfCloud's own design system. The inventory behind this file covers 213 Drive features
@@ -81,6 +81,7 @@ space ("My files"), and a group can hold users.
 | Share with a group | Built (n1): account groups, with members of any role; removing a member revokes at once |
 | Link sharing: restricted, organisation, anyone with the link | Restricted, organisation and anyone-with-the-link links built (o1, o2): an organisation link opens for members of the account; an anyone link opens for whoever holds it, viewer only, with an end date and an optional password. Manage > Links lists and deletes them (o4), and the file list shows a link badge |
 | People outside the organisation open "anyone" links without an account | Built (o2): the link's secret opens it for anyone, with a password when set. Visitors use a 15-minute credential, and are kept to the link's subtree |
+| Share with specific people outside the organisation | Built (xs1a, xs1b, xs2): an item shared with an address of another account on the same server, at viewer — view and download. Both accounts' "Share with people in other accounts" switch must be on, and the reader proves the address by a mailed link. The share dialog offers an unknown address tagged "Other account" and lists the outside grants apart from the people; the reader sees the item under Shared with me, "From other accounts", with its sharer and account, and opens it at `/x`. Read-only for now: editing, commenting, uploading, the bell and mail, search and Recent across accounts are a later phase |
 | Access expiry for a person | Built (n1, n2): `expires_at` is filtered at every read (n1). The API sets it, with a maximum from `sharing.max_expiry` (n2). Built (k3): the share dialog sets an end date, capped by `sharing_max_expiry_days` from `GET /info`, and shows it |
 | Stop viewers and commenters from downloading, copying or printing | Built (n2): downloads, signed links and copies are refused for viewers and commenters. It does not stop viewing: the content still shows in the browser, and a viewer can copy what it sees. This deters, it does not secure |
 | "Editors can change permissions" switch | Built (n2): `editors_can_share`, off by default |

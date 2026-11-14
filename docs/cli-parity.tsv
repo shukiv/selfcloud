@@ -168,7 +168,9 @@ fn	lib/settings/api.ts:changeSettings	settings set	se4	built in se4; settings re
 fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove calls it too
 fn	lib/settings/api.ts:getSettings	settings get	se4	built in se4
 fn	lib/settings/api.ts:putPicture	settings logo set	se4	built in se4; settings icon set calls it too
+fn	lib/sharing/api.ts:addExternalPermission	-	-	browser session only: external sharing is managed in the web interface (decision 172)
 fn	lib/sharing/api.ts:approveAccessRequest	access approve	cli7	built in cli7
+fn	lib/sharing/api.ts:confirmEmailProof	-	-	email proof link from the prove mail, opened by a mail client (decision 172)
 fn	lib/sharing/api.ts:createAccessRequest	-	-	a viewer asks for access in the browser
 fn	lib/sharing/api.ts:createDropLink	link create	cli7	built in cli7
 fn	lib/sharing/api.ts:createShareLink	link create	cli7	built in cli7
@@ -176,9 +178,12 @@ fn	lib/sharing/api.ts:deleteShareLink	link rm	cli7	built in cli7
 fn	lib/sharing/api.ts:denyAccessRequest	access deny	cli7	built in cli7
 fn	lib/sharing/api.ts:getSharingPolicy	sharing policy show	cli9b4	built in cli9b4
 fn	lib/sharing/api.ts:listAccessRequests	access ls	cli7	built in cli7
+fn	lib/sharing/api.ts:listExternalPermissions	-	-	browser session only: external sharing is managed in the web interface (decision 172)
 fn	lib/sharing/api.ts:listPermissions	share ls	cli7	built in cli7
 fn	lib/sharing/api.ts:listShareLinks	link ls	cli7	built in cli7
 fn	lib/sharing/api.ts:openShareLink	get	cli6	built in cli6
+fn	lib/sharing/api.ts:proveEmail	-	-	browser session only: the user asks for a proof mail (decision 172)
+fn	lib/sharing/api.ts:removeExternalPermission	-	-	browser session only: external sharing is managed in the web interface (decision 172)
 fn	lib/sharing/api.ts:removePermission	share revoke	cli7	built in cli7
 fn	lib/sharing/api.ts:renewShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:resetShareLink	link reset	cli7	built in cli7
@@ -187,6 +192,7 @@ fn	lib/sharing/api.ts:setHidden	folder hide	cli8	built in cli8 (folder show-agai
 fn	lib/sharing/api.ts:setPermission	share grant	cli7	built in cli7
 fn	lib/sharing/api.ts:setSharingPolicy	sharing policy set	cli9b4	built in cli9b4
 fn	lib/sharing/api.ts:setSharingSwitches	sharing policy set	cli9b4	built in cli9b4
+fn	lib/sharing/api.ts:sharedExternal	-	-	browser session only: items other accounts shared with the signed-in user (decision 172)
 fn	lib/sharing/api.ts:sharedWithMe	shared	cli7	built in cli7
 fn	lib/sharing/api.ts:transferOwnership	share transfer-ownership	cli7	built in cli7
 fn	lib/sharing/api.ts:updateDropLink	link update	cli7	built in cli7
