@@ -56,6 +56,7 @@ import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
 import { oe1Checks } from './oe1.mjs';
+import { ip1Checks } from './ip1.mjs';
 import { nt2MenuChecks } from './nt2menu.mjs';
 import { nt2GalleryChecks } from './nt2gallery.mjs';
 import { ks1Checks } from './ks1.mjs';
@@ -951,7 +952,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4 or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1123,6 +1124,8 @@ async function main() {
       return tab;
     };
     if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER, openProbe });
+    // Slice ip1 (decision 171): the phone's install card, its dismissals and the offer it uses, in its own browser with a finger.
+    if (!only || onlySet.has('ip1')) await ip1Checks(h, { base, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, brandName: BRAND.name });
     // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
     // sections above, which hold no sign-ins for its user, and before the full run's own checks.
     if (!only || onlySet.has('sec2')) {
