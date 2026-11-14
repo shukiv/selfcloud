@@ -9,6 +9,8 @@
   "notifications.noneUnread": "Aucune notification non lue",
   "notifications.mention": "{actor} vous a mentionné dans {item}",
   "notifications.reply": "{actor} a répondu à votre commentaire sur {item}",
+  "notifications.share": "{actor} a partagé {item} avec vous",
+  "notifications.accessRequest": "{actor} a demandé l’accès à {item}",
   "notifications.generic": "{actor} vous a envoyé une notification au sujet de {item}",
   "notifications.former": "Un ancien membre",
   "notifications.someone": "Quelqu’un",

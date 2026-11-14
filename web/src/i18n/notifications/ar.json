@@ -9,6 +9,8 @@
   "notifications.noneUnread": "لا توجد إشعارات غير مقروءة",
   "notifications.mention": "أشار إليك {actor} في {item}",
   "notifications.reply": "ردّ {actor} على تعليقك في {item}",
+  "notifications.share": "شارك {actor} {item} معك",
+  "notifications.accessRequest": "طلب {actor} الوصول إلى {item}",
   "notifications.generic": "أرسل إليك {actor} إشعارا عن {item}",
   "notifications.former": "عضو سابق",
   "notifications.someone": "شخص ما",

@@ -9,6 +9,8 @@
   "notifications.noneUnread": "No unread notifications",
   "notifications.mention": "{actor} mentioned you in {item}",
   "notifications.reply": "{actor} replied to your comment on {item}",
+  "notifications.share": "{actor} shared {item} with you",
+  "notifications.accessRequest": "{actor} asked for access to {item}",
   "notifications.generic": "{actor} sent you a notification about {item}",
   "notifications.former": "A former member",
   "notifications.someone": "Someone",

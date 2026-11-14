@@ -9,6 +9,8 @@
   "notifications.noneUnread": "אין התראות שלא נקראו",
   "notifications.mention": "{actor} אזכר/ה אותך ב-{item}",
   "notifications.reply": "{actor} הגיב/ה להערה שלך על {item}",
+  "notifications.share": "{actor} שיתף/ה את {item} איתך",
+  "notifications.accessRequest": "{actor} ביקש/ה גישה ל-{item}",
   "notifications.generic": "{actor} שלח/ה לך התראה על {item}",
   "notifications.former": "חבר/ה לשעבר",
   "notifications.someone": "מישהו",

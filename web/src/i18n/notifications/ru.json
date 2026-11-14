@@ -9,6 +9,8 @@
   "notifications.noneUnread": "Нет непрочитанных уведомлений",
   "notifications.mention": "{actor} упомянул(а) вас в {item}",
   "notifications.reply": "{actor} ответил(а) на ваш комментарий к {item}",
+  "notifications.share": "{actor} дал(а) вам доступ к {item}",
+  "notifications.accessRequest": "{actor} запросил(а) доступ к {item}",
   "notifications.generic": "{actor} отправил(а) вам уведомление о {item}",
   "notifications.former": "Бывший участник",
   "notifications.someone": "Кто-то",

@@ -8,6 +8,7 @@ import {
   followEmpty,
   itemText,
   nextPage,
+  noticePath,
   noticeSentence,
   pollInterval,
   sentenceKey,
@@ -126,6 +127,23 @@ describe("the paging of the list", () => {
 describe("the address of a notification", () => {
   it("opens the file with its comments", () => {
     expect(detailsPath("nod_abcdefgh")).toBe("/n/nod_abcdefgh?details=comments");
+  });
+
+  it("opens a comment notice on its file with the comments shown", () => {
+    expect(noticePath(base)).toBe("/n/nod_abcdefgh?details=comments");
+    expect(noticePath({ ...base, kind: "reply" })).toBe("/n/nod_abcdefgh?details=comments");
+  });
+
+  it("opens a share on its file, without the comments panel", () => {
+    expect(noticePath({ ...base, kind: "share" })).toBe("/n/nod_abcdefgh");
+  });
+
+  it("opens an access request on the requests page", () => {
+    expect(noticePath({ ...base, kind: "access_request" })).toBe("/requests");
+  });
+
+  it("opens a kind it does not know on the file with its comments", () => {
+    expect(noticePath({ ...base, kind: "reaction" })).toBe("/n/nod_abcdefgh?details=comments");
   });
 
   it("accepts a notice whose IDs have the server's shape", () => {

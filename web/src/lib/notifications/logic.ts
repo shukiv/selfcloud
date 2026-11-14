@@ -36,6 +36,8 @@ export function badgeText(count: number, more: boolean): string | null {
 export function sentenceKey(kind: string): string {
   if (kind === "mention") return "notifications.mention";
   if (kind === "reply") return "notifications.reply";
+  if (kind === "share") return "notifications.share";
+  if (kind === "access_request") return "notifications.accessRequest";
   return "notifications.generic";
 }
 
@@ -62,6 +64,14 @@ export function noticeSentence(n: Notice, t: T): string {
 // detailsPath is the address that opens the file with its comments (the /n/ address, with the request).
 export function detailsPath(nodeID: string): string {
   return `/n/${nodeID}?details=comments`;
+}
+
+// noticePath is the address a notice opens. An access request goes to the requests page, where it is answered; a share
+// goes to its file, without the comments panel; a comment notice goes to its file with the comments shown.
+export function noticePath(n: Notice): string {
+  if (n.kind === "access_request") return "/requests";
+  if (n.kind === "share") return `/n/${n.node_id}`;
+  return detailsPath(n.node_id);
 }
 
 // nextPage is the cursor of the page after last, while the server gives one.

@@ -11,7 +11,7 @@ import {
   type Notice,
   type NoticePage,
 } from "../lib/notifications/api";
-import { detailsPath, followEmpty, formatWhen, nextPage, noticeSentence, validNotice } from "../lib/notifications/logic";
+import { followEmpty, formatWhen, nextPage, noticePath, noticeSentence, validNotice } from "../lib/notifications/logic";
 import { useNT } from "../lib/notifications/i18n";
 import { useLang, useT } from "../lib/i18n";
 import { session } from "../lib/session";
@@ -24,8 +24,9 @@ import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
 
 // NotificationsPage is the signed-in person's inbox, newest first, one page at a time, with the switch for email beside it.
 // The notices are one table (tl5, decision 138): the message is the name cell, its button opens the notice; the status is a
-// second line on a phone; When is marked newest first. Opening a row or its button marks it read and goes to the file with its
-// comments shown. A failed refresh keeps the list on the screen; a failed next page says so, and is not asked again by itself
+// second line on a phone; When is marked newest first. Opening a row or its button marks it read and goes where its kind
+// leads: a comment notice to the file with its comments shown, a share to the file, an access request to the requests page.
+// A failed refresh keeps the list on the screen; a failed next page says so, and is not asked again by itself
 // (Show more asks); a failed first load says so too. While the person is signed in as another (an administrator's impersonation),
 // the inbox is not read at all, and the page says so.
 export default function NotificationsPage() {
@@ -79,15 +80,16 @@ export default function NotificationsPage() {
     }
   }
 
-  // open marks a line read and goes to its file, with the comments shown. The address is made from the node's ID only
-  // when that ID has the server's shape; a line whose ID does not is not opened.
+  // open marks a line read and goes where its kind leads: a comment notice to its file with the comments shown, a share to
+  // its file, an access request to the requests page. The address is made from the node's ID only when that ID has the
+  // server's shape; a line whose ID does not is not opened.
   function open(n: Notice) {
     if (!validNotice(n)) {
       message.error(t("notifications.badLink"));
       return;
     }
     if (!n.read_at) void markOne(n);
-    navigate(detailsPath(n.node_id));
+    navigate(noticePath(n));
   }
 
   // A touch target is 44 px on a finger, and the usual size with a mouse.
