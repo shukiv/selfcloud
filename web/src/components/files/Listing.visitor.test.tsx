@@ -122,6 +122,14 @@ describe("Listing visitor: the list", () => {
     expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: /More actions/ })).toBeNull();
   });
+
+  it("a dragstart on a row is prevented: the browser's own drag of an image or a link is off for a visitor too", () => {
+    undo = desktopViewport();
+    render(<Listing {...props()} visitor />);
+    const ev = new Event("dragstart", { bubbles: true, cancelable: true });
+    rowOf("n1").dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
 });
 
 describe("Listing visitor: the tiles", () => {
@@ -144,6 +152,14 @@ describe("Listing visitor: the tiles", () => {
     render(<Listing {...props({ view: "grid" })} visitor />);
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(3);
+  });
+
+  it("the focused tile's Download is a tab stop, and the other tiles' are not", () => {
+    undo = desktopViewport();
+    render(<Listing {...props({ view: "grid", focusID: "n2" })} visitor />);
+    expect(within(rowOf("n2")).getByRole("button", { name: "Download" }).tabIndex).toBe(0);
+    expect(within(rowOf("n1")).getByRole("button", { name: "Download" }).tabIndex).toBe(-1);
+    expect(within(rowOf("n3")).getByRole("button", { name: "Download" }).tabIndex).toBe(-1);
   });
 });
 
