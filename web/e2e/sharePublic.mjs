@@ -271,9 +271,13 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans },
   await page.waitFor(`!!document.querySelector('section.request .made input')`, 15000);
   const url = await page.evaluate(`document.querySelector('section.request .made input').value`);
   h.check(url.startsWith(base + '/s#') && url.slice(base.length + 3).length === 43, 'the owner turns on Request files and gets a link');
-  await page.waitFor(`(() => { const s = [...document.querySelectorAll('section.request span')].find((x) => x.textContent.includes('Ask for name')); const sw = s?.closest('label, div')?.querySelector('button[role="switch"]'); if (!sw) return false; sw.click(); return true; })()`);
+  // A refetch of the link can land after a click and reset the form from the link (RequestFiles), so the switch is clicked
+  // until it reads checked, not once.
+  await page.waitFor(`(() => { const s = [...document.querySelectorAll('section.request span')].find((x) => x.textContent.includes('Ask for name')); const sw = s?.closest('label, div')?.querySelector('button[role="switch"]'); if (!sw) return false; if (sw.getAttribute('aria-checked') !== 'true') { sw.click(); return false; } return true; })()`);
   await h.clickButton(page, 'Save');
   await page.waitFor(`document.querySelector('section.request .hint[role="status"]')?.textContent.includes('Saved')`, 15000);
+  const askName = await page.evaluate(`(() => { const s = [...document.querySelectorAll('section.request span')].find((x) => x.textContent.includes('Ask for name')); return s?.closest('label, div')?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null; })()`);
+  h.check(askName === 'true', `the Ask for name switch still reads checked after Save (${askName})`);
   await h.press(page, '[role="dialog"]', 'Escape');
   await page.waitFor(`!document.querySelector('[role="dialog"]')`);
 
@@ -282,7 +286,7 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans },
   await page.goto(url);
   await page.waitFor(`!!document.getElementById('drop-name')`, 15000);
   const nameLabel = await page.evaluate(`document.querySelector('label[for="drop-name"]').textContent`);
-  h.check(nameLabel === 'Your name', 'a signed-out visitor sees the name field as required');
+  h.check(nameLabel === 'Your name', `a signed-out visitor sees the name field as required (${nameLabel})`);
   await h.setInput(page, 'drop-name', 'Vera Visitor');
   await h.setInput(page, 'drop-email', 'vera@example.com');
   for (const [name, body] of [['report.txt', 'new report\n'], ['brief.txt', 'the brief\n']]) {
