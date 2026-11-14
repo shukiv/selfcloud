@@ -121,7 +121,7 @@ func scanShareLink(row interface{ Scan(...any) error }) (*ShareLink, error) {
 const linkPolicySQL = `(lf.kind = 'personal' OR lf.allow_links = 1) AND (lf.members_only = 0 OR ln.parent_id IS NULL)`
 
 // linkCreatorPausedSQL is the condition under which a link is paused because the user who made it must change
-// its password (decision 171). It reads the link as sl and is self-contained: it looks the creator up in users
+// its password (decision 178). It reads the link as sl and is self-contained: it looks the creator up in users
 // itself, so every query that reads the live/paused rule can use it without a join of its own. A link made by an
 // account key, or by a user whose flag is clear, is not paused by it; clearing the flag revives the link.
 const linkCreatorPausedSQL = `(sl.created_kind = 'user' AND EXISTS (SELECT 1 FROM users cu
@@ -207,7 +207,7 @@ type ShareLinkState struct {
 	MembersOnly   bool   // the team space admits links on its root only
 	AccountStatus string
 	PublicLinks   bool // the account's switch for links that anyone can open
-	CreatorPaused bool // the user who made the link must change its password (decision 171)
+	CreatorPaused bool // the user who made the link must change its password (decision 178)
 }
 
 const shareLinkStateSQL = `SELECT ` + shareLinkCols + `,

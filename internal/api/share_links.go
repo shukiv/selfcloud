@@ -946,7 +946,7 @@ func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) err
 		if err != nil {
 			return err
 		}
-		// A link whose creator must change its password is paused, as policy pauses one (decision 171).
+		// A link whose creator must change its password is paused, as policy pauses one (decision 178).
 		if st.CreatorPaused {
 			return dead
 		}

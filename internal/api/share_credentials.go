@@ -163,7 +163,7 @@ func parseCredentialPayload(body []byte) (credentialPayload, error) {
 // shareOpenable reports whether an anyone link gives access now, judged by the state st read: it must be an
 // anyone link that has not expired, on an active account whose switch is on, with its node not trashed, and
 // whose team space allows it (members_only admitting only the root). A link whose creator must change its
-// password is paused (decision 171). It is the one rule every use applies.
+// password is paused (decision 178). It is the one rule every use applies.
 func shareOpenable(st *store.ShareLinkState, now time.Time) bool {
 	l := &st.Link
 	switch {

@@ -94,7 +94,7 @@ func (s *Server) notifyDrop(ctx context.Context, l *store.ShareLink, now time.Ti
 }
 
 // dropMail renders the mail for a link's creator. ok is false when the creator is not to be mailed: gone,
-// not active, no longer a manager, or a user who must change its password (decision 171).
+// not active, no longer a manager, or a user who must change its password (decision 178).
 func (s *Server) dropMail(ctx context.Context, l *store.ShareLink, count int) (to, subject, body string, ok bool) {
 	if l.CreatedKind != store.CreatorUser {
 		return "", "", "", false
