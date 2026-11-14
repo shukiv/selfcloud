@@ -26,6 +26,8 @@ type externalPermissionJSON struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	CreatedBy string     `json:"created_by"`
+	// CreatedByName is the display name of the user that made the grant; "" for a key or a user that is gone.
+	CreatedByName string `json:"created_by_name"`
 }
 
 func toExternalPermissionJSON(p *store.ExternalPermission) externalPermissionJSON {
@@ -48,17 +50,28 @@ func (s *Server) handleListExternalPermissions(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		return storeErr(err)
 	}
+	ids := make([]string, len(perms))
+	for i, pm := range perms {
+		ids[i] = pm.CreatedBy
+	}
+	names, err := s.store.UserNames(r.Context(), n.AccountID, ids)
+	if err != nil {
+		return storeErr(err)
+	}
 	out := listResponse[externalPermissionJSON]{Items: []externalPermissionJSON{}}
 	for _, pm := range perms {
-		out.Items = append(out.Items, toExternalPermissionJSON(pm))
+		j := toExternalPermissionJSON(pm)
+		j.CreatedByName = names[pm.CreatedBy]
+		out.Items = append(out.Items, j)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
 // handleSetExternalPermission grants a node to an email address of another account, as viewer only.
-// The account's switch must be on. The answer is the same whether or not the address names a user
-// anywhere: a grant names an address, not a user (decision 172).
+// The role may be left out or empty, which mean viewer. The account's switch must be on. The answer
+// is the same whether or not the address names a user anywhere: a grant names an address, not a user
+// (decision 172).
 func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Email     string     `json:"email"`
@@ -78,12 +91,14 @@ func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Requ
 	nodeID := r.PathValue("nod")
 	ctx := r.Context()
 	var out externalPermissionJSON
+	var accountID string
 	s.atWrite()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		n, _, err := requireSharer(ctx, tx, p, nodeID)
 		if err != nil {
 			return err
 		}
+		accountID = n.AccountID
 		on, err := tx.ExternalSharing(ctx, n.AccountID)
 		if err != nil {
 			return err
@@ -96,7 +111,7 @@ func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			return err
 		}
-		if in.Role != store.RoleViewer {
+		if in.Role != "" && in.Role != store.RoleViewer {
 			return apierr.New(apierr.InvalidRequest, "role must be viewer")
 		}
 		if err := s.checkExpiry(in.ExpiresAt, time.Now()); err != nil {
@@ -149,6 +164,11 @@ func (s *Server) handleSetExternalPermission(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return err
 	}
+	names, err := s.store.UserNames(ctx, accountID, []string{out.CreatedBy})
+	if err != nil {
+		return storeErr(err)
+	}
+	out.CreatedByName = names[out.CreatedBy]
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

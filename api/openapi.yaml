@@ -4950,7 +4950,7 @@ paths:
         Needs the same right as setting an internal permission: manager on the node, or an editor
         when the node allows editors to share, or an account key. The account's `external_sharing`
         switch must be on, or the answer is `forbidden` with `details.reason` `external_sharing_off`.
-        The role is `viewer` only. The address is checked as a sign-in address is, and an address of
+        The role is `viewer` only; it may be left out or empty, which mean viewer. The address is checked as a sign-in address is, and an address of
         the account itself is `invalid_request` with `details.reason` `same_account`. The answer is
         the same whether or not the address names a user anywhere: a grant names an address, not a
         user. `expires_at` follows the same rule as an internal permission. A members-only team space
@@ -8018,7 +8018,7 @@ components:
 
     ExternalPermission:
       type: object
-      required: [email, role, expires_at, created_at, created_by]
+      required: [email, role, expires_at, created_at, created_by, created_by_name]
       additionalProperties: false
       properties:
         email: { type: string, description: The granted address, as it was given. }
@@ -8029,6 +8029,7 @@ components:
           description: When the grant ends, or null for one that never ends. Expired ones grant nothing.
         created_at: { type: string, format: date-time, description: When the grant was first made; an update keeps it. }
         created_by: { type: string, description: The ID of the caller who first made the grant; an update keeps it. }
+        created_by_name: { type: string, description: "The display name of the user that made the grant; empty for a key or a user that is gone." }
 
     ExternalPermissionList:
       type: object
@@ -8040,11 +8041,11 @@ components:
 
     ExternalPermissionSet:
       type: object
-      required: [email, role]
+      required: [email]
       additionalProperties: false
       properties:
         email: { type: string, maxLength: 254, description: A bare address of another account. }
-        role: { type: string, enum: [viewer] }
+        role: { type: string, enum: [viewer, ""], description: Optional; absent or empty means viewer. }
         expires_at:
           type: [string, "null"]
           format: date-time

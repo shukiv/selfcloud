@@ -116,18 +116,20 @@ func (s *Store) NodeAccountID(ctx context.Context, nodeID string) (string, error
 	return acc, err
 }
 
-// ExternalGrantRoot returns the topmost live grant at or above nodeID in accountID: the grant the
-// node's reach starts from (decision 172). An expired grant reaches nothing. It returns ErrNotFound
-// when no live grant reaches the node.
-func (s *Store) ExternalGrantRoot(ctx context.Context, accountID, nodeID string) (*ExternalPermission, error) {
+// ExternalGrantRoot returns the topmost live grant of emailKey at or above nodeID in accountID: the
+// grant the address's reach starts from (decision 172). An expired grant reaches nothing. The walk
+// stays inside the account and stops at 1000 levels. It returns ErrNotFound when no live grant of
+// the address reaches the node.
+func (s *Store) ExternalGrantRoot(ctx context.Context, accountID, nodeID, emailKey string, now time.Time) (*ExternalPermission, error) {
 	return scanExternalPermission(s.r.QueryRowContext(ctx, `WITH RECURSIVE chain(nid, parent, depth) AS (
 			SELECT id, parent_id, 0 FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
 			SELECT n.id, n.parent_id, chain.depth + 1 FROM nodes n JOIN chain ON n.id = chain.parent
+			WHERE n.account_id = ? AND chain.depth < 1000
 		)
 		SELECT `+externalGrantCols+` FROM external_permissions ep JOIN chain ON ep.node_id = chain.nid
-		WHERE ep.expires_at IS NULL OR ep.expires_at > ?
-		ORDER BY chain.depth DESC LIMIT 1`, accountID, nodeID, millis(Now())))
+		WHERE ep.email_key = ? AND (ep.expires_at IS NULL OR ep.expires_at > ?)
+		ORDER BY chain.depth DESC LIMIT 1`, accountID, nodeID, accountID, emailKey, millis(now)))
 }
 
 // ExternalSharing returns the account's switch for sharing with other accounts (decision 172).
