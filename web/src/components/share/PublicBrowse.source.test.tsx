@@ -51,7 +51,7 @@ describe("PublicBrowse over the signed-in source", () => {
     filesApi.childrenPage.mockResolvedValue({ items: [child], next_cursor: null });
     render(<PublicBrowse token="" root="nod_root" source={sessionSource()} onlost={vi.fn()} />);
     expect(await screen.findByRole("heading", { name: "Plans" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Notes" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "Notes" })).toBeTruthy();
     expect(filesApi.statNode).toHaveBeenCalledWith("nod_root");
     expect(filesApi.childrenPage).toHaveBeenCalledWith("", "nod_root", undefined);
     expect(sharingApi.visitorNode).not.toHaveBeenCalled();

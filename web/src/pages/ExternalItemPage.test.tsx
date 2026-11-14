@@ -71,7 +71,7 @@ describe("the external item page", () => {
     });
     renderAt("/x/nod_ext00000000000000000000001");
     expect(await screen.findByRole("heading", { name: "Shared folder" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Notes" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "Notes" })).toBeTruthy();
     expect(calls.every((c) => c.auth === null)).toBe(true);
     expect(calls.some((c) => c.url.includes("/thumbnail"))).toBe(false);
     expect(calls.some((c) => c.url.startsWith("/api/v1/share"))).toBe(false);
