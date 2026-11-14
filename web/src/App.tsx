@@ -67,7 +67,7 @@ const AdminSettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 const CliApprovePage = lazy(() => import("./pages/CliApprovePage"));
 const DevicesPage = lazy(() => import("./pages/DevicesPage"));
-// The proof page redeems a mailed token; the external item page opens what another account shared (decision 172).
+// The proof page redeems a mailed token; the external item page opens what another account shared (decision 174).
 const ProvePage = lazy(() => import("./pages/ProvePage"));
 const ExternalItemPage = lazy(() => import("./pages/ExternalItemPage"));
 
