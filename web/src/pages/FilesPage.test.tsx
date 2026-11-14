@@ -38,6 +38,7 @@ const api = vi.hoisted(() => ({
   mkdir: vi.fn(),
   getJob: vi.fn(),
   readLimits: vi.fn(),
+  createDocument: vi.fn(),
 }));
 // truncated gives the place of a folder more than 64 levels down (decision 140): the trail is the 64 nearest, the root is not
 // known, and so there is no space name and no path.
@@ -211,7 +212,29 @@ function renderAt(path: string, client?: QueryClient) {
 export const FOLDER = "/files/fld_aaaaaaaa";
 export const rows = (name: string) => document.querySelector(`[role="row"][aria-label="${name}"]`);
 
+// The desktop tests below read a window at least md wide, so the menus keep their hover submenus (decision 185 slides them
+// only below md). It is the setup's window with md added: lg stays false, so the toolbar keeps its New (the sidebar is not
+// drawn here). Each test restores the setup's stub afterwards.
+let undoDesktop: () => void;
+const desktopMenuViewport = (): (() => void) => {
+  const before = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: query === "(min-width: 1000px)" || query === "(min-width: 360px)" || query === "(min-width: 768px)",
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = before;
+  };
+};
+
 beforeEach(() => {
+  undoDesktop = desktopMenuViewport();
   vi.clearAllMocks();
   place.role = "editor";
   place.noDownload = false;
@@ -228,6 +251,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  undoDesktop();
   session.set(null);
   document.title = "";
 });
@@ -3430,5 +3454,150 @@ describe("the density toggle (decision 194)", () => {
     expect(screen.queryByTestId("density-toggle")).toBeNull();
     expect(document.querySelector(".files-list")?.classList.contains("list--compact")).toBe(false);
     expect(document.querySelector(".files-list .ant-table-middle")).not.toBeNull();
+  });
+});
+
+// Decision 185: below md the page's menus slide one level at a time in the same popup: the toolbar's New, the row and space
+// menus, and the selection panel's More. A submenu is a plain row with a chevron; its children follow a back row; an action
+// runs and closes; a close resets to the first level. On a coarse pointer no row shows a shortcut hint.
+describe("the page's menus on a phone (decision 185)", () => {
+  const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  // phonePointer answers for a phone below md: no min-width matches, and the pointer is a finger only when asked.
+  const phonePointer = (coarse: boolean): (() => void) => {
+    const before = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(pointer: coarse)" ? coarse : false,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    return () => {
+      window.matchMedia = before;
+    };
+  };
+  let undo: () => void;
+  beforeEach(() => {
+    undo = phonePointer(false);
+    officeEdit.set(true);
+    place.rootNodeID = "nod_root";
+    api.createDocument.mockResolvedValue(node("n9", "Untitled.docx", { mime_type: DOCX }));
+  });
+  afterEach(() => {
+    undo();
+    officeEdit.set(false);
+    vi.restoreAllMocks();
+  });
+
+  const closed = () =>
+    waitFor(() => {
+      const dropdowns = Array.from(document.querySelectorAll(".ant-dropdown"));
+      expect(dropdowns.every((d) => d.className.includes("slide-up-leave") || d.classList.contains("ant-dropdown-hidden"))).toBe(true);
+    });
+  const toolbarNew = () => within(screen.getByRole("toolbar", { name: "Folder actions" })).getByRole("button", { name: "New" });
+
+  it("the toolbar's New slides Document in the same popup; Blank makes the file and closes; the next opening is the first level", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => ({ opener: null }) as unknown as Window);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(toolbarNew());
+    const doc = await screen.findByRole("menuitem", { name: "Document" });
+    expect(doc.getAttribute("aria-haspopup")).toBeNull();
+    expect(doc.getAttribute("aria-expanded")).toBeNull();
+    expect(doc.querySelector("svg.icon-dir")).not.toBeNull();
+    fireEvent.click(doc);
+    const menu = await screen.findByRole("menu");
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "Back to Document" }))).toBe(true);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "Blank" }))).toBe(true);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "From a template" }))).toBe(true);
+    expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Blank" }));
+    await waitFor(() => expect(api.createDocument).toHaveBeenCalledWith("nod_root", "docx"));
+    await closed();
+    fireEvent.click(toolbarNew());
+    expect(await screen.findByRole("menuitem", { name: "Document" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Back to Document" })).toBeNull();
+    open.mockRestore();
+  });
+
+  it("the row menu slides Organize: the back row names it, the children keep their keys, and Cut runs and closes", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 40, clientY: 50 });
+    const organize = await screen.findByRole("menuitem", { name: "Organize" });
+    expect(organize.getAttribute("aria-haspopup")).toBeNull();
+    expect(organize.querySelector("svg.icon-dir")).not.toBeNull();
+    fireEvent.click(organize);
+    const menu = await screen.findByRole("menu");
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "Back to Organize" }))).toBe(true);
+    const cut = screen.getByRole("menuitem", { name: "Cut" });
+    expect(cut.getAttribute("aria-keyshortcuts")).toBe("Control+X");
+    expect(screen.getByRole("menuitem", { name: "Copy" })).toBeTruthy();
+    expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
+    fireEvent.click(cut);
+    await waitFor(() => expect(get(clipboard)?.nodes.map((n) => n.id)).toEqual(["n1"]));
+    await closed();
+  });
+
+  it("the row menu's back row returns to the first level, and Share and Information slide too", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 40, clientY: 50 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Information" }));
+    expect(await screen.findByRole("menuitem", { name: "Back to Information" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Details" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Back to Information" }));
+    expect(await screen.findByRole("menuitem", { name: "Organize" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Share" }));
+    expect(await screen.findByRole("menuitem", { name: "Back to Share" })).toBeTruthy();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+  });
+
+  it("on a coarse pointer the row menu shows no hint on either level, and the keys stay named", async () => {
+    undo();
+    undo = phonePointer(true);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 40, clientY: 50 });
+    const organize = await screen.findByRole("menuitem", { name: "Organize" });
+    expect(organize.querySelector(".menu-hint")).toBeNull();
+    fireEvent.click(organize);
+    const cut = await screen.findByRole("menuitem", { name: "Cut" });
+    expect(cut.querySelector(".menu-hint")).toBeNull();
+    expect(cut.getAttribute("aria-keyshortcuts")).toBe("Control+X");
+    expect(document.querySelector(".menu-hint")).toBeNull();
+  });
+
+  it("the empty space's menu slides the New submenus too", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(document.querySelector(".browser") as Element, { clientX: 40, clientY: 50 });
+    const doc = await screen.findByRole("menuitem", { name: "Document" });
+    expect(doc.getAttribute("aria-haspopup")).toBeNull();
+    fireEvent.click(doc);
+    expect(await screen.findByRole("menuitem", { name: "Back to Document" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Blank" })).toBeTruthy();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
+  });
+
+  it("the selection panel's More slides its submenus in the same popup", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    const organize = await screen.findByRole("menuitem", { name: "Organize" });
+    expect(organize.getAttribute("aria-haspopup")).toBeNull();
+    fireEvent.click(organize);
+    expect(await screen.findByRole("menuitem", { name: "Back to Organize" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Move to…" })).toBeTruthy();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
   });
 });

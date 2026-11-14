@@ -434,8 +434,16 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     check(await page.evaluate(`matchMedia('(pointer: coarse)').matches`), 'the coarse pointer is emulated for the file menu check');
     await page.evaluate(`document.querySelector(${q(`${rowSel(alpha)} button[aria-haspopup="menu"]`)}).click(), true`);
     await page.waitFor(`${LABELS}.includes('Organize')`, 10000);
-    await hoverMenuTitle(page, 'Share');
-    await menuRowChecks(page, check, 'the file menu on a coarse pointer, Share submenu open');
+    // Decision 185: a coarse pointer shows no shortcut hint on any row, the open submenu's included; the keys stay named for a
+    // screen reader. The hint is the .menu-hint span the fine pointer draws at the row's end.
+    const topHints = await page.evaluate(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .menu-hint').length`);
+    check(topHints === 0, `on a coarse pointer the menu's top level shows no shortcut hint (${topHints} hints)`);
+    await hoverMenuTitle(page, 'Organize');
+    const coarseHints = await page.evaluate(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .menu-hint, .ant-dropdown-menu-submenu-popup .menu-hint').length`);
+    check(coarseHints === 0, `on a coarse pointer no submenu row shows a shortcut hint (${coarseHints} hints)`);
+    const cutKeys = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === 'Cut'); return t ? t.closest('[role="menuitem"]')?.getAttribute('aria-keyshortcuts') ?? null : null; })()`);
+    check(cutKeys === 'Control+X' || cutKeys === 'Meta+X', `on a coarse pointer the row still names its keys for a screen reader (${cutKeys})`);
+    await menuRowChecks(page, check, 'the file menu on a coarse pointer, Organize submenu open');
     await closeMenus(page);
     await page.send('Emulation.setEmulatedMedia', { features: [] });
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });

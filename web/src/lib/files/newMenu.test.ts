@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { newMenuTree, newMenuItems, type NewMenuNode, KIND_INK } from "./newMenu";
+import type { MenuProps } from "antd";
+import { ChevronRight } from "lucide-react";
+import { newMenuTree, newMenuItems, type NewMenuNode, type NewMenuOptions, KIND_INK } from "./newMenu";
 import { newEntries, myFilesPlace, type NewPlace, type BlankKind } from "./newPlace";
 import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { antdTokens } from "../../theme/theme";
@@ -106,7 +108,7 @@ describe("the New menu, one list for the sidebar and the files page", () => {
 describe("the New menu's rows are the same height in every row", () => {
   const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };
   function heights(coarse: boolean): (string | number | undefined)[] {
-    const items = newMenuItems(tree(writable), { text, dark: false, coarse, onRun: () => undefined });
+    const items = newMenuItems(tree(writable), { text, dark: false, coarse, phone: false, onRun: () => undefined });
     return items.flatMap((item) => (item && "type" in item && item.type === "divider" ? [] : [(item as { style?: { height?: number } }).style?.height]));
   }
   it("every top-level row is 40 px on a fine pointer, submenu titles too", () => {
@@ -118,5 +120,70 @@ describe("the New menu's rows are the same height in every row", () => {
     const h = heights(true);
     expect(h.length).toBeGreaterThan(0);
     expect(h.every((x) => x === 44)).toBe(true);
+  });
+});
+
+// Decision 185: on a phone the New menu's submenus slide in the same popup (the hook reads the children the items keep);
+// on a coarse pointer the chord hints are gone from every row, and the keys stay named for a screen reader.
+describe("the New menu's phone rows and touch hints (decision 185)", () => {
+  const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };
+  const opts = (over: Partial<NewMenuOptions> = {}): NewMenuOptions => ({ text, dark: false, coarse: false, phone: false, onRun: () => undefined, ...over });
+  type Item = NonNullable<MenuProps["items"]>[number];
+  const childrenOf = (i: Item): Item[] => (i && "children" in i && Array.isArray(i.children) ? i.children : []);
+  const rows = (list: Item[]): Item[] => list.flatMap((i) => (i && "type" in i && i.type === "divider" ? [] : [i]));
+  const allRows = (list: Item[]): Item[] => rows(list).flatMap((i) => [i, ...allRows(childrenOf(i))]);
+  const find = (list: Item[], key: string): Item => {
+    const item = list.find((i) => i && "key" in i && i.key === key);
+    if (!item) throw new Error(`no item ${key}`);
+    return item;
+  };
+
+  it("phone: false keeps the menu's keys and types, submenus included", () => {
+    const items = newMenuItems(tree(writable), opts());
+    const shapeOf = (list: Item[]): string[] => list.map((i) => {
+      if (i && "type" in i && i.type === "divider") return "|";
+      const key = i && "key" in i ? String(i.key) : "?";
+      const kids = childrenOf(i);
+      return kids.length > 0 ? `${key}>[${kids.map((c) => (c && "key" in c ? String(c.key) : "?")).join(",")}]` : key;
+    });
+    expect(shapeOf(items)).toEqual([
+      "action:newFolder", "|", "action:upload", "action:uploadFolder", "|",
+      "submenu:document>[blank:docx,template:document]",
+      "submenu:spreadsheet>[blank:xlsx,template:spreadsheet]",
+      "submenu:presentation>[blank:pptx,template:presentation]",
+      "submenu:more>[blank:odg,blank:txt]",
+    ]);
+  });
+
+  it("coarse: true draws no extra on any row, submenu titles included, and keeps aria-keyshortcuts", () => {
+    const items = newMenuItems(tree(writable), opts({ coarse: true }));
+    const found = allRows(items);
+    expect(found.length).toBeGreaterThan(0);
+    expect(found.every((i) => i && "extra" in i && i.extra === undefined)).toBe(true);
+    expect(find(items, "action:newFolder")["aria-keyshortcuts"]).toBe("Alt+C F");
+    expect(find(childrenOf(find(items, "submenu:document")), "blank:docx")["aria-keyshortcuts"]).toBe("Alt+C T");
+  });
+
+  it("coarse: false shows the hints as today, on the actions and the blank documents", () => {
+    const items = newMenuItems(tree(writable), opts());
+    const folderHint = find(items, "action:newFolder").extra;
+    expect(folderHint && "props" in folderHint && (folderHint.props as Record<string, unknown>)["data-hint"]).toBe("Alt+C, F");
+    const blankHint = find(childrenOf(find(items, "submenu:document")), "blank:docx").extra;
+    expect(blankHint && "props" in blankHint && (blankHint.props as Record<string, unknown>)["data-hint"]).toBe("Alt+C, T");
+  });
+
+  it("phone: true ends each submenu row in a chevron that mirrors in RTL, and keeps its children for the slide", () => {
+    const items = newMenuItems(tree(writable), opts({ phone: true }));
+    for (const key of ["submenu:document", "submenu:spreadsheet", "submenu:presentation", "submenu:more"]) {
+      const row = find(items, key);
+      const chevron = row.extra;
+      expect(chevron).toBeTruthy();
+      expect(chevron && "type" in chevron && chevron.type).toBe(ChevronRight);
+      expect(chevron && "props" in chevron && (chevron.props as Record<string, unknown>).className).toBe("icon-dir");
+      expect(childrenOf(row).length).toBeGreaterThan(0);
+    }
+    // The plain actions keep their shape: the chevron belongs to the submenu rows alone.
+    expect(find(items, "action:newFolder").extra && "type" in (find(items, "action:newFolder").extra as object)).toBe(true);
+    expect((find(items, "action:newFolder").extra as { type: unknown }).type).not.toBe(ChevronRight);
   });
 });

@@ -6,7 +6,7 @@
 // under Document makes a blank file and opens it in the editor (the fake converter's tab). The folder is removed in a finally.
 import { join } from 'node:path';
 import { launchBrowser, openedTab, Page, tabIds } from './cdp.mjs';
-import { setLanguage, sleep } from './media.mjs';
+import { setLanguage, sleep, tap } from './media.mjs';
 import { hoverMenuTitle, menuRowChecks, menuShot } from './menu.mjs';
 
 const q = (v) => JSON.stringify(v);
@@ -203,6 +203,89 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(fromMenu === true, 'New folder from the menu puts the focus in the name field');
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
+
+    // ---- Phone (decision 185): below md the New menu slides one level at a time in the same popup. At 360, 390 and 412 touch
+    // widths the toolbar's New opens a menu that stays on the window, shows no chord hint and no side submenu popup; Document is
+    // a slide row that opens to a back row and its children, and the back row returns to the first level.
+    const PHONE_NEW = '[data-testid="browser-toolbar"] button[aria-label="New"]';
+    const tapSel = async (sel) => {
+      const at = await page.evaluate(`(() => { const b = document.querySelector(${q(sel)}); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      if (!at) throw new Error(`nothing to tap for ${sel}`);
+      await tap(page, at);
+    };
+    const setPhoneWidth = async (width) => {
+      await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
+      await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      await sleep(300);
+    };
+    const backToFolder = async () => {
+      await navigateTo(page, `/files/${teamA}/${folderID}`);
+      await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)} && !!document.querySelector(${q(PHONE_NEW)})`, 15000);
+    };
+    for (const width of [360, 390, 412]) {
+      await setPhoneWidth(width);
+      check(await page.evaluate(`matchMedia('(pointer: coarse)').matches`), `the ${width} px phone is a coarse pointer`);
+      await backToFolder();
+      await tapSel(PHONE_NEW);
+      await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+      const box = await page.evaluate(`(() => { const d = ${NEW_MENU}; if (!d) return null; const r = d.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; })()`);
+      check(box && box.left >= 0 && box.top >= 0 && box.right <= box.w && box.bottom <= box.h, `the New menu stays on the ${width} px window (${JSON.stringify(box)})`);
+      const sw = await page.evaluate(`document.documentElement.scrollWidth`);
+      check(sw <= width, `the page is no wider than the ${width} px window with the New menu open (scrollWidth ${sw})`);
+      const hints = await page.evaluate(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .menu-hint').length`);
+      check(hints === 0, `the phone New menu shows no chord hint (${hints})`);
+      check(await page.evaluate(`document.querySelectorAll('.ant-dropdown-menu-submenu-popup').length === 0`), `the phone New menu opens no side submenu popup at ${width}`);
+      check(await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"]')].some((x) => x.textContent.trim() === 'Document')`), `Document is a slide row on the ${width} px phone`);
+      // Slide Document: the same popup now holds the back row and the kind's children.
+      await hoverMenuTitle(page, 'Document');
+      check(await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]')].length > 0`), `the slid Document level has a back row at ${width}`);
+      check(await page.evaluate(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank') && ${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'From a template')`), `the slid Document level shows Blank and From a template at ${width}`);
+      check(await page.evaluate(`document.querySelectorAll('.ant-dropdown-menu-submenu-popup').length === 0`), `the slide opens no side popup at ${width}`);
+      const slidBox = await page.evaluate(`(() => { const d = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((x) => x.querySelector('[data-menu-level="back"]')); if (!d) return null; const r = d.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; })()`);
+      check(slidBox && slidBox.left >= 0 && slidBox.top >= 0 && slidBox.right <= slidBox.w && slidBox.bottom <= slidBox.h, `the slid level stays on the ${width} px window (${JSON.stringify(slidBox)})`);
+      // The back row returns to the first level, and the menu is still open.
+      await tapSel('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]');
+      await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Document') && document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]').length === 0`, 10000);
+      check(true, `the back row returns to the first level at ${width}`);
+      await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
+      await waitNoDropdown(page);
+    }
+
+    // The drawer's New is the same sliding menu: open the drawer on the phone and slide Document there too.
+    await setPhoneWidth(390);
+    await backToFolder();
+    await tapSel('[data-testid="nav-open"]');
+    await page.waitFor(`!!document.querySelector('.ant-drawer [data-testid="new-button"]:not([disabled])')`, 10000);
+    await tapSel('.ant-drawer [data-testid="new-button"]');
+    await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+    await hoverMenuTitle(page, 'Document');
+    check(await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]')].length > 0`), "the drawer's New slides Document on the phone");
+    check(await page.evaluate(`document.querySelectorAll('.ant-dropdown-menu-submenu-popup').length === 0`), "the drawer's New opens no side submenu popup on the phone");
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
+    await waitNoDropdown(page);
+    await page.evaluate(`document.querySelector('.ant-drawer .ant-drawer-close')?.click()`);
+    await sleep(400);
+
+    // Blank under Document on the phone makes the file: a coarse pointer opens the editor in this tab (decision 102), so the
+    // listing's own address is left and the editor's is read, then the folder is come back to.
+    await setPhoneWidth(390);
+    await backToFolder();
+    await tapSel(PHONE_NEW);
+    await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+    await hoverMenuTitle(page, 'Document');
+    await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
+    const blankAt = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')].find((x) => x.textContent.trim() === 'Blank'); if (!t) return null; const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    if (!blankAt) throw new Error('no Blank row in the slid Document level');
+    await tap(page, blankAt);
+    // A coarse pointer opens the editor in this tab; wait for the editor's address.
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 20000);
+    const phoneNewID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
+    const phoneCreated = await api(base, 'GET', `/api/v1/nodes/${phoneNewID}`, accountKey);
+    check(phoneCreated.kind === 'file' && phoneCreated.folder_id === teamA && phoneCreated.name.endsWith('.docx'), `Blank on the phone made a Word file in the folder (${phoneCreated.name})`);
+    if (phoneNewID) await api(base, 'DELETE', `/api/v1/nodes/${phoneNewID}?permanent=true`, accountKey).catch(() => {});
+    await backToFolder();
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   } finally {
     page.close();
     launch.proc.kill();

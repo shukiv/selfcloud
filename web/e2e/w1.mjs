@@ -486,6 +486,36 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     }
   });
 
+  // ---- 10-phone. a phone's row menu, and the submenu it slides to, stay on the 360 px window; the page grows no wider ----
+  // Decision 185: below md the submenu slides in the same popup (a back row and the same children), so no side popup is drawn
+  // past the window's edge, and the menu that opens at the bottom row is placed on the window as the mouse's is.
+  await step("a phone's row menu and its slid submenu stay on the 360 px window", async () => {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 740, deviceScaleFactor: 1, mobile: true });
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      await open('List');
+      await longPress(page, await rowPoint(page, 'f40.txt'));
+      await menuPlaced(page);
+      const box = await menuBox(page);
+      check(box && box.left >= 0 && box.top >= 0 && box.right <= box.width && box.bottom <= box.height, `the phone's row menu stays on the 360 px window (${JSON.stringify(box)})`);
+      const wide = await page.evaluate(`document.documentElement.scrollWidth`);
+      check(wide <= 360, `the page is no wider than the 360 px window with the menu open (scrollWidth ${wide})`);
+      // The submenu slides in the same popup: no side popup, a back row, and the slid level stays on the window.
+      await hoverMenuTitle(page, 'Organize');
+      check(await page.evaluate(`document.querySelectorAll('.ant-dropdown-menu-submenu-popup').length === 0`), 'the phone row menu opens no side submenu popup');
+      check(await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]')].length > 0`), 'the slid level has a back row');
+      const slid = await menuBox(page);
+      check(slid && slid.left >= 0 && slid.top >= 0 && slid.right <= slid.width && slid.bottom <= slid.height, `the slid Organize level stays on the 360 px window (${JSON.stringify(slid)})`);
+      const slidWide = await page.evaluate(`document.documentElement.scrollWidth`);
+      check(slidWide <= 360, `the page is no wider than the 360 px window with the slid level open (scrollWidth ${slidWide})`);
+      await press(page, 'Escape');
+      await sleepMs(300);
+    } finally {
+      await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    }
+  });
+
   // ---- 10b. a menu taller than the room above and below the pointer stays on the window (a right-click at mid height) ----
   // antd shifts a menu along the window only for some placements; the right-click menu shifts and scrolls (decision 49).
   await step('a menu opened at mid height in a short window stays on the window, and in a very short one it scrolls', async () => {

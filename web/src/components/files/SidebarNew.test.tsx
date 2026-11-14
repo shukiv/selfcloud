@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { theme as antdTheme } from "antd";
 import { setLang } from "../../lib/i18n";
 import { myFilesPlace, placeOfHere, type BlankKind, type NewPlace } from "../../lib/files/newPlace";
@@ -11,11 +11,22 @@ import { sidebarRow } from "../../theme/sidebarRow";
 import { contrast } from "../../lib/brand";
 import SidebarNew from "./SidebarNew";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
 // The rows' inline margin (decision 193): New's block takes it too, so New starts at the rows' edge.
 const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
+
+// The desktop tests below read the desktop window: every min-width query matches, so the menu keeps its hover submenus
+// (decision 185 slides them only below md). Each test restores the setup's stub afterwards.
+let undoDesktop: () => void;
+beforeEach(() => {
+  undoDesktop = desktopViewport();
+});
+afterEach(() => {
+  undoDesktop();
+});
 
 // Probe shows the address the menu navigated to (the gallery's, from a template).
 function Probe() {
@@ -474,6 +485,110 @@ describe("the New menu's submenus, template link, and chord", () => {
     fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
     fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
     expect(onFolder).not.toHaveBeenCalled();
+  });
+});
+
+// Decision 185: below md the New menu slides one level at a time in the same popup. A submenu is a plain row with a chevron;
+// tapping it shows the back row, a divider and the same children; the back row returns; an action runs and closes; a close
+// resets to the first level. On a coarse pointer no row shows a chord hint.
+describe("the New menu on a phone (decision 185)", () => {
+  let undo: () => void;
+  beforeEach(async () => {
+    await setLang("en");
+    undo = phoneViewport();
+  });
+  afterEach(() => {
+    undo();
+  });
+
+  const closed = () =>
+    waitFor(() => {
+      const dropdown = document.querySelector(".ant-dropdown");
+      expect(!dropdown || dropdown.className.includes("slide-up-leave") || dropdown.classList.contains("ant-dropdown-hidden")).toBe(true);
+    });
+
+  it("a submenu is a slide row: no popup of its own, a chevron, and a tap shows its children in the same menu", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx", "xlsx", "pptx"]);
+    fireEvent.click(button());
+    const doc = await screen.findByRole("menuitem", { name: "Document" });
+    expect(doc.getAttribute("aria-haspopup")).toBeNull();
+    expect(doc.getAttribute("aria-expanded")).toBeNull();
+    expect(doc.querySelector("svg.icon-dir")).not.toBeNull();
+    fireEvent.click(doc);
+    const menu = await screen.findByRole("menu");
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "Blank" }))).toBe(true);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "From a template" }))).toBe(true);
+    expect(menu.contains(screen.getByRole("menuitem", { name: "Back to Document" }))).toBe(true);
+    expect(screen.queryByRole("menuitem", { name: "New folder" })).toBeNull();
+    expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
+  });
+
+  it("after a slide the first row of the new level holds the focus, and the back row gives it to the first level's first row", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    const back = await screen.findByRole("menuitem", { name: "Back to Document" });
+    await waitFor(() => expect(document.activeElement).toBe(back));
+    fireEvent.click(back);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "New folder" })));
+  });
+
+  it("the back row returns to the first level and the menu stays open", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Back to Document" }));
+    expect(await screen.findByRole("menuitem", { name: "New folder" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Document" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Back to Document" })).toBeNull();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+  });
+
+  it("Blank runs the kind and closes the menu, and the next opening is the first level again", async () => {
+    const { onDocument } = renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Blank" }));
+    expect(onDocument).toHaveBeenCalledWith("docx");
+    await closed();
+    fireEvent.click(button());
+    expect(await screen.findByRole("menuitem", { name: "Document" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Back to Document" })).toBeNull();
+  });
+
+  it("From a template goes to the gallery and closes the menu", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "From a template" }));
+    expect(screen.getByTestId("at").textContent).toBe("/new/fld_mine?kind=document");
+    await closed();
+  });
+
+  it("Escape closes the slid menu, and the next opening is the first level again", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    const back = await screen.findByRole("menuitem", { name: "Back to Document" });
+    fireEvent.keyDown(back, { key: "Escape", code: "Escape", keyCode: 27 });
+    await closed();
+    fireEvent.click(button());
+    expect(await screen.findByRole("menuitem", { name: "New folder" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Back to Document" })).toBeNull();
+  });
+
+  it("on a coarse pointer no row shows a hint, on either level, and the keys stay named for a screen reader", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, true, ["docx"]);
+    fireEvent.click(button());
+    const folder = await screen.findByRole("menuitem", { name: "New folder" });
+    expect(folder.querySelector(".menu-hint")).toBeNull();
+    expect(folder.getAttribute("aria-keyshortcuts")).toBe("Alt+C F");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Document" }));
+    const blank = await screen.findByRole("menuitem", { name: "Blank" });
+    expect(blank.querySelector(".menu-hint")).toBeNull();
+    expect(blank.getAttribute("aria-keyshortcuts")).toBe("Alt+C T");
+    expect(document.querySelector(".menu-hint")).toBeNull();
   });
 });
 

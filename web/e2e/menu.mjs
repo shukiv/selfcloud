@@ -45,8 +45,19 @@ export async function pickMenuEntry(page, label) {
 }
 
 // hoverMenuTitle opens a submenu from its title, as a person does: a hover first, then a press on the title. The title is read again
-// at each try, because the menu may still be moving in.
+// at each try, because the menu may still be moving in. On a phone (decision 185) the submenu is a slide row: a press replaces the
+// level with the back row and the same children in the same popup, so the press is a tap and the wait is for the back row.
 export async function hoverMenuTitle(page, title) {
+  // A slide row carries data-menu-level="slide"; a desktop submenu title does not. When the title is a slide row, tap it and wait
+  // for the back row of the level it opens, then let the children settle, as the desktop branch lets its popup settle.
+  const slideAt = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"] .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); if (!t) return null; const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  if (slideAt) {
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: slideAt.x, y: slideAt.y, button: 'left', buttons: 1, clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: slideAt.x, y: slideAt.y, button: 'left', buttons: 0, clickCount: 1 });
+    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]').length > 0`, 5000);
+    await new Promise((r) => setTimeout(r, 350));
+    return;
+  }
   const isOpen = `(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); return !!(t && t.closest('.ant-dropdown-menu-submenu')?.classList.contains('ant-dropdown-menu-submenu-open')); })()`;
   const at = () => page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); if (!t) return null; const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   const waitOpen = async (ms) => {
