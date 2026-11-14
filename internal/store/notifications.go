@@ -14,7 +14,7 @@ import (
 // or replied to their comment, that an item was shared with them, or that someone asked for access to an item they manage.
 // It holds IDs, a kind and times: no name and no text. Comment notifications (mention, reply) live in notifications and may
 // be mailed through the outbox; share and access-request notifications live in share_notifications and are in-app only
-// (decision 171 keeps them in a second table so decision 120's additive rule holds). The reads union the two. Each is
+// (decision 182 keeps them in a second table so decision 120's additive rule holds). The reads union the two. Each is
 // written in the transaction that writes the comment, the permission or the request.
 
 // Kinds of notification.

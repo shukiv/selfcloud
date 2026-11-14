@@ -1,4 +1,4 @@
--- Share and access-request notifications join the list (design section 14, decision 171). They live in their own table,
+-- Share and access-request notifications join the list (design section 14, decision 182). They live in their own table,
 -- not in notifications: decision 120 keeps migrations from 0051 on additive, so an older binary still reads the rows it
 -- knows. notifications.comment_id is NOT NULL and its kind CHECK admits only mention and reply, and widening either would
 -- rebuild the table, which an older binary's notification list could not read. A second table keeps that guarantee. The

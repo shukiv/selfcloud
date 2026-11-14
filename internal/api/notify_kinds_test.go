@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The in-app notifications of a share and of an access request (decision 171). They are written in the transaction that
+// The in-app notifications of a share and of an access request (decision 182). They are written in the transaction that
 // writes the permission or the request, to the people the matching mail goes to by the same rule, never to the actor or
 // the requester, and whether or not mail is configured. They queue no mail of their own. The kind strings are the wire
 // values the store keeps, so the tests name them as they are stored.
