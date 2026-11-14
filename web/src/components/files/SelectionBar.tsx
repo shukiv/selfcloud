@@ -16,7 +16,8 @@ export type SelectionAction = { key: string; label: string; icon: ReactNode; ena
 // never fewer than 0. The width is the bar's own border box, read by a ResizeObserver on its root, so the count comes from the
 // room the bar has, not from what it draws: hiding an icon cannot widen the bar, and the measure cannot flicker. The slot is the
 // icon button plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's minimum + More + the
-// padding + the three gaps between those four (layout.ts). The actions that do not fit are given to overflow, which draws them
+// padding + the three gaps between those four (layout.ts). The count is held to that reserved width (ellipsis, its full text
+// in the title) and does not grow or shrink, so it cannot push the icons past the edge. The actions that do not fit are given to overflow, which draws them
 // at the top of More, in order; without an overflow the bar keeps every icon, so no action is ever unreachable. A window that
 // cannot measure (jsdom has no ResizeObserver) is taken as wide enough for every icon.
 export default function SelectionBar({
@@ -80,7 +81,7 @@ export default function SelectionBar({
       }}
     >
       <IconButton data-testid="selection-clear" label={clearLabel} icon={<X size={16} aria-hidden="true" focusable="false" />} onClick={onClear} />
-      <span aria-live="polite" title={countText} style={{ flex: "none", minWidth: COUNT_MIN_W, maxWidth: "40%", boxSizing: "border-box", padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <span aria-live="polite" title={countText} style={{ flex: "none", minWidth: COUNT_MIN_W, maxWidth: COUNT_MIN_W, boxSizing: "border-box", padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {countText}
       </span>
       {actions.slice(0, shown).map((a) => (

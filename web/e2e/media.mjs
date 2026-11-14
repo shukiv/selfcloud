@@ -337,7 +337,12 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   const root = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2F`, accountKey)).items;
   const folderID = root.find((n) => n.name === 'media-test').id;
   const folderURL = `${page.base}/files/${teamA}/${folderID}`;
-  const clipID = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2Fmedia-test`, accountKey)).items.find((n) => n.name === 'clip.webm').id;
+  const mediaKids = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2Fmedia-test`, accountKey)).items;
+  const clipID = mediaKids.find((n) => n.name === 'clip.webm').id;
+  // Decision 185: the phone-fit step runs as the member, who may change pic.png but by default not share it. Letting editors
+  // share it gives the bar its full ordered set (Share, Copy link, Download, Move, Delete) to fit.
+  const picID = mediaKids.find((n) => n.name === 'pic.png').id;
+  await api(base, 'PATCH', `/api/v1/nodes/${picID}`, accountKey, { editors_can_share: true });
 
   // open loads the folder afresh, in the view asked for, with nothing selected.
   const open = async (view) => {
@@ -375,8 +380,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
 
   // ---- 2. on a phone one tap opens a file or a folder, and the checkbox selects ----
   // Decision 185: the selection bar shows as many of its ordered actions as fit its own width; the rest are the first entries
-  // of its More menu, in order. The file picked here (pic.png in media-test) is one the signed-in owner may change, so its
-  // actions include Move and Delete. At 375 and 360 both are in More; at 320 Download is too; at 390 only Delete is.
+  // of its More menu, in order. The file picked here (pic.png in media-test) is one the signed-in member may change and share,
+  // so its actions are Share, Copy link, Download, Move and Delete. At 375 and 360 Move and Delete are in More; at 320
+  // Download is too; at 390 only Delete is.
   const escapeKey = async () => {
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
@@ -394,13 +400,14 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
             await open(view);
             const bare = await wideElements(page);
             check(bare.scrollWidth <= width, `${lang}, ${width} px, ${view}, nothing selected: the page fits its window (scrollWidth ${bare.scrollWidth}; wider: ${JSON.stringify(bare.top.slice(0, 2))})`);
-            const box = await page.evaluate(`(() => { const r = document.querySelector(${q(itemSel('pic.png'))})?.querySelector('input[type="checkbox"]')?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+            const box = await page.evaluate(`(() => { const c = document.querySelector(${q(itemSel('pic.png'))})?.querySelector('input[type="checkbox"]'); if (!c) return null; c.scrollIntoView({ block: 'center' }); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
             if (box === null) {
               check(false, `${lang}, ${width} px, ${view}: a row has a checkbox to select it`);
               continue;
             }
             await tap(page, box);
-            await sleep(500);
+            await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000).catch(() => undefined);
+            await sleep(300);
             const picked = await wideElements(page);
             check(picked.scrollWidth <= width, `${lang}, ${width} px, ${view}, with a selection: the page fits its window (scrollWidth ${picked.scrollWidth}; wider: ${JSON.stringify(picked.top.slice(0, 2))})`);
             const moreBox = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right) }; })()`);
