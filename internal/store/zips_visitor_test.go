@@ -30,7 +30,7 @@ func zipVisitorTestDB(t *testing.T) (*Store, func(func(tx *Tx) error), time.Time
 }
 
 // TestZipVisitorCountsSeparateKinds: the signed-in caps count only non-visitor zips, and the visitor cap counts only
-// the visitors' unfinished zips, so the two never spend each other's budget.
+// the visitors' live zips (pending, or ready and not expired), so the two never spend each other's budget.
 func TestZipVisitorCountsSeparateKinds(t *testing.T) {
 	s, write, now := zipVisitorTestDB(t)
 	ctx := context.Background()
@@ -51,16 +51,28 @@ func TestZipVisitorCountsSeparateKinds(t *testing.T) {
 	if n, err := s.CountAllPendingZips(ctx); err != nil || n != 1 {
 		t.Errorf("CountAllPendingZips = %d, %v; want 1, the member's only", n, err)
 	}
-	if n, err := s.CountPendingVisitorZips(ctx, "acc_a"); err != nil || n != 1 {
-		t.Errorf("CountPendingVisitorZips = %d, %v; want 1, the visitor's only", n, err)
+	if n, err := s.CountLiveVisitorZips(ctx, "acc_a", now); err != nil || n != 1 {
+		t.Errorf("CountLiveVisitorZips = %d, %v; want 1, the visitor's pending zip", n, err)
 	}
-	// A ready visitor zip is not unfinished, so it leaves the visitor count.
+	// A ready visitor zip still holds its file until it expires, so it keeps its place in the count.
 	write(func(tx *Tx) error {
 		_, err := tx.CompleteZip(ctx, "zip_visitor", 10, strings.Repeat("a", 64), now.Add(time.Hour))
 		return err
 	})
-	if n, err := s.CountPendingVisitorZips(ctx, "acc_a"); err != nil || n != 0 {
-		t.Errorf("CountPendingVisitorZips after ready = %d, %v; want 0", n, err)
+	if n, err := s.CountLiveVisitorZips(ctx, "acc_a", now); err != nil || n != 1 {
+		t.Errorf("CountLiveVisitorZips after ready = %d, %v; want 1, still unexpired", n, err)
+	}
+	// A member's ready zip never counts, even unexpired.
+	write(func(tx *Tx) error {
+		_, err := tx.CompleteZip(ctx, "zip_member", 10, strings.Repeat("b", 64), now.Add(time.Hour))
+		return err
+	})
+	if n, err := s.CountLiveVisitorZips(ctx, "acc_a", now); err != nil || n != 1 {
+		t.Errorf("CountLiveVisitorZips with a ready member zip = %d, %v; want 1, the visitor's only", n, err)
+	}
+	// An expired ready visitor zip leaves the count.
+	if n, err := s.CountLiveVisitorZips(ctx, "acc_a", now.Add(2*time.Hour)); err != nil || n != 0 {
+		t.Errorf("CountLiveVisitorZips after expiry = %d, %v; want 0", n, err)
 	}
 }
 

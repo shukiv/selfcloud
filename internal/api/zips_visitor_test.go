@@ -217,20 +217,36 @@ func TestZipVisitorDeleteLinkRemovesZip(t *testing.T) {
 // TestZipVisitorPerLinkAndAccountCaps: a link has one zip, and the account's visitors share a cap of their own that
 // does not spend the signed-in callers' budget.
 func TestZipVisitorPerLinkAndAccountCaps(t *testing.T) {
-	fx := anyoneZipFixture(t, func(c *config.Config) { c.Zip.VisitorMaxPerAccount = 1 })
-	_, secretB := fx.makeAnyone(t, fx.b.ID, nil)
-	_, secretC := fx.makeAnyone(t, fx.c.ID, nil)
-	vB := byCred(t, fx.s, fx.visitAnyone(t, secretB, ""))
-	vC := byCred(t, fx.s, fx.visitAnyone(t, secretC, ""))
-	visitorZip(t, vB, fx.b.ID)
-	// A second link's visitor passes the account's visitor cap.
-	rec := vC("POST", "/api/v1/zips", map[string]any{"nodes": []string{fx.c.ID}})
+	fx := anyoneZipFixture(t, func(c *config.Config) { c.Zip.VisitorMaxPerAccount = 3 })
+	// The cap is what is tested here, not the address rate (TestZipVisitorAddressRateLimit covers that).
+	fx.s.limits["zip.create.visitor"] = newLimiter(100)
+	ready := func(node string) jobJSON {
+		_, secret := fx.makeAnyone(t, node, nil)
+		v := byCred(t, fx.s, fx.visitAnyone(t, secret, ""))
+		job := visitorZip(t, v, node)
+		runZip(t, fx.sharingFixture, job.ID)
+		return job
+	}
+	// Three links, each with a READY unexpired zip, fill the account's visitor cap.
+	first := ready(fx.b.ID)
+	ready(fx.c.ID)
+	ready(fx.a.ID)
+	// A fourth link (on its own folder, since a node holds one anyone link) is refused: the ready zips still hold their places.
+	d := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/d")
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/d/y.txt", "d")
+	_, secretD := fx.makeAnyone(t, d.ID, nil)
+	vD := byCred(t, fx.s, fx.visitAnyone(t, secretD, ""))
+	rec := vD("POST", "/api/v1/zips", map[string]any{"nodes": []string{d.ID}})
 	wantStatus(t, rec, 409)
 	if !strings.Contains(rec.Body.String(), "too_many_zips_account") {
 		t.Errorf("refusal %s does not name too_many_zips_account", rec.Body.String())
 	}
-	// A signed-in caller is not held back by the visitors' cap.
+	// An expired ready zip leaves the count, so the fourth link's zip is accepted.
+	fx.execDB(t, "UPDATE zips SET expires_at = ? WHERE id = ?", time.Now().Add(-time.Hour).UnixMilli(), first.Target)
+	visitorZip(t, vD, d.ID)
+	// A signed-in caller is not held back by the visitors' cap, and its zips never count toward it.
 	createZip(t, fx.sharingFixture, nil, fx.a.ID)
+	createZip(t, fx.sharingFixture, nil, fx.b.ID)
 }
 
 // TestZipVisitorByteCap: a visitor's zip is held to zip.visitor_max_bytes, not the signed-in zip.max_bytes.
@@ -315,6 +331,19 @@ func TestZipLinkRouteStates(t *testing.T) {
 	}
 }
 
+// TestZipDispositionNotAskable: a caller cannot ask POST /nodes/{nod}/links for the zip disposition; it is refused as
+// any unknown disposition is, because only the server signs a zip link (decision 185).
+func TestZipDispositionNotAskable(t *testing.T) {
+	fx := anyoneZipFixture(t)
+	for _, disp := range []string{"zip", "bogus"} {
+		rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/links", fx.key, map[string]any{"disposition": disp})
+		wantStatus(t, rec, 400)
+		if !strings.Contains(rec.Body.String(), "invalid_request") {
+			t.Errorf("disposition %q: %s, want invalid_request", disp, rec.Body.String())
+		}
+	}
+}
+
 // TestZipSignedLinkRefusals: a signed zip link is refused for a bad MAC, a wrong id/disposition pairing, an expired
 // token and an expired zip, each with the answer a bad link gets.
 func TestZipSignedLinkRefusals(t *testing.T) {
@@ -336,6 +365,19 @@ func TestZipSignedLinkRefusals(t *testing.T) {
 	wantStatus(t, getLink(t, fx.s, linkPrefix+zipAsFile, nil), 404)
 	nodeAsZip := fx.s.links.sign(linkClaims{nod: fx.b.ID, acc: z.AccountID, disp: dispZip, exp: time.Now().Add(time.Hour).Unix()}, z.SHA256)
 	wantStatus(t, getLink(t, fx.s, linkPrefix+nodeAsZip, nil), 404)
+	// A signed-in maker's READY zip is not served by a zip token, even one signed over its own SHA-256: only a link's zip is.
+	memberJob := createZip(t, fx.sharingFixture, nil, fx.a.ID)
+	runZip(t, fx.sharingFixture, memberJob.ID)
+	mz, err := fx.s.store.Zip(context.Background(), fx.acc.ID, memberJob.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberTok := fx.s.links.sign(linkClaims{nod: mz.ID, acc: mz.AccountID, disp: dispZip, exp: time.Now().Add(time.Hour).Unix()}, mz.SHA256)
+	wantStatus(t, getLink(t, fx.s, linkPrefix+memberTok, nil), 404)
+	// A zip token naming another account is not_found, even with the right zip id and SHA-256.
+	other, _ := newAccount(t, fx.s, fx.admin, "Other")
+	otherAcc := fx.s.links.sign(linkClaims{nod: z.ID, acc: other.ID, disp: dispZip, exp: time.Now().Add(time.Hour).Unix()}, z.SHA256)
+	wantStatus(t, getLink(t, fx.s, linkPrefix+otherAcc, nil), 404)
 	// An expired token is the node link's expired answer.
 	expired := fx.s.links.sign(linkClaims{nod: z.ID, acc: z.AccountID, disp: dispZip, exp: time.Now().Add(-time.Hour).Unix()}, z.SHA256)
 	wantError(t, getLink(t, fx.s, linkPrefix+expired, nil), 410, apierr.LinkExpired)
