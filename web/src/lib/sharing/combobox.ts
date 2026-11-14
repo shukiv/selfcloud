@@ -15,6 +15,9 @@ export interface ComboState {
   // active is the index of the option the arrow keys are on, or -1.
   active: number;
   chosen: DirectoryEntry | null;
+  // chosenOutside is the address chosen as a person of another account, or null. It is dropped when the person
+  // types again or picks an entry of the account, so the two choices never stand together.
+  chosenOutside: string | null;
   // more is true when the shown answer holds fewer entries than matched (decision 96).
   more: boolean;
   // browse is true once the field has been focused. Only then does a query under two characters open the
@@ -32,10 +35,11 @@ export type ComboAction =
   | { type: 'focus' }
   | { type: 'listed'; items: DirectoryEntry[]; more: boolean }
   | { type: 'listfail' }
-  | { type: 'move'; delta: number }
+  | { type: 'move'; delta: number; extra?: number }
   | { type: 'pick'; entry: DirectoryEntry }
+  | { type: 'pickOutside'; email: string }
   | { type: 'choose' }
-  | { type: 'open' }
+  | { type: 'open'; extra?: number }
   | { type: 'close' }
   | { type: 'clear' };
 
@@ -46,6 +50,7 @@ export const COMBO_START: ComboState = {
   items: [],
   active: -1,
   chosen: null,
+  chosenOutside: null,
   more: false,
   browse: false,
   focus: null,
@@ -64,12 +69,13 @@ function showShort(s: ComboState): ComboState {
 export function comboReducer(s: ComboState, a: ComboAction): ComboState {
   switch (a.type) {
     case 'type': {
-      // Typing starts a new search and drops what was chosen before.
+      // Typing starts a new search and drops what was chosen before, of the account or outside it.
+      const typed = { ...s, chosenOutside: null };
       if (a.query.trim().length < MIN_QUERY) {
-        if (s.browse) return showShort({ ...s, query: a.query, chosen: null });
-        return { ...s, query: a.query, open: false, status: 'idle', items: [], active: -1, chosen: null, more: false };
+        if (s.browse) return showShort({ ...typed, query: a.query, chosen: null });
+        return { ...typed, query: a.query, open: false, status: 'idle', items: [], active: -1, chosen: null, more: false };
       }
-      return { ...s, query: a.query, open: true, status: 'loading', items: [], active: -1, chosen: null, more: false };
+      return { ...typed, query: a.query, open: true, status: 'loading', items: [], active: -1, chosen: null, more: false };
     }
     case 'results': {
       // An answer to an old query is dropped, so a slow answer cannot overwrite a newer one.
@@ -97,22 +103,25 @@ export function comboReducer(s: ComboState, a: ComboAction): ComboState {
       return { ...s, status: 'error', items: [], more: false, active: -1 };
     }
     case 'move': {
-      if (!s.open || s.items.length === 0) return s;
-      const n = s.items.length;
+      // extra counts the options that are not entries of the account, such as the outside-address option.
+      const n = s.items.length + (a.extra ?? 0);
+      if (!s.open || n === 0) return s;
       // From no active option, the first arrow goes to the first option and the up arrow to the last.
       if (s.active < 0) return { ...s, active: a.delta > 0 ? 0 : n - 1 };
       return { ...s, active: (((s.active + a.delta) % n) + n) % n };
     }
     case 'pick':
-      return { ...s, query: a.entry.name, open: false, active: -1, chosen: a.entry };
+      return { ...s, query: a.entry.name, open: false, active: -1, chosen: a.entry, chosenOutside: null };
+    case 'pickOutside':
+      return { ...s, query: a.email, open: false, active: -1, chosen: null, chosenOutside: a.email };
     case 'choose': {
       const entry = s.items[s.active];
       if (!s.open || entry === undefined) return s;
-      return { ...s, query: entry.name, open: false, active: -1, chosen: entry };
+      return { ...s, query: entry.name, open: false, active: -1, chosen: entry, chosenOutside: null };
     }
     case 'open':
       // Reopens the list (on the arrow keys, after a blur) only when it has something to show.
-      if (s.items.length === 0) return s;
+      if (s.items.length + (a.extra ?? 0) === 0) return s;
       return { ...s, open: true, active: s.active < 0 ? 0 : s.active };
     case 'close':
       return { ...s, open: false, active: -1 };

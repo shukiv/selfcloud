@@ -24,6 +24,33 @@ export function removePermission(nod: string, subject: string): Promise<void> {
   return api<void>('DELETE', `/api/v1/nodes/${nod}/permissions/${subject}`);
 }
 
+// ExternalPermission is a share with a person in another account, named by their address. The role is viewer only.
+export interface ExternalPermission {
+  email: string;
+  role: 'viewer';
+  created_at: string;
+  expires_at: string | null;
+  created_by: string;
+  created_by_name: string;
+}
+
+export function listExternalPermissions(nod: string): Promise<{ items: ExternalPermission[] }> {
+  return api<{ items: ExternalPermission[] }>('GET', `/api/v1/nodes/${nod}/external-permissions`);
+}
+
+// addExternalPermission shares a node with an address outside the account, as a viewer. expires_at is an RFC 3339 time.
+export function addExternalPermission(
+  nod: string,
+  body: { email: string; role?: 'viewer'; expires_at?: string },
+): Promise<ExternalPermission> {
+  return api<ExternalPermission>('POST', `/api/v1/nodes/${nod}/external-permissions`, { body });
+}
+
+// removeExternalPermission ends a share with an address. The address is encoded, so one with a plus never breaks the route.
+export function removeExternalPermission(nod: string, email: string): Promise<void> {
+  return api<void>('DELETE', `/api/v1/nodes/${nod}/external-permissions/${encodeURIComponent(email)}`);
+}
+
 // searchDirectory finds people and groups by q, 0 to 100 characters after trimming. An empty q lists the account
 // (decision 96). more is true when more matched than items holds.
 export function searchDirectory(
@@ -41,6 +68,37 @@ export type SharedNode = Node & { shared_at?: string };
 export function sharedWithMe(cursor?: string): Promise<Page<SharedNode>> {
   const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
   return api<Page<SharedNode>>('GET', `/api/v1/shared?limit=50${c}`);
+}
+
+// ExternalShared is an item a person in another account shared with the caller's proved address. It names the sharer
+// and their account, and carries no folder of the caller's drive.
+export interface ExternalShared {
+  id: string;
+  name: string;
+  kind: Node['kind'];
+  size?: number;
+  modified_at: string;
+  mime?: string;
+  account_name: string;
+  shared_by_name: string;
+  role: 'viewer';
+  expires_at: string | null;
+}
+
+// sharedExternal reads the items shared with the caller from other accounts, and whether their address is proved.
+export function sharedExternal(): Promise<{ items: ExternalShared[]; email_proved: boolean }> {
+  return api<{ items: ExternalShared[]; email_proved: boolean }>('GET', '/api/v1/shared/external');
+}
+
+// proveEmail asks the server to send the proof mail to the session's address. 200 means the address is already proved;
+// 202 means the ask was taken, and sent says whether a mail could be sent.
+export function proveEmail(): Promise<{ proved: boolean; sent: boolean }> {
+  return api<{ proved: boolean; sent: boolean }>('POST', '/api/v1/me/email-proof');
+}
+
+// confirmEmailProof redeems the mailed token. A bad token is an answer the page reads, not a redirect to sign-in.
+export function confirmEmailProof(token: string): Promise<void> {
+  return api<void>('POST', '/api/v1/auth/email-proof', { body: { token }, noRedirect: true });
 }
 
 // createAccessRequest asks for a role on a node. The server answers 202 with no body whether or not the
@@ -218,6 +276,9 @@ export interface SharingPolicy {
   // in an answer from an older server.
   comments?: boolean;
   who_viewed?: boolean;
+  // external_sharing is the account's switch for sharing with people in other accounts. Absent in an answer from
+  // an older server.
+  external_sharing?: boolean;
 }
 
 // SharingSwitches is the part of the sharing policy a change may name. The server wants at least one of them.
@@ -237,9 +298,11 @@ export function getSharingPolicy(acc: string): Promise<SharingPolicy> {
   return api<SharingPolicy>('GET', `/api/v1/accounts/${acc}/sharing-policy`);
 }
 
-// setSharingPolicy turns the account's switch for anyone links on or off. Off pauses those links at once.
-export function setSharingPolicy(acc: string, on: boolean): Promise<SharingPolicy> {
-  return api<SharingPolicy>('PATCH', `/api/v1/accounts/${acc}/sharing-policy`, {
-    body: { public_links: on },
-  });
+// setSharingPolicy changes the account's switches for anyone links and for sharing with other accounts. Each switch
+// named is applied on its own; turning anyone links off pauses those links at once.
+export function setSharingPolicy(
+  acc: string,
+  patch: { public_links?: boolean; external_sharing?: boolean },
+): Promise<SharingPolicy> {
+  return api<SharingPolicy>('PATCH', `/api/v1/accounts/${acc}/sharing-policy`, { body: patch });
 }

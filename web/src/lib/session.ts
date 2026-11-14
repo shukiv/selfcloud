@@ -13,6 +13,10 @@ export interface Session {
   csrf: string;
   // publicLinks is the account's switch for links that anyone can open.
   publicLinks: boolean;
+  // emailProved: the person has proved their address. accountExternalSharing: the account's switch for sharing
+  // with people in other accounts. Both are off until the account is read.
+  emailProved?: boolean;
+  accountExternalSharing?: boolean;
   // mustChange: the person must change the password before the app opens (every route answers so).
   mustChange?: boolean;
   // impersonation is set while an installation admin is signed in as this person, until endsAt (RFC 3339).
@@ -64,6 +68,8 @@ export function setMe(me: Me): void {
     impersonation: me.impersonation ? { endsAt: me.impersonation.ends_at } : null,
     tenantAccess: me.tenant_access === true,
     mailConfigured: me.mail_configured === true,
+    emailProved: me.email_proved === true,
+    accountExternalSharing: me.account_external_sharing === true,
   });
   noteSignedIn(me.user.id);
 }

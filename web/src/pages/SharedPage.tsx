@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Skeleton, Tag } from "antd";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Listing, { type ListColumn } from "../components/files/Listing";
 import Icon from "../components/files/Icon";
 import DriveName, { openDrive } from "../components/drive/DriveName";
@@ -12,13 +12,106 @@ import { brand } from "../lib/brand";
 import { session } from "../lib/session";
 import { queryKey } from "../lib/query";
 import { fileErrorText } from "../lib/files/fileErrors";
+import { errorMessage, type Message } from "../lib/errors";
 import { formatDate } from "../lib/files/format";
 import { kindOf } from "../lib/files/kind";
-import { sharedWithMe, type SharedNode } from "../lib/sharing/api";
+import { go } from "../lib/router";
+import { proveEmail, sharedExternal, sharedWithMe, type ExternalShared, type SharedNode } from "../lib/sharing/api";
 import type { Page } from "../lib/files/types";
 import { useDriveText } from "../lib/drive/driveText";
 import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
 import DriveTextFailure from "../components/drive/DriveTextFailure";
+
+// ExternalShares is the "From other accounts" section: the items people in other accounts shared with the caller's proved
+// address. While the address is not proved it asks for the proof mail instead of the items; once proved it lists them with
+// their sharer and account, and an item opens at /x/{nod}. A failed proof ask shows its own message and keeps the prompt.
+function ExternalShares({ ready }: { ready: boolean }) {
+  const { t, tp } = useT();
+  const lang = useLang();
+  const me = useStore(session);
+  const qc = useQueryClient();
+  const key = queryKey("shared-external");
+  const [note, setNote] = useState<string | null>(null);
+  const [proofError, setProofError] = useState<Message | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () => sharedExternal(),
+    enabled: me !== null && me.accountExternalSharing === true,
+    refetchOnMount: "always",
+  });
+
+  const proved = q.data?.email_proved === true || me?.emailProved === true;
+  const items = q.data?.items ?? [];
+
+  const sendProof = async () => {
+    setBusy(true);
+    setNote(null);
+    setProofError(null);
+    try {
+      const res = await proveEmail();
+      if (res.proved) {
+        await qc.invalidateQueries({ queryKey: key });
+      } else if (res.sent) {
+        setNote(t("shared.external.proveSent", { email: me?.user.email ?? "" }));
+      } else {
+        setNote(t("shared.external.proveFailed"));
+      }
+    } catch (err) {
+      setProofError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const columns: ListColumn<ExternalShared>[] = [
+    { key: "name", title: t("files.col.name"), render: (n) => <bdi>{n.name}</bdi> },
+    { key: "by", title: t("drive.col.sharedBy"), secondary: true, render: (n) => t("shared.external.by", { name: n.shared_by_name, account: n.account_name }) },
+    { key: "when", title: t("files.col.modified"), secondary: true, render: (n) => <time dateTime={n.modified_at}>{formatDate(n.modified_at, lang)}</time> },
+  ];
+
+  // A proved address waits for its items and the table's words before the section appears, so the region is found only
+  // once its rows are there; until then a skeleton stands in without the heading.
+  if (proved && (q.isPending || !ready)) {
+    return <Skeleton active />;
+  }
+  return (
+    <section style={{ marginTop: 32 }}>
+      <h2 id="shared-external-title" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>
+        {t("shared.external.title")}
+      </h2>
+      {!proved ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          <Alert type="info" showIcon message={t("shared.external.prove")} />
+          <div>
+            <Button onClick={() => void sendProof()} loading={busy}>
+              {t("shared.external.proveSend")}
+            </Button>
+          </div>
+          {note && (
+            <p role="status" style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>
+              {note}
+            </p>
+          )}
+          {proofError && (
+            <Alert type="error" showIcon role="alert" message={proofError.plural !== undefined ? tp(proofError.key, proofError.plural) : t(proofError.key)} />
+          )}
+        </div>
+      ) : (
+        <Listing<ExternalShared>
+          label={t("shared.external.title")}
+          items={items}
+          rowLabel={(n) => n.name}
+          columns={columns}
+          icon={(n) => <Icon kind={kindOf({ kind: n.kind, mime_type: n.mime ?? "" })} size={24} />}
+          onOpen={(n) => go(`/x/${n.id}`)}
+          empty={{ title: t("shared.external.empty"), className: "empty" }}
+        />
+      )}
+    </section>
+  );
+}
 
 // Shared with me: the items other people shared with the caller, each at the role it has, on the one table (tl4, decision 137), in
 // the order the server gives them, newest share first. An item opens through its address (/n/{nod}), like any link a share mail
@@ -102,6 +195,8 @@ export default function SharedPage() {
           </Button>
         </div>
       )}
+
+      {me?.accountExternalSharing === true && <ExternalShares ready={driveReady} />}
     </div>
   );
 }

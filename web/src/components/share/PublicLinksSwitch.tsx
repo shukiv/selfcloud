@@ -9,9 +9,13 @@ import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
 import DeletePublicLinks from "./DeletePublicLinks";
 
-// PublicLinksSwitch is the account's switch for links that anyone can open. Turning it off pauses those links at once;
-// turning it on makes them work again. The owner and the installation admin both use it (part v4). A failed refetch
-// keeps the answer already shown.
+// PolicyPatch is the part of the account's sharing policy one change may name: the anyone-links switch, the
+// external-sharing switch, or both. Each named switch is applied on its own by the server.
+type PolicyPatch = { public_links?: boolean; external_sharing?: boolean };
+
+// PublicLinksSwitch is the account's switches for links that anyone can open and for sharing with people in other
+// accounts. Turning anyone links off pauses those links at once; turning it on makes them work again. The owner and the
+// installation admin both use it (part v4). A failed refetch keeps the answer already shown.
 export default function PublicLinksSwitch({ account }: { account: string }) {
   const { t, tp } = useT();
   const lang = useLang();
@@ -25,10 +29,10 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
   });
 
   const toggle = useMutation({
-    mutationFn: (next: boolean) => setSharingPolicy(account, next),
+    mutationFn: (patch: PolicyPatch) => setSharingPolicy(account, patch),
     // The answer is written only if the person is still the one who asked: a mutation's callbacks run after a clear.
     onMutate: () => ({ changed: sessionChanged() }),
-    onSuccess: (reply: SharingPolicy, _next, ctx) => {
+    onSuccess: (reply: SharingPolicy, _patch, ctx) => {
       if (ctx.changed()) return;
       qc.setQueryData(key, reply);
     },
@@ -39,11 +43,12 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
   const notice = toggle.isSuccess ? t("policy.saved") : null;
   const busy = toggle.isPending;
 
-  const change = (next: boolean) => {
+  const change = (patch: PolicyPatch) => {
     const stale = sessionChanged();
-    toggle.mutate(next, {
-      onSettled: () => {
-        if (!stale()) void qc.invalidateQueries({ queryKey: key });
+    toggle.mutate(patch, {
+      // The reply already holds the new policy, so a made change keeps it; only a refused change reads the server again.
+      onSettled: (_reply, err) => {
+        if (err && !stale()) void qc.invalidateQueries({ queryKey: key });
       },
     });
   };
@@ -61,7 +66,7 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
       )}
       {shown && (
         <>
-          <Checkbox id="public-links-switch" checked={shown.public_links} disabled={busy} onChange={(e) => change(e.target.checked)}>
+          <Checkbox id="public-links-switch" checked={shown.public_links} disabled={busy} onChange={(e) => change({ public_links: e.target.checked })}>
             {t("policy.publicLinks")}
           </Checkbox>
           <p className="hint" style={{ margin: 0, fontSize: 13 }}>
@@ -71,6 +76,12 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
             {tp("policy.anyoneLinks", shown.anyone_links)}
           </p>
           <DeletePublicLinks account={account} count={shown.anyone_links} ondone={() => void qc.invalidateQueries({ queryKey: key })} onunsure={() => void qc.invalidateQueries({ queryKey: key })} />
+          <Checkbox id="external-sharing-switch" checked={shown.external_sharing === true} disabled={busy} onChange={(e) => change({ external_sharing: e.target.checked })}>
+            {t("policy.externalSharing")}
+          </Checkbox>
+          <p className="hint" style={{ margin: 0, fontSize: 13 }}>
+            {t("policy.externalSharingHint")}
+          </p>
         </>
       )}
     </section>

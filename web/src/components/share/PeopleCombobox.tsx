@@ -4,7 +4,7 @@ import { useEffect, useMemo, useReducer, useRef, type KeyboardEvent } from "reac
 import { Input } from "antd";
 import { useT } from "../../lib/i18n";
 import { searchDirectory } from "../../lib/sharing/api";
-import { COMBO_START, MIN_QUERY, SEARCH_DELAY, comboReducer, debounce } from "../../lib/sharing/combobox";
+import { COMBO_START, MIN_QUERY, SEARCH_DELAY, comboReducer, debounce, type ComboState } from "../../lib/sharing/combobox";
 import type { DirectoryEntry } from "../../lib/files/types";
 import { useStore } from "../../lib/store";
 import { session } from "../../lib/session";
@@ -26,11 +26,19 @@ export interface PeopleComboboxProps {
   invalid?: boolean;
   errorId?: string;
   kind?: "all" | "user" | "group";
+  // allowOutside offers a complete address the directory does not know as one option, a share with a person of
+  // another account, while the account's external sharing switch is on. onoutside gets the address when it is
+  // chosen, and null when the person types again or picks an entry of the account.
+  allowOutside?: boolean;
+  onoutside?: (email: string | null) => void;
 }
 
 const isShort = (q: string) => q.trim().length < MIN_QUERY;
 
-export default function PeopleCombobox({ id, label, hint, onpick, invalid = false, errorId, kind = "all" }: PeopleComboboxProps) {
+// EMAIL is the same shape the invite form reads: one whole address, trimmed.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export default function PeopleCombobox({ id, label, hint, onpick, invalid = false, errorId, kind = "all", allowOutside = false, onoutside }: PeopleComboboxProps) {
   const { t, tp } = useT();
   const [state, dispatch] = useReducer(comboReducer, COMBO_START);
   const stateRef = useRef(state);
@@ -89,10 +97,26 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
     if (isShort(stateRef.current.query)) loadList();
   };
 
+  // The outside option stands after the entries of the account: a whole address the answer does not name as a
+  // person of it. It is offered only while the account's switch is on and the answer has arrived.
+  const outsideOn = allowOutside && sess?.accountExternalSharing === true;
+  const outsideEmailOf = (s: ComboState): string | null => {
+    if (!outsideOn || s.status !== "ready") return null;
+    const q = s.query.trim();
+    if (!EMAIL.test(q)) return null;
+    const known = s.items.some((it) => (it.email ?? "").toLowerCase() === q.toLowerCase());
+    return known ? null : q;
+  };
+  const outsideEmail = outsideEmailOf(state);
+  const extra = outsideEmail !== null ? 1 : 0;
+
   const onInput = (value: string) => {
-    const hadChoice = stateRef.current.chosen !== null;
+    const before = stateRef.current;
+    const hadChoice = before.chosen !== null;
+    const hadOutside = before.chosenOutside !== null;
     dispatch({ type: "type", query: value });
     if (hadChoice) onpick(null);
+    if (hadOutside) onoutside?.(null);
     if (!isShort(value)) {
       search.call(value);
     } else {
@@ -102,9 +126,17 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
   };
 
   const choose = (index: number) => {
-    const entry = stateRef.current.items[index];
+    const s = stateRef.current;
+    const outside = outsideEmailOf(s);
+    if (outside !== null && index === s.items.length) {
+      dispatch({ type: "pickOutside", email: outside });
+      onoutside?.(outside);
+      return;
+    }
+    const entry = s.items[index];
     if (!entry) return;
     dispatch({ type: "pick", entry });
+    if (s.chosenOutside !== null) onoutside?.(null);
     onpick(entry);
   };
 
@@ -113,15 +145,16 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
       case "ArrowDown":
       case "ArrowUp": {
         e.preventDefault();
+        const delta = e.key === "ArrowDown" ? 1 : -1;
         // Under two characters an arrow opens the account's list when it is closed, then moves from no option: the
         // first option for the down arrow, the last for the up arrow.
         if (isShort(state.query)) {
           if (!state.open) browse();
-          dispatch({ type: "move", delta: e.key === "ArrowDown" ? 1 : -1 });
+          dispatch({ type: "move", delta, extra });
           break;
         }
-        dispatch({ type: "open" });
-        dispatch({ type: "move", delta: e.key === "ArrowDown" ? 1 : -1 });
+        dispatch({ type: "open", extra });
+        dispatch({ type: "move", delta, extra });
         break;
       }
       case "Enter":
@@ -140,7 +173,7 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
     }
   };
 
-  const showList = state.open && state.items.length > 0;
+  const showList = state.open && (state.items.length > 0 || outsideEmail !== null);
   const statusText =
     state.status === "loading"
       ? isShort(state.query)
@@ -148,9 +181,9 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
         : t("share.combo.searching")
       : state.status === "error"
         ? t("share.combo.error")
-        : state.status === "ready" && state.items.length === 0 && state.query.trim().length >= MIN_QUERY
+        : state.status === "ready" && state.items.length === 0 && state.query.trim().length >= MIN_QUERY && outsideEmail === null
           ? t("share.combo.none")
-          : showList
+          : showList && state.items.length > 0
             ? tp(kind === "user" ? "share.combo.people" : "share.combo.count", state.items.length)
             : "";
 
@@ -180,6 +213,11 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
       <p className="hint" id={`${id}-hint`} style={{ margin: 0, fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
         {hint}
       </p>
+      {allowOutside && !outsideOn && (
+        <p className="hint" style={{ margin: 0, fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+          {t("share.external.off")}
+        </p>
+      )}
       <p role="status" aria-live="polite" style={{ margin: 0, fontSize: 13 }}>
         {statusText}
       </p>
@@ -228,6 +266,30 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
                 </span>
               </li>
             ))}
+            {outsideEmail !== null && (
+              <li
+                key="outside"
+                id={optionId(state.items.length)}
+                role="option"
+                aria-selected={state.active === state.items.length}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => choose(state.items.length)}
+                style={{
+                  display: "grid",
+                  gap: 2,
+                  minHeight: 44,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  background: state.active === state.items.length ? "var(--ant-control-item-bg-hover)" : undefined,
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{t("share.external.option", { email: outsideEmail })}</span>
+                <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13, color: "var(--ant-color-text-secondary)" }}>
+                  {t("share.external.optionHint")}
+                  <span className="badge">{t("share.external.tag")}</span>
+                </span>
+              </li>
+            )}
           </ul>
           {state.more && (
             <p id={moreId} style={{ margin: 0, padding: "8px 12px", fontSize: 13, color: "var(--ant-color-text-secondary)" }}>

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
-import { Alert, Dropdown, theme as antdTheme } from "antd";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Alert, Button, Dropdown, theme as antdTheme } from "antd";
 import { ArrowUpDown, ChevronRight, Download, LayoutGrid, List, Play } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
-import type { Node } from "../../lib/files/types";
+import type { Node, Page } from "../../lib/files/types";
 import { visitorChildren, visitorLink, visitorNode } from "../../lib/sharing/api";
+import { childrenPage, signedLink, statNode } from "../../lib/files/api";
 import { crumbsTo, previewKind, type NodeRef } from "../../lib/sharing/anyone";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
@@ -46,8 +47,41 @@ function writeSharePrefs(prefs: ViewPrefs): void {
 // The visitor's selection is always empty: a link's visitor selects nothing (pb1).
 const NO_SELECTION: Set<string> = new Set();
 
-// asLink reads a visitor link's answer: its address. The server's end time is not read: a player decides from what it
-// sees, not from a clock (lib/files/media.ts).
+// LINK_TTL is the life asked of a signed-in file's link: five minutes, enough to start the download or the preview.
+const LINK_TTL = 300;
+
+// BrowseSource is where PublicBrowse reads a node, a folder's children and a file's link from. The visitor source reads
+// through the bearer credential an anyone link gives; the signed-in source reads through the drive's own calls, with the
+// session the browser already holds. A source that defers its links asks for a file's contents only when the person clicks
+// Download or Preview, not when the file opens.
+export interface BrowseSource {
+  node: (id: string) => Promise<Node>;
+  children: (id: string, cursor?: string) => Promise<Page<Node>>;
+  link: (id: string, disposition: "inline" | "attachment") => Promise<{ url: string }>;
+  deferLinks?: boolean;
+}
+
+// visitorSource reads through the visitor's calls with the bearer the page holds.
+export function visitorSource(token: string): BrowseSource {
+  return {
+    node: (id) => visitorNode(token, id),
+    children: (id, cursor) => visitorChildren(token, id, cursor),
+    link: (id, disposition) => visitorLink(token, id, disposition),
+  };
+}
+
+// sessionSource reads through the drive's own calls, and defers a file's link to the click that needs it.
+export function sessionSource(): BrowseSource {
+  return {
+    node: (id) => statNode(id),
+    children: (id, cursor) => childrenPage("", id, cursor),
+    link: (id, disposition) => signedLink(id, disposition, LINK_TTL),
+    deferLinks: true,
+  };
+}
+
+// asLink reads a link answer's address. The server's end time is not read: a player decides from what it sees, not from a
+// clock (lib/files/media.ts).
 function asLink(got: { url: string }): Link {
   return { url: got.url };
 }
@@ -70,17 +104,24 @@ export interface PublicBrowseProps {
   token: string;
   root: string;
   onlost: (why: "expired" | "gone") => void;
+  // source is where the reads come from; without it the visitor's way is kept, over the token given.
+  source?: BrowseSource;
+  // byline is a line drawn under the name, such as who shared the item and from which account.
+  byline?: ReactNode;
 }
 
-export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps) {
+export default function PublicBrowse({ token, root, onlost, source, byline }: PublicBrowseProps) {
   const { t } = useT();
   const lang = useLang();
   const { token: theme } = antdTheme.useToken();
   // The nodes the visitor has seen. A path is always made of these, since the visitor only moves down from the root,
   // so nothing above the root is ever asked for.
   const cache = useRef(new Map<string, Node>());
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
+  // src is the source the reads go through, read at the call so a renewed token or a changed source is the one used.
+  const srcRef = useRef<BrowseSource>(source ?? visitorSource(token));
+  srcRef.current = source ?? visitorSource(token);
+  // defer asks for a file's link only on the click that needs it, not at open.
+  const defer = source?.deferLinks === true;
   const onlostRef = useRef(onlost);
   onlostRef.current = onlost;
   const aliveRef = useRef(true);
@@ -92,6 +133,8 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   const [trail, setTrail] = useState<NodeRef[]>([]);
   const [children, setChildren] = useState<Node[]>([]);
   const [previewLink, setPreviewLink] = useState<Link | null>(null);
+  // previewFailed says a deferred preview was asked for and refused, so the page shows the no-preview line.
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [media, setMedia] = useState<MediaSeed | null>(null);
   // mediaNow is the playlist's file on screen, the one its Download button saves. mediaDownload is the answer the server
   // gave for that file's attachment link, asked when the file starts (as main asked at open): allowed shows the button, a
@@ -125,7 +168,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     const out: Node[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 50; page++) {
-      const res = await visitorChildren(tokenRef.current, id, cursor);
+      const res = await srcRef.current.children(id, cursor);
       out.push(...res.items);
       if (!res.next_cursor) return { items: out, cursor: null };
       cursor = res.next_cursor;
@@ -139,14 +182,14 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     let preview: Link | null = null;
     if (previewKind(node.mime_type) !== null) {
       try {
-        preview = asLink(await visitorLink(tokenRef.current, node.id, "inline"));
+        preview = asLink(await srcRef.current.link(node.id, "inline"));
       } catch (err) {
         if (err instanceof ApiError && (err.status === 401 || err.status === 404)) throw err;
         preview = null;
       }
     }
     try {
-      const download = (await visitorLink(tokenRef.current, node.id, "attachment")).url;
+      const download = (await srcRef.current.link(node.id, "attachment")).url;
       return { preview, download, restricted: false };
     } catch (err) {
       if (err instanceof ApiError && err.code === "download_restricted") return { preview, download: null, restricted: true };
@@ -161,7 +204,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   const shareGone = async (err: unknown): Promise<boolean> => {
     if (!(err instanceof ApiError) || (err.status !== 401 && err.status !== 404)) return false;
     try {
-      await visitorNode(tokenRef.current, root);
+      await srcRef.current.node(root);
       return false;
     } catch (again) {
       if (again instanceof ApiError && (again.status === 401 || again.status === 404)) {
@@ -172,15 +215,20 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     }
   };
 
-  // fetchLink asks for a link to a file the playlist plays: the visitor's preview link, one per file played.
-  const fetchLink = (n: Node): Promise<Link> => visitorLink(tokenRef.current, n.id, "inline").then(asLink);
+  // fetchLink asks for a link to a file the playlist plays: the preview link, one per file played.
+  const fetchLink = (n: Node): Promise<Link> => srcRef.current.link(n.id, "inline").then(asLink);
 
   // onMediaCurrent is told the file the playlist plays. Its download answer is asked for now, once per file, so the page shows
-  // the button or the notice for that file and no other.
+  // the button or the notice for that file and no other. A source that defers its links shows the button at once and asks on
+  // the click (downloadNow), so nothing is read for a file the person only plays.
   const onMediaCurrent = (n: Node | null): void => {
     setMediaNow(n);
     if (n === null || n.kind === "dir") return;
-    void visitorLink(tokenRef.current, n.id, "attachment").then(
+    if (defer) {
+      setMediaDownload({ id: n.id, allowed: true });
+      return;
+    }
+    void srcRef.current.link(n.id, "attachment").then(
       () => setMediaDownload({ id: n.id, allowed: true }),
       (err: unknown) => {
         if (err instanceof ApiError && err.code === "download_restricted") setMediaDownload({ id: n.id, allowed: false });
@@ -192,7 +240,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   // downloadNow starts a download of a file. The link is asked for on the click, not before.
   const downloadNow = async (n: Node): Promise<void> => {
     try {
-      const { url } = await visitorLink(tokenRef.current, n.id, "attachment");
+      const { url } = await srcRef.current.link(n.id, "attachment");
       const a = document.createElement("a");
       a.href = url;
       a.download = "";
@@ -200,6 +248,35 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     } catch (err) {
       if (err instanceof ApiError && err.code === "download_restricted") setError(t("share.open.noDownload"));
       else lost(err);
+    }
+  };
+
+  // downloadDeferred asks for a deferred file's attachment link on the click, then starts the download. A refusal of the
+  // download shows the downloads-off notice; an ended credential or a dead item is handed to the page.
+  const downloadDeferred = async (n: Node): Promise<void> => {
+    try {
+      const { url } = await srcRef.current.link(n.id, "attachment");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      a.click();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "download_restricted") setDownloadRestricted(true);
+      else lost(err);
+    }
+  };
+
+  // previewDeferred asks for a deferred file's inline link on the click, then shows the preview. A refusal shows the
+  // no-preview line; an ended credential or a dead item is handed to the page.
+  const previewDeferred = async (n: Node): Promise<void> => {
+    try {
+      setPreviewLink(asLink(await srcRef.current.link(n.id, "inline")));
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
+        lost(err);
+        return;
+      }
+      setPreviewFailed(true);
     }
   };
 
@@ -212,10 +289,11 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
     setBusy(true);
     setError(null);
     try {
-      const node = cache.current.get(id) ?? (await visitorNode(tokenRef.current, id));
+      const node = cache.current.get(id) ?? (await srcRef.current.node(id));
       cache.current.set(id, node);
       if (!live()) return;
       setPreviewLink(null);
+      setPreviewFailed(false);
       setMedia(null);
       // The playlist's file belongs to the file being shown: a new file clears it at once, so no render names the last one.
       setMediaNow(null);
@@ -239,10 +317,10 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
           const trailNow = crumbsTo(cache.current, id, root) ?? [];
           const parent = trailNow.length >= 2 ? trailNow[trailNow.length - 2].id : null;
           const seen = parent !== null && listing.current?.id === parent ? listing.current : null;
-          const folder = new Pager(seen?.items ?? [], seen?.cursor ?? null, (c) => visitorChildren(tokenRef.current, parent ?? id, c));
+          const folder = new Pager(seen?.items ?? [], seen?.cursor ?? null, (c) => srcRef.current.children(parent ?? id, c));
           if (!live()) return;
           setMedia({ start: node, folder });
-        } else {
+        } else if (!defer) {
           const got = await prepareFile(node);
           if (!live()) return;
           setPreviewLink(got.preview);
@@ -373,6 +451,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
 
           {/* The heading names the file on screen: the playlist's file while one plays, the page's file otherwise. */}
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px" }}>{(playing && mediaNow ? mediaNow : current).name}</h1>
+          {byline}
 
           {current.kind === "dir" ? (
             <>
@@ -451,6 +530,31 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
                   />
                 </Suspense>
               </div>
+            </>
+          ) : defer ? (
+            <>
+              {previewLink !== null && kind === "image" && (
+                <img className="public-preview" src={previewLink.url} alt={current.name} style={{ maxWidth: "100%" }} />
+              )}
+              {previewLink !== null && kind === "pdf" && (
+                <iframe className="public-preview" title={current.name} src={previewLink.url} style={{ width: "100%", minHeight: 480, border: 0 }} />
+              )}
+              {previewLink === null && (kind === null || previewFailed) && (
+                <p style={{ color: "var(--ant-color-text-secondary)" }}>{t("share.open.noPreview")}</p>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "12px 0" }}>
+                {kind !== null && previewLink === null && !previewFailed && (
+                  <Button onClick={() => void previewDeferred(current)}>{t("files.act.preview")}</Button>
+                )}
+                {!downloadRestricted && (
+                  <Button type="primary" onClick={() => void downloadDeferred(current)}>
+                    {t("share.open.download")}
+                  </Button>
+                )}
+              </div>
+              {downloadRestricted && (
+                <p style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("share.open.noDownload")}</p>
+              )}
             </>
           ) : (
             <>

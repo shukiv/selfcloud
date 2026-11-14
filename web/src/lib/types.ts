@@ -29,6 +29,10 @@ export interface Me {
   // tenant_access and mail_configured are sent only to an installation admin's own session.
   tenant_access?: boolean;
   mail_configured?: boolean;
+  // email_proved: the person has proved the address of their session. account_external_sharing: the account's
+  // switch for sharing with people in other accounts. Absent in an answer from an older server.
+  email_proved?: boolean;
+  account_external_sharing?: boolean;
 }
 
 export interface SignedIn {

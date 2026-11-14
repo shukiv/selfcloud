@@ -17,11 +17,15 @@ import { statOrNull } from "../../lib/files/api";
 import { go } from "../../lib/router";
 import type { DirectoryEntry, FolderAccess, Node, Permission, Role } from "../../lib/files/types";
 import {
+  addExternalPermission,
+  listExternalPermissions,
   listPermissions,
+  removeExternalPermission,
   removePermission,
   setPermission,
   transferOwnership,
   updateNodeFlags,
+  type ExternalPermission,
 } from "../../lib/sharing/api";
 import { grantableRoles, shareCap } from "../../lib/sharing/roles";
 import { ancestorIDs, canRemoveHere, originOf, type Origin } from "../../lib/sharing/inherited";
@@ -82,6 +86,19 @@ export function noticeFor(reason: string | undefined, lang: Lang): string | null
   }
 }
 
+// externalErrorText says what a refused outside share means, by the reason the server names. A same-account address is
+// shared with as a person here; a switch turned off meanwhile says the same hint as the form; too many outside shares says so.
+export function externalErrorText(err: unknown, lang: Lang, email: string): string {
+  if (err instanceof ApiError) {
+    if (err.details.reason === "same_account") return translate(lang, "share.external.sameAccount", { email });
+    if (err.details.reason === "external_sharing_off") return translate(lang, "share.external.off");
+    if (err.details.reason === "too_many_external") return translate(lang, "share.external.tooMany");
+    if (err.code === "rate_limited") return translate(lang, "share.err.limited");
+    if (err.status === 0) return translate(lang, statusZeroKey(err));
+  }
+  return translate(lang, "error.generic");
+}
+
 export default function ShareDialog({ node, space, onclose, onchanged }: ShareDialogProps) {
   const { t, tp } = useT();
   const lang = useLang();
@@ -96,6 +113,19 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
     refetchOnMount: "always",
   });
   const perms: Permission[] = permsQ.data?.items ?? [];
+
+  // The outside grants: the addresses of other accounts this item is shared with. A failed read keeps the people list and
+  // shows no error of its own; the grants are simply not there.
+  const externalOn = me?.accountExternalSharing === true;
+  const extKey = queryKey("external-permissions", node.id);
+  const extQ = useQuery({
+    queryKey: extKey,
+    queryFn: () => listExternalPermissions(node.id),
+    enabled: externalOn,
+    refetchOnMount: "always",
+  });
+  const grants: ExternalPermission[] = extQ.data?.items ?? [];
+  const refreshExternal = () => qc.invalidateQueries({ queryKey: extKey });
 
   // Names of the ancestors the permissions sit on. An ancestor the caller cannot read has no name, and the row says so.
   const ancestors = ancestorIDs(perms);
@@ -120,6 +150,9 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
 
   // The add form.
   const [picked, setPicked] = useState<DirectoryEntry | null>(null);
+  // outsideEmail is the address chosen as a person of another account, or null. While it is set the form shares with it as
+  // a viewer, with no role choice and no mail.
+  const [outsideEmail, setOutsideEmail] = useState<string | null>(null);
   const [newRole, setNewRole] = useState<Role>("viewer");
   const [expires, setExpires] = useState("");
   const [notify, setNotify] = useState(true);
@@ -218,6 +251,10 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
     e.preventDefault();
     setFormError(null);
     setNotice(null);
+    if (outsideEmail !== null) {
+      await addOutside(outsideEmail);
+      return;
+    }
     if (picked === null) {
       setPickedInvalid(true);
       setFormError(t("share.err.pick"));
@@ -250,6 +287,50 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
       setNotify(true);
       return mailNote ? `${done} ${mailNote}` : done;
     });
+  }
+
+  // addOutside shares the item with an address of another account, as a viewer, with the end date the form holds and no mail.
+  async function addOutside(email: string): Promise<void> {
+    const expiresAt = expiryFromInputCapped(expires, new Date(), maxDays);
+    if (expires !== "" && expiresAt === null) {
+      setFormError(t("share.err.date"));
+      return;
+    }
+    const stale = sessionChanged();
+    setBusy(true);
+    try {
+      await addExternalPermission(node.id, { email, role: "viewer", ...(expiresAt ? { expires_at: expiresAt } : {}) });
+      if (stale()) return;
+      setNotice(t("share.done", { name: email, role: t("role.viewer") }));
+      setOutsideEmail(null);
+      setExpires("");
+      await refreshExternal();
+      onchanged();
+    } catch (err) {
+      if (stale()) return;
+      setFormError(externalErrorText(err, lang, email));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // removeExternal ends a share with an address of another account, then reads the grants again.
+  async function removeExternal(g: ExternalPermission): Promise<void> {
+    const stale = sessionChanged();
+    setBusy(true);
+    setFormError(null);
+    try {
+      await removeExternalPermission(node.id, g.email);
+      if (stale()) return;
+      setNotice(t("share.removed", { name: g.email }));
+      await refreshExternal();
+      onchanged();
+    } catch (err) {
+      if (stale()) return;
+      setFormError(externalErrorText(err, lang, g.email));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function setFlag(flag: "editors_can_share" | "no_download", on: boolean): Promise<void> {
@@ -428,6 +509,45 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
           )}
         </section>
 
+        {grants.length > 0 && (
+          <section aria-labelledby="share-external-grants">
+            <h3 id="share-external-grants" style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>
+              {t("share.external.grantsTitle")}
+            </h3>
+            <ul style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
+              {grants.map((g) => (
+                <li
+                  key={g.email}
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    minHeight: 44,
+                    paddingBlock: 8,
+                    borderBlockEnd: "1px solid var(--ant-color-split)",
+                  }}
+                >
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
+                      <bdi>{g.email}</bdi>
+                    </span>
+                    <span className="badge">{t("share.external.tag")}</span>
+                    <span className="origin hint">{t("share.external.grantRole", { role: t("role.viewer"), name: g.created_by_name })}</span>
+                    {g.expires_at && (
+                      <span className="origin hint">{t("share.endsOn", { date: formatDate(g.expires_at, lang) })}</span>
+                    )}
+                  </div>
+                  {canShareHere && (
+                    <IconButton label={`${t("share.remove")}: ${g.email}`} tip={t("share.remove")} onClick={() => void removeExternal(g)} disabled={busy} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {canShareHere ? (
           <section aria-labelledby="share-add" style={{ display: "grid", gap: 12 }}>
             <h3 id="share-add" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
@@ -440,9 +560,18 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
                 hint={t("share.whoHint")}
                 invalid={pickedInvalid}
                 errorId={pickedInvalid ? "share-who-error" : undefined}
+                allowOutside
+                onoutside={(email) => {
+                  setOutsideEmail(email);
+                  if (email !== null) {
+                    setPicked(null);
+                    setPickedInvalid(false);
+                  }
+                }}
                 onpick={(entry) => {
                   setPicked(entry);
                   setPickedInvalid(false);
+                  if (entry !== null) setOutsideEmail(null);
                 }}
               />
               {pickedInvalid && (
@@ -452,14 +581,23 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
               )}
               <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                 <div style={{ display: "grid", gap: 8 }}>
-                  <label htmlFor="share-role">{t("share.role")}</label>
-                  <Select
-                    id="share-role"
-                    value={newRole}
-                    virtual={false}
-                    onChange={(v: Role) => setNewRole(v)}
-                    options={roleSelectOptions}
-                  />
+                  {outsideEmail !== null ? (
+                    <>
+                      <span>{t("share.role")}</span>
+                      <span className="badge" style={{ justifySelf: "start" }}>{t("role.viewer")}</span>
+                    </>
+                  ) : (
+                    <>
+                      <label htmlFor="share-role">{t("share.role")}</label>
+                      <Select
+                        id="share-role"
+                        value={newRole}
+                        virtual={false}
+                        onChange={(v: Role) => setNewRole(v)}
+                        options={roleSelectOptions}
+                      />
+                    </>
+                  )}
                 </div>
                 <div style={{ display: "grid", gap: 8 }}>
                   <label htmlFor="share-expires">{t("share.expires")}</label>
@@ -477,25 +615,29 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
                   </p>
                 </div>
               </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                <label htmlFor="share-message">{t("share.message")}</label>
-                <Input.TextArea
-                  id="share-message"
-                  rows={2}
-                  maxLength={500}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  aria-describedby="share-message-hint"
-                />
-                <p className="hint" id="share-message-hint" style={{ margin: 0, fontSize: 13 }}>
-                  {t("share.messageHint", { count: message.length })}
-                </p>
-              </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-                <Checkbox id="share-notify" checked={notify} onChange={(e) => setNotify(e.target.checked)}>
-                  {t("share.notify")}
-                </Checkbox>
-              </label>
+              {outsideEmail === null && (
+                <>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <label htmlFor="share-message">{t("share.message")}</label>
+                    <Input.TextArea
+                      id="share-message"
+                      rows={2}
+                      maxLength={500}
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      aria-describedby="share-message-hint"
+                    />
+                    <p className="hint" id="share-message-hint" style={{ margin: 0, fontSize: 13 }}>
+                      {t("share.messageHint", { count: message.length })}
+                    </p>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
+                    <Checkbox id="share-notify" checked={notify} onChange={(e) => setNotify(e.target.checked)}>
+                      {t("share.notify")}
+                    </Checkbox>
+                  </label>
+                </>
+              )}
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Button type="primary" htmlType="submit" disabled={busy}>
                   {t("share.submit")}
