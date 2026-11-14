@@ -112,9 +112,10 @@ async function tap(page, { x, y }) {
   await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
-// clickRowText is one real click on a visitor's listing row, by its name.
+// clickRowText is one real click on a visitor's listing row, by its name. The share page's folder view is the node listing
+// (decision 184): the row is a tr[data-id] named by its aria-label, and the click lands on its name cell, not the actions cell.
 async function clickRowText(page, name) {
-  const p = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.rows button')].find((x) => x.textContent === ${q(name)}); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  const p = await page.evaluate(`(() => { const row = [...document.querySelectorAll('.public-browse .files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === ${q(name)}); if (!row) return null; row.scrollIntoView({ block: 'center' }); const cell = [...row.querySelectorAll('td')].find((td) => td.textContent.includes(${q(name)})); const r = (cell ?? row).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   if (!p) throw new Error(`no row ${name}`);
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y });
   await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 });
@@ -709,8 +710,8 @@ export async function x6Checks(h, { page, base, accountKey, accountID, memberID 
       await signOut();
       await setViewport(page, 1280, 900);
       await page.goto(audioURL);
-      await until(page, `!!document.querySelector('.rows button')`, 20000, 'the share listing');
-      await page.evaluate(`[...document.querySelectorAll('.rows button')].find((b) => b.textContent === 'a-plain.ogg').click(), true`);
+      await until(page, `!!document.querySelector('.public-browse .files-list tr[data-id]')`, 20000, 'the share listing');
+      await clickRowText(page, 'a-plain.ogg');
       await until(page, `!!document.querySelector('[data-testid="media-cover"]')`, 20000, 'the share player');
       await sleep(400);
       const ca = await page.evaluate(`(() => { const e = document.querySelector('.media-cover-empty'); const r = e ? e.getBoundingClientRect() : null; return { icon: !!e, w: r ? r.width : 0, h: r ? r.height : 0, bottom: r ? r.bottom : 0, innerH: innerHeight, cover: document.querySelector('[data-testid="media-cover"]').dataset.cover }; })()`);
@@ -719,7 +720,7 @@ export async function x6Checks(h, { page, base, accountKey, accountID, memberID 
       // A second share differs only in its secret, so the page is left first: a hash change alone does not load the link.
       await page.goto(base + '/login');
       await page.goto(videoURL);
-      await until(page, `!!document.querySelector('.rows button')`, 20000, 'the share listing of the video');
+      await until(page, `!!document.querySelector('.public-browse .files-list tr[data-id]')`, 20000, 'the share listing of the video');
       // A real click: a script's click is no gesture, and the browser then refuses the video's play.
       await clickRowText(page, 'bright.webm');
       await until(page, `!!${MEDIA}`, 20000, 'the share video');
