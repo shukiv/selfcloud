@@ -28,6 +28,7 @@ var allowedWrites = map[string]string{
 	"POST /api/v1/nodes/{nod}/exports":                "file data: a derived copy",
 	"POST /api/v1/zips":                               "file data: the zip job keeps the admin's mark",
 	"DELETE /api/v1/zips/{zip}":                       "the caller's own zip job",
+	"POST /api/v1/zips/{zip}/links":                   "a signed link to the visitor's zip, capped at the sign-in-as's end",
 	"PUT /api/v1/nodes/{nod}/content":                 "file data",
 	"PUT /api/v1/nodes/{nod}/labels/{lbf}":            "file metadata",
 	"DELETE /api/v1/nodes/{nod}/labels/{lbf}":         "file metadata",
