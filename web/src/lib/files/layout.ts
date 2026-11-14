@@ -12,6 +12,14 @@ export const buttonH = (coarse: boolean): number => (coarse ? 44 : 40);
 export const PANEL_INSET = 4;
 export const panelH = (coarse: boolean): number => buttonH(coarse) + 2 * PANEL_INSET;
 
+// The selection bar's parts sit 4 px apart, and its count keeps one short word (48 px, ellipsized) even when the bar is narrow.
+// The bar shows as many action icons as fit its own width (decision 185): an icon's slot is its button plus one gap, and the
+// fixed part is Clear + the count's minimum + More + the padding + the three gaps between those four.
+export const PANEL_GAP = 4;
+export const COUNT_MIN_W = 48;
+export const panelFixedW = (coarse: boolean): number => 2 * buttonH(coarse) + COUNT_MIN_W + 2 * PANEL_INSET + 3 * PANEL_GAP;
+export const panelSlotW = (coarse: boolean): number => buttonH(coarse) + PANEL_GAP;
+
 // The toolbar's row is as tall as the panel plus the row's own 4 px above and below on a mouse; on a finger the panel fills the
 // row (52), so the row does not grow for the larger target.
 export const rowPad = (coarse: boolean): number => (coarse ? 0 : 4);

@@ -3,9 +3,9 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Grid, Modal, Skeleton, theme as antdTheme } from "antd";
+import { App, Alert, Button, ConfigProvider, Dropdown, Grid, Modal, Skeleton, theme as antdTheme, type MenuProps, type ThemeConfig } from "antd";
 import IconButton from "../components/IconButton";
-import SelectionBar from "../components/files/SelectionBar";
+import SelectionBar, { type SelectionAction } from "../components/files/SelectionBar";
 import { useNewChord } from "../components/files/SidebarNew";
 import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewMenuNode } from "../lib/files/newMenu";
 import { newURL } from "../lib/files/newRoute";
@@ -172,9 +172,10 @@ const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 const BUSY_NOTICE_KEYS: ReadonlySet<string> = new Set(["copy", "cut", "paste", "delete", "f2", "selectAll", "enter"]);
 
 
-// useRoomy says whether the window is at least 360 pixels wide. Below it the selection panel keeps two icons, and the rest go in
-// its More menu, so the panel never runs past the window's edge; a window that cannot say its width is taken as roomy.
-function useRoomy(min = 360): boolean {
+// useRoomy says whether the window is at least min pixels wide. The toolbar's New button keeps its word from 480 px (decision
+// 68); a window that cannot say its width is taken as roomy. The selection bar no longer reads the window: it fits its own
+// measured width (decision 185).
+function useRoomy(min: number): boolean {
   const query = `(min-width: ${min}px)`;
   const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
   const [roomy, setRoomy] = useState(() => (supported ? window.matchMedia(query).matches : true));
@@ -334,6 +335,18 @@ function dialogOpen(): boolean {
   });
 }
 
+// MoreMenu is the selection bar's More dropdown: it slides one level at a time on a phone (decision 200) and draws the overflow that puts the bar's hidden actions ahead of More's own entries (decision 201).
+function MoreMenu({ items, phone, coarse, theme, label, icon }: { items: MenuProps["items"]; phone: boolean; coarse: boolean; theme: ThemeConfig; label: string; icon: ReactNode }) {
+  const level = useMenuLevel(items ?? [], phone);
+  return (
+    <ConfigProvider theme={theme}>
+      <Dropdown trigger={["click"]} open={level.open} onOpenChange={level.onOpenChange} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: level.items, style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }}>
+        <IconButton label={label} icon={icon} aria-haspopup="menu" />
+      </Dropdown>
+    </ConfigProvider>
+  );
+}
+
 export default function FilesPage() {
   const { t } = useT();
   const lang = useLang();
@@ -343,7 +356,6 @@ export default function FilesPage() {
   const [density, setDensity] = useDensity();
   // Below md the page's menus slide one level at a time in the same popup (decision 185), the same phone test the list reads.
   const phone = !Grid.useBreakpoint().md;
-  const roomy = useRoomy();
   const spacious = useRoomy(480);
   // Where the sidebar is shown, its New button holds the New actions, so the toolbar has none. A drawer has no New of its own,
   // so the toolbar keeps its New there (decision 66).
@@ -1929,9 +1941,10 @@ export default function FilesPage() {
   const acts = buildActs(selectedNodes);
   // The rights decide what is hidden, so the toolbar keeps its shape as the selection changes.
   const barActs = acts.filter((a) => !a.hidden);
-  // The panel keeps its icons in order; the rest of the selection actions are in its More menu.
-  // Copy link has an icon where the room allows (all widths with a mouse; from 480 px on a finger); below that it is in More.
-  const panelKeys = roomy ? (coarse && !spacious ? ["share", "download", "move", "delete"] : ["share", "copyLink", "download", "move", "delete"]) : ["share", "download"];
+  // The panel's actions in their fixed order (decision 185). The bar shows as many of them as fit its own measured width and
+  // gives the rest to its overflow, which puts them at the top of More, in this same order, ahead of More's own entries. The
+  // window's width no longer decides the icon count: a narrow bar hides the tail, a wide one keeps every icon.
+  const panelKeys = ["share", "copyLink", "download", "move", "delete"];
   const panelIcons = panelKeys.map((k) => barActs.find((a) => a.key === k)).filter((a): a is BarAct => a !== undefined);
   const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
   // The New menu is the one list of newMenu.ts, the sidebar's too: its entries follow the page's rules (canMakeFolder, canUploadHere,
@@ -2056,11 +2069,11 @@ export default function FilesPage() {
         children: piece.acts.map(actItem),
       };
     });
-  // The toolbar's New, the selection panel's More and the right-click menu each slide one level at a time on a phone
-  // (decision 185), through the one helper the sidebar's New reads too. The right-click menu owns its open state (the page
-  // sets menu to null to close it), so the hook reads that open and forwards the closes that reach it; a slide keeps it open.
+  // The toolbar's New and the right-click menu each slide one level at a time on a phone (decision 185), through the one
+  // helper the sidebar's New reads too; the selection panel's More slides the same way in MoreMenu. The right-click menu owns
+  // its open state (the page sets menu to null to close it), so the hook reads that open and forwards the closes that reach it;
+  // a slide keeps it open.
   const toolbarNewLevel = useMenuLevel(newMenuItems(newTree, newMenuOptions), phone);
-  const panelMoreLevel = useMenuLevel(groupedItems(panelMore), phone);
   const ctxItems = menu === null ? [] : menu.scope === "space" ? spaceMenuItems() : groupedItems(barActs);
   const ctxLevel = useMenuLevel(ctxItems, phone, {
     open: menu !== null,
@@ -2142,6 +2155,24 @@ export default function FilesPage() {
   // The selection panel takes the toolbar's row while something is selected: one full-width bar at the same height, above the
   // listing (on every width, as the owner asked). X clears, then the count, then icons with tooltips; the rest are in More.
   const countText = translatePlural(lang, "files.selected", sel.ids.length);
+  // moreButton wraps a menu in the bar's More dropdown (decision 68). It draws More's own entries, and the overflow menu that
+  // puts the actions the bar could not fit ahead of them.
+  const moreButton = (items: MenuProps["items"]) => (
+    <MoreMenu items={items} phone={phone} coarse={coarse} theme={menuTheme} label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} />
+  );
+  // overflow is the bar's hidden actions at the top of More, in the bar's order, ahead of More's own entries (decision 185).
+  // Each keeps its label, icon, disabled state and run: it is the same action the icon would have drawn, a divider apart from
+  // the grouped entries below. More is always there when anything is hidden, even with no entries of its own.
+  const overflow = (hidden: SelectionAction[]) => {
+    const hiddenActs = hidden.map((h) => panelIcons.find((a) => a.key === h.key)).filter((a): a is BarAct => a !== undefined);
+    const rest = groupedItems(panelMore);
+    const items: MenuProps["items"] = [
+      ...hiddenActs.map(actItem),
+      ...(hiddenActs.length > 0 && rest.length > 0 ? [{ type: "divider" as const, key: "overflow-divider" }] : []),
+      ...rest,
+    ];
+    return moreButton(items);
+  };
   // The bar is a pill with its icons (decision 68): clear, the count, the actions, a spacer and More.
   const selectionPanel = (
     <SelectionBar
@@ -2151,15 +2182,8 @@ export default function FilesPage() {
       onClear={clearPicked}
       coarse={coarse}
       actions={panelIcons.map((a) => ({ key: a.key, label: a.label, icon: a.icon, enabled: a.enabled, run: a.run }))}
-      moreMenu={
-        panelMore.length > 0 ? (
-          <ConfigProvider theme={menuTheme}>
-            <Dropdown trigger={["click"]} open={panelMoreLevel.open} onOpenChange={panelMoreLevel.onOpenChange} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: panelMoreLevel.items, style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }}>
-              <IconButton label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} aria-haspopup="menu" />
-            </Dropdown>
-          </ConfigProvider>
-        ) : null
-      }
+      moreMenu={panelMore.length > 0 ? moreButton(groupedItems(panelMore)) : null}
+      overflow={overflow}
     />
   );
   // The row is 48 px with a mouse (the panel's 40 and 4 above and below) and 52 on a finger, where the panel fills it.
