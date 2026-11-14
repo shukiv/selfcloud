@@ -2,7 +2,9 @@
 
 // Slice sb: every row of the sidebar's folder tree takes the menu row's metrics (decision 81). At 1280 wide, in light and dark, and
 // in English and Hebrew, My files, a folder opened under it, and the Starred item have one height, the top two have the menu item's
-// inline edges and corner radius, and My files' icon sits in the menu's icon column. On a finger (the drawer at 390 wide) every
+// inline edges and corner radius, and My files' icon sits in the menu's icon column. Decision 185: every part of the expanded sidebar
+// (the brand's picture, New, the tree's rows, the menu's rows and the storage block) starts at one edge, the picture, the rows and the
+// block end at one edge, and the space above the picture is the side space S. On a finger (the drawer at 390 wide) every
 // sidebar row is at least 44 pixels. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures are saved.
 import { mkdir } from 'node:fs/promises';
 import { setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
@@ -66,8 +68,46 @@ async function pair(page, check, label) {
   return m;
 }
 
-// storageFit reads the storage card of the sidebar on the screen (decision 181): its bar and its figures, its height, and whether
-// the card scrolls sideways (a clipped row). Null when the card is not drawn.
+// oneEdge reads the expanded sidebar's parts (decision 185): the brand's picture, the New button, the tree's first row, the Starred
+// item and the storage block, with the sider's (or the drawer body's) box. Null when a part is not on the screen.
+const oneEdge = (page) =>
+  page.evaluate(`(() => {
+    const scope = ${SCOPE};
+    if (!scope) return null;
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top }; };
+    const sider = document.querySelector('.shell-sider') ?? scope.querySelector('.ant-drawer-body') ?? scope;
+    const menu = [...scope.querySelectorAll('.shell-menu li.ant-menu-item')];
+    return {
+      sider: box(sider),
+      brand: box(scope.querySelector('[data-testid="sidebar-brand"] img')),
+      new: box(scope.querySelector('[data-testid="new-button"]')),
+      first: box(scope.querySelector('[data-testid="folder-tree"] [role="tree"] > [role="treeitem"] > .tree-row')),
+      starred: box(menu.find((li) => (li.getAttribute('data-menu-id') ?? '').includes('starred'))),
+      card: box(scope.querySelector('[data-testid="storage-card"]')),
+      rtl: document.documentElement.dir === 'rtl',
+    };
+  })()`);
+
+// edgeChecks says the parts take one edge (decision 185): every part starts where Starred starts, the picture, the rows and the block
+// end where Starred ends, and the space above the picture is the space from the sider's start edge (S). The measured edges are logged.
+function edgeChecks(m, check, label) {
+  const ready = !!(m && m.sider && m.brand && m.new && m.first && m.starred && m.card);
+  check(ready, `${label}: the brand, New, the tree, Starred and the storage block are on the screen (${JSON.stringify(m && { sider: !!m.sider, brand: !!m.brand, new: !!m.new, first: !!m.first, starred: !!m.starred, card: !!m.card })})`);
+  if (!ready) return;
+  const start = (b) => (m.rtl ? b.r : b.l);
+  const end = (b) => (m.rtl ? b.l : b.r);
+  const starts = { brand: start(m.brand), new: start(m.new), first: start(m.first), starred: start(m.starred), card: start(m.card) };
+  check(Object.values(starts).every((x) => same(x, starts.starred)), `${label}: every part of the sidebar starts at one edge (${JSON.stringify(starts)})`);
+  const ends = { brand: end(m.brand), first: end(m.first), starred: end(m.starred), card: end(m.card) };
+  check(Object.values(ends).every((x) => same(x, ends.starred)), `${label}: the brand, the rows and the storage block end at one edge (${JSON.stringify(ends)})`);
+  const topSpace = m.brand.t - m.sider.t;
+  const sideSpace = Math.abs(start(m.brand) - start(m.sider));
+  check(same(topSpace, sideSpace), `${label}: the space above the logo is the side space S (${topSpace} and ${sideSpace})`);
+  console.log(`INFO ${label}: one edge ${JSON.stringify({ starts, ends, topSpace, sideSpace })}`);
+}
+
+// storageFit reads the storage block of the sidebar on the screen (decisions 181 and 185): its bar and its figures, its height, and whether
+// the block scrolls sideways (a clipped row). Null when the block is not drawn.
 const storageFit = (page) =>
   page.evaluate(`(() => {
     const scope = ${SCOPE};
@@ -124,6 +164,7 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   await setTheme(page, 'Light');
   await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
   await pair(page, check, 'English, light');
+  edgeChecks(await oneEdge(page), check, 'English, light');
   await snap('sb-desktop-en-light.png');
   await setTheme(page, 'Dark');
   await page.waitFor(`document.documentElement.dataset.theme === 'dark'`, 10000);
@@ -135,6 +176,7 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   await page.waitFor(`document.documentElement.dir === 'rtl'`, 10000);
   await openMyFiles(page);
   await pair(page, check, 'Hebrew, light');
+  edgeChecks(await oneEdge(page), check, 'Hebrew, light');
   await snap('sb-desktop-he-light.png');
   await setLanguage(page, 'English');
   await page.waitFor(`document.documentElement.dir === 'ltr'`, 10000);
@@ -150,15 +192,15 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   // The drawer slides in: its rows are measured once it has stopped.
   await sleep(700);
   const phone = await pair(page, check, 'phone drawer');
-  // The storage card on a finger: its bar and figures are inside the sidebar, the card is not clipped (no sideways scroll), and it
+  // The storage block on a finger: its bar and figures are inside the sidebar, the block is not clipped (no sideways scroll), and it
   // is a finger's target, at least 44 px tall (decision 181).
   const fit = await storageFit(page);
-  check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the storage card shows its bar and figures (${JSON.stringify(fit)})`);
+  check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the storage block shows its bar and figures (${JSON.stringify(fit)})`);
   if (fit && fit.meter && fit.figures) {
     const inside = (b) => b.left >= fit.side.left - TOL && b.right <= fit.side.right + TOL;
-    check(fit.scroll <= 0, `on a finger the storage card is not clipped sideways (scroll ${fit.scroll}px)`);
+    check(fit.scroll <= 0, `on a finger the storage block is not clipped sideways (scroll ${fit.scroll}px)`);
     check(inside(fit.meter) && inside(fit.figures), `on a finger the storage bar and figures are inside the sidebar (bar ${fit.meter.left}-${fit.meter.right}, figures ${fit.figures.left}-${fit.figures.right}, sidebar ${fit.side.left}-${fit.side.right})`);
-    check(fit.item.height >= 44 - TOL, `on a finger the storage card is at least 44 px tall (${fit.item.height})`);
+    check(fit.item.height >= 44 - TOL, `on a finger the storage block is at least 44 px tall (${fit.item.height})`);
   }
   if (phone) {
     const short = [...phone.treeRows, ...phone.menuRows].filter((r) => r.height < 44 - TOL);

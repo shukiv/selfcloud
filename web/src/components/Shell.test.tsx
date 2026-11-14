@@ -919,9 +919,10 @@ describe("the sidebar's New (decision 66)", () => {
 
 });
 
-// Decision 171: the storage meter is a card pinned at the bottom of the sidebar, one link to /storage; the Storage entry
-// leaves the menu (the owner's Manage entry stays). The card is outside the scroll region, so it stays while the menu scrolls.
-describe("the sidebar's storage card (decision 181)", () => {
+// Decision 171: the storage meter is pinned at the bottom of the sidebar, one link to /storage; the Storage entry
+// leaves the menu (the owner's Manage entry stays). The block is outside the scroll region, so it stays while the menu scrolls.
+// Decision 185: it is a sidebar row, not a card, and on its page it takes the selected row's fill.
+describe("the sidebar's storage block (decisions 181 and 185)", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
@@ -986,14 +987,18 @@ describe("the sidebar's storage card (decision 181)", () => {
     expect(within(nav).queryByTestId("storage-rail")).toBeNull();
   });
 
-  it("on the Storage page the card is the current place: aria-current page and the mark border", async () => {
+  it("on the Storage page the block is the current place: aria-current page, the selected row's fill from the stylesheet", async () => {
     signIn("member");
     myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
     renderShell("/storage");
     const nav = await openNav();
     const card = await within(nav).findByTestId("storage-card");
     expect(card.getAttribute("aria-current")).toBe("page");
-    expect(card.style.borderColor).toBe("rgb(254, 204, 0)");
+    // Decision 185: no border and no inline background; the stylesheet fills the current block with the active colour, as the
+    // selected menu row is filled, and the block's ink is the on-active one.
+    expect(card.style.border).toBe("");
+    expect(card.style.background).toBe("");
+    expect(card.style.color).toBe("rgb(13, 33, 66)");
   });
 
   it("clicking the card opens the Storage page", async () => {
