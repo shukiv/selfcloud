@@ -210,12 +210,15 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     });
 
     await step('the page queue is a table, and a click on row 2 plays it in the page player', async () => {
-      await until(page, `document.querySelectorAll('[data-testid="media-page-queue"] [data-testid="media-qrow"]').length === 2`, 15000, 'the two queue rows');
+      // The folder holds four playable files (mp4 adds a tagged song and a video for the library tabs), so the queue
+      // lists four rows; the two tracks are found by name, not by their place in the list.
+      const qrow = (name) => `[data-testid="media-page-queue"] [data-testid="media-qrow"][aria-label=${JSON.stringify(name)}]`;
+      await until(page, `document.querySelectorAll('[data-testid="media-page-queue"] [data-testid="media-qrow"]').length === 4`, 15000, 'the four queue rows');
       check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]') && !document.querySelector('[data-testid="media-page-queue"] [data-testid="media-row"]')`), 'the queue is the table, with no drawer rows');
-      check(await page.evaluate(`(() => { const r = document.querySelectorAll('[data-testid="media-qrow"]'); return r[0].classList.contains('media-qrow--on') && !r[1].classList.contains('media-qrow--on'); })()`), 'the playing row is marked');
-      // A click on row 2's name plays it through the session's one player, on the page's stage.
+      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('track-one.ogg'))}); const off = document.querySelector(${q(qrow('track-two.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the playing row is marked');
+      // A click on track-two's name plays it through the session's one player, on the page's stage.
       const p = await page.evaluate(`(() => {
-        const row = document.querySelectorAll('[data-testid="media-qrow"]')[1];
+        const row = document.querySelector(${q(qrow('track-two.ogg'))});
         row.scrollIntoView({ block: 'center' });
         const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -225,7 +228,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `(() => { const v = ${MEDIA}; return !!v && v.getAttribute('aria-label') === 'track-two.ogg' && v.readyState >= 2; })()`, 20000, 'row 2 has data');
       await playing(page);
       check(await page.evaluate(`document.querySelectorAll('audio').length === 1 && document.querySelector('[data-testid="media-page-stage"] audio') === document.querySelector('audio')`), 'one player, in the page stage, plays row 2');
-      check(await page.evaluate(`(() => { const r = document.querySelectorAll('[data-testid="media-qrow"]'); return !r[0].classList.contains('media-qrow--on') && r[1].classList.contains('media-qrow--on'); })()`), 'the mark moves to row 2');
+      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('track-two.ogg'))}); const off = document.querySelector(${q(qrow('track-one.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the mark moves to row 2');
       // The element is made once for the file that plays (decision 186): carry the identity mark to the session's current
       // element, so the checks that follow judge the same one.
       await page.evaluate(`(() => { const el = document.querySelector('audio'); el.__mp1 = 1; window.__mp1el = el; return true; })()`);
