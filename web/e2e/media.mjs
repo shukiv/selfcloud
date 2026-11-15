@@ -63,6 +63,24 @@ async function tap(page, { x, y }) {
   await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+// The install offer card (decision 179) appears after a delay and sits over the listing's lower rows, so a tap on a tile's More
+// button can land on it. Answer it the way the landing branch does: keep the app's own dismissal and close the card if it is up.
+async function answerInstallCard(page) {
+  await page.evaluate(`(() => { window.localStorage.setItem('selfcloud.installPrompt', JSON.stringify({ at: Date.now(), forever: false })); const c = document.querySelector('[data-testid="install-prompt"]'); if (c) c.querySelector('button')?.click(); })()`).catch(() => undefined);
+  await page.waitFor(`!document.querySelector('[data-testid="install-prompt"]')`, 5000).catch(() => undefined);
+}
+
+// The page can still scroll by itself for a beat after a selection is cleared or a mark changes (a known issue, handled elsewhere):
+// read a tile's More button rect only once scrollY is equal across two animation frames, so the tap that follows lands on it.
+async function stillMorePoint(page, name) {
+  await answerInstallCard(page);
+  await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel(name))})?.querySelector('button[aria-haspopup="menu"]'); if (b) b.scrollIntoView({ block: 'center' }); })()`);
+  await page.evaluate(`(() => { window.__still = { prev: null, ok: false }; const tick = () => { const s = window.__still; if (!s) return; const y = window.scrollY; s.ok = s.prev === y; s.prev = y; if (!s.ok) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()`);
+  await page.waitFor(`window.__still && window.__still.ok`, 2000).catch(() => undefined);
+  await page.evaluate(`window.__still = null`);
+  return page.evaluate(`(() => { const b = document.querySelector(${q(itemSel(name))})?.querySelector('button[aria-haspopup="menu"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+}
+
 // openedName waits for the preview to open and returns the name it shows, or null when none opens.
 async function openedName(page) {
   await sleep(900);
@@ -347,6 +365,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   // open loads the folder afresh, in the view asked for, with nothing selected.
   const open = async (view) => {
     await page.goto(folderURL);
+    // The phone's install card (decision 179) is not part of these checks; a fixed card over the listing would cover a row's More
+    // button. Answer it on every fresh load, and again right before a tile's More tap, since it can appear after a delay.
+    await answerInstallCard(page);
     // The view toggle shows the view it switches to (data-view): it is clicked when that is the view asked for.
     const want = view === 'List' ? 'list' : 'grid';
     await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 15000);
@@ -407,7 +428,12 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
             }
             await tap(page, box);
             await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000).catch(() => undefined);
-            await sleep(300);
+            // Decision 185: the bar fits its icons before paint and keeps one fixed-height row, so drawing it changes neither
+            // its own height nor the page's scroll. Read both as the selection appears and again 500 ms later: both equal.
+            const fitA = await page.evaluate(`({ bar: Math.round(document.querySelector('[data-testid="selection-panel"]')?.getBoundingClientRect().height ?? -1), sy: window.scrollY })`);
+            await sleep(500);
+            const fitB = await page.evaluate(`({ bar: Math.round(document.querySelector('[data-testid="selection-panel"]')?.getBoundingClientRect().height ?? -1), sy: window.scrollY })`);
+            check(fitA.bar === fitB.bar && fitA.sy === fitB.sy, `${lang}, ${width} px, ${view}: the selection bar keeps its height and the page its scroll as the icons fit (bar ${fitA.bar} -> ${fitB.bar} px; scrollY ${fitA.sy} -> ${fitB.sy})`);
             const picked = await wideElements(page);
             check(picked.scrollWidth <= width, `${lang}, ${width} px, ${view}, with a selection: the page fits its window (scrollWidth ${picked.scrollWidth}; wider: ${JSON.stringify(picked.top.slice(0, 2))})`);
             const moreBox = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right) }; })()`);
@@ -421,12 +447,14 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
               await sleep(200);
               const entries = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((x) => ({ name: x.textContent.trim(), disabled: x.classList.contains('ant-dropdown-menu-item-disabled') }))`);
               const first = entries.slice(0, 3).map((x) => x.name);
-              const want = width === 320 ? ['Download', 'Move to…', 'Move to trash'] : width === 390 ? ['Move to trash'] : ['Move to…', 'Move to trash'];
-              check(JSON.stringify(first.slice(0, want.length)) === JSON.stringify(want), `${width} px: the bar's hidden actions are the first entries of More, in order (wanted ${JSON.stringify(want)}, got ${JSON.stringify(first)}; icons ${JSON.stringify(icons)})`);
+              // Decision 68's rule: Copy link leaves first, then Move and Delete; Share and Download stay longest. So at 390
+              // Delete keeps its icon and only Copy link is hidden; the hidden entries keep the display order in More.
+              const want = width === 320 ? ['Copy link', 'Move to…', 'Move to trash'] : width === 390 ? ['Copy link'] : ['Copy link', 'Move to…'];
+              check(JSON.stringify(first.slice(0, want.length)) === JSON.stringify(want), `${width} px: the bar's hidden actions are the first entries of More, in display order (wanted ${JSON.stringify(want)}, got ${JSON.stringify(first)}; icons ${JSON.stringify(icons)})`);
               const move = entries.find((x) => x.name === 'Move to…');
               const del = entries.find((x) => x.name === 'Move to trash');
               const moveReachable = (move !== undefined && !move.disabled) || icons.includes('Move to…');
-              const delReachable = del !== undefined && !del.disabled;
+              const delReachable = (del !== undefined && !del.disabled) || icons.includes('Delete');
               check(moveReachable && delReachable, `${width} px: Move and Delete are reachable and enabled, from an icon or from More (move ${JSON.stringify(move)}, delete ${JSON.stringify(del)}, icons ${JSON.stringify(icons)})`);
               if (width === 360 && move !== undefined) {
                 await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…').click()`);
@@ -444,9 +472,15 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
         }
       }
     } finally {
+      // Leave the page as the next step finds it on a fresh visit: no menu open, nothing selected, back at the top. An open
+      // dropdown would otherwise swallow the next step's first tap to close itself.
+      await escapeKey().catch(() => undefined);
+      await clearSelection(page).catch(() => undefined);
+      await page.evaluate(`window.scrollTo(0, 0)`).catch(() => undefined);
       await setWidth(page, 390);
       await setLanguage(page, 'English').catch(() => undefined);
       await setPhone(page, false);
+      await sleep(400);
     }
   });
 

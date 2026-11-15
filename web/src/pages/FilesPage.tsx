@@ -1941,10 +1941,12 @@ export default function FilesPage() {
   const acts = buildActs(selectedNodes);
   // The rights decide what is hidden, so the toolbar keeps its shape as the selection changes.
   const barActs = acts.filter((a) => !a.hidden);
-  // The panel's actions in their fixed order (decision 185). The bar shows as many of them as fit its own measured width and
-  // gives the rest to its overflow, which puts them at the top of More, in this same order, ahead of More's own entries. The
-  // window's width no longer decides the icon count: a narrow bar hides the tail, a wide one keeps every icon.
+  // The panel's actions in their display order (decision 185). The bar shows as many of them as fit its own measured width and
+  // gives the rest to its overflow, which puts them at the top of More, in this same display order, ahead of More's own entries.
+  // The window's width no longer decides the icon count. Which actions leave first keeps decision 68's rule (panelHideOrder):
+  // Copy link goes first, then Move and Delete, and Share and Download stay longest, so Delete keeps its icon on a phone.
   const panelKeys = ["share", "copyLink", "download", "move", "delete"];
+  const panelHideOrder = ["copyLink", "move", "delete", "download", "share"];
   const panelIcons = panelKeys.map((k) => barActs.find((a) => a.key === k)).filter((a): a is BarAct => a !== undefined);
   const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
   // The New menu is the one list of newMenu.ts, the sidebar's too: its entries follow the page's rules (canMakeFolder, canUploadHere,
@@ -2184,6 +2186,7 @@ export default function FilesPage() {
       actions={panelIcons.map((a) => ({ key: a.key, label: a.label, icon: a.icon, enabled: a.enabled, run: a.run }))}
       moreMenu={panelMore.length > 0 ? moreButton(groupedItems(panelMore)) : null}
       overflow={overflow}
+      hideOrder={panelHideOrder}
     />
   );
   // The row is 48 px with a mouse (the panel's 40 and 4 above and below) and 52 on a finger, where the panel fills it.

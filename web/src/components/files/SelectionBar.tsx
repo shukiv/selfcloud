@@ -12,14 +12,18 @@ export type SelectionAction = { key: string; label: string; icon: ReactNode; ena
 // rounded pill with no borders. The clear icon, then the count, then the action icons, started right after the count, then a
 // spacer, then More (the rest of the actions, in a menu the caller gives).
 //
-// The bar shows as many of its ordered actions as fit its own width (decision 185): shown = floor((width - fixed) / slot),
-// never fewer than 0. The width is the bar's own border box, read by a ResizeObserver on its root, so the count comes from the
-// room the bar has, not from what it draws: hiding an icon cannot widen the bar, and the measure cannot flicker. The slot is the
-// icon button plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's minimum + More + the
-// padding + the three gaps between those four (layout.ts). The count is held to that reserved width (ellipsis, its full text
-// in the title) and does not grow or shrink, so it cannot push the icons past the edge. The actions that do not fit are given to overflow, which draws them
-// at the top of More, in order; without an overflow the bar keeps every icon, so no action is ever unreachable. A window that
-// cannot measure (jsdom has no ResizeObserver) is taken as wide enough for every icon.
+// The bar shows as many of its actions as fit its own width (decision 185): shown = floor((width - fixed) / slot), never fewer
+// than 0. The width is the bar's own border box, read by a ResizeObserver on its root, so the count comes from the room the bar
+// has, not from what it draws: hiding an icon cannot widen the bar, and the measure cannot flicker. The slot is the icon button
+// plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's minimum + More + the padding + the
+// three gaps between those four (layout.ts). The count is held to that reserved width (ellipsis, its full text in the title) and
+// does not grow or shrink, so it cannot push the icons past the edge.
+//
+// Which actions leave the bar keeps decision 68's rule: the caller gives hideOrder, the order they go (Copy link first, then
+// Move and Delete, Share and Download last). The icons that stay keep the display order, and the actions that do not fit are
+// given to overflow, which draws them at the top of More in that same display order; without an overflow the bar keeps every
+// icon, so no action is ever unreachable. A window that cannot measure (jsdom has no ResizeObserver) is taken as wide enough for
+// every icon.
 export default function SelectionBar({
   label,
   countText,
@@ -28,6 +32,7 @@ export default function SelectionBar({
   actions,
   moreMenu,
   overflow,
+  hideOrder,
   coarse,
 }: {
   label: string;
@@ -37,15 +42,21 @@ export default function SelectionBar({
   actions: SelectionAction[];
   moreMenu?: ReactNode;
   overflow?: (hidden: SelectionAction[]) => ReactNode;
+  hideOrder?: readonly string[];
   coarse: boolean;
 }) {
   const { token } = antdTheme.useToken();
   const rootRef = useRef<HTMLDivElement>(null);
-  // null is "not measured": every action keeps its icon until the observer reports the bar's width.
+  // null is "not measured": every action keeps its icon until the bar's width is known.
   const [width, setWidth] = useState<number | null>(null);
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
+    // The first fit is read before paint, so the bar never draws a wider set of icons than it keeps and then shrinks: its
+    // row is the right height from the first frame, and the page cannot scroll under a tap taken next. The observer only
+    // handles later width changes. A zero width is not a measurement (jsdom does not lay out), so it stays "not measured".
+    const first = el.getBoundingClientRect().width;
+    if (first > 0) setWidth(first);
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -59,7 +70,13 @@ export default function SelectionBar({
     width === null || overflow === undefined
       ? actions.length
       : Math.max(0, Math.min(actions.length, Math.floor((width - panelFixedW(coarse)) / panelSlotW(coarse))));
-  const hidden = actions.slice(shown);
+  // Decision 68's rule: hideOrder names the actions as they leave the bar; the rest keep their icons. Both the icons that stay
+  // and the hidden entries keep the display order. With no hideOrder the tail of the display order leaves first.
+  const present = new Set(actions.map((a) => a.key));
+  const leaveOrder = (hideOrder ?? [...actions.map((a) => a.key)].reverse()).filter((k) => present.has(k));
+  const hiddenKeys = new Set(leaveOrder.slice(0, actions.length - shown));
+  const hidden = actions.filter((a) => hiddenKeys.has(a.key));
+  const visible = actions.filter((a) => !hiddenKeys.has(a.key));
   return (
     <div
       ref={rootRef}
@@ -68,6 +85,9 @@ export default function SelectionBar({
       data-testid="selection-panel"
       style={{
         display: "flex",
+        // One row, always: the bar's block size never depends on how many icons fit, so drawing or hiding an icon cannot
+        // change its height and scroll the page (decision 185).
+        flexWrap: "nowrap",
         alignItems: "center",
         gap: PANEL_GAP,
         minWidth: 0,
@@ -84,7 +104,7 @@ export default function SelectionBar({
       <span aria-live="polite" title={countText} style={{ flex: "none", minWidth: COUNT_MIN_W, maxWidth: COUNT_MIN_W, boxSizing: "border-box", padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {countText}
       </span>
-      {actions.slice(0, shown).map((a) => (
+      {visible.map((a) => (
         <IconButton key={a.key} label={a.label} icon={a.icon} disabled={!a.enabled} onClick={a.run} />
       ))}
       <span data-slot="spacer" style={{ flex: "1 1 auto", minWidth: 0 }} />
