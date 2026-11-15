@@ -3,13 +3,17 @@
 package sharing
 
 import (
+	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/url"
 
 	"github.com/shukiv/selfcloud/internal/cli/cmdkit"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
+	"github.com/shukiv/selfcloud/internal/cli/output"
+	"github.com/shukiv/selfcloud/internal/cli/profile"
 )
 
 // requestableRoles are the roles the API lets a request ask for, and a decision give.
@@ -105,16 +109,23 @@ func (r *run) decide(verb string, body any) int {
 
 // Shared is `selfcloud shared`: what other people shared with the caller.
 func Shared(args []string, stdout, stderr io.Writer) int {
-	var recent, all bool
+	var recent, all, external bool
 	r, code, ok := begin("shared", args, stdout, stderr, func(set *flag.FlagSet) {
 		set.BoolVar(&recent, "recent", false, "the most recently shared first")
 		set.BoolVar(&all, "all", false, "follow the cursor and print every page")
+		set.BoolVar(&external, "external", false, "what other accounts shared with your email address")
 	})
 	if !ok {
 		return code
 	}
 	if len(r.pos) != 0 {
 		return r.fail(exitcode.Usagef("shared takes no arguments"))
+	}
+	if external && (recent || all) {
+		return r.fail(exitcode.Usagef("shared --external takes no --recent or --all"))
+	}
+	if external {
+		return r.sharedExternal()
 	}
 	q := url.Values{}
 	if recent {
@@ -131,4 +142,42 @@ func Shared(args []string, stdout, stderr io.Writer) int {
 	r.listNotice(next)
 	return r.printList(items, []string{"ID", "KIND", "ROLE", "NAME", "SHARED", "PLACE"},
 		[]string{"id", "kind", "role", "name", "shared_at", "place"})
+}
+
+// sharedExternal lists what other accounts shared with the caller's email address: one page. The server lists the items
+// to a browser session only (decision 187): a terminal's device token gets the empty list, so the command says where to
+// read it, and an unproved address is told to prove it. Proving an address stays in the web interface.
+func (r *run) sharedExternal() int {
+	c, err := r.connect()
+	if err != nil {
+		return r.fail(err)
+	}
+	resp, err := files.Send(c, "GET", "/api/v1/shared/external", nil, nil)
+	if err != nil {
+		return r.fail(err)
+	}
+	if r.G.JSON {
+		if err := output.Indented(r.out, resp.Body); err != nil {
+			return r.fail(err)
+		}
+		return exitcode.OK
+	}
+	var doc struct {
+		Items       []json.RawMessage `json:"items"`
+		EmailProved bool              `json:"email_proved"`
+	}
+	if err := json.Unmarshal(resp.Body, &doc); err != nil {
+		return r.fail(fmt.Errorf("the server's answer is not a document"))
+	}
+	if code := r.printList(doc.Items, []string{"ID", "KIND", "ROLE", "NAME", "ACCOUNT", "BY", "EXPIRES"},
+		[]string{"id", "kind", "role", "name", "account_name", "shared_by_name", "expires_at"}); code != exitcode.OK {
+		return code
+	}
+	switch {
+	case !doc.EmailProved:
+		_, _ = fmt.Fprintln(r.err, "selfcloud: your email address is not proved; prove it in the web interface to see what other accounts shared with you")
+	case c.Kind == profile.KindDevice:
+		_, _ = fmt.Fprintln(r.err, "selfcloud: the server does not list what other accounts shared with you to a terminal sign-in; see it in the web interface")
+	}
+	return exitcode.OK
 }

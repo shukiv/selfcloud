@@ -28,12 +28,23 @@ func Confirm(yes bool, phrase, what string, stderr io.Writer) error {
 
 // Send makes one request and reads JSON back. A doc that is not nil is sent as the JSON body.
 func Send(c *conn.Conn, method, path string, query url.Values, doc any) (*client.Response, error) {
-	r := request{method: method, path: path}
+	return sendDoc(c, method, path, query, doc, false)
+}
+
+// SendEscaped is Send for a path that is already percent-escaped: it goes on the wire as it is, so one segment stays
+// one segment.
+func SendEscaped(c *conn.Conn, method, path string, query url.Values, doc any) (*client.Response, error) {
+	return sendDoc(c, method, path, query, doc, true)
+}
+
+func sendDoc(c *conn.Conn, method, path string, query url.Values, doc any, escaped bool) (*client.Response, error) {
+	r := request{method: method, path: path, escapedPath: escaped}
 	if doc != nil {
 		var err error
 		if r, err = jsonRequest(method, path, doc); err != nil {
 			return nil, err
 		}
+		r.escapedPath = escaped
 	}
 	r.query = query
 	return send(c, r)

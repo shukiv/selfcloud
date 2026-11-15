@@ -127,6 +127,7 @@ func trashRoute(nodeID string) string { return "/api/v1/trash/" + nodeID }
 type request struct {
 	method      string
 	path        string
+	escapedPath bool
 	query       url.Values
 	body        []byte
 	contentType string
@@ -146,6 +147,7 @@ func send(c *conn.Conn, r request) (*client.Response, error) {
 	return c.Client.Do(context.Background(), client.Request{
 		Method:      r.method,
 		Path:        r.path,
+		EscapedPath: r.escapedPath,
 		Query:       r.query,
 		Accept:      "application/json",
 		ContentType: r.contentType,

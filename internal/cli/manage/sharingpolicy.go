@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The sharing policy commands (slice cli9b4): sharing policy show|set. They read and change the
-// account's switches for links that anyone can open, for comments, and for who viewed. Only the account's owner or key
-// may change them; the show command also answers managers.
+// account's switches for links that anyone can open, for comments, for who viewed, and for sharing with other accounts'
+// addresses (slice xs4). Only the account's owner or key may change them; the show command also answers managers.
 
 package manage
 
@@ -21,10 +21,11 @@ import (
 // sharingPolicyView is the part of the policy document that the command prints, plain or under --json. AnyoneLinks
 // counts the account's anyone links; the others are switches. A field the API adds is not shown until it is added here.
 type sharingPolicyView struct {
-	PublicLinks bool `json:"public_links"`
-	AnyoneLinks int  `json:"anyone_links"`
-	Comments    bool `json:"comments"`
-	WhoViewed   bool `json:"who_viewed"`
+	PublicLinks     bool `json:"public_links"`
+	AnyoneLinks     int  `json:"anyone_links"`
+	Comments        bool `json:"comments"`
+	WhoViewed       bool `json:"who_viewed"`
+	ExternalSharing bool `json:"external_sharing"`
 }
 
 func (v sharingPolicyView) pairs() []output.KV {
@@ -33,6 +34,7 @@ func (v sharingPolicyView) pairs() []output.KV {
 		{Key: "anyone_links", Value: strconv.Itoa(v.AnyoneLinks)},
 		{Key: "comments", Value: strconv.FormatBool(v.Comments)},
 		{Key: "who_viewed", Value: strconv.FormatBool(v.WhoViewed)},
+		{Key: "external_sharing", Value: strconv.FormatBool(v.ExternalSharing)},
 	}
 }
 
@@ -91,16 +93,18 @@ func SharingPolicyShow(args []string, stdout, stderr io.Writer) int {
 }
 
 // SharingPolicySet is `selfcloud sharing policy set [--account ACC] [--public-links true|false]
-// [--comments true|false] [--who-viewed true|false]`: it changes only the switches that are given. Turning public links
-// off asks first, because every anyone link of the account stops working.
+// [--comments true|false] [--who-viewed true|false] [--external-sharing true|false]`: it changes only the switches that
+// are given. Turning public links off asks first, because every anyone link of the account stops working; the other
+// switches ask nothing, and turning external sharing off keeps every grant already made.
 func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 	c := begin("sharing policy set", true, stdout, stderr)
 	var yes bool
-	var publicLinks, comments, whoViewed string
+	var publicLinks, comments, whoViewed, externalSharing string
 	c.Set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
 	c.Set.StringVar(&publicLinks, "public-links", "", "links that anyone can open: true or false")
 	c.Set.StringVar(&comments, "comments", "", "comments on files: true or false")
 	c.Set.StringVar(&whoViewed, "who-viewed", "", "the who-viewed switch: true or false")
+	c.Set.StringVar(&externalSharing, "external-sharing", "", "sharing with other accounts' email addresses: true or false")
 	pos, code, ok := c.Parse(args)
 	if !ok {
 		return code
@@ -110,8 +114,8 @@ func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 	if err := cmdkit.NoArgs("sharing policy set", pos); err != nil {
 		return c.fail(err)
 	}
-	if !seen["public-links"] && !seen["comments"] && !seen["who-viewed"] {
-		return c.fail(exitcode.Usagef("sharing policy set needs --public-links, --comments or --who-viewed"))
+	if !seen["public-links"] && !seen["comments"] && !seen["who-viewed"] && !seen["external-sharing"] {
+		return c.fail(exitcode.Usagef("sharing policy set needs --public-links, --comments, --who-viewed or --external-sharing"))
 	}
 	body := map[string]bool{}
 	if seen["public-links"] {
@@ -134,6 +138,13 @@ func SharingPolicySet(args []string, stdout, stderr io.Writer) int {
 			return c.fail(err)
 		}
 		body["who_viewed"] = value
+	}
+	if seen["external-sharing"] {
+		value, err := sharingSwitchArg("external-sharing", externalSharing)
+		if err != nil {
+			return c.fail(err)
+		}
+		body["external_sharing"] = value
 	}
 	acc, err := c.AccountID()
 	if err != nil {

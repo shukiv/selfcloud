@@ -87,8 +87,11 @@ type Client struct {
 
 // Request is one call. Path is an absolute path on the server, with no query, no fragment and no ".." segment.
 type Request struct {
-	Method      string
-	Path        string
+	Method string
+	Path   string
+	// EscapedPath says Path is already percent-escaped and goes on the wire as it is, so one segment stays one
+	// segment. It must unescape and escape back to itself, or the request is refused before it is sent.
+	EscapedPath bool
 	Query       url.Values
 	Accept      string
 	ContentType string
@@ -305,11 +308,19 @@ func methodOf(r Request) string {
 }
 
 // target is the request's URL on the client's own address. Only the path and the query come from the request, so no
-// request can name another host.
+// request can name another host. An EscapedPath request keeps its escaping on the wire, so one segment stays one
+// segment; every other path is sent as before.
 func (c *Client) target(r Request) url.URL {
 	u := *c.base
 	u.Path = c.base.Path + r.Path
 	u.RawPath = ""
+	if r.EscapedPath {
+		// checkRequest has refused a path that does not round-trip, so the raw form is kept here.
+		raw := c.base.EscapedPath() + r.Path
+		if p, err := url.PathUnescape(raw); err == nil {
+			u.Path, u.RawPath = p, raw
+		}
+	}
 	u.RawQuery = r.Query.Encode()
 	return u
 }
@@ -474,12 +485,30 @@ func checkRequest(r Request) error {
 	if err := checkPath(r.Path); err != nil {
 		return err
 	}
+	if r.EscapedPath {
+		if err := checkEscapedPath(r.Path); err != nil {
+			return err
+		}
+	}
 	for k := range r.Header {
 		for _, name := range reservedHeaders {
 			if strings.EqualFold(k, name) {
 				return fmt.Errorf("a request may not set the %s header; the client sets it", name)
 			}
 		}
+	}
+	return nil
+}
+
+// checkEscapedPath refuses an escaped path that does not unescape, or does not escape back to itself: what goes on the
+// wire must be exactly what the caller wrote. The client's own base path is well-formed, so the path alone decides it.
+func checkEscapedPath(p string) error {
+	decoded, err := url.PathUnescape(p)
+	if err != nil {
+		return errors.New("the escaped request path is not well-formed")
+	}
+	if u := (url.URL{Path: decoded, RawPath: p}); u.EscapedPath() != p {
+		return errors.New("the escaped request path is not well-formed")
 	}
 	return nil
 }

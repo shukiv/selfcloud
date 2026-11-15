@@ -72,6 +72,29 @@ func subjectArg(v string) (string, error) {
 	return v, nil
 }
 
+// maxAddressBytes is the longest email address the API takes.
+const maxAddressBytes = 254
+
+// externalAddressArg checks an address for an external grant or revoke. It is passed as given, never trimmed: it must
+// hold an @, be at most 254 bytes, and carry no whitespace, control character or broken encoding, so it can never add
+// a path segment or a query, and what is sent is what was named. Anything stranger the server refuses itself.
+func externalAddressArg(v string) (string, error) {
+	switch {
+	case v == "":
+		return "", exitcode.Usagef("name an email address")
+	case len(v) > maxAddressBytes:
+		return "", exitcode.Usagef("an email address may be at most %d bytes", maxAddressBytes)
+	case !strings.Contains(v, "@"):
+		return "", exitcode.Usagef("an email address holds an @")
+	}
+	for _, r := range v {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || r == utf8.RuneError {
+			return "", exitcode.Usagef("an email address holds no whitespace or control character")
+		}
+	}
+	return v, nil
+}
+
 // expiryArg turns --expires (a time) or --expires-in (a duration, with d for days) into the RFC 3339 time the API reads.
 // It returns "" when neither is given. Giving both is a usage error.
 func expiryArg(at, in string, now time.Time) (string, error) {

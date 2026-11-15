@@ -114,9 +114,11 @@ func (r *run) printList(items []json.RawMessage, headers []string, keys []string
 // ShareLs is `selfcloud share ls`: who holds a role on a node, or who holds a grant on a team folder.
 func ShareLs(args []string, stdout, stderr io.Writer) int {
 	var folder, account string
+	var external bool
 	r, code, ok := begin("share ls", args, stdout, stderr, func(set *flag.FlagSet) {
 		set.StringVar(&folder, "folder", "", "list the grants of this team folder, `id` (fld_...), with --account")
 		set.StringVar(&account, "account", "", "the account `id` (acc_...) of a team folder (default: $"+accountEnv+")")
+		set.BoolVar(&external, "external", false, "list the addresses of other accounts the node is shared with")
 	})
 	if !ok {
 		return code
@@ -125,12 +127,23 @@ func ShareLs(args []string, stdout, stderr io.Writer) int {
 	if err == nil && len(rest) != 0 {
 		err = exitcode.Usagef("share ls takes one node, or --folder")
 	}
+	if err == nil && external && folderID != "" {
+		err = exitcode.Usagef("--external lists a node's addresses, not a team folder's grants")
+	}
 	if err != nil {
 		return r.fail(err)
 	}
 	c, err := r.connect()
 	if err != nil {
 		return r.fail(err)
+	}
+	if external {
+		items, _, err := files.ListPages(c, nodePath(nodeID, "/external-permissions"), nil, false)
+		if err != nil {
+			return r.fail(err)
+		}
+		return r.printList(items, []string{"EMAIL", "ROLE", "EXPIRES", "CREATED", "BY"},
+			[]string{"email", "role", "expires_at", "created_at", "created_by_name"})
 	}
 	if folderID != "" {
 		items, _, err := files.ListPages(c, grantsPath(accountID, folderID, ""), nil, false)
@@ -150,7 +163,7 @@ func ShareLs(args []string, stdout, stderr io.Writer) int {
 // ShareGrant is `selfcloud share grant`: gives a user or a group a role on a node, or a user a level on a team folder.
 func ShareGrant(args []string, stdout, stderr io.Writer) int {
 	var folder, account, role, level, expires, expiresIn, message string
-	var noNotify bool
+	var noNotify, external bool
 	r, code, ok := begin("share grant", args, stdout, stderr, func(set *flag.FlagSet) {
 		set.StringVar(&folder, "folder", "", "grant on this team folder, `id` (fld_...), with --account and --level")
 		set.StringVar(&account, "account", "", "the account `id` (acc_...) of a team folder (default: $"+accountEnv+")")
@@ -160,16 +173,33 @@ func ShareGrant(args []string, stdout, stderr io.Writer) int {
 		set.StringVar(&expiresIn, "expires-in", "", "when the role ends, as a `duration` from now such as 36h or 30d")
 		set.StringVar(&message, "message", "", "a note for the mail the person gets")
 		set.BoolVar(&noNotify, "no-notify", false, "do not mail the person")
+		set.BoolVar(&external, "external", false, "share with an email address of another account, as a viewer")
 	})
 	if !ok {
 		return code
 	}
 	nodeID, folderID, accountID, rest, err := scope(r.pos, folder, account)
+	if err == nil && external && folderID != "" {
+		err = exitcode.Usagef("--external shares a node with an address, not a team folder")
+	}
 	if err == nil && len(rest) != 1 {
-		err = exitcode.Usagef("share grant takes a node (or --folder) and one person or group")
+		if external {
+			err = exitcode.Usagef("share grant --external takes a node and one email address")
+		} else {
+			err = exitcode.Usagef("share grant takes a node (or --folder) and one person or group")
+		}
+	}
+	if err == nil && external && role != "" && role != "viewer" {
+		err = exitcode.Usagef("--external gives the viewer role only")
+	}
+	if err == nil && external && (level != "" || message != "" || noNotify) {
+		err = exitcode.Usagef("--external takes no --level, --message or --no-notify")
 	}
 	if err != nil {
 		return r.fail(err)
+	}
+	if external {
+		return r.grantExternal(nodeID, rest[0], expires, expiresIn)
 	}
 	if folderID != "" {
 		return r.grantFolder(folderID, accountID, rest[0], role, level, expires, expiresIn, message, noNotify)
@@ -210,6 +240,35 @@ func ShareGrant(args []string, stdout, stderr io.Writer) int {
 		return r.fail(err)
 	}
 	if err := r.printDoc(resp.Body, "subject_kind", "subject_id", "role", "expires_at", "notified", "reason"); err != nil {
+		return r.fail(err)
+	}
+	return exitcode.OK
+}
+
+// grantExternal shares a node with an email address of another account: the viewer role only, with no note and no mail
+// flag of its own. The address is checked before any request.
+func (r *run) grantExternal(nodeID, address, expires, expiresIn string) int {
+	address, err := externalAddressArg(address)
+	var end string
+	if err == nil {
+		end, err = expiryArg(expires, expiresIn, time.Now())
+	}
+	if err != nil {
+		return r.fail(err)
+	}
+	body := map[string]any{"email": address, "role": "viewer"}
+	if end != "" {
+		body["expires_at"] = end
+	}
+	c, err := r.connect()
+	if err != nil {
+		return r.fail(err)
+	}
+	resp, err := files.Send(c, "POST", nodePath(nodeID, "/external-permissions"), nil, body)
+	if err != nil {
+		return r.fail(err)
+	}
+	if err := r.printDoc(resp.Body, "email", "role", "expires_at", "created_at"); err != nil {
 		return r.fail(err)
 	}
 	return exitcode.OK
@@ -281,23 +340,33 @@ func nodeWords(name string, safe bool, nodeID string) string {
 // ShareRevoke is `selfcloud share revoke`: takes a role or a grant away. It asks first.
 func ShareRevoke(args []string, stdout, stderr io.Writer) int {
 	var folder, account string
-	var yes bool
+	var yes, external bool
 	r, code, ok := begin("share revoke", args, stdout, stderr, func(set *flag.FlagSet) {
 		set.StringVar(&folder, "folder", "", "revoke grants of this team folder, `id` (fld_...), with --account")
 		set.StringVar(&account, "account", "", "the account `id` (acc_...) of a team folder (default: $"+accountEnv+")")
 		set.BoolVar(&yes, "yes", false, "do not ask first (needed when standard input is not a terminal)")
+		set.BoolVar(&external, "external", false, "revoke the access of an email address of another account")
 	})
 	if !ok {
 		return code
 	}
 	nodeID, folderID, accountID, subjects, err := scope(r.pos, folder, account)
+	if err == nil && external && folderID != "" {
+		err = exitcode.Usagef("--external revokes an address on a node, not a team folder's grant")
+	}
+	if err == nil && external && len(subjects) != 1 {
+		err = exitcode.Usagef("share revoke --external takes a node and one email address")
+	}
 	if err == nil && len(subjects) == 0 {
 		err = exitcode.Usagef("share revoke takes a node (or --folder) and one or more people or groups")
 	}
 	for i := 0; err == nil && i < len(subjects); i++ {
-		if folderID != "" {
+		switch {
+		case external:
+			_, err = externalAddressArg(subjects[i])
+		case folderID != "":
 			_, err = cmdkit.IDArg("usr", "a person (a team folder is shared with users, not groups)", subjects[i])
-		} else {
+		default:
 			_, err = subjectArg(subjects[i])
 		}
 	}
@@ -309,7 +378,17 @@ func ShareRevoke(args []string, stdout, stderr io.Writer) int {
 		return r.fail(err)
 	}
 	fallback := "remove the access of the named people or groups"
+	if external {
+		fallback = "remove the access of the named address"
+	}
 	err = r.ask(yes, fallback, func() (string, string, error) {
+		if external {
+			name, safe, err := nodeLabel(c, nodeID)
+			if err != nil {
+				return "", "", err
+			}
+			return phraseFor(subjects), fmt.Sprintf("remove the access of %s on %s", subjects[0], nodeWords(name, safe, nodeID)), nil
+		}
 		who := fmt.Sprint(subjects)
 		if folderID != "" {
 			return phraseFor(subjects), fmt.Sprintf("remove the grant of %s on the team folder %s", who, folderID), nil
@@ -326,11 +405,17 @@ func ShareRevoke(args []string, stdout, stderr io.Writer) int {
 	}
 	outs := make([]outcome, 0, len(subjects))
 	for _, s := range subjects {
-		path := nodePath(nodeID, "/permissions/"+s)
-		if folderID != "" {
-			path = grantsPath(accountID, folderID, "/"+s)
+		if external {
+			// The address is escaped into one segment, and sent as it is, so it can never add a segment or a query.
+			_, err = files.SendEscaped(c, "DELETE", nodePath(nodeID, "/external-permissions/"+url.PathEscape(s)), nil, nil)
+		} else {
+			path := nodePath(nodeID, "/permissions/"+s)
+			if folderID != "" {
+				path = grantsPath(accountID, folderID, "/"+s)
+			}
+			_, err = files.Send(c, "DELETE", path, nil, nil)
 		}
-		if _, err := files.Send(c, "DELETE", path, nil, nil); err != nil {
+		if err != nil {
 			outs = append(outs, failedOutcome(s, err))
 			continue
 		}

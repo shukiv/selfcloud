@@ -165,33 +165,37 @@ func TestExternalSharingThroughTheRealAPI(t *testing.T) {
 		t.Fatalf("a second revoke of the slash address: exit %d, want 4", code)
 	}
 
-	// The guest reads what was shared with its address, with a device token of its own.
+	// A terminal's device token gets the empty list from the server (decision 187), and the command says where to read
+	// it; the items themselves are proved by the API's own tests, not here.
 	guestToken := xs4DeviceToken(t, p, otherAcc, otherKey, guest)
 	t.Setenv("SELFCLOUD_TOKEN", guestToken)
 	code, out, errOut = p.sharingRun("shared", "--external")
-	if code != 0 || !strings.Contains(out, node) || !strings.Contains(out, "probe") {
+	if code != 0 || strings.Contains(out, node) || !strings.Contains(errOut, "terminal sign-in") {
 		t.Fatalf("shared --external: exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 	if strings.Contains(errOut, "not proved") {
-		t.Fatalf("a proved address got the notice: %q", errOut)
+		t.Fatalf("a proved address got the unproved notice: %q", errOut)
 	}
-	if _, out, _ := p.sharingRun("shared", "--external", "--json"); !strings.Contains(out, `"email_proved": true`) ||
-		!strings.Contains(out, node) {
-		t.Fatalf("shared --external --json: %q", out)
+	if _, out, errOut := p.sharingRun("shared", "--external", "--json"); !strings.Contains(out, `"email_proved": true`) ||
+		strings.Contains(out, node) || strings.Contains(errOut, "terminal sign-in") {
+		t.Fatalf("shared --external --json: stdout %q, stderr %q", out, errOut)
 	}
 
-	// The sharer removes the grant; the guest's list is empty then, and a second revoke is not found.
+	// An account key is refused, as for any refusal.
 	t.Setenv("SELFCLOUD_TOKEN", sharerKey)
+	if code, _, _ := p.sharingRun("shared", "--external"); code != 3 {
+		t.Fatalf("shared --external with an account key: exit %d, want 3", code)
+	}
+
+	// The sharer removes the grant; the external list no longer shows it, and a second revoke is not found.
 	if code, _, errOut := p.sharingRun("share", "revoke", node, "--external", guestEmail, "--yes"); code != 0 {
 		t.Fatalf("revoke: exit %d, stderr %q", code, errOut)
 	}
 	if code, _, _ := p.sharingRun("share", "revoke", node, "--external", guestEmail, "--yes"); code != 4 {
 		t.Fatalf("a second revoke: exit %d, want 4", code)
 	}
-	t.Setenv("SELFCLOUD_TOKEN", guestToken)
-	code, out, errOut = p.sharingRun("shared", "--external")
-	if code != 0 || strings.Contains(out, node) || strings.Contains(errOut, "not proved") {
-		t.Fatalf("shared --external after the revoke: exit %d, stdout %q, stderr %q", code, out, errOut)
+	if _, out, _ := p.sharingRun("share", "ls", node, "--external"); strings.Contains(out, guestEmail) {
+		t.Fatalf("share ls --external after the revoke: %q", out)
 	}
 
 	// A user whose address is not proved gets the notice, and an empty list.

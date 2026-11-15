@@ -311,20 +311,25 @@ var remoteCommands = []remoteCommand{
 `, run: manage.UserRevokeTokens},
 	// The sharing commands (cli7). Each acts on a node, or on a team folder or an account with --folder and --account.
 	{name: "share ls", route: "GET /api/v1/nodes/{nod}/permissions",
-		more: []string{"GET /api/v1/accounts/{acc}/folders/{fld}/grants"},
+		more: []string{"GET /api/v1/accounts/{acc}/folders/{fld}/grants", "GET /api/v1/nodes/{nod}/external-permissions"},
 		help: `  share ls NODE | --folder FOLDER [--account ACCOUNT] [--json]
-                                 who holds a role on a node, or a grant on a team folder
+  share ls NODE --external [--json]
+                                 who holds a role on a node, or a grant on a team folder; --external: other accounts' addresses
 `, run: sharing.ShareLs},
 	{name: "share grant", route: "PUT /api/v1/nodes/{nod}/permissions/{subject}",
-		more: []string{"PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}"},
+		more: []string{"PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", "POST /api/v1/nodes/{nod}/external-permissions"},
 		help: `  share grant NODE USER|GROUP --role ROLE [--expires TIME | --expires-in DURATION] [--message TEXT] [--no-notify]
+  share grant NODE --external ADDRESS [--expires TIME | --expires-in DURATION]
   share grant --folder FOLDER [--account ACCOUNT] USER --level read|write
-                                 give a person or a group a role on a node, or a person a level on a team folder
+                                 give a person or a group a role on a node, or a person a level on a team folder;
+                                 --external shares with another account's address, as a viewer
 `, run: sharing.ShareGrant},
 	{name: "share revoke", route: "DELETE /api/v1/nodes/{nod}/permissions/{subject}",
-		more:  []string{"DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}"},
+		more: []string{"DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}",
+			"DELETE /api/v1/nodes/{nod}/external-permissions/{email}"},
 		reads: []string{"GET /api/v1/nodes/{nod}"},
 		help: `  share revoke NODE USER|GROUP... [--yes]
+  share revoke NODE --external ADDRESS [--yes]
   share revoke --folder FOLDER [--account ACCOUNT] USER... [--yes]
                                  take a role or a grant away (asks first)
 `, run: sharing.ShareRevoke},
@@ -377,8 +382,10 @@ var remoteCommands = []remoteCommand{
 		help: `  access deny REQUEST...         refuse the requests
 `, run: sharing.AccessDeny},
 	{name: "shared", route: "GET /api/v1/shared",
+		more:      []string{"GET /api/v1/shared/external"},
 		notProbed: "needs a device token (an account key has no shared items); internal/cli/sharing records its calls",
 		help: `  shared [--recent] [--all]      what other people shared with the signed-in person
+  shared --external              what other accounts shared with your email address; a terminal sign-in gets the empty list (read it in the web interface)
 `, run: sharing.Shared},
 	{name: "webhook add", route: "POST /api/v1/accounts/{acc}/webhooks",
 		help: `  webhook add --account ACC --endpoint ADDRESS --event TYPE... [--description TEXT]
@@ -539,14 +546,14 @@ var remoteCommands = []remoteCommand{
 	{name: "label clear", route: "DELETE /api/v1/nodes/{nod}/labels/{lbf}",
 		help: `  label clear NODE FIELD [--yes] remove a label field's value from a node (asks first)
 `, run: files.LabelClear},
-	// The sharing policy commands (cli9b4).
+	// The sharing policy commands (cli9b4; the external-sharing switch is xs4).
 	{name: "sharing policy show", route: "GET /api/v1/accounts/{acc}/sharing-policy",
 		help: `  sharing policy show [--account ACC]
-                                 the account's switches for public links, comments and who viewed
+                                 the account's switches for public links, comments, who viewed and external sharing
 `, run: manage.SharingPolicyShow},
 	{name: "sharing policy set", route: "PATCH /api/v1/accounts/{acc}/sharing-policy",
 		help: `  sharing policy set [--account ACC] [--public-links true|false] [--comments true|false]
-                     [--who-viewed true|false] [--yes]
+                     [--who-viewed true|false] [--external-sharing true|false] [--yes]
                                  change the switches given; turning public links off asks first
 `, run: manage.SharingPolicySet},
 	{name: "star", route: "PUT /api/v1/nodes/{nod}/star",
