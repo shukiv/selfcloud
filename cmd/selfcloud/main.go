@@ -35,6 +35,8 @@ Commands:
   healthcheck   exit 0 if the local server is ready (for container health checks)
   fsck          check files against the database; safe beside a running server
                 (exit 0 clean, 1 findings, 2 cannot run; --json, --repair, --verify-content, --min-age)
+  backup        snapshot the database (--to DIR) or verify a snapshot (--check FILE);
+                safe beside a running server (exit 0 ok, 1 problems, 2 cannot run; --json)
   version       print the version
 
 Remote client (a server's address and a key, from flags, the environment or a profile):
@@ -75,6 +77,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return healthcheck(args[1:], stderr)
 	case "fsck":
 		return fsckCommand(args[1:], stdout, stderr)
+	case "backup":
+		return backupCommand(args[1:], stdout, stderr)
 	case "info", "api", "profile", "login", "logout", "whoami",
 		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "edit", "upload", "settings",
 		"folder", "group", "user", "share", "link", "access", "shared", "webhook", "import", "job", "zip",
