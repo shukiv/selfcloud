@@ -52,13 +52,13 @@ const (
 type zipPayload struct {
 	Actor actorPayload `json:"actor"`
 	// Link is the link that made the zip, for a link visitor's zip. The job re-reads that link's state every turn, so
-	// the zip is made only while the link is open (decision 185). It is "" for a signed-in caller's zip.
+	// the zip is made only while the link is open (decision 192). It is "" for a signed-in caller's zip.
 	Link string `json:"link,omitempty"`
 }
 
 // zipMaker is the caller a zip job runs for, re-read live. A link visitor's zip runs as its link: the link must still
 // exist, not be a drop link, and still be openable, or the zip is refused. A signed-in caller's zip runs as the caller
-// its payload records (decision 185).
+// its payload records (decision 192).
 func (s *Server) zipMaker(ctx context.Context, z *store.Zip, pl zipPayload) (*auth.Principal, error) {
 	if z.CreatedKind != string(auth.KindShareLink) {
 		return jobPrincipal(pl.Actor, z.AccountID), nil
@@ -171,7 +171,7 @@ func errZipAccountDisk() error {
 
 // zipDiskBudgets are the disk budgets a zip is held to: the whole installation and account shares for a signed-in
 // caller's zip, half of each for a link visitor's. The usage they are checked against is the full usage, so a visitor
-// never crowds out the members' zips (decision 185).
+// never crowds out the members' zips (decision 192).
 func (s *Server) zipDiskBudgets(z *store.Zip) (maxDisk, maxAccount int64) {
 	maxDisk = int64(s.cfg.Zip.MaxDisk)
 	maxAccount = int64(s.cfg.Zip.MaxDiskPerAccount)
@@ -208,7 +208,7 @@ func (s *Server) handleCreateZip(w http.ResponseWriter, r *http.Request) error {
 	visitor := p != nil && p.Kind == auth.KindShareLink
 	if visitor {
 		// A visitor's zip requests are limited per client address, before any read: a busy link cannot spend the
-		// signed-in callers' budget, and one address cannot flood the queue (decision 185).
+		// signed-in callers' budget, and one address cannot flood the queue (decision 192).
 		if err := s.rateLimit("zip.create.visitor", addressKey(r)); err != nil {
 			return err
 		}
@@ -299,7 +299,7 @@ func (s *Server) insertMemberZip(ctx context.Context, tx *store.Tx, p *auth.Prin
 }
 
 // insertVisitorZip queues a link visitor's zip, inside the create write. A link has one live zip: the same roots reuse
-// it, other roots are refused while it lives. The account's visitors share a cap of their own (decision 185).
+// it, other roots are refused while it lives. The account's visitors share a cap of their own (decision 192).
 func (s *Server) insertVisitorZip(ctx context.Context, tx *store.Tx, p *auth.Principal, acc string, nodes []string, now time.Time) (*store.Job, error) {
 	live, err := s.store.LiveZipOfLink(ctx, acc, p.ID, now)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -424,7 +424,7 @@ func (s *Server) handleGetZip(w http.ResponseWriter, r *http.Request) error {
 }
 
 // serveZipFile sends a ready zip's file, with its validators, Range handling and disposition. corp is the
-// Cross-Origin-Resource-Policy: the member route is same-origin, a signed zip link cross-origin (decision 185).
+// Cross-Origin-Resource-Policy: the member route is same-origin, a signed zip link cross-origin (decision 192).
 func (s *Server) serveZipFile(w http.ResponseWriter, r *http.Request, z *store.Zip, name, corp string) error {
 	path, err := s.zipFiles.Path(z.AccountID, z.ID)
 	if err != nil {
@@ -498,7 +498,7 @@ func (s *Server) handleDeleteZip(w http.ResponseWriter, r *http.Request) error {
 // handleCreateZipLink signs a download link to a link visitor's finished zip. Only the link that made the zip may link
 // it, and only a visitor's zip has one: a signed-in caller's zip is downloaded through the member route. The zip must
 // be ready and unexpired, and every root is re-checked as the maker. The link lives no longer than the visitor's
-// credential or the zip itself, whichever ends first (decision 185).
+// credential or the zip itself, whichever ends first (decision 192).
 func (s *Server) handleCreateZipLink(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	zipID := r.PathValue("zip")
@@ -568,7 +568,7 @@ func (s *Server) handleCreateZipLink(w http.ResponseWriter, r *http.Request) err
 
 // releaseLinkZips removes the zips a link made, in the transaction that ends the link: their rows go with it. The zip
 // IDs it returns still have their files; the caller removes them with discardZipFiles once the transaction has
-// committed, as a drop link's open uploads are released (decision 185).
+// committed, as a drop link's open uploads are released (decision 192).
 func (s *Server) releaseLinkZips(ctx context.Context, tx *store.Tx, accountID, linkID string) ([]string, error) {
 	ids, err := s.store.ZipIDsOfLink(ctx, accountID, linkID)
 	if err != nil {
@@ -583,7 +583,7 @@ func (s *Server) releaseLinkZips(ctx context.Context, tx *store.Tx, accountID, l
 }
 
 // discardZipFiles removes the files of zips whose rows a committed write has already removed. A file that cannot be
-// removed is logged and left for the zip sweep's orphan pass (decision 185).
+// removed is logged and left for the zip sweep's orphan pass (decision 192).
 func (s *Server) discardZipFiles(accountID string, zipIDs []string) {
 	for _, id := range zipIDs {
 		if err := s.zipFiles.Remove(accountID, id); err != nil {
@@ -678,7 +678,7 @@ const zipRefusedGone = "the caller of this zip no longer has access; no zip was 
 // mid-job gets no zip.
 func (s *Server) zipGuard(ctx context.Context, z *store.Zip, p *auth.Principal) error {
 	// A link visitor has no delegation to check: its liveness is the link's, re-read by zipMaker each turn and before
-	// publish. Its roots are still checked against the link's scope (decision 185).
+	// publish. Its roots are still checked against the link's scope (decision 192).
 	if p.Kind != auth.KindShareLink {
 		if err := callerActive(ctx, s.store, p, z.AccountID, zipRefusedGone); err != nil {
 			return err
@@ -797,7 +797,7 @@ func (s *Server) planZip(ctx context.Context, z *store.Zip, p *auth.Principal) (
 		skipped int
 		total   int64
 	)
-	// A link visitor's zip is held to the visitor byte cap, a signed-in caller's to the whole one (decision 185).
+	// A link visitor's zip is held to the visitor byte cap, a signed-in caller's to the whole one (decision 192).
 	maxBytes := int64(s.cfg.Zip.MaxBytes)
 	if z.CreatedKind == string(auth.KindShareLink) {
 		maxBytes = int64(s.cfg.Zip.VisitorMaxBytes)
@@ -984,7 +984,7 @@ func (s *Server) publishZip(ctx context.Context, z *store.Zip, w *zipWork) error
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		// The maker is checked inside the write that publishes, so a revoke is seen before the zip is ready. A link
-		// visitor's maker is its link, re-read live; a signed-in caller's is its delegation (decision 185).
+		// visitor's maker is its link, re-read live; a signed-in caller's is its delegation (decision 192).
 		if w.caller.Kind == auth.KindShareLink {
 			if _, err := s.zipMaker(ctx, z, zipPayload{}); err != nil {
 				return err

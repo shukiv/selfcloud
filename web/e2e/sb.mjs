@@ -2,7 +2,7 @@
 
 // Slice sb: every row of the sidebar's folder tree takes the menu row's metrics (decision 81). At 1280 wide, in light and dark, and
 // in English and Hebrew, My files, a folder opened under it, and the Starred item have one height, the top two have the menu item's
-// inline edges and corner radius, and My files' icon sits in the menu's icon column. Decision 185: every part of the expanded sidebar
+// inline edges and corner radius, and My files' icon sits in the menu's icon column. Decision 193: every part of the expanded sidebar
 // (the brand's picture, New, the tree's rows, the menu's rows and the storage block) starts at one edge, the picture, the rows and the
 // block end at one edge, and the space above the picture is the side space S. On a finger (the drawer at 390 wide) every
 // sidebar row is at least 44 pixels. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures are saved.
@@ -68,7 +68,7 @@ async function pair(page, check, label) {
   return m;
 }
 
-// oneEdge reads the expanded sidebar's parts (decision 185): the brand's picture, the New button, the tree's first row, the Starred
+// oneEdge reads the expanded sidebar's parts (decision 193): the brand's picture, the New button, the tree's first row, the Starred
 // item and the storage block, with the sider's (or the drawer body's) box. Null when a part is not on the screen.
 const oneEdge = (page) =>
   page.evaluate(`(() => {
@@ -91,7 +91,7 @@ const oneEdge = (page) =>
     };
   })()`);
 
-// edgeChecks says the parts take one edge (decision 185): every part starts where Starred starts, the picture, the rows and the block
+// edgeChecks says the parts take one edge (decision 193): every part starts where Starred starts, the picture, the rows and the block
 // end where Starred ends, and the space above the picture is the space from the sider's start edge (S). The measured edges are logged.
 function edgeChecks(m, check, label) {
   const ready = !!(m && m.sider && m.brand && m.new && m.first && m.starred && m.card);
@@ -103,7 +103,7 @@ function edgeChecks(m, check, label) {
   check(Object.values(starts).every((x) => same(x, starts.starred)), `${label}: every part of the sidebar starts at one edge (${JSON.stringify(starts)})`);
   const ends = { brand: end(m.brand), first: end(m.first), starred: end(m.starred), card: end(m.card) };
   check(Object.values(ends).every((x) => same(x, ends.starred)), `${label}: the brand, the rows and the storage block end at one edge (${JSON.stringify(ends)})`);
-  // Decision 185: the bar stops a menu row's inline padding (antd's token.padding) short of the block's end edge, so it does not run
+  // Decision 193: the bar stops a menu row's inline padding (antd's token.padding) short of the block's end edge, so it does not run
   // into the block's end edge and its hover/active fill. The gap between the two end edges is that padding, in either reading direction.
   check(m.meter !== null && same(Math.abs(end(m.card) - end(m.meter)), m.cardPadEnd), `${label}: the bar ends the rows' inline padding short of the block's end edge (${JSON.stringify({ meter: m.meter, card: m.card, padEnd: m.cardPadEnd })})`);
   const topSpace = m.brand.t - m.sider.t;
@@ -112,7 +112,7 @@ function edgeChecks(m, check, label) {
   console.log(`INFO ${label}: one edge ${JSON.stringify({ starts, ends, topSpace, sideSpace })}`);
 }
 
-// storageFit reads the storage block of the sidebar on the screen (decisions 181 and 185): its bar and its figures, its height, and whether
+// storageFit reads the storage block of the sidebar on the screen (decisions 181 and 193): its bar and its figures, its height, and whether
 // the block scrolls sideways (a clipped row). Null when the block is not drawn.
 const storageFit = (page) =>
   page.evaluate(`(() => {

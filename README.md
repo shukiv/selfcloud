@@ -244,7 +244,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `zip.max_per_principal` | `2` | Unfinished zips one caller may have at once. Counts only zips a signed-in caller made. |
 | `zip.max_per_account` | `4` | Unfinished zips an account may have at once. Counts only zips a signed-in caller made. |
 | `zip.max_unfinished` | `8` | Unfinished zips the installation may have at once; each holds its file and its plan in memory. Counts only zips a signed-in caller made. |
-| `zip.visitor_max_per_account` | `3` | Zips made by visitors of an account's anyone links that are pending, or ready and not expired. Kept apart from the signed-in caps, so anonymous load never refuses a member's zip (decision 185). |
+| `zip.visitor_max_per_account` | `3` | Zips made by visitors of an account's anyone links that are pending, or ready and not expired. Kept apart from the signed-in caps, so anonymous load never refuses a member's zip (decision 192). |
 | `zip.visitor_max_bytes` | `10GiB` | Most bytes of files one visitor's zip may hold; a larger zip is refused as `zip.max_bytes` refuses. A visitor zip is also held to half the zip disk. |
 | `search.enabled` | `true` | Turns the search route on. Off, `/api/v1/search` answers `not_found`; the index is still kept, so turning it on again needs no backfill. |
 | `search.max_query_bytes` | `200` | Longest `q`, in bytes (1 to 1000). |

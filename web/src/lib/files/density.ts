@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The list's row height choice (decision 185): Compact or Comfortable, kept per signed-in person in this browser. There is
+// The list's row height choice (decision 194): Compact or Comfortable, kept per signed-in person in this browser. There is
 // no server-side preference store, so the storage key carries the person's ID and two people on one browser keep their own
 // choice. One in-memory value per person with a subscribe list (the pattern of tags.ts), so every mounted list re-renders
 // when the choice changes. Storage can be blocked, so every access is guarded as viewPrefs' is, and the default applies

@@ -83,7 +83,7 @@ func (w *Sweeper) expireShareLinks(ctx context.Context, now time.Time) (int, err
 }
 
 // removeEndedLink removes one ended link in a transaction. It reports whether the link was removed, the open uploads
-// it took with it, and the zips its visitors made, whose files the caller removes after the commit (decision 185).
+// it took with it, and the zips its visitors made, whose files the caller removes after the commit (decision 192).
 func (w *Sweeper) removeEndedLink(ctx context.Context, cutoff, now time.Time, accountID, linkID string) ([]*store.Upload, []string, bool, error) {
 	var (
 		gone   bool

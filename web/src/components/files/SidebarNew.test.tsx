@@ -14,7 +14,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
-// The rows' inline margin (decision 185): New's block takes it too, so New starts at the rows' edge.
+// The rows' inline margin (decision 193): New's block takes it too, so New starts at the rows' edge.
 const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
 
 // Probe shows the address the menu navigated to (the gallery's, from a template).
@@ -154,7 +154,7 @@ describe("the sidebar's New button", () => {
 
   // Decision 69, restored by decision 177: the button is as wide as its text, not the sidebar's width, and it is capped at the
   // sidebar's width so a long translation is cut with an ellipsis rather than pushing the sidebar. Its content starts at the
-  // start edge, the plus in the rows' icon column. Decision 185: the block takes the rows' inline margin, so the plus's indent
+  // start edge, the plus in the rows' icon column. Decision 193: the block takes the rows' inline margin, so the plus's indent
   // from the block's own edge is the rows' indent alone (--sc-icon-col, 24 px).
   it("is as wide as its text, and no wider than the sidebar", () => {
     renderNew(myFilesPlace("fld_mine"));
@@ -171,17 +171,17 @@ describe("the sidebar's New button", () => {
     expect(tip.parentElement?.style.justifyContent).toBe("flex-start");
   });
 
-  // Decision 185: New's block takes the rows' inline margin, so the button starts where the rows start (and its plus stays in
+  // Decision 193: New's block takes the rows' inline margin, so the button starts where the rows start (and its plus stays in
   // the rows' icon column, the indent above read from the block's edge).
-  it("its block takes the rows' inline margin, so New starts at the rows' edge (decision 185)", () => {
+  it("its block takes the rows' inline margin, so New starts at the rows' edge (decision 193)", () => {
     renderNew(myFilesPlace("fld_mine"));
     const block = screen.getByTestId("new-button").closest("div");
     expect(block?.style.marginInline).toBe(`${ROW_INLINE}px`);
   });
 
-  // Decision 185 leaves the folded rail unchanged: the round button's wrapper keeps its centred flex and its 6 px top margin,
+  // Decision 193 leaves the folded rail unchanged: the round button's wrapper keeps its centred flex and its 6 px top margin,
   // with no inline margin.
-  it("the folded rail's New wrapper keeps its own styles (decision 185)", () => {
+  it("the folded rail's New wrapper keeps its own styles (decision 193)", () => {
     renderNew(myFilesPlace("fld_mine"), true);
     const block = screen.getByTestId("new-button").closest("div");
     expect(block?.style.marginBlockStart).toBe("6px");

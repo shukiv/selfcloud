@@ -815,13 +815,13 @@ function WindowHeaderRow(props: Record<string, unknown>) {
 
 const FILES_TABLE_COMPONENTS = { table: WindowTable, header: { row: WindowHeaderRow }, body: { wrapper: WindowBody } };
 
-// rowHeights is each pointer kind and density's row height, measured from a drawn row (decision 185). A row is one line
+// rowHeights is each pointer kind and density's row height, measured from a drawn row (decision 194). A row is one line
 // (decision 183), so every row of a density is the same height. It is 0 until a row has been drawn. A finger keeps the full
 // row whatever the choice, so its height has no density part.
 const rowHeights: Record<string, number> = { "fine:comfortable": 0, "fine:compact": 0, coarse: 0 };
 
 // heightKey is the row height the window reads: the pointer kind and, for a mouse, the density. A change of density reads
-// another height, so the new rows are measured and the drawn rows recomputed (decision 185).
+// another height, so the new rows are measured and the drawn rows recomputed (decision 194).
 function heightKey(g: WindowInputs): string {
   return g.coarse ? "coarse" : `fine:${g.density}`;
 }
@@ -837,7 +837,7 @@ function measureRow(region: HTMLElement): number {
 }
 
 // WindowInputs are what the window is worked out from, as of the last render: the list's rows and their IDs, the pointer kind,
-// the row height choice (decision 185), the row being renamed (pinned, or -1) and where the column header is pinned.
+// the row height choice (decision 194), the row being renamed (pinned, or -1) and where the column header is pinned.
 interface WindowInputs {
   active: boolean;
   count: number;
@@ -1006,7 +1006,7 @@ function presetSig(inline: ListAction[], entries: ListMenuEntry[]): string {
 // a folder's items, a table in list view and tiles in grid view, whose keyboard handling belongs to the page; it reports
 // clicks, keys and focus, and marks what is selected. With columns it is a preset list: the page's columns, rows, actions
 // and menu, with the shared selection and keys. Both are drawn in the same frame: the region and its band variables, antd's
-// table at the middle size with a fixed layout (the small size in compact, decision 185), the header cell, the row's icons and ⋮ button, and the shared CSS group
+// table at the middle size with a fixed layout (the small size in compact, decision 194), the header cell, the row's icons and ⋮ button, and the shared CSS group
 // (.files-list, .item-list in index.css). A preset list never takes the files-list class, which e2e waits on.
 export default function Listing<T extends { id: string }>(p: ListingProps | ItemListingProps<T>) {
   const { t } = useT();
@@ -1016,7 +1016,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const screens = Grid.useBreakpoint();
   const narrow = !screens.md;
   const coarse = useCoarsePointer();
-  // The row height choice (decision 185): compact with a mouse only. A finger keeps the full row, its tap targets as they are.
+  // The row height choice (decision 194): compact with a mouse only. A finger keeps the full row, its tap targets as they are.
   const [density] = useDensity();
   const compact = density === "compact" && !coarse;
   const stickyTop = p.stickyTop ?? (isItems(p) ? HEADER_H : DEFAULT_STICKY_TOP);

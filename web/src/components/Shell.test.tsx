@@ -921,8 +921,8 @@ describe("the sidebar's New (decision 66)", () => {
 
 // Decision 171: the storage meter is pinned at the bottom of the sidebar, one link to /storage; the Storage entry
 // leaves the menu (the owner's Manage entry stays). The block is outside the scroll region, so it stays while the menu scrolls.
-// Decision 185: it is a sidebar row, not a card, and on its page it takes the selected row's fill.
-describe("the sidebar's storage block (decisions 181 and 185)", () => {
+// Decision 193: it is a sidebar row, not a card, and on its page it takes the selected row's fill.
+describe("the sidebar's storage block (decisions 181 and 193)", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
@@ -994,7 +994,7 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     const nav = await openNav();
     const card = await within(nav).findByTestId("storage-card");
     expect(card.getAttribute("aria-current")).toBe("page");
-    // Decision 185: no border and no inline background; the stylesheet fills the current block with the active colour, as the
+    // Decision 193: no border and no inline background; the stylesheet fills the current block with the active colour, as the
     // selected menu row is filled, and the block's ink is the on-active one.
     expect(card.style.border).toBe("");
     expect(card.style.background).toBe("");
@@ -1129,11 +1129,11 @@ describe("the sidebar's menu takes the row metrics (decision 81)", () => {
   }
 });
 
-// Decision 185: every part of the expanded sidebar starts and ends at one edge. The brand block, New's block and the storage
+// Decision 193: every part of the expanded sidebar starts and ends at one edge. The brand block, New's block and the storage
 // card take the rows' inline margin (row.inline), and the brand's space above and below is S, the sider's inline padding plus
 // that margin, on a mouse and a finger alike. The expected values are read from the same tokens and the shell's own padding,
 // not written as numbers. The collapsed rail is unchanged: its brand, New and storage styles are snapshotted.
-describe("the sidebar's parts take one edge (decision 185)", () => {
+describe("the sidebar's parts take one edge (decision 193)", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
@@ -1202,7 +1202,7 @@ describe("the sidebar's parts take one edge (decision 185)", () => {
     });
   });
 
-  // The rail is unchanged by decision 185: its brand block keeps the old edges and no inline margin, its New the centred round
+  // The rail is unchanged by decision 193: its brand block keeps the old edges and no inline margin, its New the centred round
   // button's wrapper, and its storage the icon link's colour alone.
   it("the folded rail keeps its brand, New and storage styles unchanged", async () => {
     await wideScreen(async () => {

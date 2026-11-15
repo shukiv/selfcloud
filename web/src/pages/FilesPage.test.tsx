@@ -3381,9 +3381,9 @@ describe("a key's focus request in each view (decision 183)", () => {
   });
 });
 
-// The density toggle (decision 185): compact rows with a mouse in the list view, kept per person in this browser. The toggle
+// The density toggle (decision 194): compact rows with a mouse in the list view, kept per person in this browser. The toggle
 // shows the density it switches to, as the view toggle shows the view it switches to.
-describe("the density toggle (decision 185)", () => {
+describe("the density toggle (decision 194)", () => {
   const original = window.matchMedia;
   const key = `${DENSITY_KEY_PREFIX}u1`;
   afterEach(() => {

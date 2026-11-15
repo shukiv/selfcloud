@@ -338,7 +338,7 @@ export default function FilesPage() {
   const lang = useLang();
   const { token } = antdTheme.useToken();
   const coarse = useCoarsePointer();
-  // The list's row height choice, kept per person in this browser (decision 185).
+  // The list's row height choice, kept per person in this browser (decision 194).
   const [density, setDensity] = useDensity();
   const roomy = useRoomy();
   const spacious = useRoomy(480);
@@ -2111,7 +2111,7 @@ export default function FilesPage() {
   };
   // The view toggle shows the view it switches to.
   const switchTo = view === "list" ? { to: "grid" as const, label: t("files.view.grid") } : { to: "list" as const, label: t("files.view.list") };
-  // The density toggle shows the rows it switches to, as the view toggle shows its view (decision 185).
+  // The density toggle shows the rows it switches to, as the view toggle shows its view (decision 194).
   const densityTo = density === "compact" ? { to: "comfortable" as const, label: t("files.density.comfortable") } : { to: "compact" as const, label: t("files.density.compact") };
   // The toolbar is one row that stays on screen above the listing: the shell's header is 56 pixels, and the rows scroll under it.
   // The selection panel takes the toolbar's row while something is selected: one full-width bar at the same height, above the
@@ -2312,7 +2312,7 @@ export default function FilesPage() {
                 </Dropdown>
               </ConfigProvider>
             )}
-            {/* The row height choice is a mouse's, in the list view only: a finger keeps the full row (decision 185). */}
+            {/* The row height choice is a mouse's, in the list view only: a finger keeps the full row (decision 194). */}
             {view === "list" && !coarse && (
               <IconButton
                 data-testid="density-toggle"

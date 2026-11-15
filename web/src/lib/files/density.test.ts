@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The list's row height choice (decision 185): kept per signed-in person in this browser, under a key that carries the
+// The list's row height choice (decision 194): kept per signed-in person in this browser, under a key that carries the
 // person's ID, so two people on one browser keep their own choice. Garbage or blocked storage leaves the default; no person
 // stores nothing. A write tells every mounted list.
 

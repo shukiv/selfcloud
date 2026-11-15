@@ -1313,7 +1313,7 @@ paths:
         Visitor zips keep their own caps (`zip.visitor_max_per_account`, `zip.visitor_max_bytes`) and half the zip
         disk, apart from the signed-in caps so anonymous load never refuses a member's zip, and a per-address rate.
         A visitor reads its zip only through a signed link from `POST /api/v1/zips/{zip}/links`; `GET` and
-        `DELETE /api/v1/zips/{zip}` stay closed to it (decision 185).
+        `DELETE /api/v1/zips/{zip}` stay closed to it (decision 192).
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -1423,7 +1423,7 @@ paths:
         failed one `409` `zip_failed` (a final answer), and one past its expiry `404`. Every root is re-checked for
         access and the no-download rule, as the download is. The answer is a signed link (`GET /api/v1/links/{token}`
         with disposition `zip`) that downloads the archive with no credential; it lives for the shorter of the
-        signed-link life and the time left to the zip's expiry, and dies with the link (decision 185).
+        signed-link life and the time left to the zip's expiry, and dies with the link (decision 192).
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":

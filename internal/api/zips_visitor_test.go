@@ -332,7 +332,7 @@ func TestZipLinkRouteStates(t *testing.T) {
 }
 
 // TestZipDispositionNotAskable: a caller cannot ask POST /nodes/{nod}/links for the zip disposition; it is refused as
-// any unknown disposition is, because only the server signs a zip link (decision 185).
+// any unknown disposition is, because only the server signs a zip link (decision 192).
 func TestZipDispositionNotAskable(t *testing.T) {
 	fx := anyoneZipFixture(t)
 	for _, disp := range []string{"zip", "bogus"} {

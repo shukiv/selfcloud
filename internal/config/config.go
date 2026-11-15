@@ -276,7 +276,7 @@ type ZipConfig struct {
 	MaxUnfinished int `yaml:"max_unfinished"`
 	// VisitorMaxPerAccount is how many live zips (pending, or ready and not expired) the visitors of one account's
 	// links may have at once, counted apart from the signed-in callers' MaxPerAccount so a busy link cannot spend a
-	// member's budget (decision 185).
+	// member's budget (decision 192).
 	VisitorMaxPerAccount int `yaml:"visitor_max_per_account"`
 	// VisitorMaxBytes is the most bytes of files a link visitor's zip may hold. It is the visitor's own cap, refused
 	// as MaxBytes is, and a visitor's zip also keeps to half the disk budgets a signed-in caller may use in full.

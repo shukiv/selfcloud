@@ -355,7 +355,7 @@ a {
 }
 
 /* The sidebar's rows share one icon column and one name column, and one font size (decision 66, its edge replaced by decision
-   185): each block takes the rows' inline margin, and an icon sits --sc-icon-col in from the block's own start edge (24 px, or
+   193): each block takes the rows' inline margin, and an icon sits --sc-icon-col in from the block's own start edge (24 px, or
    44 px on a finger), the name following an 18 px icon and a 10 px gap. The New button, the folder tree and the storage block use
    the same number. The menu's icon column is its inline indent (Shell.tsx, decision 81): antd sets the item's start padding
    inline, so a stylesheet rule cannot set it. The folded rail keeps the menu's own centred icons. */
@@ -366,7 +366,7 @@ a {
 .shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
   margin-inline-start: 10px;
 }
-/* The storage block pinned at the bottom of the sidebar (decision 181's pin, decision 185's look): one link to the Storage page,
+/* The storage block pinned at the bottom of the sidebar (decision 181's pin, decision 193's look): one link to the Storage page,
    the Cloud icon and the title, the bar and the figures. Its layout and its colours are set inline by SidebarStorage; the
    stylesheet gives it the rows' hover tint, fills the current place with the active colour as the selected menu row is (on hover
    too), and draws the keyboard focus ring. It has no background of its own off its page. */
@@ -389,7 +389,7 @@ a {
   outline-offset: 2px;
 }
 
-/* The folded rail's storage icon link (decision 181): one centred Cloud at the bottom of the rail (decision 185). On the Storage
+/* The folded rail's storage icon link (decision 181): one centred Cloud at the bottom of the rail (decision 193). On the Storage
    page it is filled with the active colour as the rail's menu rows are (decision 72); the hover is the rows' own tint. */
 .shell-storage-rail {
   flex: none;

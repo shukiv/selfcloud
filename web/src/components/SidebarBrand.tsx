@@ -5,17 +5,17 @@ import { useStore } from "../lib/store";
 import { brand, brandLoaded, contrast, safeLogo } from "../lib/brand";
 
 // The two pictures the default brand draws at the top of the sidebar, each reserved at its own ratio so the box never grows when the
-// brand loads (decision 185). On a dark sidebar the white wordmark reads (/brand/wordmark.svg, internal/web/brand/selfcloud-logo-transparent.svg);
+// brand loads (decision 193). On a dark sidebar the white wordmark reads (/brand/wordmark.svg, internal/web/brand/selfcloud-logo-transparent.svg);
 // on a light one it would not, so the tile logo is drawn (/brand/logo, internal/web/brand/selfcloud-logo.svg, viewBox 1731.65 x 398),
 // which is taller at the same width. An uploaded logo (at most 42 px high) and the text name stay inside the reserved box.
 const WORDMARK_RATIO = 38 / 211;
 const LOGO_RATIO = 398 / 1731.65;
 
-// The brand at the top of the sidebar (decision 109, its edge replaced by decision 185). Its block takes the rows' inline margin, so
+// The brand at the top of the sidebar (decision 109, its edge replaced by decision 193). Its block takes the rows' inline margin, so
 // it starts where the rows start, and the space above the picture and below the block is S, the sider's inline padding plus that
 // margin, on a mouse and a finger alike. Expanded, it is the SelfCloud wordmark (every installation with no logo file, decision 126),
 // the installation's logo, or, only from a server that sends neither, its name as text. The wordmark and the tile logo fill the
-// block's width (decision 185); an uploaded logo keeps its aspect, centred, at most 42 px high. The block reserves the height of the
+// block's width (decision 193); an uploaded logo keeps its aspect, centred, at most 42 px high. The block reserves the height of the
 // picture the background will draw at its content width, so nothing moves when the brand arrives. Folded to the rail, it is the
 // SelfCloud mark for every name (decision 119), or the logo small, with the rail's own edges unchanged.
 // The name of a custom installation is not drawn in the rail: it has no picture to fold to, so the mark stands in for it. Nothing
@@ -26,7 +26,7 @@ export default function SidebarBrand({ collapsed, coarse, text, background, inli
   const logo = safeLogo(b.logo_url);
   // The wordmark has white letters, which read only on a dark sidebar; on a light one the tile logo is drawn instead (decision 109).
   const wordmarkReads = contrast("#FFFFFF", background) >= 3;
-  // The reserved height is the picture the background will draw, at the block's content width, rounded up (decision 185): the
+  // The reserved height is the picture the background will draw, at the block's content width, rounded up (decision 193): the
   // wordmark on a dark sidebar, the taller tile logo on a light one, so the box keeps its height when the brand loads.
   const reserved = Math.ceil((width - 2 * edge) * (wordmarkReads ? WORDMARK_RATIO : LOGO_RATIO));
   const railEdge = coarse ? 6 : 10;

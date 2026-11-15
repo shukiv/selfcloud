@@ -71,7 +71,7 @@ const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
 const RAIL_WIDTH = 88;
-// The sider's and the drawer's inline padding, and the drawer's width (decision 185): the space S above and below the brand is this
+// The sider's and the drawer's inline padding, and the drawer's width (decision 193): the space S above and below the brand is this
 // padding plus the rows' inline margin, and the brand's reserved height is read at the sider's or the drawer's own width.
 const SIDE_PAD = 12;
 const DRAWER_WIDTH = 280;
@@ -141,7 +141,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
         { key: "/manage/people", label: t("nav.people"), icon: icon(Users) },
         { key: "/manage/groups", label: t("nav.groups"), icon: icon(Users) },
         { key: "/manage/spaces", label: t("nav.spaces"), icon: icon(FolderOpen) },
-        // Storage is the Cloud everywhere (decision 185): the sidebar row, the folded rail and this Manage entry.
+        // Storage is the Cloud everywhere (decision 193): the sidebar row, the folded rail and this Manage entry.
         { key: "/manage/storage", label: t("nav.manageStorage"), icon: icon(Cloud) },
         { key: "/manage/labels", label: t("nav.manageLabels"), icon: icon(Tags) },
         { key: "/manage/links", label: t("nav.links"), icon: icon(Share2) },
@@ -475,12 +475,12 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   // The sidebar in its two forms: the tree of My files and the teams (not when folded to icons, and not for an admin, who has
   // no drive), then the menu. Each part that scrolls is in one region; the storage block is pinned below it (decision 181). width is
-  // the sider's or the drawer's own width, so the brand reserves its picture's height at the right content width (decision 185).
+  // the sider's or the drawer's own width, so the brand reserves its picture's height at the right content width (decision 193).
   const renderSidebar = (collapsedNow: boolean, width: number) => {
     const { items, selected } = menuFor(collapsedNow);
     const newShown = (onFiles || newWhere !== null) && !admin;
     const tree = !admin && !collapsedNow;
-    // S, the space above and below the brand (decision 185): the sider's inline padding plus the rows' inline margin.
+    // S, the space above and below the brand (decision 193): the sider's inline padding plus the rows' inline margin.
     const edge = SIDE_PAD + row.inline;
     return (
       <div
@@ -495,11 +495,11 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-side-ink": currentMark(sidebar).ink,
           "--sc-side-hover": sidebar.hover,
           // The icon column of every row (New, the tree, the menu, the storage block) from the row's own start edge: the row's icon
-          // indent, 24 px, or 44 px on a finger (decisions 66, 81 and 185). The rows' inline margin is outside it.
+          // indent, 24 px, or 44 px on a finger (decisions 66, 81 and 193). The rows' inline margin is outside it.
           "--sc-icon-col": `${row.indent}px`,
         } as CSSProperties}
       >
-        {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decisions 109 and 185). */}
+        {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decisions 109 and 193). */}
         <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} background={sidebar.bg} inline={row.inline} edge={edge} width={width} />
         {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} inline={row.inline} onPick={pick} onFolder={(where) => setFolderWhere(where)}
           documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn, impersonating) : []} onDocument={makeDocument} />}
@@ -691,7 +691,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               top: 0,
               height: impersonating ? "calc(100vh - 48px)" : "100vh",
               overflow: "hidden",
-              // No top padding: the brand's own space S starts at the top (decision 185).
+              // No top padding: the brand's own space S starts at the top (decision 193).
               padding: collapsed ? "0 8px 16px" : `0 ${SIDE_PAD}px 16px`,
             }}
           >

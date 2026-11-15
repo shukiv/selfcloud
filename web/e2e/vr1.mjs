@@ -4,7 +4,7 @@
 // spacer rows holding the place of the rest. The page scrolls to the end and back, End and Home move the focus to the first
 // and last loaded rows, a shift click from the first row to the last selects all 1,000, a band dragged to an edge scrolls
 // and selects, a row being renamed keeps its name through a scroll away and back, the density toggle shortens the rows
-// with the last row still reachable and the choice kept through a reload (decision 185), a row at the end of the list drops
+// with the last row still reachable and the choice kept through a reload (decision 194), a row at the end of the list drops
 // on a folder in the tree, and a folder of 150 rows draws every row while one of 151 draws a window. The click that selects
 // one row is timed at 300 and 1,000 loaded rows and printed. The folders it makes are removed at the end.
 const q = (v) => JSON.stringify(v);
@@ -250,7 +250,7 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
     await press(page, 'input.rename', 'Escape');
     await page.waitFor(`!document.querySelector('input.rename')`, 5000);
 
-    // Compact rows (decision 185): the toggle shortens every row, the window keeps the last row reachable by scrolling to the
+    // Compact rows (decision 194): the toggle shortens every row, the window keeps the last row reachable by scrolling to the
     // end with no gap at the bottom, the choice survives a reload under the person's own key, and switching back restores the
     // full rows. The list is read to its end again afterwards, for the drop check below. The rename check left its row selected,
     // and the selection panel holds the toolbar's row while anything is selected, so the choice is read with nothing selected.

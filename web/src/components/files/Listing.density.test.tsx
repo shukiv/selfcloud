@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The row height choice in the lists (decision 185): compact draws antd's small table and the list--compact class with a
+// The row height choice in the lists (decision 194): compact draws antd's small table and the list--compact class with a
 // mouse, in both presets; a finger keeps the middle table whatever the choice, its tap targets as they are. The window
 // measures the new density's height and recomputes the drawn rows, so a switch leaves no stale height, gap or overlap.
 
@@ -105,7 +105,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the files preset's row height (decision 185)", () => {
+describe("the files preset's row height (decision 194)", () => {
   it("compact with a mouse draws the small table and the list--compact class", () => {
     writeDensity("u1", "compact");
     const { container } = render(<Listing {...props(items(2))} />);
@@ -139,7 +139,7 @@ describe("the files preset's row height (decision 185)", () => {
   });
 });
 
-describe("an item preset's row height (decision 185)", () => {
+describe("an item preset's row height (decision 194)", () => {
   it("compact with a mouse draws the small table and the list--compact class", () => {
     writeDensity("u1", "compact");
     const { container } = presetProps();
@@ -221,7 +221,7 @@ function totalHeight(container: HTMLElement, rowH: number): number {
   return top + drawn(container).length * rowH + bottom;
 }
 
-describe("the window measures the new density's height (decision 185)", () => {
+describe("the window measures the new density's height (decision 194)", () => {
   beforeEach(() => {
     scrollY = 0;
     Object.defineProperty(window, "innerHeight", { value: 800, configurable: true, writable: true });

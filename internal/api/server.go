@@ -537,7 +537,7 @@ func New(opts Options) (*Server, error) {
 			// Zips asked for, per caller: each one is a job that reads a whole subtree.
 			"zip.create": newLimiter(60),
 			// Zips asked for by link visitors, per client address: a few a minute, so one address cannot flood the queue
-			// with work that reads whole subtrees (decision 185).
+			// with work that reads whole subtrees (decision 192).
 			"zip.create.visitor": newLimiter(3),
 			// Conversions (previews and exports) that start new work, per caller. A read of one already made is not charged.
 			"convert.enqueue": newLimiter(120),

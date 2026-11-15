@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice d2: the sidebar's New button and the storage block (decisions 66, 171 and 185). A member's browser is measured at 1280 wide: the New
+// Slice d2: the sidebar's New button and the storage block (decisions 66, 171 and 193). A member's browser is measured at 1280 wide: the New
 // icon and its word line up with the rows' icons and names (within a pixel), in English and mirrored in Hebrew, and every menu row has
 // one font size. New fits its text, narrower than the sidebar's content, with a dropdown arrow after the word (decision 177).
 // New folder from Starred makes the folder in My files, and Upload files from inside a folder puts the file there;
@@ -10,7 +10,7 @@
 // block at its foot, and the toolbar has its New only on a phone. The current place (decision 69, option B) has no background: its text
 // reads at 4.5:1 or more on the sidebar, and its bar at 3:1 or more (the sidebar's rule, theme/currentMark.ts); the storage block keeps
 // its track and fill, and on the Storage page it takes the selected menu row's look: the active fill and the on-active ink, the bar's
-// normal fill in the on-active ink so it keeps 3:1 against its track (decision 185).
+// normal fill in the on-active ink so it keeps 3:1 against its track (decision 193).
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -27,7 +27,7 @@ const SHARE_LEVELS = { ok: 0.5, warning: 0.85 };
 const FILL = { ok: 'rgb(254, 204, 0)', warning: 'rgb(255, 169, 64)', danger: 'rgb(255, 107, 107)' };
 
 // rowGeometry reads the rows the columns are measured on, and the font of each row's name. Each reading is a box: its icon
-// and its name, as the screen draws them. The storage block is not an antd menu row (decisions 181 and 185); it is measured by cardGeometry.
+// and its name, as the screen draws them. The storage block is not an antd menu row (decisions 181 and 193); it is measured by cardGeometry.
 const rowGeometry = (page) =>
   page.evaluate(`(() => {
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right }; };
@@ -51,7 +51,7 @@ const rowGeometry = (page) =>
     };
   })()`);
 
-// cardGeometry reads the storage block (decisions 181 and 185): its box, the sider's content box, the title and the figures line and their
+// cardGeometry reads the storage block (decisions 181 and 193): its box, the sider's content box, the title and the figures line and their
 // fonts, the Cloud icon and the bar, and the menu's last row, so the check can say the block is pinned below the menu at the sider's foot.
 // The menu sits in the scroll region and may scroll its last row out of sight, so belowMenu reads the menu as shown: the smaller of the last
 // row's bottom and the scroll region's bottom. The block's inline edges are the rows' edges (the sider's 12 px padding plus the rows' inline
@@ -148,7 +148,7 @@ async function settledLine(page) {
 
 // The line is null until the figures are read: before that the block holds its title alone. The width is the fill's inline
 // percentage (the bar and the figures take the same figure, storagePercent). The title is the storage title, with the share when
-// there is a limit (decision 185).
+// there is a limit (decision 193).
 const storageLine = (page) =>
   page.evaluate(`(() => {
     const card = document.querySelector('.shell-sider [data-testid="storage-card"]');
@@ -258,7 +258,7 @@ const barOf = (page, sel) =>
     return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el, '::before').backgroundColor, bg: bg.slice(0, 3).map(Math.round) };
   })()`);
 // onMark reads the storage block's title and figures on the block (which sits on the sidebar), and the bar's track, edge and fill,
-// as the block draws them (decisions 181 and 185). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
+// as the block draws them (decisions 181 and 193). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
 const onMark = (page) =>
   Promise.all([
     contrastOf(page, `${CARD} .shell-storage-title`, 'color', [CARD, SIDER]),
@@ -274,13 +274,13 @@ const waitTreeCurrent = async (page, key) => {
   await page.waitFor(`!!document.querySelector('[data-tree-key="${key}"][aria-current="location"]')`, 15000);
   await sleep(700);
 };
-// waitSelected waits for the storage block to be the current place (aria-current page, the selected row's fill, decision 185).
+// waitSelected waits for the storage block to be the current place (aria-current page, the selected row's fill, decision 193).
 const waitSelected = async (page) => {
   await page.waitFor(`(() => { const c = document.querySelector('${CARD}'); return !!c && c.getAttribute('aria-current') === 'page'; })()`, 15000);
   await sleep(700);
 };
 // cardFill reads the block's background and border, and the sidebar's active and on-active colours (--sc-side-active,
-// --sc-side-on-active), so the check can say the current block is filled as the selected menu row is, with no border (decision 185).
+// --sc-side-on-active), so the check can say the current block is filled as the selected menu row is, with no border (decision 193).
 const cardFill = (page) =>
   page.evaluate(`(() => {
     const c = document.querySelector('${CARD}');
@@ -393,7 +393,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at61 = await storageLine(page);
     check(at61.title === 'Storage (61% full)' && at61.width === '61%', `the block's title is the storage title and the bar is at the share held (${at61.title}, ${at61.width})`);
-    // Decision 185: the bar runs from the Cloud icon's start edge to a menu row's inline padding (token.padding) short of the block's
+    // Decision 193: the bar runs from the Cloud icon's start edge to a menu row's inline padding (token.padding) short of the block's
     // end edge, so it does not run into the fill. Read here, where the limit gives a bar (the alignment section below restores the
     // member's own limit, which may be none, so the block has no bar there).
     const geo61 = await cardGeometry(page);
@@ -401,7 +401,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(geo61.meter !== null && geo61.icon !== null && geo61.card !== null && geo61.padEnd !== null && near61(geo61.meter.l, geo61.icon.l) && near61(geo61.meter.r, geo61.card.r - geo61.padEnd), `the bar runs from the icon's start edge to the rows' padding short of the block's end edge (${JSON.stringify({ meter: geo61.meter, icon: geo61.icon, card: geo61.card, padEnd: geo61.padEnd })})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
     // The block's title and figures colours, read here where the block is not the current place, to compare with the Storage page
-    // below: there the block takes the selected row's fill and ink (decision 185).
+    // below: there the block takes the selected row's fill and ink (decision 193).
     const plainTitle = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-title'); return t ? getComputedStyle(t).color : null; })()`);
     const plainLineColour = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
     // The current folder has no background (decision 69, option B): its name, its arrow and its bar read on the sidebar.
@@ -429,7 +429,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const pageLine = await page.evaluate(`(${meterAlt}).split(': ')[0] || null`);
     check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
     // On this page the storage block is the current place: it takes the selected menu row's fill and ink, has no border and no bar
-    // of its own, and the bar keeps its track; its normal fill takes the on-active ink so it keeps 3:1 against the track (decision 185).
+    // of its own, and the bar keeps its track; its normal fill takes the on-active ink so it keeps 3:1 against the track (decision 193).
     await waitSelected(page);
     const yEn = await onMark(page);
     const fillEn = await cardFill(page);
@@ -437,11 +437,11 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(fillEn !== null && fillEn.background === fillEn.active && fillEn.borderWidth === '0px', `on the Storage page the block is filled with the active colour and has no border (${JSON.stringify(fillEn)})`);
     check(yEn.title !== null && yEn.title.ratio >= 4.5, `on the storage block the title reads on the fill at 4.5:1 or more (${showRatio(yEn.title)})`);
     check(yEn.line !== null && yEn.line.ratio >= 4.5, `on the storage block the figures read on the fill at 4.5:1 or more (${showRatio(yEn.line)})`);
-    // Decision 185: the title and the figures take the on-active ink on the fill, as the selected menu row's text does (off the
+    // Decision 193: the title and the figures take the on-active ink on the fill, as the selected menu row's text does (off the
     // page they are the sidebar's text and caption, read above).
     check(yEn.title !== null && yEn.title.text === fillEn.onActive && yEn.title.text !== plainTitle, `the title takes the on-active ink on the Storage page (${yEn.title?.text} / ${fillEn?.onActive}, off the page ${plainTitle})`);
     check(yEn.line !== null && yEn.line.text === fillEn.onActive && yEn.line.text !== plainLineColour, `the figures take the on-active ink on the Storage page (${yEn.line?.text} / ${fillEn?.onActive}, off the page ${plainLineColour})`);
-    check(storageBarNone === true, `the storage block has no bar of its own: its fill marks the place (decision 185)`);
+    check(storageBarNone === true, `the storage block has no bar of its own: its fill marks the place (decision 193)`);
     // The fill is compared with the unfilled track it is drawn on (the pair a person compares); the edge (the outline) is the
     // bar's ring against the fill. The normal fill is the on-active ink here, not the accent, which would sit on its own colour.
     check(yEn.fill !== null && yEn.fill.ratio >= 3 && yEn.fill.text === fillEn.onActive, `on the storage block the bar's fill is the on-active ink, 3:1 or more against its track (${showRatio(yEn.fill)})`);
@@ -487,7 +487,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const geo = await rowGeometry(page);
     const cardGeo = await cardGeometry(page);
     // The storage block is pinned below the menu, at the sider's foot (decision 181): its inline edges are the rows' edges (the
-    // sider's 12 px padding plus the rows' inline margin, decision 185), it is outside the scroll region, and it links to /storage.
+    // sider's 12 px padding plus the rows' inline margin, decision 193), it is outside the scroll region, and it links to /storage.
     // The menu sits in the scroll region and may scroll, so the block is below the menu as shown: the smaller of the last row's
     // bottom and the scroll region's bottom.
     const cardNear = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
@@ -495,7 +495,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(cardGeo.card !== null && cardGeo.rowInline !== null && cardNear(cardGeo.card.l, cardGeo.sider.l + cardGeo.padL + cardGeo.rowInline) && cardNear(cardGeo.card.r, cardGeo.sider.r - cardGeo.padR - cardGeo.rowInline), `the block's inline edges are the rows' edges, the sider's padding plus the rows' margin (${JSON.stringify({ card: cardGeo.card, sider: cardGeo.sider, padL: cardGeo.padL, padR: cardGeo.padR, rowInline: cardGeo.rowInline })})`);
     check(cardGeo.card !== null && cardNear(cardGeo.card.b, cardGeo.sider.b - cardGeo.padB), `the block sits at the sider's foot, above its bottom padding (${JSON.stringify({ cardB: cardGeo.card?.b, siderB: cardGeo.sider?.b, padB: cardGeo.padB })})`);
     check(cardGeo.titleFs === '14px' && cardGeo.lineFs === '12px', `the block's title is the rows' 14 px and its figures 12 px (${cardGeo.titleFs}, ${cardGeo.lineFs})`);
-    // Decision 185: no card frame. The block has no border and no background of its own off its page; its Cloud icon is in the rows'
+    // Decision 193: no card frame. The block has no border and no background of its own off its page; its Cloud icon is in the rows'
     // icon column and its title in the rows' name column (Starred's, within a pixel). The bar's own edges are read above, at the 61%
     // limit, because the member's own limit restored here may be none, so the block has no bar in this section.
     check(cardGeo.borderWidth === '0px' && cardGeo.background === 'rgba(0, 0, 0, 0)', `off its page the storage block has no border and no background (${cardGeo.borderWidth}, ${cardGeo.background})`);
@@ -517,7 +517,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
     console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team })}`);
     // New fits its content (decision 69, restored by decision 177): narrower than the sidebar's content, its start edge at the rows'
-    // start edge (decision 185), its plus and word in the rows' columns, and the arrow inside after the word.
+    // start edge (decision 193), its plus and word in the rows' columns, and the arrow inside after the word.
     const newWidth = geo.newBox ? geo.newBox.r - geo.newBox.l : 0;
     const contentWidth = geo.newParent ? geo.newParent.r - geo.newParent.l : 0;
     check(geo.newBox !== null && geo.newParent !== null && newWidth < contentWidth - 8 && Math.abs(geo.newBox.l - geo.newParent.l) <= 1 && near(off.new.icon) && near(off.new.name), `the New button is narrower than the sidebar's content and its start edge is the rows' start edge (${JSON.stringify({ box: geo.newBox, content: geo.newParent, iconOffset: off.new.icon, nameOffset: off.new.name })})`);
@@ -658,7 +658,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
     // The folded rail's round New, by real key presses, opened with Space.
     await newMenuKeyChecks(page, check, { button: '.ant-layout-sider-collapsed [data-testid="new-button"]', label: 'folded, Team A, writable, Space', opener: 'Space' });
-    // The folded rail's storage icon link (decisions 181 and 185): a Cloud named by the storage title, which its tooltip shows. The
+    // The folded rail's storage icon link (decisions 181 and 193): a Cloud named by the storage title, which its tooltip shows. The
     // limit is set to 61% so the title carries a share; on the Storage page the icon is the current place.
     const heldFold = await heldOf(page);
     await quotaSet(api, base, accountID, accountKey, memberID, Math.floor(heldFold / 0.61));

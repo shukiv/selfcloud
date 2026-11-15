@@ -109,7 +109,7 @@ func (tx *Tx) InsertZip(ctx context.Context, z *Zip) error {
 }
 
 // CountPendingZips counts the unfinished zips of an account, or of one caller in it when createdBy is not "". A link
-// visitor's zip is not counted: the signed-in caps and the visitors' cap are separate budgets (decision 185).
+// visitor's zip is not counted: the signed-in caps and the visitors' cap are separate budgets (decision 192).
 func (s *Store) CountPendingZips(ctx context.Context, accountID, createdBy string) (int, error) {
 	q := `SELECT COUNT(*) FROM zips WHERE account_id = ? AND state = 'pending' AND created_kind != 'share_link'`
 	args := []any{accountID}
@@ -130,7 +130,7 @@ func (s *Store) CountAllPendingZips(ctx context.Context) (int, error) {
 }
 
 // CountLiveVisitorZips counts the live zips the visitors of one account's links have made: pending, or ready and not
-// expired (decision 185). A ready zip still holds its file until it expires, so it keeps its place in the cap; an
+// expired (decision 192). A ready zip still holds its file until it expires, so it keeps its place in the cap; an
 // expired or failed one does not. The signed-in callers' zips are never counted here.
 func (s *Store) CountLiveVisitorZips(ctx context.Context, accountID string, now time.Time) (int, error) {
 	var n int
@@ -140,7 +140,7 @@ func (s *Store) CountLiveVisitorZips(ctx context.Context, accountID string, now 
 }
 
 // LiveZipOfLink returns the one live zip a link has made: its pending zip, or its ready zip that has not expired, or
-// ErrNotFound. A failed zip is not live, so the link may ask again. A link has at most one live zip (decision 185).
+// ErrNotFound. A failed zip is not live, so the link may ask again. A link has at most one live zip (decision 192).
 func (s *Store) LiveZipOfLink(ctx context.Context, accountID, linkID string, now time.Time) (*Zip, error) {
 	z, err := scanZip(s.r.QueryRowContext(ctx, "SELECT "+zipCols+` FROM zips
 		WHERE account_id = ? AND created_by = ? AND created_kind = 'share_link' AND state IN ('pending', 'ready')

@@ -3,7 +3,7 @@
 // Slice d3 (decision 69, the owner's option B for the current place). At 1440 wide a tree row and a menu item look alike in every
 // state: the same text colour, weight and size, and the same hover background. The current place has no background; it has a
 // 3 px bar at its start edge and its text in the sidebar's mark colour (the yellow on the default blue), in the folder tree, on the
-// menu's own pages and in the rail; the storage block on its page takes the selected menu row's fill and ink (decision 185). The bar
+// menu's own pages and in the rail; the storage block on its page takes the selected menu row's fill and ink (decision 193). The bar
 // is on the right in Hebrew. With SELFCLOUD_E2E_SHOTS set (a folder), the run saves the pictures of each state.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -244,7 +244,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     check(otherHover !== null && otherHover.background === HOVER && otherHover.color === TEXT, `on hover another row takes the hover background (${show(otherHover)})`);
     await unhover(page);
 
-    // The storage block, current on its page (decisions 181 and 185): it takes the selected menu row's look, the active fill and the
+    // The storage block, current on its page (decisions 181 and 193): it takes the selected menu row's look, the active fill and the
     // on-active ink, with no border and no bar of its own. The colours are read first, on this page, where the block is not current;
     // the title is the rows' text colour and the figures the brand's caption, so they are not hard-coded.
     const plainTitle = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage-title'); return t ? getComputedStyle(t).color : null; })()`);
@@ -324,14 +324,14 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await setPhone(page, false);
 
     // An installation admin's page has no New (decision 66), so the sidebar keeps the gap New leaves: the menu starts S below the
-    // brand's block, S the sider's inline padding plus the rows' inline margin (decision 185). Back to the member afterwards.
+    // brand's block, S the sider's inline padding plus the rows' inline margin (decision 193). Back to the member afterwards.
     await signOut(page);
     await signIn(page, ADMIN);
     await navigateTo(page, '/admin/tenants');
     await page.waitFor(`location.pathname.startsWith('/admin') && !!document.querySelector('[data-testid="sidebar-brand"]') && !!document.querySelector('.shell-sider .shell-menu .ant-menu-item')`, 20000);
     await sleep(300);
     const adminGap = await page.evaluate(`(() => { const sider = document.querySelector('.shell-sider'); const s = sider.getBoundingClientRect(); const brand = document.querySelector('[data-testid="sidebar-brand"]'); const g = brand.getBoundingClientRect(); const bs = getComputedStyle(brand); const edge = parseFloat(getComputedStyle(sider).paddingInlineStart) + parseFloat(bs.marginInlineStart); const first = document.querySelector('.shell-sider .shell-menu .ant-menu-item').getBoundingClientRect(); const menu = document.querySelector('.shell-sider .shell-menu').getBoundingClientRect(); return { gapTop: Math.round(g.top - s.top), gapHeight: Math.round(g.height), menuTop: Math.round(menu.top - s.top), firstTop: Math.round(first.top - s.top), firstMargin: parseFloat(getComputedStyle(document.querySelector('.shell-sider .shell-menu .ant-menu-item')).marginTop), news: document.querySelectorAll('.shell-sider [data-testid="new-button"]').length, edge, reserved: parseFloat(bs.minHeight) }; })()`);
-    // Decision 185: the brand's block is at the top (S above its picture, then the picture's reserved height), and the menu starts S
+    // Decision 193: the brand's block is at the top (S above its picture, then the picture's reserved height), and the menu starts S
     // below the block's foot; the first item sits at the menu's top plus its own margin (the menu's rule, 4 px).
     check(adminGap.news === 0 && adminGap.gapTop === 0 && Math.abs(adminGap.gapHeight - (adminGap.edge + adminGap.reserved)) <= 1 && Math.abs(adminGap.menuTop - adminGap.gapHeight - adminGap.edge) <= 1 && adminGap.firstTop === adminGap.menuTop + adminGap.firstMargin, `on an admin page there is no New, the brand is at the top and the menu starts S below it (${JSON.stringify(adminGap)})`);
     await signOut(page);

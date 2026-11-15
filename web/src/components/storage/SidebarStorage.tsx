@@ -9,7 +9,7 @@ import { formatBytes } from "../../lib/files/format";
 import { heldBytes, sidebarMeterLevel, storagePercent, type MeStorage } from "../../lib/storage/logic";
 import { RADIUS, type Sidebar } from "../../theme/tokens";
 
-// The bar's colours on the sidebar's block (decisions 66, 171 and 185). The accent is the sidebar's own yellow; the warning and the
+// The bar's colours on the sidebar's block (decisions 66, 171 and 193). The accent is the sidebar's own yellow; the warning and the
 // error colours keep 3:1 against the track. The track is the meter's own dark (decision 66): the fill is compared with the
 // unfilled track, so it keeps 3:1 against it in every brand. On the Storage page the block is filled with the active colour, and
 // the normal fill takes the on-active ink instead, so it keeps 3:1 against the track on the fill too.
@@ -24,7 +24,7 @@ export function storageTitle(s: MeStorage | null, t: (key: string, params?: Reco
   return percent === null ? t("nav.storage") : t("nav.storageFull", { percent: String(percent) });
 }
 
-// SidebarStorage is the storage block pinned at the bottom of the sidebar (decision 181's pin, decision 185's look): a sidebar
+// SidebarStorage is the storage block pinned at the bottom of the sidebar (decision 181's pin, decision 193's look): a sidebar
 // row, not a card. It takes the rows' inline margin, radius and hover tint, with no border and no background of its own. Line 1 is
 // a Cloud icon in the rows' icon column and the storage title in the rows' label column; line 2 the bar, only with a limit, from the
 // icon's start edge to a menu row's padding short of the block's end edge; line 3 the figures in the caption colour. With no limit there
@@ -106,7 +106,7 @@ export default function SidebarStorage({ my, sidebar, inline, selected = false, 
   );
 }
 
-// StorageRail is the folded rail's storage icon link (decision 181): one Cloud icon at the bottom of the rail (decision 185), named
+// StorageRail is the folded rail's storage icon link (decision 181): one Cloud icon at the bottom of the rail (decision 193), named
 // by the storage title, which its tooltip shows. On the Storage page it is the current place: aria-current page, and the stylesheet
 // fills it with the active colour as the rail's menu rows are (decision 72). onNavigate closes the drawer (the rail is a wide window's).
 export function StorageRail({ my, sidebar, selected = false, onNavigate }: { my: MeStorage | null; sidebar: Sidebar; selected?: boolean; onNavigate?: () => void }): ReactNode {

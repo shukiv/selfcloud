@@ -331,7 +331,7 @@ describe("the folder tree in the sidebar", () => {
   });
 
   // Decision 69: with no New drawn (an admin page), the gap New leaves stays, so the first item is not on the top bar's edge.
-  // On a files page New is drawn and there is no gap. Decision 185: the gap is S, the sider's inline padding plus the rows'
+  // On a files page New is drawn and there is no gap. Decision 193: the gap is S, the sider's inline padding plus the rows'
   // inline margin, on a mouse and a finger alike (decision 109's 10 px and 6 px are gone).
   it("keeps the gap New leaves on an admin page, the side space S, on a mouse and a finger alike; a files page has no gap", async () => {
     signIn("admin");
@@ -367,7 +367,7 @@ describe("the folder tree in the sidebar", () => {
     treePlace.set({ folder: "fld_p", chain: [] });
     renderShell("/files/fld_p");
     await waitFor(() => expect(document.querySelector('[data-testid="new-button"]')).not.toBeNull());
-    // Decision 109: on a files page New follows the brand block, one edge below it; the block keeps its own top edge (S, decision 185).
+    // Decision 109: on a files page New follows the brand block, one edge below it; the block keeps its own top edge (S, decision 193).
     const brandBlock = document.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
     expect(brandBlock?.style.paddingBlockStart).toBe(`${edgeOf(false)}px`);
     expect(brandBlock?.style.marginBlockEnd).toBe(`${edgeOf(false)}px`);

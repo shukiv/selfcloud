@@ -28,7 +28,7 @@ export interface SidebarNewProps {
   collapsed: boolean;
   coarse: boolean;
   sidebar: Sidebar;
-  // inline is the rows' inline margin (decision 185): the expanded block takes it, so New starts where the rows start. The folded
+  // inline is the rows' inline margin (decision 193): the expanded block takes it, so New starts where the rows start. The folded
   // rail's round button keeps its own centred wrapper.
   inline: number;
   onPick: (kind: "files" | "folders", where: UploadWhere) => void;
@@ -179,7 +179,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
     maxInlineSize: "100%",
     minInlineSize: 0,
     minBlockSize: 56,
-    // The plus starts in the icon column (the shell sets --sc-icon-col from the block's own start edge, decision 185), and its word
+    // The plus starts in the icon column (the shell sets --sc-icon-col from the block's own start edge, decision 193), and its word
     // in the name column (18 px icon, 10 px gap), as the rows below it.
     paddingInlineStart: "var(--sc-icon-col, 24px)",
     paddingInlineEnd: 24,
@@ -194,7 +194,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   };
   return (
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger. The block
-    // takes the rows' inline margin, so New starts at the rows' edge (decision 185).
+    // takes the rows' inline margin, so New starts at the rows' edge (decision 193).
     <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginInline: inline, marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine } } }}>
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}

@@ -473,7 +473,7 @@ func TestVisitorIsCutOffFromEveryRouteButTheLinkedOnes(t *testing.T) {
 		"HEAD /api/v1/nodes/{nod}/content",
 		"POST /api/v1/nodes/{nod}/links",
 		"POST /api/v1/share/renew",
-		// A visitor of an anyone link may make a zip and ask its signed download link (decision 185).
+		// A visitor of an anyone link may make a zip and ask its signed download link (decision 192).
 		"POST /api/v1/zips",
 		"POST /api/v1/zips/{zip}/links",
 	}

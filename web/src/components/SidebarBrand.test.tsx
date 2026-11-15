@@ -7,7 +7,7 @@ import SidebarBrand from "./SidebarBrand";
 import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
 import { sidebarRow } from "../theme/sidebarRow";
 
-// The brand at the top of the sidebar (decision 109, its edge replaced by decision 185). Expanded: the wordmark (or the tile
+// The brand at the top of the sidebar (decision 109, its edge replaced by decision 193). Expanded: the wordmark (or the tile
 // logo where the wordmark would not read) fills the block's width, the custom logo is centred at up to 42 px high, or the name
 // as text. The block takes the rows' inline margin, so every part of the sidebar starts at one edge, and the space above the
 // picture and below the block is S, the sider's inline padding plus that margin, on a mouse and a finger alike. Folded to the
@@ -25,10 +25,10 @@ function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", backg
   return render(<SidebarBrand collapsed={collapsed} coarse={coarse} text={text} background={background} inline={row.inline} edge={edge} width={width} />);
 }
 // reserved is the height the picture the background draws will have at the block's content width, rounded up, so the box keeps its
-// height when the brand loads (decision 185): the wordmark (38/211) on a dark sidebar, the taller tile logo (398/1731.65) on a light one.
+// height when the brand loads (decision 193): the wordmark (38/211) on a dark sidebar, the taller tile logo (398/1731.65) on a light one.
 const reserved = (width: number, edge: number, light = false) => Math.ceil((width - 2 * edge) * (light ? 398 / 1731.65 : 38 / 211));
 
-describe("SidebarBrand (decisions 109 and 185)", () => {
+describe("SidebarBrand (decisions 109 and 193)", () => {
   beforeEach(() => brandLoaded.set(true));
   afterEach(() => {
     brandLoaded.set(false);
@@ -82,7 +82,7 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
     expect(container.textContent).toBe("");
   });
 
-  // Decision 185: an uploaded logo keeps its aspect, centred in the block, at most as wide as the block and 42 px high.
+  // Decision 193: an uploaded logo keeps its aspect, centred in the block, at most as wide as the block and 42 px high.
   it("shows a custom logo centred, at most 42 px high and as wide as the block, and small in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", artwork: false });
     const expanded = renderBrand(false).container;
@@ -133,7 +133,7 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
   });
 
   // The reserved space is the height the loaded brand takes, so the sidebar does not move when the info arrives (the w2 e2e drag
-  // depends on it: a move of 58 px shifted the rows under a press). Decision 185: the wordmark fills the width, so the height is
+  // depends on it: a move of 58 px shifted the rows under a press). Decision 193: the wordmark fills the width, so the height is
   // the content width x 38/211 rounded up, 42 px at the desktop's 232 px content, with S (16 px) above and below.
   it("reserves the height the loaded brand takes, so nothing moves when it arrives", () => {
     const box = (el: HTMLElement | null) => [el?.style.minHeight, el?.style.paddingBlockStart, el?.style.marginBlockEnd];
@@ -147,7 +147,7 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
     expect(loaded).toEqual(reservedBox);
   });
 
-  // Decision 185: on a light sidebar the picture is the tile logo (/brand/logo, internal/web/brand/selfcloud-logo.svg, viewBox
+  // Decision 193: on a light sidebar the picture is the tile logo (/brand/logo, internal/web/brand/selfcloud-logo.svg, viewBox
   // 1731.65 x 398), taller than the wordmark at the same width. The reserved height is the tile's own, so the box does not grow when
   // the brand loads (the must-never-happen). The dark case above keeps the wordmark's 42 px.
   it("reserves the tile logo's height on a light sidebar, so the box does not grow when it loads", () => {
@@ -167,7 +167,7 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
     expect(reservedBox[0]).toBe("54px");
   });
 
-  // Decision 185 replaces decision 109's 10 px (6 px on a finger) edge: the block's top and bottom space is S on a mouse and a
+  // Decision 193 replaces decision 109's 10 px (6 px on a finger) edge: the block's top and bottom space is S on a mouse and a
   // finger alike, and its inline margin is the rows' own, so the brand starts where the rows start.
   it("keeps the side space S above and below, and the rows' inline margin, on a mouse and a finger alike", () => {
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
@@ -191,7 +191,7 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
     expect(block?.style.minHeight).toBe(`${reserved(280, edge)}px`);
   });
 
-  // Decision 185 leaves the collapsed rail unchanged: its block keeps the old edges, its 32 px mark box and no inline margin.
+  // Decision 193 leaves the collapsed rail unchanged: its block keeps the old edges, its 32 px mark box and no inline margin.
   it("the folded rail's brand block keeps its own styles, on a mouse and a finger", () => {
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
     const mouse = renderBrand(true).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');

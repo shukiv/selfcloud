@@ -15,9 +15,9 @@ import { contrast } from "../../lib/brand";
 import SidebarStorage, { StorageRail, storageTitle } from "./SidebarStorage";
 import { formatBytes } from "../../lib/files/format";
 
-// The rows' inline margin (decision 185): the block takes it too, so its edges are the rows' edges.
+// The rows' inline margin (decision 193): the block takes it too, so its edges are the rows' edges.
 const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
-// The menu rows' inline padding (antd's Menu itemPaddingInline is token.padding, decision 185): the block's content ends this far
+// The menu rows' inline padding (antd's Menu itemPaddingInline is token.padding, decision 193): the block's content ends this far
 // short of its end edge, so the bar, the title and the figures do not run into the block's end edge and its hover/active fill.
 const ROW_PAD_END = antdTheme.getDesignToken().padding;
 
@@ -38,11 +38,11 @@ function rule(css: string, selector: string): string {
   return css.slice(start, css.indexOf("}", start) + 1);
 }
 
-// The storage block at the foot of the sidebar (decision 181's pin, decision 185's look): no card frame, a sidebar row's edges,
+// The storage block at the foot of the sidebar (decision 181's pin, decision 193's look): no card frame, a sidebar row's edges,
 // hover and radius. Line 1 is a Cloud icon in the rows' icon column and the storage title in the rows' label column; line 2 the
 // bar, only with a limit; line 3 the figures in the caption colour. On the Storage page it takes the selected menu row's look:
 // the active fill and the on-active ink, and the bar's normal fill takes the on-active ink too, so it keeps 3:1 against its track.
-describe("the sidebar's storage block (decisions 181 and 185)", () => {
+describe("the sidebar's storage block (decisions 181 and 193)", () => {
   beforeEach(async () => {
     await setLang("en");
   });
@@ -125,7 +125,7 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     expect(screen.getByRole("link", { name: `Storage ${formatBytes(153 * MB, "en")} used` })).toBeTruthy();
   });
 
-  // Decision 185: no card frame. The block is a sidebar row: the rows' radius, the rows' hover tint and the same focus ring, with
+  // Decision 193: no card frame. The block is a sidebar row: the rows' radius, the rows' hover tint and the same focus ring, with
   // no border and no background of its own. Its content starts in the rows' icon column, the title an 18 px icon and a 10 px gap
   // in (the menu's own icon and gap), and ends one menu-row inline padding (token.padding) short of the block's end edge.
   it("is a sidebar row, not a card: no border, no background, the rows' radius, hover and focus ring", () => {
@@ -146,14 +146,14 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     expect(rule(indexCss, ".shell-storage-card:focus-visible")).toContain("outline");
   });
 
-  // Decision 185: the block takes the rows' inline margin, so it starts and ends where the menu's rows and the tree's rows do.
-  it("takes the rows' inline margin, so its edges are the rows' edges (decision 185)", () => {
+  // Decision 193: the block takes the rows' inline margin, so it starts and ends where the menu's rows and the tree's rows do.
+  it("takes the rows' inline margin, so its edges are the rows' edges (decision 193)", () => {
     draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const card = screen.getByTestId("storage-card");
     expect(card.style.marginInline).toBe(`${ROW_INLINE}px`);
   });
 
-  // Decision 185: on the Storage page the block takes the selected menu row's look: the stylesheet fills it with the active colour
+  // Decision 193: on the Storage page the block takes the selected menu row's look: the stylesheet fills it with the active colour
   // (on hover too), and the title, the figures and the bar's outline take the on-active ink. The bar's normal fill takes it too, so
   // it keeps 3:1 against its track on the fill (the warning and error colours keep themselves).
   it("on the Storage page it is the current place: the selected row's fill and ink, the bar's fill in the on-active ink", () => {
@@ -202,7 +202,7 @@ describe("the folded rail's storage icon link (decision 181)", () => {
     const link = screen.getByTestId("storage-rail");
     expect(link.getAttribute("href")).toBe("/storage");
     expect(link.getAttribute("aria-label")).toBe("Storage (61% full)");
-    // The same Cloud shape as the expanded block (decision 185).
+    // The same Cloud shape as the expanded block (decision 193).
     const icon = link.querySelector("svg");
     expect(icon?.getAttribute("class")).toContain("lucide-cloud");
     expect(icon?.getAttribute("aria-hidden")).toBe("true");

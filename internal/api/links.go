@@ -56,7 +56,7 @@ const (
 	dispAttachment = "attachment"
 	dispInline     = "inline"
 	// dispZip names a stored zip, not a node: the token's id is a zip ID and its tag is the zip's SHA-256. Only the
-	// server signs it, for the link visitor who made the zip (decision 185).
+	// server signs it, for the link visitor who made the zip (decision 192).
 	dispZip = "zip"
 )
 
@@ -281,7 +281,7 @@ func parseLinkToken(tok string) (linkClaims, []byte, []byte, error) {
 		return c, nil, nil, errLinkMalformed
 	}
 	// A zip link names a zip; every other link names a node. The two ID kinds do not overlap, so a zip ID with a file
-	// disposition, or a node ID with the zip disposition, is malformed (decision 185).
+	// disposition, or a node ID with the zip disposition, is malformed (decision 192).
 	idKind := "nod"
 	if parts[2] == dispZip {
 		idKind = "zip"
@@ -505,7 +505,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return linkNotFound()
 	}
-	// A zip link names a stored zip, not a node, so it is served before any node is read (decision 185).
+	// A zip link names a stored zip, not a node, so it is served before any node is read (decision 192).
 	if c.disp == dispZip {
 		return s.serveZipLink(w, r, c, payload, mac)
 	}
@@ -571,7 +571,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 // serveZipLink sends the stored zip a zip link names. It needs no credential and reads no cookie: the token is the
 // capability. The zip must be a link visitor's, ready and unexpired; the token must verify against the zip's SHA-256
 // and not have expired; the account must be active; and the link that made the zip must still be open, with every root
-// still reachable and unrestricted. Each failure is the answer a bad link gets, so a probe learns nothing (decision 185).
+// still reachable and unrestricted. Each failure is the answer a bad link gets, so a probe learns nothing (decision 192).
 func (s *Server) serveZipLink(w http.ResponseWriter, r *http.Request, c linkClaims, payload, mac []byte) error {
 	ctx := r.Context()
 	z, err := s.store.Zip(ctx, c.acc, c.nod)
