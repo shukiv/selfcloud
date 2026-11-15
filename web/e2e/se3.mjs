@@ -264,10 +264,14 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
     check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
 
-    // 6. A window whose content straddles the tabs boundary does not flip: 635 px less a classic scrollbar is inside the 24 px
-    //    band the layout settles across, so the cards stay stacked and the tablist never appears, over two seconds.
+    // 6. A window whose content straddles the tabs boundary settles once and does not oscillate: 635 px less the 28 px page
+    //    padding and a classic 15 px scrollbar leaves 592 px of content, under the 600 px boundary, so the cards settle on the
+    //    tabs; without the scrollbar the content is 607 px, still under the 624 px that would stack them again, so the layout
+    //    holds. The wait holds for that settled state first: the About card is drawn in either layout, so watching from its
+    //    presence alone would count the one settle as a flip. Then two seconds with no tablist change.
     await page.send('Emulation.setDeviceMetricsOverride', { width: 635, height: 2400, deviceScaleFactor: 1, mobile: false });
-    await page.waitFor(`!!document.getElementById('settings-about')`, 10000);
+    await page.waitFor(`!!document.querySelector('[role="tablist"]') && !!document.getElementById('settings-about')`, 10000);
+    check(await page.evaluate(`!!document.querySelector('[role="tablist"]') && !!document.getElementById('settings-about')`), 'at 635 px the page settles on the tabs');
     const changes = await page.evaluate(`new Promise((resolve) => {
       const root = document.querySelector('h1').parentElement;
       let last = !!document.querySelector('[role="tablist"]');
