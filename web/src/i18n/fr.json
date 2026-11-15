@@ -818,6 +818,7 @@
   "audit.account.comments_policy": "{actor} a modifié l’autorisation des commentaires dans le compte.",
   "audit.account.comments_policy.on": "{actor} a autorisé les commentaires dans le compte.",
   "audit.account.comments_policy.off": "{actor} a désactivé les commentaires dans le compte.",
+  "audit.account.embed_origins": "{actor} a modifié les sites autorisés à intégrer le compte.",
   "audit.account.quota_warning": "{actor} a modifié le seuil d’alerte de quota.",
   "audit.account.quota_warning.percent": "{actor} a fixé l’alerte de quota à {percent} pour cent.",
   "audit.account.sharing_policy": "{actor} a modifié les paramètres de partage du compte.",

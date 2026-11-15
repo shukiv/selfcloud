@@ -818,6 +818,7 @@
   "audit.account.comments_policy": "غيّر {actor} إعداد السماح بالتعليقات في الحساب.",
   "audit.account.comments_policy.on": "سمح {actor} بالتعليقات في الحساب.",
   "audit.account.comments_policy.off": "أوقف {actor} التعليقات في الحساب.",
+  "audit.account.embed_origins": "غيّر {actor} المواقع المسموح لها بتضمين الحساب.",
   "audit.account.quota_warning": "غيّر {actor} مستوى تنبيه الحصة.",
   "audit.account.quota_warning.percent": "ضبط {actor} تنبيه الحصة على {percent} في المئة.",
   "audit.account.sharing_policy": "غيّر {actor} إعدادات المشاركة في الحساب.",

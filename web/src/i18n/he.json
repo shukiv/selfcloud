@@ -818,6 +818,7 @@
   "audit.account.comments_policy": "{actor} שינה את ההגדרה של תגובות בחשבון.",
   "audit.account.comments_policy.on": "{actor} אפשר תגובות בחשבון.",
   "audit.account.comments_policy.off": "{actor} כיבה תגובות בחשבון.",
+  "audit.account.embed_origins": "{actor} שינה את האתרים המורשים להטמיע את החשבון.",
   "audit.account.quota_warning": "{actor} שינה את רמת התראת המכסה.",
   "audit.account.quota_warning.percent": "{actor} קבע את התראת המכסה ל-{percent} אחוזים.",
   "audit.account.sharing_policy": "{actor} שינה את הגדרות השיתוף של החשבון.",

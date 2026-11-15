@@ -818,6 +818,7 @@
   "audit.account.comments_policy": "{actor} изменил(а) настройку комментариев в аккаунте.",
   "audit.account.comments_policy.on": "{actor} разрешил(а) комментарии в аккаунте.",
   "audit.account.comments_policy.off": "{actor} отключил(а) комментарии в аккаунте.",
+  "audit.account.embed_origins": "{actor} изменил(а) сайты, которым разрешено встраивать аккаунт.",
   "audit.account.quota_warning": "{actor} изменил(а) уровень предупреждения о квоте.",
   "audit.account.quota_warning.percent": "{actor} установил(а) предупреждение о квоте на {percent} %.",
   "audit.account.sharing_policy": "{actor} изменил(а) настройки общего доступа аккаунта.",

@@ -818,6 +818,7 @@
   "audit.account.comments_policy": "{actor} changed whether comments are allowed in the account.",
   "audit.account.comments_policy.on": "{actor} allowed comments in the account.",
   "audit.account.comments_policy.off": "{actor} turned off comments in the account.",
+  "audit.account.embed_origins": "{actor} changed the sites that may embed the account.",
   "audit.account.quota_warning": "{actor} changed the quota warning level.",
   "audit.account.quota_warning.percent": "{actor} set the quota warning to {percent} percent.",
   "audit.account.sharing_policy": "{actor} changed the sharing settings of the account.",

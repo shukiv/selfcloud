@@ -244,6 +244,8 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
             : 'audit.account.sharing_policy.off';
       return { key, params: { actor } };
     }
+    case 'account.embed_origins':
+      return { key: 'audit.account.embed_origins', params: { actor } };
     case 'account.quota_warning': {
       const percent = number(d, 'percent');
       if (percent === undefined) return { key: 'audit.account.quota_warning', params: { actor } };

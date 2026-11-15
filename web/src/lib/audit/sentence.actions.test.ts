@@ -38,6 +38,7 @@ const ROWS: Row[] = [
   { action: 'access.approve', actor: user, target: 'arq_1', details: { node: 'nod_1', user: 'usr_mateo', role: 'viewer' } },
   { action: 'access.deny', actor: user, target: 'arq_1', details: { node: 'nod_1', user: 'usr_mateo', role: 'viewer' } },
   { action: 'account.comments_policy', actor: user, target: 'acc_1', details: { comments: true } },
+  { action: 'account.embed_origins', actor: user, target: 'acc_1', details: { origins: ['https://a.example'] } },
   { action: 'account.quota_warning', actor: user, target: 'acc_1', details: { percent: 80 } },
   { action: 'account.sharing_policy', actor: user, target: 'acc_1', details: { public_links: false } },
   { action: 'account.storage_policy', actor: user, target: 'acc_1', details: { user_quota_bytes: 0 } },
