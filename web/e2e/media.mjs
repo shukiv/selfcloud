@@ -472,14 +472,12 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
         }
       }
     } finally {
-      // Leave the page as the next step finds it on a fresh visit: no menu open, nothing selected, back at the top. An open
-      // dropdown would otherwise swallow the next step's first tap to close itself.
-      await escapeKey().catch(() => undefined);
-      await clearSelection(page).catch(() => undefined);
-      await page.evaluate(`window.scrollTo(0, 0)`).catch(() => undefined);
+      // Leave the page as the next step finds it on a fresh visit: load the folder again, so no press, menu or selection
+      // carries over. An open dropdown would otherwise swallow the next step's first tap to close itself.
       await setWidth(page, 390);
       await setLanguage(page, 'English').catch(() => undefined);
       await setPhone(page, false);
+      await open('List');
       await sleep(400);
     }
   });
