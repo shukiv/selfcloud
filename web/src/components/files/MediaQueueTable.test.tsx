@@ -215,7 +215,7 @@ describe("MediaQueueTable: the queue as a table", () => {
 
   it("an empty queue shows the empty state inside the table, under the header row", async () => {
     const { container } = render(<MediaQueueTable {...props([])} />);
-    expect(await screen.findByText("Nothing in the playlist.")).toBeTruthy();
+    expect(await screen.findByText("Nothing in the playlist")).toBeTruthy();
     const table = container.querySelector('[data-testid="media-queue-table"] table') as HTMLElement;
     // The header row stays, with the column names; the empty state is the table's body.
     expect(table.querySelector("thead")).not.toBeNull();

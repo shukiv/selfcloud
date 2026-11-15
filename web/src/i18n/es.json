@@ -312,7 +312,7 @@
   "files.media.next": "Archivo siguiente",
   "files.media.queue": "Lista de reproducción",
   "files.media.closePlaylist": "Cerrar lista de reproducción",
-  "files.media.queueEmpty": "La lista de reproducción está vacía.",
+  "files.media.queueEmpty": "La lista de reproducción está vacía",
   "files.media.shuffle": "Aleatorio",
   "files.media.repeat": "Repetir",
   "files.media.repeatOff": "Repetir: no",
