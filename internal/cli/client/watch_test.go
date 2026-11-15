@@ -33,6 +33,30 @@ func TestWatchEndOfBodySetsTheTailBeforeTheAnswer(t *testing.T) {
 	}
 }
 
+// TestWatchAnsweredEndsTheTail: once the answer's headers have arrived, a later end-of-body read does not bring the tail
+// back. The running limit stays the stall limit, and the watch fires after about it, not after the longer tail.
+func TestWatchAnsweredEndsTheTail(t *testing.T) {
+	t.Parallel()
+	const stall, tail = 200 * time.Millisecond, 3 * time.Second
+	fired := make(chan struct{})
+	w := newWatch(stall, func() { close(fired) })
+	defer w.stop()
+	w.answered()
+	w.endOfBody(tail)
+	if got := runningLimit(w); got != stall {
+		t.Fatalf("after the answer a late end-of-body read set the limit to %v, want the stall %v", got, stall)
+	}
+	start := time.Now()
+	select {
+	case <-fired:
+	case <-time.After(stall + 300*time.Millisecond):
+		t.Fatal("the watch did not fire within the stall limit")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("the watch fired after %v, want about %v", d, stall)
+	}
+}
+
 // TestWatchedUploadGivesTheTailOnce: the transport reads past the declared length to see whether the body is longer than
 // declared, and may do so more than once. The tail is given the first time the declared length is out, and not again on
 // those later reads: after a kick has returned the limit to the stall, a later read must not set the tail back.

@@ -72,7 +72,7 @@ func (c *Client) Stream(ctx context.Context, r Request, stall time.Duration) (*S
 		}
 		return nil, decodeAPIError(&Response{Status: resp.StatusCode, Header: resp.Header.Clone(), Body: data})
 	}
-	w.kick()
+	w.answered()
 	return &StreamResponse{Status: resp.StatusCode, Header: resp.Header.Clone(),
 		Body: &watchedBody{rc: resp.Body, w: w, end: end}}, nil
 }
@@ -80,11 +80,12 @@ func (c *Client) Stream(ctx context.Context, r Request, stall time.Duration) (*S
 // watch ends a transfer that has stopped moving: its timer cancels the request when no byte has moved for limit. Each
 // byte read or sent restarts it.
 type watch struct {
-	mu    sync.Mutex
-	stall time.Duration // the limit after a byte has moved
-	limit time.Duration // the limit now running, which is longer than stall at the end of an upload piece
-	timer *time.Timer
-	fired bool
+	mu        sync.Mutex
+	stall     time.Duration // the limit after a byte has moved
+	limit     time.Duration // the limit now running, which is longer than stall at the end of an upload piece
+	timer     *time.Timer
+	fired     bool
+	gotAnswer bool // the answer's headers have arrived, so the tail no longer applies
 }
 
 func newWatch(limit time.Duration, cancel context.CancelFunc) *watch {
@@ -102,21 +103,34 @@ func newWatch(limit time.Duration, cancel context.CancelFunc) *watch {
 func (w *watch) kick() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.kickLocked()
+}
+
+func (w *watch) kickLocked() {
 	if !w.fired {
 		w.limit = w.stall
 		w.timer.Reset(w.stall)
 	}
 }
 
+// answered marks that the answer's headers have arrived and restarts the stall limit. From then on the tail no longer
+// applies, so a read of the upload's end that lands after the answer cannot bring the longer limit back.
+func (w *watch) answered() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.gotAnswer = true
+	w.kickLocked()
+}
+
 // endOfBody restarts the timer with the longer limit tail once the last byte of a piece has been read from its source. The
 // transport still has to write the end of it, and the server then works on the piece (hashing, a sync) before it
 // answers, which its response-header timeout bounds. The timer is not stopped, so a link that stalls in that moment ends
-// the transfer after tail, and not after TCP's own give-up time. Until the answer's headers arrive, kick restarts it with
-// the stall limit again.
+// the transfer after tail, and not after TCP's own give-up time. The tail ends when the answer's headers arrive: once
+// answered this does nothing, and until then kick restarts the stall limit again.
 func (w *watch) endOfBody(tail time.Duration) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !w.fired {
+	if !w.fired && !w.gotAnswer {
 		w.limit = tail
 		w.timer.Reset(tail)
 	}
@@ -136,12 +150,14 @@ func (w *watch) classify(err error) error {
 }
 
 // watchedUpload is a request body that restarts the watch as it is read, and gives it the longer tail limit once its
-// declared length is out.
+// declared length is out. The tail is given once: the transport reads past the declared length to check for more, and
+// those later reads must not set it again. The tail ends when the answer arrives.
 type watchedUpload struct {
-	r    io.Reader
-	w    *watch
-	left int64
-	tail time.Duration
+	r      io.Reader
+	w      *watch
+	left   int64
+	tail   time.Duration
+	tailed bool
 }
 
 func (u *watchedUpload) Read(p []byte) (int, error) {
@@ -150,7 +166,8 @@ func (u *watchedUpload) Read(p []byte) (int, error) {
 		u.w.kick()
 		u.left -= int64(n)
 	}
-	if u.left <= 0 || err == io.EOF {
+	if !u.tailed && (u.left <= 0 || err == io.EOF) {
+		u.tailed = true
 		u.w.endOfBody(u.tail)
 	}
 	return n, err
