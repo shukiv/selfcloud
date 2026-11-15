@@ -1056,6 +1056,7 @@ the other account commands, and the server's rules are the ones that decide who 
 | `user verify USER --method email\|link\|none` | sends a pending person their invitation again, or verifies them outright |
 | `user reset-password USER --method email\|link` | starts a password reset; the person chooses the new password |
 | `user sign-in-link USER [--next PATH]` | makes a one-time link that signs the person in |
+| `user sessions end USER [--ref REF]` | ends the person's web sessions: a sign-in link's, or all of them |
 | `user revoke-tokens USER [--yes]` | ends every sign-in of the person on every device; asks first |
 
 `--method` is required and is checked before any request (exit 2). `email` needs mail to be configured on the server,
@@ -1070,21 +1071,32 @@ A sign-in link needs the account's own key: an installation admin's key and a de
 `--next` is the path opened after sign-in, such as `/files/report`; the server checks it and refuses anything that is
 not a path on the site. The link is short-lived and single-use.
 
+`user sessions end` also needs the account's own key, and ends the web sessions the person holds (decision 211). A
+sign-in link may name the session it starts (`session_ref` in the API) and say when it must end (`session_expires_at`);
+the redeemed session carries both. With `--ref REF` the command ends only the sessions of that ref; with no ref, or an
+empty one, it ends all the person's own web sessions, a password sign-in included. `--ref` is checked before any request
+(exit 2): 1 to 128 letters, digits, `-` or `_`. An impersonation of the person is the admin's, not the person's, and
+stays. No token is touched, so the person's device and application tokens keep working; this signs them out of the web
+interface only, and deletes nothing, so the command never asks. The answer counts what ended: `ended N session(s)`, or
+`{ended}` under `--json`. A second call with nothing left to end answers `ended 0 session(s)`.
+
 `user revoke-tokens` asks first, as the other destructive commands do. At a terminal the person types the user's id;
 without a terminal it refuses (exit 2) unless `--yes` is given. The answer is the server's cut-off: every token and
 editing session of that person issued before it no longer works. The account's other people and its keys are not
 affected.
 
 Plain output uses `verification=METHOD`, then `sent=true` or `false` for mail, or `link=URL` and `link_expires_at=TIME`
-for a link. A sign-in link prints `link=URL` and `expires_at=TIME`; a revoke prints `tokens_not_before=TIME`. Under
+for a link. A sign-in link prints `link=URL` and `expires_at=TIME`; a revoke prints `tokens_not_before=TIME`; ending
+sessions prints `ended N session(s)`. Under
 `--json` a verification is `{method, url, expires_at, sent}`, with empty fields left out, a sign-in link is
-`{url, expires_at}`, and a revoke is `{tokens_not_before}`. The server's own refusals keep their messages: a missing
+`{url, expires_at}`, a revoke is `{tokens_not_before}`, and ending sessions is `{ended}`. The server's own refusals keep their messages: a missing
 person is exit 4, and a refused method or a conflict is exit 3.
 
 ```
 selfcloud user verify --account acc_… usr_… --method email
 LINK=$(selfcloud user reset-password --account acc_… usr_… --method link | sed -n 's/^link=//p')
 selfcloud user sign-in-link --account acc_… usr_… --next /files/report
+selfcloud user sessions end --account acc_… usr_… --ref app-one
 selfcloud user revoke-tokens --account acc_… usr_… --yes
 ```
 
