@@ -252,7 +252,9 @@ export async function vr1Checks(h, { page, base, accountKey, teamA }) {
 
     // Compact rows (decision 185): the toggle shortens every row, the window keeps the last row reachable by scrolling to the
     // end with no gap at the bottom, the choice survives a reload under the person's own key, and switching back restores the
-    // full rows. The list is read to its end again afterwards, for the drop check below.
+    // full rows. The list is read to its end again afterwards, for the drop check below. The rename check left its row selected,
+    // and the selection panel holds the toolbar's row while anything is selected, so the choice is read with nothing selected.
+    await clear(page);
     const comfortableH = await page.evaluate(`document.querySelector('.files-list [role="row"][data-id]')?.getBoundingClientRect().height ?? 0`);
     await page.evaluate(`document.querySelector('[data-testid="density-toggle"]')?.click(), true`);
     await page.waitFor(`!!document.querySelector('.files-list.list--compact')`, 10000);
