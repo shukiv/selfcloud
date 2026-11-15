@@ -1545,6 +1545,20 @@ tr[data-drop-state="refused"] > td {
   display: none;
 }
 
+/* A preset list's phone second line is one wrapping row of inline items (mob4). The dot between two items is drawn here, on the
+   item that follows, so it stays attached to it across a wrap: none before the first item, after the last, or twice in a row, and
+   an empty cell (left out of the line) draws no separator. */
+.item-list .row-second {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 2px;
+}
+.item-list .row-second-item + .row-second-item::before {
+  content: "·";
+  margin-inline: 6px;
+}
+
 .files-list tr[aria-selected="true"] .row-acts,
 .files-list tr:focus-within .row-acts {
   visibility: visible;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { App, Alert, Button, Input } from "antd";
+import { App, Alert, Button, Grid, Input } from "antd";
 import { useFlight } from "../../lib/flight";
 import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -44,6 +44,8 @@ function TenantsView() {
   const brandName = useStore(brand).name;
   const qc = useQueryClient();
   const flight = useGuard();
+  // On a phone the usage is the name's second line as one line of text, with no meter (mob4).
+  const narrow = !Grid.useBreakpoint().md;
   // The suspend or resume on its way is the request the dialog cancels (fu4, decision 76's rule for writes).
   const request = useFlight();
   const { message } = App.useApp();
@@ -203,7 +205,7 @@ function TenantsView() {
       key: "usage",
       title: t("tenant.overview.usage"),
       secondary: true,
-      render: (a) => <UsageMeter used={a.used_bytes} quota={a.quota_bytes > 0 ? a.quota_bytes : null} />,
+      render: (a) => <UsageMeter used={a.used_bytes} quota={a.quota_bytes > 0 ? a.quota_bytes : null} inline={narrow} />,
     },
     {
       key: "users",

@@ -95,6 +95,9 @@ export default function LargestFilesCard({
               key: "size",
               title: t("storage.size"),
               align: "end",
+              // A fixed width (mob4): with the table's fixed layout and no width of its own the column took half the table on a
+              // phone, wrapping names to four lines beside a short number.
+              width: 96,
               render: (f) => (
                 <span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                   {formatBytes(f.size, lang)}

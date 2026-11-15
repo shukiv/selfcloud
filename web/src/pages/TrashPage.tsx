@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Modal, Select, Skeleton } from "antd";
+import { Alert, Button, Grid, Modal, Select, Skeleton } from "antd";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 import IconButton from "../components/IconButton";
 import Listing, { type ListColumn } from "../components/files/Listing";
@@ -37,6 +37,8 @@ const canPurge = (it: TrashItem) => it.role === "manager";
 export default function TrashPage() {
   const { t } = useT();
   const lang = useLang();
+  // On a phone the deleted cell is the name's second line, so the date and the days-left read inline, not stacked (mob4).
+  const narrow = !Grid.useBreakpoint().md;
   const qc = useQueryClient();
   const allFolders = useStore(folders);
   const me = useStore(session);
@@ -165,12 +167,18 @@ export default function TrashPage() {
       title: t("drive.col.deletedOn"),
       secondary: true,
       ariaSort: "descending",
-      render: (it) => (
-        <span style={{ display: "block" }}>
-          <time dateTime={it.trashed_at}>{formatDate(it.trashed_at, lang)}</time>
-          <span style={{ display: "block", fontSize: 14, opacity: 0.75 }}>{days(it)}</span>
-        </span>
-      ),
+      render: (it) =>
+        narrow ? (
+          <span>
+            <time dateTime={it.trashed_at}>{formatDate(it.trashed_at, lang)}</time>
+            <span style={{ fontSize: 14, opacity: 0.75 }}> {days(it)}</span>
+          </span>
+        ) : (
+          <span style={{ display: "block" }}>
+            <time dateTime={it.trashed_at}>{formatDate(it.trashed_at, lang)}</time>
+            <span style={{ display: "block", fontSize: 14, opacity: 0.75 }}>{days(it)}</span>
+          </span>
+        ),
     },
     { key: "size", title: t("files.col.size"), secondary: true, align: "end", render: (it) => (it.kind === "dir" ? "—" : formatBytes(it.size, lang)) },
   ];

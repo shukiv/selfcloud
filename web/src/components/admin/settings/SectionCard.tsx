@@ -30,7 +30,7 @@ interface Props {
 // so a person can reach it from the section list, and an assistive technology lists it.
 export function CardFrame({ id, title, intro, children }: { id: string; title: string; intro: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={`settings-${id}-title`} id={`settings-${id}`} style={{ minWidth: 0 }}>
+    <section aria-label={title} id={`settings-${id}`} style={{ minWidth: 0 }}>
       <Card
         title={
           <div>

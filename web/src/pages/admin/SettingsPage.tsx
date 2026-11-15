@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Modal, Tabs } from "antd";
+import { Alert, Button, Grid, Modal, Tabs } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useBlocker } from "react-router-dom";
@@ -36,7 +36,8 @@ const TABS: Tab[] = [...SECTIONS.map((s) => s.id), "about"];
 
 // The layout follows the width of the page's own content, not the window's: the docked sidebar takes 264 px of a window from 992 px.
 // Below TABS_BELOW the sections are tabs; from LIST_FROM the section list sits beside the cards; in between the cards are stacked.
-// A row puts its input beside its text when the card is at least ROW_FROM wide.
+// A row puts its input beside its text when the card is at least ROW_FROM wide. A phone stacks every section whatever the content's
+// width (mob4): antd's tabs hide a section under their "···" at 360 and 412 px, so it could not be reached.
 export const TABS_BELOW = 600;
 export const LIST_FROM = 900;
 const ROW_FROM = 600;
@@ -101,6 +102,7 @@ function SettingsView() {
   const { ready, failed: textFailed, retry: retryText } = useAdminTextState();
   const root = useRef<HTMLDivElement>(null);
   const layout = useLayout(root);
+  const phone = !Grid.useBreakpoint().md;
   const wide = layout.rowWide;
   const settingsKey = queryKey("settings");
   const infoKey = queryKey("installation");
@@ -142,7 +144,7 @@ function SettingsView() {
   // The section list marks the section in view.
   const [inView, setInView] = useState<Tab>("branding");
   useEffect(() => {
-    if (!layout.list || answer === undefined || typeof IntersectionObserver === "undefined") return;
+    if (!layout.list || phone || answer === undefined || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => {
         const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -158,7 +160,7 @@ function SettingsView() {
       }
     }
     return () => io.disconnect();
-  }, [layout.list, layout.tabs, answer]);
+  }, [layout.list, layout.tabs, answer, phone]);
 
   const dropEdits = (keys: string[]) =>
     setEdits((cur) => {
@@ -288,9 +290,9 @@ function SettingsView() {
     );
   } else if (!ready || (answer === undefined && !q.isError)) {
     body = <p role="status">{t("app.loading")}</p>;
-  } else if (answer !== undefined && !layout.tabs) {
+  } else if (answer !== undefined && (!layout.tabs || phone)) {
     const stacked = <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>{cards.map((c) => c.node)}</div>;
-    body = !layout.list ? (
+    body = !layout.list || phone ? (
       stacked
     ) : (
       <div style={{ display: "grid", gridTemplateColumns: "200px minmax(0, 1fr)", gap: 24, alignItems: "start" }}>

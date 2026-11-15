@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
-  Fragment,
   createContext,
   memo,
   useCallback,
@@ -231,6 +230,15 @@ const ROW_ICON_PX = 40;
 const ROW_ICONS = 4;
 // DEFAULT_STICKY_TOP is the shell's header (56 px) and the toolbar's row (48 px with a mouse), where the column header pins.
 const DEFAULT_STICKY_TOP = 104;
+
+// emptySecondCell says a phone second-line cell draws nothing (mob4): an absent value, or text that is only whitespace. Such a
+// cell is left out of the line, so no separator is drawn before, after or beside it. A cell that renders an element is kept.
+function emptySecondCell(node: ReactNode): boolean {
+  if (node === null || node === undefined || typeof node === "boolean") return true;
+  if (typeof node === "string") return node.trim() === "";
+  if (Array.isArray(node)) return node.every(emptySecondCell);
+  return false;
+}
 
 type AriaSort = "ascending" | "descending" | "none";
 
@@ -476,7 +484,7 @@ function FileRename({ value, error, H }: { value: string; error: string | null; 
           el.select();
         }
       }}
-      style={{ flex: "1 1 160px", minWidth: 0, minHeight: 44 }}
+      style={{ flex: "1 1 0", minWidth: 0, minHeight: 44 }}
     />
   );
 }
@@ -514,7 +522,9 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
   return (
     // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
     // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
+    // While renaming the icon, the field and the marks share one line that does not wrap (mob4): the field grows from no
+    // basis into the room there is. A rename error keeps its own line, so the cell wraps again to let it drop below.
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: renaming && !renameError ? "nowrap" : "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
       {coarse || visitor ? (
         <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
       ) : (
@@ -1387,31 +1397,34 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
     // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
     const check = (r: T) => <PresetCheck id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} />;
-    const nameCell = (r: T) => (
-      <div style={{ minWidth: 0 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
-          {selectable && !coarse ? (
-            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", minWidth: 22, height: 22 }}>
-              {q.icon && <span className="row-icon">{q.icon(r)}</span>}
-              {check(r)}
-            </span>
-          ) : (
-            q.icon?.(r)
+    const nameCell = (r: T) => {
+      // The phone's second line is one wrapping row of inline items (mob4): each non-empty cell is a span, and the dot between
+      // two items is the stylesheet's (.row-second-item + .row-second-item::before), so no text node holds a separator and an
+      // empty cell draws nothing.
+      const cells = seconds.map((c) => ({ key: c.key, node: c.render(r) })).filter((c) => !emptySecondCell(c.node));
+      return (
+        <div style={{ minWidth: 0 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
+            {selectable && !coarse ? (
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", minWidth: 22, height: 22 }}>
+                {q.icon && <span className="row-icon">{q.icon(r)}</span>}
+                {check(r)}
+              </span>
+            ) : (
+              q.icon?.(r)
+            )}
+            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{nameCol.render(r)}</span>
+          </span>
+          {cells.length > 0 && (
+            <div className="row-second" style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM, overflowWrap: "anywhere" }}>
+              {cells.map((c) => (
+                <span key={c.key} className="row-second-item">{c.node}</span>
+              ))}
+            </div>
           )}
-          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{nameCol.render(r)}</span>
-        </span>
-        {seconds.length > 0 && (
-          <div className="row-second" style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM, overflowWrap: "anywhere" }}>
-            {seconds.map((c, i) => (
-              <Fragment key={c.key}>
-                {i > 0 ? " · " : ""}
-                {c.render(r)}
-              </Fragment>
-            ))}
-          </div>
-        )}
-      </div>
-    );
+        </div>
+      );
+    };
     const rowEnd = (r: T) => {
       const end = ends.get(r.id);
       if (!end) return null;

@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import Listing from "../../components/files/Listing";
 
 import { useState } from "react";
-import { App, Alert, Button, Select } from "antd";
+import { App, Alert, Button, Grid, Select } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
@@ -43,6 +43,8 @@ function LinksView() {
   const { t } = useT();
   const adminText = useAdminText();
   const lang = useLang();
+  // On a phone the kind, created and status cells are the name's second line, so they read inline, not as stacked blocks (mob4).
+  const narrow = !Grid.useBreakpoint().md;
   const qc = useQueryClient();
   const account = useAccountID();
   useManageTitle("links.title");
@@ -131,30 +133,36 @@ function LinksView() {
           {t("links.title")}
         </h1>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <label htmlFor="links-audience">{t("links.filter.audience")}</label>
-          <Select
-            id="links-audience"
-            value={filter.audience}
-            onChange={(v: AudienceFilter) => setAudience(v)}
-            options={[
-              { value: "all", label: t("links.filter.all") },
-              { value: "organisation", label: t("links.audience.organisation") },
-              { value: "anyone", label: t("links.audience.anyone") },
-            ]}
-            style={{ minWidth: 160 }}
-          />
-          <label htmlFor="links-kind">{t("links.filter.kind")}</label>
-          <Select
-            id="links-kind"
-            value={filter.kind}
-            onChange={(v: KindFilter) => setKind(v)}
-            options={[
-              { value: "all", label: t("links.filter.all") },
-              { value: "access", label: t("links.kind.access") },
-              { value: "drop", label: t("links.kind.drop") },
-            ]}
-            style={{ minWidth: 160 }}
-          />
+          {/* Each label stays with its select in one wrapping unit (mob4): as separate flex items the label sat on one row while
+              its select wrapped to the next at 360 px. The pair wraps together or not at all. */}
+          <span style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8 }}>
+            <label htmlFor="links-audience">{t("links.filter.audience")}</label>
+            <Select
+              id="links-audience"
+              value={filter.audience}
+              onChange={(v: AudienceFilter) => setAudience(v)}
+              options={[
+                { value: "all", label: t("links.filter.all") },
+                { value: "organisation", label: t("links.audience.organisation") },
+                { value: "anyone", label: t("links.audience.anyone") },
+              ]}
+              style={{ minWidth: 160 }}
+            />
+          </span>
+          <span style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8 }}>
+            <label htmlFor="links-kind">{t("links.filter.kind")}</label>
+            <Select
+              id="links-kind"
+              value={filter.kind}
+              onChange={(v: KindFilter) => setKind(v)}
+              options={[
+                { value: "all", label: t("links.filter.all") },
+                { value: "access", label: t("links.kind.access") },
+                { value: "drop", label: t("links.kind.drop") },
+              ]}
+              style={{ minWidth: 160 }}
+            />
+          </span>
         </div>
       </div>
 
@@ -198,36 +206,56 @@ function LinksView() {
               key: "kind",
               title: t("links.filter.kind"),
               secondary: true,
-              render: (l) => (
-                <span style={{ display: "block" }}>
-                  <span style={{ display: "block" }}>{text(kindLabel(l))}</span>
-                  {l.role && <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t(`role.${l.role}`)}</span>}
-                </span>
-              ),
+              render: (l) =>
+                narrow ? (
+                  <span>
+                    {text(kindLabel(l))}
+                    {l.role && <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}> {t(`role.${l.role}`)}</span>}
+                  </span>
+                ) : (
+                  <span style={{ display: "block" }}>
+                    <span style={{ display: "block" }}>{text(kindLabel(l))}</span>
+                    {l.role && <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t(`role.${l.role}`)}</span>}
+                  </span>
+                ),
             },
             {
               key: "created",
               title: t("keys.created"),
               secondary: true,
-              render: (l) => (
-                <span style={{ display: "block" }}>
-                  <time dateTime={l.created_at}>{formatDate(l.created_at, lang)}</time>
-                  <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(creatorLabel(l))}</span>
-                </span>
-              ),
+              render: (l) =>
+                narrow ? (
+                  <span>
+                    <time dateTime={l.created_at}>{formatDate(l.created_at, lang)}</time>
+                    <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}> {text(creatorLabel(l))}</span>
+                  </span>
+                ) : (
+                  <span style={{ display: "block" }}>
+                    <time dateTime={l.created_at}>{formatDate(l.created_at, lang)}</time>
+                    <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(creatorLabel(l))}</span>
+                  </span>
+                ),
             },
             {
               key: "status",
               title: t("people.detail.status"),
               secondary: true,
-              render: (l) => (
-                <span style={{ display: "block" }}>
-                  <span style={{ display: "block" }}>{l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}</span>
-                  {statusKeys(l).map((s, i) => (
-                    <span key={i} style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(s)}</span>
-                  ))}
-                </span>
-              ),
+              render: (l) =>
+                narrow ? (
+                  <span>
+                    {l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}
+                    {statusKeys(l).map((s, i) => (
+                      <span key={i} style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}> {text(s)}</span>
+                    ))}
+                  </span>
+                ) : (
+                  <span style={{ display: "block" }}>
+                    <span style={{ display: "block" }}>{l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}</span>
+                    {statusKeys(l).map((s, i) => (
+                      <span key={i} style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(s)}</span>
+                    ))}
+                  </span>
+                ),
             },
           ]}
           actions={(l) => [
