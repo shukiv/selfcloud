@@ -158,6 +158,7 @@ fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (d
 fn	lib/manage/api.ts:updateAccount	account update	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:updatePerson	user update	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:usage	account usage	cli9a2	built in cli9a2
+fn	lib/media/api.ts:listPlayed	-	-	CLI command later, slice mp4c (decision 206)
 fn	lib/notifications/api.ts:getEmailSwitch	-	-	browser session only: the server refuses every token on this route
 fn	lib/notifications/api.ts:listNotices	-	-	browser session only: the server refuses every token on this route
 fn	lib/notifications/api.ts:markRead	-	-	browser session only: the server refuses every token on this route

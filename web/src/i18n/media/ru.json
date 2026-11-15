@@ -1,8 +1,1 @@
-{
-  "media.title": "Медиа",
-  "media.tab.nowPlaying": "Сейчас играет",
-  "media.queue.length": "Длительность",
-  "media.empty.title": "Ничего не воспроизводится",
-  "media.empty.body": "Включите видео или песню из своих файлов, и они появятся здесь.",
-  "media.empty.action": "Перейти в Мои файлы"
-}
+{"media.title": "Медиа", "media.tab.nowPlaying": "Сейчас играет", "media.queue.length": "Длительность", "media.tab.videos": "Видео", "media.tab.music": "Музыка", "media.tab.recent": "Недавно воспроизведённые", "media.empty.title": "Ничего не воспроизводится", "media.empty.body": "Включите видео или песню из своих файлов, и они появятся здесь.", "media.empty.action": "Перейти в Мои файлы", "media.lib.col.folder": "Папка", "media.lib.col.artist": "Исполнитель", "media.lib.col.album": "Альбом", "media.lib.col.length": "Длительность", "media.lib.col.played": "Воспроизведено", "media.lib.col.progress": "Прогресс", "media.lib.progressOf": "{position} из {duration}", "media.lib.openFolder": "Открыть папку", "media.lib.searchOff.title": "Библиотеке нужен поиск", "media.lib.searchOff.body": "Поиск отключён на этом сервере, поэтому видео и музыка не могут отображаться здесь.", "media.lib.rateLimited": "Слишком много поисков. Подождите минуту и повторите.", "media.lib.empty.videos.title": "Нет видео", "media.lib.empty.videos.body": "Доступные вам видео появятся здесь. Добавьте их в Моих файлах.", "media.lib.empty.music.title": "Нет музыки", "media.lib.empty.music.body": "Доступные вам песни появятся здесь. Добавьте их в Моих файлах.", "media.lib.empty.recent.title": "Пока ничего не воспроизводилось", "media.lib.empty.recent.body": "Включите видео или песню, и они появятся здесь с местом, где вы остановились."}

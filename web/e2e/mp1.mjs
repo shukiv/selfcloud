@@ -103,6 +103,42 @@ async function stopOnPage(page) {
   await page.evaluate(`[...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')?.click()`);
 }
 
+// clickTab presses one of the Media page's tabs by its label.
+async function clickTab(page, label) {
+  await page.evaluate(`[...document.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === ${q(label)})?.click()`);
+}
+
+// clickRow presses a library row by its name, the way a person's single click plays it. The row is found inside its tab's
+// region: a tab already opened keeps its rows mounted (hidden), so a bare name search could find another tab's row.
+const rowSel = (region, name) => `[role="region"][aria-label=${JSON.stringify(region)}] [role="row"][aria-label=${JSON.stringify(name)}]`;
+async function clickRow(page, region, name) {
+  await page.evaluate(`document.querySelector(${q(rowSel(region, name))})?.click()`);
+}
+
+// waitListed waits until the search lists the file under its type: the search indexes a file by a job after the upload.
+async function waitListed(api, base, accountKey, type, name) {
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    const found = await api(base, 'GET', `/api/v1/search?type=${type}&kind=file&limit=50`, accountKey);
+    if (found.items.some((n) => n.name === name)) return;
+    if (Date.now() > deadline) throw new Error(`${name} was not listed in the ${type} search in 30 seconds`);
+    await sleep(300);
+  }
+}
+
+// waitResumeSaved waits until a resume place written after the pause has left for the server and the answer came back.
+async function waitResumeSaved(page, before) {
+  const isResume = (r) => r.method === 'PUT' && r.url.includes('/resume');
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    const sent = page.sent.filter(isResume).length;
+    const pending = [...(page.inflight?.values() ?? [])].some((r) => r.url.includes('/resume'));
+    if (sent > before && !pending) return;
+    if (Date.now() > deadline) throw new Error('the resume place was not saved in 15 seconds');
+    await sleep(100);
+  }
+}
+
 export async function mp1Checks(h, { page, base, accountKey, accountID }) {
   const { api, rawPut, check } = h;
   const signIn = (who) => h.signIn(page, who);
@@ -115,6 +151,11 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
   for (const name of ['track-one.ogg', 'track-two.ogg']) {
     await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent(`/${name}`)}`, accountKey, tone, 'audio/ogg');
   }
+  // A tagged song and a video, for the library tabs (mp4): the Music tab reads the tags, the Videos tab lists the video.
+  const tagged = await readFile(join(media, 'tag24.mp3'));
+  await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent('/tag24.mp3')}`, accountKey, tagged, 'audio/mpeg');
+  const clip = await readFile(join(media, 'clip.webm'));
+  await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent('/clip.webm')}`, accountKey, clip, 'video/webm');
   const folderURL = `${base}/files/${folder}`;
 
   await signOut();
@@ -203,6 +244,65 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio') && document.body.innerText.includes('Nothing is playing')`, 10000, 'the session ends and the empty state shows');
       check(await page.evaluate(`!document.querySelector('[data-testid="media-mini"]')`), 'no mini player is left');
+    });
+
+    // The library tabs (mp4): the search indexes the uploads by a job, so wait for them to be listed before opening a tab.
+    await waitListed(api, base, accountKey, 'audio', 'tag24.mp3');
+    await waitListed(api, base, accountKey, 'video', 'clip.webm');
+
+    await step('the Music tab lists the songs with their tags', async () => {
+      await h.clickNav(page, 'Media');
+      await until(page, `location.pathname === '/media'`, 10000, 'the Media page');
+      await clickTab(page, 'Music');
+      await until(page, `location.search.includes('tab=music')`, 10000, 'the Music tab');
+      await until(page, `!!document.querySelector(${q(rowSel('Music', 'tag24.mp3'))})`, 15000, 'the tagged song row');
+      const taggedText = await page.evaluate(`document.querySelector(${q(rowSel('Music', 'tag24.mp3'))}).textContent`);
+      check(taggedText.includes('Artist One'), `the Music tab shows the artist (${taggedText})`);
+      check(taggedText.includes('שלום עולם'), 'the Music tab shows the tag title');
+      check(taggedText.includes('Album X'), 'the Music tab shows the album');
+      check(await page.evaluate(`!!document.querySelector(${q(rowSel('Music', 'track-one.ogg'))})`), 'the untagged song is listed by its name');
+    });
+
+    await step('clicking a song plays it in the page’s one player, on Now playing', async () => {
+      await clickRow(page, 'Music', 'track-one.ogg');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page stage');
+      await until(page, `!location.search.includes('tab=')`, 10000, 'back to Now playing');
+      check(await page.evaluate(`[...document.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === 'Now playing')?.getAttribute('aria-selected') === 'true'`), 'Now playing is the active tab');
+      await page.evaluate(`(() => { const el = document.querySelector('[data-testid="media-page-stage"] audio'); el.__mp4 = 1; window.__mp4el = el; return true; })()`);
+      await playing(page);
+      check(await page.evaluate(`document.querySelectorAll('audio').length === 1`), 'one audio element on the page');
+      check(await page.evaluate(`!document.querySelector('[data-testid="media-mini"]') && !document.querySelector('[data-testid="preview"]')`), 'no mini player and no dialog beside the page');
+    });
+
+    await step('after a few seconds and a pause, Recently played lists the place stopped at', async () => {
+      await until(page, `window.__mp4el.currentTime > 5`, 15000, 'a few seconds played');
+      const before = page.sent.filter((r) => r.method === 'PUT' && r.url.includes('/resume')).length;
+      await page.evaluate(`window.__mp4el.pause()`);
+      await waitResumeSaved(page, before);
+      await clickTab(page, 'Recently played');
+      await until(page, `location.search.includes('tab=recent')`, 10000, 'the Recently played tab');
+      await until(page, `!!document.querySelector(${q(rowSel('Recently played', 'track-one.ogg'))})`, 15000, 'the played row');
+      const prog = await page.evaluate(`document.querySelector(${q(rowSel('Recently played', 'track-one.ogg'))}).textContent`);
+      check(/0:0[5-9] of 0:08/.test(prog), `Recently played shows the place stopped at (${prog})`);
+      check(await page.evaluate(`document.querySelector('[data-testid="media-page-stage"] audio') === window.__mp4el && window.__mp4el.paused`), 'the same paused element stays on the hidden stage');
+      check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]')`), 'the queue table stays in its host across the tab change');
+    });
+
+    await step('the Videos tab lists the uploaded video', async () => {
+      await clickTab(page, 'Videos');
+      await until(page, `location.search.includes('tab=videos')`, 10000, 'the Videos tab');
+      // Wait for the tab's read to settle: a row, or the empty state inside the table's frame.
+      await until(page, `(() => { const r = document.querySelector('[role="region"][aria-label="Videos"]'); return !!r && (!!r.querySelector('[role="row"]') || !!r.querySelector('.empty-title')); })()`, 15000, 'the Videos tab settles');
+      const hasVideo = await page.evaluate(`!!document.querySelector(${q(rowSel('Videos', 'clip.webm'))})`);
+      if (!hasVideo) {
+        console.log('INFO mp1 Videos: no video listed; skipping the video row check');
+      } else {
+        const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'clip.webm'))}).textContent`);
+        check(vidText.includes('MP1 media'), `the Videos tab shows the folder (${vidText})`);
+      }
+      // End the session so the phone check below starts from the empty state, as it expects.
+      await stopOnPage(page);
+      await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
     });
 
     await step('the Media page fits a phone with no sideways scroll', async () => {

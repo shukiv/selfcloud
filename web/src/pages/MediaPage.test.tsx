@@ -5,12 +5,14 @@
 // page, and StrictMode's double mount does not end the session.
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getPlayback, startPlayback, stopPlayback } from "../lib/files/playback";
 import { Pager } from "../lib/files/pager";
 import type { Node } from "../lib/files/types";
+import { createQueryClient } from "../lib/query";
 import { session } from "../lib/session";
 import { fail, stubFetch } from "../test/fetchStub";
 import MediaPage from "./MediaPage";
@@ -26,20 +28,22 @@ function LocationProbe() {
 
 function renderPage(strict = false, entry = "/media") {
   const page = (
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route
-          path="/media"
-          element={
-            <>
-              <MediaPage />
-              <LocationProbe />
-            </>
-          }
-        />
-        <Route path="/files" element={<p>files page</p>} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route
+            path="/media"
+            element={
+              <>
+                <MediaPage />
+                <LocationProbe />
+              </>
+            }
+          />
+          <Route path="/files" element={<p>files page</p>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
   return render(strict ? <StrictMode>{page}</StrictMode> : page);
 }

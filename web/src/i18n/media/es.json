@@ -1,8 +1,1 @@
-{
-  "media.title": "Multimedia",
-  "media.tab.nowPlaying": "Reproduciendo ahora",
-  "media.queue.length": "Duración",
-  "media.empty.title": "No hay nada en reproducción",
-  "media.empty.body": "Reproduce un vídeo o una canción desde tus archivos y aparecerá aquí.",
-  "media.empty.action": "Ir a Mis archivos"
-}
+{"media.title": "Multimedia", "media.tab.nowPlaying": "Reproduciendo ahora", "media.queue.length": "Duración", "media.tab.videos": "Vídeos", "media.tab.music": "Música", "media.tab.recent": "Reproducido recientemente", "media.empty.title": "No hay nada en reproducción", "media.empty.body": "Reproduce un vídeo o una canción desde tus archivos y aparecerá aquí.", "media.empty.action": "Ir a Mis archivos", "media.lib.col.folder": "Carpeta", "media.lib.col.artist": "Artista", "media.lib.col.album": "Álbum", "media.lib.col.length": "Duración", "media.lib.col.played": "Reproducido", "media.lib.col.progress": "Progreso", "media.lib.progressOf": "{position} de {duration}", "media.lib.openFolder": "Abrir carpeta", "media.lib.searchOff.title": "La biblioteca necesita la búsqueda", "media.lib.searchOff.body": "La búsqueda está desactivada en este servidor, así que los vídeos y la música no pueden aparecer aquí.", "media.lib.rateLimited": "Demasiadas búsquedas. Espera un minuto y vuelve a intentarlo.", "media.lib.empty.videos.title": "Sin vídeos", "media.lib.empty.videos.body": "Los vídeos a los que tienes acceso aparecen aquí. Añade algunos en Mis archivos.", "media.lib.empty.music.title": "Sin música", "media.lib.empty.music.body": "Las canciones a las que tienes acceso aparecen aquí. Añade algunas en Mis archivos.", "media.lib.empty.recent.title": "Aún no se ha reproducido nada", "media.lib.empty.recent.body": "Reproduce un vídeo o una canción y aparecerá aquí con el punto en el que te detuviste."}

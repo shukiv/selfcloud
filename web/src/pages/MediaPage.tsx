@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
-import { Alert, Button, Tabs } from "antd";
-import { useNavigate } from "react-router-dom";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { Alert, Button, Skeleton, Tabs } from "antd";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import { brand } from "../lib/brand";
 import { attachPage, getPlayback, subscribePlayback } from "../lib/files/playback";
@@ -10,10 +10,24 @@ import { useT } from "../lib/i18n";
 import { useMT } from "../lib/media/i18n";
 import { useStore } from "../lib/store";
 
-// Media is the page of the running session (decision 186): one tab for now, the player on its stage and the queue below.
-// The session's player box moves here while the page is open (playback.attachPage), so the element that plays is never
-// made again for the move. With no session the tab says so and offers the way back to My files. The hosts stay mounted
-// either way, so a session that starts or ends while the page is open draws into the same places.
+// Media is the page of the running session and the library of the person's media (decisions 186, 206): the Now playing
+// tab keeps the session's player on its stage and the queue below it, and the library tabs list the videos, the music
+// and the recently played files. The session's player box moves into the stage while the page is open
+// (playback.attachPage), so the element that plays is never made again for the move. The hosts sit in the Now playing
+// pane, which is force-rendered and never destroyed: a library tab hides the pane, it does not unmount the hosts, so a
+// session keeps playing and its box keeps its identity across tab changes. With no session the pane says so and offers
+// the way back to My files.
+
+// The library is a separate chunk: its shared list is not part of the page's first load.
+const MediaLibrary = lazy(() => import("../components/media/MediaLibrary"));
+
+type TabKey = "now-playing" | "videos" | "music" | "recent";
+
+// tabOf reads the tab from the address: an absent or unknown value is Now playing.
+function tabOf(params: URLSearchParams): TabKey {
+  const v = params.get("tab");
+  return v === "videos" || v === "music" || v === "recent" ? v : "now-playing";
+}
 
 export default function MediaPage() {
   const { t, ready, failed } = useMT();
@@ -23,6 +37,13 @@ export default function MediaPage() {
   const snap = useSyncExternalStore(subscribePlayback, getPlayback, getPlayback);
   const stageRef = useRef<HTMLDivElement>(null);
   const queueRef = useRef<HTMLDivElement>(null);
+  const [params, setParams] = useSearchParams();
+  const tab = tabOf(params);
+
+  // choose writes the tab in the address with replace (the back button leaves the page, it does not walk the tabs).
+  const choose = (key: string) => {
+    setParams(key === "now-playing" ? {} : { tab: key }, { replace: true });
+  };
 
   // The hosts are given in a layout effect, so the detach runs before they leave the page: the box is parked while the
   // session still holds it, and the viewer closes one microtask later (a remount in the same tick keeps the session).
@@ -50,37 +71,62 @@ export default function MediaPage() {
     );
   }
 
+  const library = (key: "videos" | "music" | "recent", label: string) => ({
+    key,
+    label,
+    children: (
+      <Suspense fallback={<Skeleton active />}>
+        <MediaLibrary tab={key} onPlay={() => choose("now-playing")} />
+      </Suspense>
+    ),
+  });
+
   return (
     <div>
       <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px" }}>{ready ? t("media.title") : mt("nav.media")}</h1>
       <Tabs
+        activeKey={tab}
+        onChange={choose}
         items={[
           {
             key: "now-playing",
             label: ready ? t("media.tab.nowPlaying") : mt("nav.media"),
-            children:
-              snap.seed === null && ready ? (
-                <EmptyState
-                  role="status"
-                  text={
-                    <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <span style={{ fontWeight: 600 }}>{t("media.empty.title")}</span>
-                      <span>{t("media.empty.body")}</span>
-                    </span>
-                  }
-                >
-                  <Button type="primary" onClick={() => navigate("/files")}>
-                    {t("media.empty.action")}
-                  </Button>
-                </EmptyState>
-              ) : null,
+            // The pane is drawn even while another tab is active, and is never destroyed: the hosts stay mounted.
+            forceRender: true,
+            children: (
+              <>
+                {snap.seed === null && ready && (
+                  <EmptyState
+                    role="status"
+                    text={
+                      <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontWeight: 600 }}>{t("media.empty.title")}</span>
+                        <span>{t("media.empty.body")}</span>
+                      </span>
+                    }
+                  >
+                    <Button type="primary" onClick={() => navigate("/files")}>
+                      {t("media.empty.action")}
+                    </Button>
+                  </EmptyState>
+                )}
+                {/* The session's places: the player box moves into the stage, the queue panel into the host below it.
+                    Empty hosts take no room while no session runs. The stage's test id is the page's own; the player
+                    inside keeps media-stage. */}
+                <div ref={stageRef} className="media-page-stage" data-testid="media-page-stage" />
+                <div ref={queueRef} className="media-page-queue" data-testid="media-page-queue" />
+              </>
+            ),
           },
+          ...(ready
+            ? [
+                library("videos", t("media.tab.videos")),
+                library("music", t("media.tab.music")),
+                library("recent", t("media.tab.recent")),
+              ]
+            : []),
         ]}
       />
-      {/* The session's places: the player box moves into the stage, the queue panel into the host below it. Empty hosts
-          take no room while no session runs. The stage's test id is the page's own; the player inside keeps media-stage. */}
-      <div ref={stageRef} className="media-page-stage" data-testid="media-page-stage" />
-      <div ref={queueRef} className="media-page-queue" data-testid="media-page-queue" />
     </div>
   );
 }

@@ -1,8 +1,1 @@
-{
-  "media.title": "الوسائط",
-  "media.tab.nowPlaying": "قيد التشغيل الآن",
-  "media.queue.length": "المدة",
-  "media.empty.title": "لا يوجد شيء قيد التشغيل",
-  "media.empty.body": "شغّل فيديو أو أغنية من ملفاتك وستظهر هنا.",
-  "media.empty.action": "الذهاب إلى ملفاتي"
-}
+{"media.title": "الوسائط", "media.tab.nowPlaying": "قيد التشغيل الآن", "media.queue.length": "المدة", "media.tab.videos": "فيديوهات", "media.tab.music": "موسيقى", "media.tab.recent": "شُغّلت مؤخرًا", "media.empty.title": "لا يوجد شيء قيد التشغيل", "media.empty.body": "شغّل فيديو أو أغنية من ملفاتك وستظهر هنا.", "media.empty.action": "الذهاب إلى ملفاتي", "media.lib.col.folder": "مجلد", "media.lib.col.artist": "الفنان", "media.lib.col.album": "الألبوم", "media.lib.col.length": "المدة", "media.lib.col.played": "التشغيل", "media.lib.col.progress": "التقدم", "media.lib.progressOf": "{position} من {duration}", "media.lib.openFolder": "فتح المجلد", "media.lib.searchOff.title": "تحتاج المكتبة إلى البحث", "media.lib.searchOff.body": "البحث معطّل على هذا الخادم، لذلك لا يمكن عرض الفيديوهات والموسيقى هنا.", "media.lib.rateLimited": "عمليات بحث كثيرة. انتظر دقيقة ثم حاول مرة أخرى.", "media.lib.empty.videos.title": "لا توجد فيديوهات", "media.lib.empty.videos.body": "تظهر هنا الفيديوهات التي يمكنك الوصول إليها. أضف بعضها في ملفاتي.", "media.lib.empty.music.title": "لا توجد موسيقى", "media.lib.empty.music.body": "تظهر هنا الأغاني التي يمكنك الوصول إليها. أضف بعضها في ملفاتي.", "media.lib.empty.recent.title": "لم يُشغّل شيء بعد", "media.lib.empty.recent.body": "شغّل فيديو أو أغنية وستظهر هنا مع الموضع الذي توقفت عنده."}

@@ -1,8 +1,1 @@
-{
-  "media.title": "Médias",
-  "media.tab.nowPlaying": "Lecture en cours",
-  "media.queue.length": "Durée",
-  "media.empty.title": "Rien n'est en lecture",
-  "media.empty.body": "Lancez la lecture d'une vidéo ou d'une chanson depuis vos fichiers : elle s'affichera ici.",
-  "media.empty.action": "Accéder à Mes fichiers"
-}
+{"media.title": "Médias", "media.tab.nowPlaying": "Lecture en cours", "media.queue.length": "Durée", "media.tab.videos": "Vidéos", "media.tab.music": "Musique", "media.tab.recent": "Lus récemment", "media.empty.title": "Rien n'est en lecture", "media.empty.body": "Lancez la lecture d'une vidéo ou d'une chanson depuis vos fichiers : elle s'affichera ici.", "media.empty.action": "Accéder à Mes fichiers", "media.lib.col.folder": "Dossier", "media.lib.col.artist": "Artiste", "media.lib.col.album": "Album", "media.lib.col.length": "Durée", "media.lib.col.played": "Lecture", "media.lib.col.progress": "Progression", "media.lib.progressOf": "{position} sur {duration}", "media.lib.openFolder": "Ouvrir le dossier", "media.lib.searchOff.title": "La bibliothèque a besoin de la recherche", "media.lib.searchOff.body": "La recherche est désactivée sur ce serveur : les vidéos et la musique ne peuvent pas être listées ici.", "media.lib.rateLimited": "Trop de recherches. Attendez une minute, puis réessayez.", "media.lib.empty.videos.title": "Aucune vidéo", "media.lib.empty.videos.body": "Les vidéos auxquelles vous avez accès apparaissent ici. Ajoutez-en dans Mes fichiers.", "media.lib.empty.music.title": "Aucune musique", "media.lib.empty.music.body": "Les chansons auxquelles vous avez accès apparaissent ici. Ajoutez-en dans Mes fichiers.", "media.lib.empty.recent.title": "Rien n'a encore été lu", "media.lib.empty.recent.body": "Lancez une vidéo ou une chanson : elle apparaîtra ici avec l'endroit où vous vous êtes arrêté."}

@@ -1,8 +1,1 @@
-{
-  "media.title": "מדיה",
-  "media.tab.nowPlaying": "מתנגן עכשיו",
-  "media.queue.length": "אורך",
-  "media.empty.title": "שום דבר לא מתנגן",
-  "media.empty.body": "נגנו סרטון או שיר מהקבצים שלכם והוא יופיע כאן.",
-  "media.empty.action": "מעבר לקבצים שלי"
-}
+{"media.title": "מדיה", "media.tab.nowPlaying": "מתנגן עכשיו", "media.queue.length": "אורך", "media.tab.videos": "סרטונים", "media.tab.music": "מוזיקה", "media.tab.recent": "הושמעו לאחרונה", "media.empty.title": "שום דבר לא מתנגן", "media.empty.body": "נגנו סרטון או שיר מהקבצים שלכם והוא יופיע כאן.", "media.empty.action": "מעבר לקבצים שלי", "media.lib.col.folder": "תיקייה", "media.lib.col.artist": "אמן", "media.lib.col.album": "אלבום", "media.lib.col.length": "אורך", "media.lib.col.played": "הושמע", "media.lib.col.progress": "התקדמות", "media.lib.progressOf": "{position} מתוך {duration}", "media.lib.openFolder": "פתיחת התיקייה", "media.lib.searchOff.title": "הספרייה זקוקה לחיפוש", "media.lib.searchOff.body": "החיפוש כבוי בשרת הזה, ולכן אי אפשר להציג כאן סרטונים ומוזיקה.", "media.lib.rateLimited": "יותר מדי חיפושים. המתינו דקה ונסו שוב.", "media.lib.empty.videos.title": "אין סרטונים", "media.lib.empty.videos.body": "סרטונים שנגישים לכם יופיעו כאן. הוסיפו כמה בקבצים שלי.", "media.lib.empty.music.title": "אין מוזיקה", "media.lib.empty.music.body": "שירים שנגישים לכם יופיעו כאן. הוסיפו כמה בקבצים שלי.", "media.lib.empty.recent.title": "עדיין לא הושמע כלום", "media.lib.empty.recent.body": "נגנו סרטון או שיר והוא יופיע כאן עם המקום שבו עצרתם."}

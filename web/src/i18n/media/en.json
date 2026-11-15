@@ -1,8 +1,1 @@
-{
-  "media.title": "Media",
-  "media.tab.nowPlaying": "Now playing",
-  "media.queue.length": "Length",
-  "media.empty.title": "Nothing is playing",
-  "media.empty.body": "Play a video or a song from your files and it shows here.",
-  "media.empty.action": "Go to My files"
-}
+{"media.title": "Media", "media.tab.nowPlaying": "Now playing", "media.queue.length": "Length", "media.tab.videos": "Videos", "media.tab.music": "Music", "media.tab.recent": "Recently played", "media.empty.title": "Nothing is playing", "media.empty.body": "Play a video or a song from your files and it shows here.", "media.empty.action": "Go to My files", "media.lib.col.folder": "Folder", "media.lib.col.artist": "Artist", "media.lib.col.album": "Album", "media.lib.col.length": "Length", "media.lib.col.played": "Played", "media.lib.col.progress": "Progress", "media.lib.progressOf": "{position} of {duration}", "media.lib.openFolder": "Open folder", "media.lib.searchOff.title": "The library needs search", "media.lib.searchOff.body": "Search is turned off on this server, so videos and music cannot be listed here.", "media.lib.rateLimited": "Too many searches. Wait a minute, then try again.", "media.lib.empty.videos.title": "No videos", "media.lib.empty.videos.body": "Videos you can reach appear here. Add some in My files.", "media.lib.empty.music.title": "No music", "media.lib.empty.music.body": "Songs you can reach appear here. Add some in My files.", "media.lib.empty.recent.title": "Nothing played yet", "media.lib.empty.recent.body": "Play a video or a song and it shows here with the place you stopped at."}
