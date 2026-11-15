@@ -176,4 +176,13 @@ describe("SelectionBar fits its own width (decision 185)", () => {
     expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Copy link", "Download", "Move to…", "Delete", "More actions"]);
     expect(entryNames()).toEqual(["Details"]);
   });
+
+  // The first draw keeps every icon until the width is measured, and the measure lays the row out once with them all. The bar
+  // clips that draw so the icons past its edge cannot widen the page: on a phone a wider page grows the layout viewport and
+  // zooms out, clamping the window's scrollY down, which closes a menu opened next (the More tap). clip, not hidden, so a focus
+  // on an icon does not scroll the bar sideways.
+  it("clips its own overflow, so the unmeasured first draw cannot widen the page and clamp the scroll", () => {
+    const { bar } = fitRenders({ width: undefined });
+    expect(bar.style.overflow).toBe("clip");
+  });
 });
