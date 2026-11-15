@@ -556,6 +556,15 @@ var remoteCommands = []remoteCommand{
                      [--who-viewed true|false] [--external-sharing true|false] [--yes]
                                  change the switches given; turning public links off asks first
 `, run: manage.SharingPolicySet},
+	// The embed site commands.
+	{name: "embed show", route: "GET /api/v1/accounts/{acc}/embed",
+		help: `  embed show [--account ACC] [--json]
+                                 the sites that may show the account's pages in a frame
+`, run: manage.EmbedShow},
+	{name: "embed set", route: "PUT /api/v1/accounts/{acc}/embed",
+		help: `  embed set [--account ACC] ORIGIN... | --clear [--yes]
+                                 replace the account's embed sites; clearing asks first
+`, run: manage.EmbedSet},
 	{name: "star", route: "PUT /api/v1/nodes/{nod}/star",
 		notProbed: "needs a device token; internal/cli/files records its calls",
 		help: `  star NODE...                   star one or more nodes

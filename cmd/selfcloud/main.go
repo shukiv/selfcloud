@@ -82,7 +82,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "info", "api", "profile", "login", "logout", "whoami",
 		"ls", "stat", "mkdir", "touch", "mv", "cp", "rm", "trash", "shortcut", "unlock", "put", "get", "edit", "upload", "settings",
 		"folder", "group", "user", "share", "link", "access", "shared", "webhook", "import", "job", "zip",
-		"account", "storage", "label", "sharing",
+		"account", "storage", "label", "sharing", "embed",
 		"star", "unstar", "starred", "recent", "comment", "activity", "search", "people", "tag", "doc", "template", "thumbnail", "export":
 		if code, ok := remote(args, stdout, stderr); ok {
 			return code
