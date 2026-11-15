@@ -30,20 +30,30 @@ var backupClock = time.Now
 var backupLink = os.Link
 
 // backupCommand snapshots the database (--to DIR) or verifies a snapshot (--check FILE). The snapshot holds the
-// database only; blobs/ and keys/ are copied with other tools after it (design section 12). Exit 0 is good, 1 means
-// the copy failed its check or the checked file has problems, 2 means the command could not run.
+// database only; blobs/ and keys/ are copied with other tools after it (design section 12). --check reads no
+// configuration, so a snapshot can be verified on any machine with the binary, even one with no configuration file.
+// backup -h exits 0 because production scripts probe for the command with it. Exit 0 is good, 1 means the copy
+// failed its check or the checked file has problems, 2 means the command could not run.
 func backupCommand(args []string, stdout, stderr io.Writer) int {
 	var (
 		to, check string
 		asJSON    bool
 	)
-	cfg, _, code := loadConfig("backup", args, stderr, 0, func(fs *flag.FlagSet) {
-		fs.StringVar(&to, "to", "", "write an online snapshot of the database into this `directory` (the database only; copy blobs/ and keys/ with other tools after the snapshot)")
-		fs.StringVar(&check, "check", "", "verify an existing snapshot `file` (read-only; writes nothing beside it)")
-		fs.BoolVar(&asJSON, "json", false, "print one JSON document instead of text")
-	})
-	if cfg == nil {
-		return code
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	path := fs.String("config", os.Getenv("SELFCLOUD_CONFIG"), "configuration `file` (YAML)")
+	fs.StringVar(&to, "to", "", "write an online snapshot of the database into this `directory` (the database only; copy blobs/ and keys/ with other tools after the snapshot)")
+	fs.StringVar(&check, "check", "", "verify an existing snapshot `file` (read-only; writes nothing beside it)")
+	fs.BoolVar(&asJSON, "json", false, "print one JSON document instead of text")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "selfcloud backup: expected %d argument(s), got %d\n", 0, fs.NArg())
+		return 2
 	}
 	switch {
 	case to != "" && check != "":
@@ -57,6 +67,11 @@ func backupCommand(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 	if check != "" {
 		return backupCheck(ctx, check, asJSON, stdout, stderr)
+	}
+	cfg, err := config.Load(*path, os.LookupEnv)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
 	}
 	return backupTo(ctx, cfg, to, asJSON, stdout, stderr)
 }
