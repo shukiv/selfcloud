@@ -380,6 +380,62 @@ func TestSharedExternal(t *testing.T) {
 	wantError(t, callSession(t, s, adminSess, "GET", "/api/v1/shared/external", nil), 403, apierr.Forbidden)
 }
 
+// TestSharedExternalDeviceToken: a terminal's device token reads the shared-with list as a browser session does
+// (decision 192). A token minted by an account key still gets the empty list, an unproved address gets the empty list
+// with email_proved false, and an installation admin and an account key keep the forbidden they have today.
+func TestSharedExternalDeviceToken(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	admin := adminKey(t, s)
+	accA, keyA := newAccount(t, s, admin, "Sharer")
+	fldA := newFolder(t, s, keyA, accA.ID, "Team")
+	fileA := putNode(t, s, keyA, fldA.ID, "/file.txt", "hello")
+	accB, keyB := newAccount(t, s, admin, "Recipient")
+	fldB := newFolder(t, s, keyB, accB.ID, "Team")
+	guest, guestSess := verifiedUser(t, s, keyB, accB.ID, "guest@example.com")
+	proof := proveByMail(t, s, guestSess, rec)
+	wantStatus(t, redeemProof(t, s, proof), 204)
+	enableExternal(t, s, keyA, accA.ID)
+	enableExternal(t, s, keyB, accB.ID)
+	wantStatus(t, extGrantCall(t, s, keyA, fileA.ID,
+		map[string]any{"email": "guest@example.com", "role": "viewer"}), 200)
+
+	// The proved grantee's device token lists the item with the same fields as the session.
+	_, devTok := approvedToken(t, s, guestSess)
+	sess := decode[extSharedList](t, callSession(t, s, guestSess, "GET", "/api/v1/shared/external", nil))
+	dev := decode[extSharedList](t, call(t, s, "GET", "/api/v1/shared/external", devTok, nil))
+	if len(sess.Items) != 1 || !sess.EmailProved {
+		t.Fatalf("session list = %+v", sess)
+	}
+	if !reflect.DeepEqual(dev, sess) {
+		t.Fatalf("device token list = %+v, want the session's %+v", dev, sess)
+	}
+
+	// A token the account key minted acting as the same user still gets the empty list.
+	delegated := mintFor(t, s, keyB, accB.ID, map[string]any{"folders": []string{fldB.ID}, "user": guest.ID})
+	if l := decode[extSharedList](t, call(t, s, "GET", "/api/v1/shared/external", delegated, nil)); len(l.Items) != 0 {
+		t.Fatalf("key-minted token's list = %+v", l)
+	}
+
+	// An unproved address via a device token gets the empty list, email_proved false.
+	_, guest2Sess := verifiedUser(t, s, keyB, accB.ID, "guest2@example.com")
+	wantStatus(t, extGrantCall(t, s, keyA, fileA.ID,
+		map[string]any{"email": "guest2@example.com", "role": "viewer"}), 200)
+	_, devTok2 := approvedToken(t, s, guest2Sess)
+	if l := decode[extSharedList](t, call(t, s, "GET", "/api/v1/shared/external", devTok2, nil)); len(l.Items) != 0 || l.EmailProved {
+		t.Fatalf("unproved device token's list = %+v", l)
+	}
+
+	// An account key keeps its forbidden. An installation admin keeps theirs: its session is refused on the route,
+	// and it cannot sign in at a terminal at all, so no device token of an admin reaches the route.
+	wantError(t, call(t, s, "GET", "/api/v1/shared/external", keyB, nil), 403, apierr.Forbidden)
+	_, adminSess := newAdminUser(t, s, admin, "admin@example.com")
+	wantError(t, callSession(t, s, adminSess, "GET", "/api/v1/shared/external", nil), 403, apierr.Forbidden)
+	st := cliStart(t, s)
+	wantError(t, cliApprove(t, s, adminSess, st.UserCode), 403, apierr.Forbidden)
+}
+
 // TestExternalGrantRoleOptional: the role may be left out or empty; both mean viewer.
 func TestExternalGrantRoleOptional(t *testing.T) {
 	t.Parallel()
