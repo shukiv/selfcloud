@@ -4,7 +4,8 @@
 // in English and Hebrew, My files, a folder opened under it, and the Starred item have one height, the top two have the menu item's
 // inline edges and corner radius, and My files' icon sits in the menu's icon column. Decision 193: every part of the expanded sidebar
 // (the brand's picture, New, the tree's rows, the menu's rows and the storage block) starts at one edge, the picture, the rows and the
-// block end at one edge, and the space above the picture is the side space S. On a finger (the drawer at 390 wide) every
+// block end at one edge, and the space above the picture is the side space S. The same edges hold when the middle scrolls (a short
+// window): its scrollbar sits in the sider's end padding. On a finger (the drawer at 390 wide) every
 // sidebar row is at least 44 pixels. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures are saved.
 import { mkdir } from 'node:fs/promises';
 import { setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
@@ -186,6 +187,24 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   await snap('sb-desktop-he-light.png');
   await setLanguage(page, 'English');
   await page.waitFor(`document.documentElement.dir === 'ltr'`, 10000);
+
+  // ---- The scrolling middle: a shorter window leaves the tree and the menu taller than the region, so its thin scrollbar appears.
+  // The scrollbar sits in the sider's end padding (Shell.tsx), so the rows keep the brand's and the storage block's end edge. The
+  // height shrinks until the region really scrolls (its own check, so the case cannot pass vacuously); the scrollbar's width is logged.
+  let middle = null;
+  let shortHeight = 800;
+  while (shortHeight > 240) {
+    shortHeight -= 100;
+    await size(1280, shortHeight, false);
+    await sleep(400);
+    middle = await page.evaluate(`(() => { const s = document.querySelector('.shell-sider .shell-scroll'); return s ? { tall: s.scrollHeight - s.clientHeight, w: s.offsetWidth - s.clientWidth } : null; })()`);
+    if (middle && middle.tall > 0) break;
+  }
+  check(middle !== null && middle.tall > 0, `English, light, scrolling middle: the sidebar's middle scrolls (window height ${shortHeight}, ${JSON.stringify(middle)})`);
+  console.log(`INFO English, light, scrolling middle: the scrollbar's width w=${middle ? middle.w : 'unknown'}`);
+  edgeChecks(await oneEdge(page), check, 'English, light, scrolling middle');
+  await size(1280, 800, false);
+  await sleep(300);
 
   // ---- A finger: the drawer at 390 wide. Every sidebar row (the tree's and the menu's) is at least 44 pixels.
   await setPhone(page, true);
