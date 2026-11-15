@@ -4,8 +4,8 @@
 // server and accounts: the sidebar's Media entry right after Starred, the page's empty state with its way back to My
 // files, a file played from My files that goes on in the mini player and then on the Media page — the same element,
 // marked, never made again — with the queue table below it (mp1b: a click on row 2 plays it in the page's one player)
-// and no mini player beside it, the mini player back on My files, the page's Stop and close that ends the session, and
-// the page fitting a phone with no sideways scroll. Run it
+// and no mini player beside it, the mini player back on My files, the page's Stop and close that ends the session, the
+// More menu's A-B loop and its sleep timer's End of this file, and the page fitting a phone with no sideways scroll. Run it
 // alone with SELFCLOUD_E2E_ONLY=mp1. The checks end signed in as the member, which the rest of the run expects; the
 // interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
@@ -147,6 +147,30 @@ async function waitResumeSaved(page, before) {
     if (Date.now() > deadline) throw new Error('the resume place was not saved in 15 seconds');
     await sleep(100);
   }
+}
+
+// moreNode names a visible More-menu entry by its text: a menu item or a submenu title. Submenu popups carry their own
+// class, so match any menuitem that is not inside a hidden dropdown or submenu.
+const moreNode = (text) => `[...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)} && !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden'))`;
+
+async function openMore(page) {
+  await page.evaluate(`document.querySelector('[data-testid="media-controls"] button[aria-label="More options"]').click()`);
+  await until(page, `!!(${moreNode('A-B loop')})`, 5000, 'the More menu');
+}
+
+async function moreItem(page, text) {
+  await until(page, `!!(${moreNode(text)})`, 5000, `the menu item ${text}`);
+}
+
+// The submenus open on hover, as antd's do; a mouseover is what the browser sends for it.
+async function openMoreSub(page, name) {
+  await moreItem(page, name);
+  await page.evaluate(`(${moreNode(name)}).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))`);
+}
+
+async function pickMore(page, text) {
+  await moreItem(page, text);
+  await page.evaluate(`(${moreNode(text)}).click()`);
 }
 
 export async function mp1Checks(h, { page, base, accountKey, accountID }) {
@@ -312,6 +336,55 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'clip.webm'))}).textContent`);
       check(vidText.includes('MP1 media'), `the Videos tab shows the folder (${vidText})`);
       // End the session so the phone check below starts from the empty state, as it expects.
+      await stopOnPage(page);
+      await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
+    });
+
+    // The More menu's A-B loop: A at about a second and B at two and a half, both set paused so the places are exact.
+    // Once B is set the place must return below B after it reaches B, with a second's slack for the element's own
+    // timeupdate pace, and play on from A.
+    await step("the More menu's A-B loop returns the place to A at B", async () => {
+      await openFolder(page, folderURL, 'track-one.ogg');
+      await dblClick(page, await rowPoint(page, 'track-one.ogg'));
+      await until(page, viewerShown, 15000, 'the viewer opens');
+      await playing(page);
+      await closeViewer(page);
+      await h.clickNav(page, 'Media');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page');
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 1; return true; })()`);
+      await openMore(page);
+      await openMoreSub(page, 'A-B loop');
+      await pickMore(page, 'Set start (A)');
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.currentTime = 2.5; return true; })()`);
+      await openMore(page);
+      await openMoreSub(page, 'A-B loop');
+      await pickMore(page, 'Set end (B)');
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.play(); return true; })()`);
+      await until(page, `(() => { const v = ${MEDIA}; return !!v && v.currentTime < 2.5; })()`, 2500, 'the place returns below B');
+      check(await page.evaluate(`(() => { const v = ${MEDIA}; return v.currentTime >= 0.9 && v.currentTime < 2.5; })()`), 'the place is back at A, below B');
+      await until(page, `(() => { const v = ${MEDIA}; return v.currentTime > 1.6; })()`, 5000, 'the loop plays on from A');
+      await openMore(page);
+      await openMoreSub(page, 'A-B loop');
+      await pickMore(page, 'Clear loop');
+    });
+
+    // End of this file: the file ends near its own end, and the queue does not move to the next track. The element
+    // stays ended, the playing name is unchanged, and the choice is spent (the menu shows Off again).
+    await step("the sleep timer's End of this file keeps the ended file on screen", async () => {
+      await openMore(page);
+      await openMoreSub(page, 'Sleep timer');
+      await pickMore(page, 'End of this file');
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.__mp5 = 1; v.currentTime = Math.max(0, (v.duration || 8) - 0.8); return true; })()`);
+      await until(page, `(() => { const v = ${MEDIA}; return !!v && v.ended; })()`, 10000, 'the file ends');
+      await sleep(1500);
+      const st = await page.evaluate(`(() => { const v = ${MEDIA}; return { same: !!v && v.__mp5 === 1, ended: !!v && v.ended, name: v ? v.getAttribute('aria-label') : null, row: (document.querySelector('[data-testid="media-page-queue"] .media-qrow--on') || {}).textContent || '' }; })()`);
+      check(st.same && st.ended, 'the same element stays ended');
+      check(st.name === 'track-one.ogg' && st.row.includes('track-one.ogg'), `the playing name is unchanged (${st.name}; row ${st.row.slice(0, 40)})`);
+      await openMore(page);
+      await openMoreSub(page, 'Sleep timer');
+      await moreItem(page, 'Off');
+      check(await page.evaluate(`(${moreNode('Off')}).classList.contains('ant-dropdown-menu-item-selected')`), 'the sleep timer is Off again');
+      await page.evaluate(`document.querySelector('[data-testid="media-controls"] button[aria-label="More options"]').click()`);
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
     });
