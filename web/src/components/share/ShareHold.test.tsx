@@ -48,7 +48,7 @@ describe("ShareHold", () => {
     expect((await screen.findByTestId("where")).textContent).toBe("/login");
   });
 
-  it("with an outside sign-in page, takes the files first, then assigns the outside page (decision 185)", async () => {
+  it("with an outside sign-in page, takes the files first, then assigns the outside page (decision 204)", async () => {
     setSignInInfo({ externalUrl: "https://id.example.com/sign-in?next={next}", signedOutUrl: "", password: false });
     const assign = stubLocationAssign();
     render(

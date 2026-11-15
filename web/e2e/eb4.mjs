@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The web interface follows the installation's outside sign-in page (eb4, decision 185). It runs inside the shared
+// The web interface follows the installation's outside sign-in page (eb4, decision 204). It runs inside the shared
 // end-to-end run (run.mjs) in its own browser with its own profile, or alone with SELFCLOUD_E2E_ONLY=eb4, so the shared
 // page's same-origin check never sees the outside addresses. A local server plays the outside page: the three settings
 // name it, GET /login answers 302 to it, a signed-out visit goes there with its next, /login?password keeps the form,

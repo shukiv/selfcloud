@@ -91,7 +91,7 @@ const DevicesPage = lazy(() => import("./pages/DevicesPage"));
 // The proof page redeems a mailed token; the external item page opens what another account shared (decision 189).
 const ProvePage = lazy(() => import("./pages/ProvePage"));
 const ExternalItemPage = lazy(() => import("./pages/ExternalItemPage"));
-// The signed-out page (decision 185) is reached only with an outside sign-in page set, so it stays out of the first load.
+// The signed-out page (decision 204) is reached only with an outside sign-in page set, so it stays out of the first load.
 const SignedOutPage = lazy(() => import("./pages/SignedOutPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
@@ -347,7 +347,7 @@ export function Gate() {
     return <ShareHold id={new URLSearchParams(search).get("id") ?? ""} from={path + search} />;
   }
   if (!signedIn) {
-    // The installation's outside sign-in page (decision 185): the move leaves the app, so it is made in an effect. With
+    // The installation's outside sign-in page (decision 204): the move leaves the app, so it is made in an effect. With
     // no outside page set, the sign-in page is opened as today.
     const outside = outsideSignIn(path + search);
     if (outside !== null) return <OutsideRedirect url={outside} />;

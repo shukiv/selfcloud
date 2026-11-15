@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The sign-in page while the installation names an outside sign-in page (decision 185): /login goes to it, the query
+// The sign-in page while the installation names an outside sign-in page (decision 204): /login goes to it, the query
 // password keeps the installation admin's form, and a redirect the loop guard refuses shows the signed-out page.
 
 import { render, screen, waitFor } from "@testing-library/react";

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A session the server ended while the installation names an outside sign-in page (decision 185): the 401 sends the
+// A session the server ended while the installation names an outside sign-in page (decision 204): the 401 sends the
 // browser to that page with the path it was on, and a third such redirect within a minute shows the signed-out page
 // instead, so a sign-in that never lands cannot loop.
 

@@ -13,7 +13,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// The installation's outside sign-in (decision 185): GET /login answers a redirect to the outside
+// The installation's outside sign-in (decision 204): GET /login answers a redirect to the outside
 // sign-in page, /info names the settings, and password sign-in off refuses every account that is
 // not an installation admin's, with the wrong-password answer.
 

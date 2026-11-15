@@ -448,7 +448,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     try {
       await signOut();
     } finally {
-      // The signed-out URL, the signed-out page, or today's sign-in page (decision 185).
+      // The signed-out URL, the signed-out page, or today's sign-in page (decision 204).
       goSignedOut();
     }
   }

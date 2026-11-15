@@ -2568,7 +2568,7 @@ paths:
         entry (`user.sign_in_link`) names the user and never holds the token, the URL or the path.
         Rate-limited per account, 60 a minute.
         An installation whose users come from another application sets `users.external_sign_in_url`
-        (decision 185): `GET /login` then answers `302` to that page, with `{next}` replaced by the
+        (decision 204): `GET /login` then answers `302` to that page, with `{next}` replaced by the
         URL-escaped `next` query path when it is a path on this site (the same rule as here), else
         `/`, and `Cache-Control: no-store`. The outside application checks its own session, asks
         for a sign-in link with `next`, and sends the browser to it; one link per visit. The query
@@ -9299,7 +9299,7 @@ components:
     SignIn:
       type: object
       description: |
-        How this installation signs its users in (decision 185). The URLs are empty strings when
+        How this installation signs its users in (decision 204). The URLs are empty strings when
         their settings are unset.
       required: [external_url, signed_out_url, password]
       properties:

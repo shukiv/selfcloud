@@ -381,7 +381,7 @@ func TestSharedExternal(t *testing.T) {
 }
 
 // TestSharedExternalDeviceToken: a terminal's device token reads the shared-with list as a browser session does
-// (decision 192). A token minted by an account key still gets the empty list, an unproved address gets the empty list
+// (decision 203). A token minted by an account key still gets the empty list, an unproved address gets the empty list
 // with email_proved false, and an installation admin and an account key keep the forbidden they have today.
 func TestSharedExternalDeviceToken(t *testing.T) {
 	t.Parallel()

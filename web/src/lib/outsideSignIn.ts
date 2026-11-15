@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The installation's outside sign-in page (decision 185). The server names it in GET /api/v1/info's sign_in, and
+// The installation's outside sign-in page (decision 204). The server names it in GET /api/v1/info's sign_in, and
 // answers GET /login with a redirect to it; this module keeps what the last info read said, and moves the browser the
 // same way for the moves the interface makes itself: a person with no session goes to the outside page, and a sign-out
 // goes to the signed-out URL, or to the signed-out page when only the sign-in page is named.

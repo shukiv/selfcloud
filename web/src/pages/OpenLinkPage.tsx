@@ -175,7 +175,7 @@ export default function OpenLinkPage() {
 
   // switchAccount signs the visitor out, for an organisation link opened from the wrong account. The secret waits for
   // the sign-in. With no outside sign-in set the sign-in keeps the link as its next, as before; when one is set the
-  // browser goes where a sign-out goes (decision 185).
+  // browser goes where a sign-out goes (decision 204).
   const switchAccount = async (): Promise<void> => {
     stashSecret(secretRef.current, window.sessionStorage);
     try {

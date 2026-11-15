@@ -226,7 +226,7 @@ type externalSharedList struct {
 // handleSharedExternal lists the nodes other accounts shared with the caller's proved address. Both
 // accounts' switches must be on. A terminal's device token reads the list as a session does; a token
 // minted by an account key, an impersonation, an unproved address and a switched-off account all get
-// the empty list; an installation admin is refused (decision 187, changed by decision 192).
+// the empty list; an installation admin is refused (decision 187, changed by decision 203).
 func (s *Server) handleSharedExternal(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if err := callerCheck(p); err != nil {

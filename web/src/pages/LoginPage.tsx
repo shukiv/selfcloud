@@ -36,7 +36,7 @@ export default function LoginPage() {
   // (sec2, decision 86). The page says so and offers the way back to the form; it shows no error.
   const [confirm, setConfirm] = useState(false);
 
-  // The installation's outside sign-in page (decision 185): /login goes to it with the next path, as the server's own
+  // The installation's outside sign-in page (decision 204): /login goes to it with the next path, as the server's own
   // redirect does. The query password keeps this form, the installation admin's way in. With no outside page set, the
   // form is drawn as today.
   const params = new URLSearchParams(window.location.search);

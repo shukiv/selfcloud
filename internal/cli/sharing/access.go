@@ -144,7 +144,7 @@ func Shared(args []string, stdout, stderr io.Writer) int {
 }
 
 // sharedExternal lists what other accounts shared with the caller's email address: one page. A terminal's device token
-// reads the list as a session does (decision 192); an unproved address is told to prove it. Proving an address stays in
+// reads the list as a session does (decision 203); an unproved address is told to prove it. Proving an address stays in
 // the web interface.
 func (r *run) sharedExternal() int {
 	c, err := r.connect()

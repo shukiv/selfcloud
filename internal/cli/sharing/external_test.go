@@ -285,7 +285,7 @@ func TestSharedExternalRefusedFlagsCostNoCall(t *testing.T) {
 	f.wantNoCalls()
 }
 
-// A terminal's device token reads the list as a session does (decision 192): the table is printed and no line is added
+// A terminal's device token reads the list as a session does (decision 203): the table is printed and no line is added
 // for a proved address; --json prints the document unchanged.
 func TestSharedExternalDeviceTokenReadsTheList(t *testing.T) {
 	isolate(t, testDeviceTk)

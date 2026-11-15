@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A sign-in link that fails to redeem while the installation names an outside sign-in page (decision 185): the failure
+// A sign-in link that fails to redeem while the installation names an outside sign-in page (decision 204): the failure
 // text stays, a Sign in again button goes to the outside page, and the page never redirects by itself. A redeem that
 // works keeps going to the link's path.
 

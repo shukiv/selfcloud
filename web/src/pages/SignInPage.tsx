@@ -73,7 +73,7 @@ export default function SignInPage() {
         </p>
       )}
       <Alert message={error} />
-      {/* A failed redeem offers the outside sign-in page when the installation names one (decision 185). Only the button
+      {/* A failed redeem offers the outside sign-in page when the installation names one (decision 204). Only the button
           moves: the page never redirects by itself, so a link that cannot be redeemed cannot loop. */}
       {error && signInInfo().externalUrl !== "" && (
         <Button

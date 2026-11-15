@@ -7,7 +7,7 @@ import { useT } from "../lib/i18n";
 import AuthLayout from "../components/AuthLayout";
 
 // SignedOutPage is where a sign-out lands when the installation names an outside sign-in page but no signed-out URL,
-// and where the loop guard leaves a person whose sign-in keeps coming back here (decision 185). It never redirects by
+// and where the loop guard leaves a person whose sign-in keeps coming back here (decision 204). It never redirects by
 // itself: only the button moves, to the outside sign-in page.
 export default function SignedOutPage() {
   const { t } = useT();

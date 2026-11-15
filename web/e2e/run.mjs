@@ -1267,7 +1267,7 @@ async function main() {
         sec2Browser = null;
       }
     }, { as: 'member' });
-    // Slice eb4 (decision 185): the interface follows the installation's outside sign-in page. Its own browser, so the
+    // Slice eb4 (decision 204): the interface follows the installation's outside sign-in page. Its own browser, so the
     // shared page's same-origin check never sees the outside addresses; a local server plays them.
     if (!only || onlySet.has('eb4')) await section('eb4', async () => {
       const eb4Launch = await launchBrowser(await findBrowser(), join(dir, 'eb4-profile'));

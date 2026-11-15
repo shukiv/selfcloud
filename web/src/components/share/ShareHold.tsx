@@ -14,7 +14,7 @@ import { outsideSignIn, sendToSignIn } from "../../lib/outsideSignIn";
 import { signInURL } from "../../lib/router";
 
 export default function ShareHold({ id, from }: { id: string; from: string }) {
-  // The installation's outside sign-in page (decision 185): the move leaves the app, so the take is given its answer
+  // The installation's outside sign-in page (decision 204): the move leaves the app, so the take is given its answer
   // first, and the move is made once (StrictMode runs effects twice, and a second assign would count as a second hop).
   const outside = outsideSignIn(from);
   const started = useRef(false);

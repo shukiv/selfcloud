@@ -658,7 +658,7 @@ external-sharing switch on (`sharing policy set --external-sharing true`); the s
 comes back as it is. Turning the switch off keeps every grant already made.
 
 The person the address belongs to reads the list with `shared --external`, signed in with `login` (a device token): a
-terminal's device token reads the list as a browser session does (decision 192), and the command prints one page;
+terminal's device token reads the list as a browser session does (decision 203), and the command prints one page;
 `--recent` and `--all` are refused with it. A token minted by an account key gets the empty list, and an account key itself
 is refused (exit 3), as for any refusal. When the person's email address is not proved, the list is empty and one line on
 standard error asks to prove it; proving an address stays in the web interface. Under `--json` the whole answer is printed

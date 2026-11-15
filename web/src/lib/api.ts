@@ -137,7 +137,7 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   }
   if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
     clearSession();
-    // The installation's outside sign-in page when one is set (decision 185), else the app's own sign-in page.
+    // The installation's outside sign-in page when one is set (decision 204), else the app's own sign-in page.
     sendToSignIn();
   }
   // The person must change the password first: every route refuses until then, so the change-password page is opened.

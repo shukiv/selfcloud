@@ -39,7 +39,7 @@ describe("the change-password page", () => {
   });
 });
 
-describe("the forced page's sign-out with an outside sign-in page (decision 185)", () => {
+describe("the forced page's sign-out with an outside sign-in page (decision 204)", () => {
   let assign: ReturnType<typeof stubLocationAssign>;
 
   beforeEach(() => {

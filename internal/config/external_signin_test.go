@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The installation's outside sign-in (decision 185): the two URLs and the password switch are
+// The installation's outside sign-in (decision 204): the two URLs and the password switch are
 // settings, checked at start and on a settings write with the file's own rules.
 
 func TestExternalSignInDefaults(t *testing.T) {

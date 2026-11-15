@@ -165,7 +165,7 @@ func TestExternalSharingThroughTheRealAPI(t *testing.T) {
 		t.Fatalf("a second revoke of the slash address: exit %d, want 4", code)
 	}
 
-	// A terminal's device token reads the list as a session does (decision 192): the proved guest sees the grant.
+	// A terminal's device token reads the list as a session does (decision 203): the proved guest sees the grant.
 	guestToken := xs4DeviceToken(t, p, otherAcc, otherKey, guest)
 	t.Setenv("SELFCLOUD_TOKEN", guestToken)
 	code, out, errOut = p.sharingRun("shared", "--external")
