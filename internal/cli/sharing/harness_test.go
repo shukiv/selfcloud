@@ -82,8 +82,11 @@ type fake struct {
 	mu      sync.Mutex
 	replies map[string][]reply
 	calls   []string
-	bodies  []string
-	bearers []string
+	// rawCalls keeps each call's path as it went on the wire, with its percent escapes, so a test can tell an
+	// escaped segment from a split one.
+	rawCalls []string
+	bodies   []string
+	bearers  []string
 }
 
 func newFake(t *testing.T) *fake {
@@ -104,11 +107,14 @@ func (f *fake) on(method, path string, rs ...reply) {
 func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	call := r.Method + " " + r.URL.Path
+	raw := r.Method + " " + r.URL.EscapedPath()
 	if r.URL.RawQuery != "" {
 		call += "?" + r.URL.RawQuery
+		raw += "?" + r.URL.RawQuery
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
+	f.rawCalls = append(f.rawCalls, raw)
 	f.bodies = append(f.bodies, string(body))
 	f.bearers = append(f.bearers, r.Header.Get("Authorization"))
 	rep := reply{status: http.StatusNotFound, body: `{"error":{"code":"not_found","message":"no such thing"}}`}
@@ -163,6 +169,17 @@ func (f *fake) wantNoCalls() {
 	f.t.Helper()
 	if calls := f.requests(); len(calls) != 0 {
 		f.t.Fatalf("calls %v; want none", calls)
+	}
+}
+
+// wantRawCalls checks the calls as they went on the wire, with their percent escapes.
+func (f *fake) wantRawCalls(want ...string) {
+	f.t.Helper()
+	f.mu.Lock()
+	calls := append([]string(nil), f.rawCalls...)
+	f.mu.Unlock()
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		f.t.Fatalf("raw calls:\n%s\nwant:\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
 	}
 }
 
