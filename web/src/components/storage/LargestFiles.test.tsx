@@ -81,6 +81,27 @@ describe("the largest files are one table (decision 122)", () => {
     expect(container.querySelectorAll("tbody td .item-name").length).toBe(2);
   });
 
+  // The Size column keeps a fixed width (mob4): with a fixed table layout and no width of its own it took half the table
+  // on a phone (137 of 274 px at 360), wrapping names to four lines beside a short number.
+  it("the Size column has a fixed width of 96 px, on a desktop and on a phone", () => {
+    const { unmount } = renderCard();
+    const region = screen.getByRole("region", { name: "Largest files" });
+    const cols = [...region.querySelectorAll("colgroup col")];
+    expect(cols[1]).toBeTruthy();
+    expect((cols[1] as HTMLElement).style.width).toBe("96px");
+    unmount();
+    const undo = phoneViewport();
+    try {
+      renderCard();
+      const phoneRegion = screen.getByRole("region", { name: "Largest files" });
+      const phoneCols = [...phoneRegion.querySelectorAll("colgroup col")];
+      // On a phone the columns are Name, Size and the ⋮ menu: Size keeps its 96 px.
+      expect((phoneCols[1] as HTMLElement).style.width).toBe("96px");
+    } finally {
+      undo();
+    }
+  });
+
   // Download is a real link to the file's own address, so a middle click, a new tab and Copy link work as before.
   it("Download is a link to the file's own address", () => {
     renderCard();

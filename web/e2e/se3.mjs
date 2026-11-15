@@ -6,8 +6,9 @@
 //     the default back, and the server holds no value after.
 //  3. A key the e2e config file writes (the piece size) is read-only and marked as set in the config file, with no Reset.
 //  4. Unsaved changes ask before the sidebar leaves the page; Stay keeps the page and the change.
-//  5. At 375 px the sections are tabs and nothing scrolls sideways; in Hebrew the page is right to left, the section list sits
-//     at the right of the cards and nothing scrolls sideways at 375 px; and dark mode draws the page. None logs a page error.
+//  5. At 375 and 360 px the sections are stacked cards, every one reachable, with no tabs and nothing scrolling sideways
+//     (mob4); in Hebrew the page is right to left, the section list sits at the right of the cards and nothing scrolls
+//     sideways at 375 px; and dark mode draws the page. None logs a page error.
 //  6. The label column is readable at 768, 992, 1000, 1150 and 1280 px (the layout follows the content's width).
 //  7. Signed out, the old address goes to sign-in and back to Settings; so does /login?next= the old address, and the address
 //     with a trailing slash lands on Settings.
@@ -225,17 +226,28 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     }
     await setWidth(page, 1280);
 
-    // 5. A phone, Hebrew and the dark theme.
+    // 5. A phone, Hebrew and the dark theme. A phone stacks every section (mob4): antd's tabs cut the third one under its
+    //    "···" at these widths, so a section could not be reached. Every card is on the page and scrolls into view.
+    const SECTIONS = ['branding', 'uploads', 'sharing', 'signin', 'about'];
+    for (const width of [375, 360]) {
+      await setWidth(page, width);
+      await page.waitFor(`!!document.getElementById('settings-uploads') && !document.querySelector('[role="tablist"]')`, 10000);
+      const stacked = await page.evaluate(`(() => {
+        const ids = ${q(SECTIONS.map((s) => `settings-${s}`))};
+        return {
+          tabs: !!document.querySelector('[role="tablist"]'),
+          more: !!document.querySelector('.ant-tabs-nav-more'),
+          nav: !!document.querySelector('nav[aria-label="Sections"]'),
+          cards: ids.map((id) => { const el = document.getElementById(id); if (!el) return { id, there: false }; el.scrollIntoView({ block: 'start' }); const r = el.getBoundingClientRect(); return { id, there: true, w: r.width, top: r.top }; }),
+        };
+      })()`);
+      check(!stacked.tabs && !stacked.more && !stacked.nav && stacked.cards.every((c) => c.there && c.w > 0),
+        `at ${width} px the five sections are stacked cards, each reachable (${JSON.stringify(stacked.cards.map((c) => c.id))}; tabs ${stacked.tabs}, more ${stacked.more})`);
+      check(!(await sideways(page)), `at ${width} px the Settings page has no sideways scroll`);
+    }
     await setWidth(page, 375);
-    await page.waitFor(`!!document.querySelector('[role="tablist"]') && !document.querySelector('nav[aria-label="Sections"]')`, 10000);
-    const tabs = await page.evaluate(`[...document.querySelectorAll('[role="tablist"] [role="tab"]')].map((t) => t.textContent.trim())`);
-    check(tabs.length === 5 && tabs[0] === 'Branding' && tabs[4] === 'About', `at 375 px the sections are tabs (${tabs.join(' | ')})`);
-    check(!(await sideways(page)), 'at 375 px the Settings page has no sideways scroll');
     await page.waitFor(`!!document.getElementById('settings-branding') && document.getElementById('settings-branding').getBoundingClientRect().width > 0`, 10000);
-    check(!(await sideways(page)), 'at 375 px the Branding tab, with its preview, has no sideways scroll');
-    await page.evaluate(`[...document.querySelectorAll('[role="tablist"] [role="tab"]')].find((t) => t.textContent.trim() === 'About').click()`);
-    await page.waitFor(`!!document.querySelector('#settings-about') && document.querySelector('#settings-about').getBoundingClientRect().width > 0`, 10000);
-    check(!(await sideways(page)), 'at 375 px the About tab has no sideways scroll');
+    check(!(await sideways(page)), 'at 375 px the Branding card, with its preview, has no sideways scroll');
 
     await setWidth(page, 1280);
     await setLanguage(page, 'עברית');
@@ -249,7 +261,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     })()`);
     check(sides.nav > sides.card, `in Hebrew the section list is at the right of the cards (${Math.round(sides.nav)} against ${Math.round(sides.card)})`);
     await setWidth(page, 375);
-    await page.waitFor(`!!document.querySelector('[role="tablist"]')`, 10000);
+    await page.waitFor(`!!document.getElementById('settings-uploads') && !document.querySelector('[role="tablist"]')`, 10000);
     check(!(await sideways(page)), 'in Hebrew at 375 px the Settings page has no sideways scroll');
     await setWidth(page, 1280);
     await setLanguage(page, 'English');

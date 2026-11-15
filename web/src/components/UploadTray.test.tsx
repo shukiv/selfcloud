@@ -87,6 +87,37 @@ describe("UploadTray", () => {
     expect(manager.pause).toHaveBeenCalledWith(7);
   });
 
+  // The row's close sits on the name's line (mob4): below the name it wrapped onto a line of its own on a phone. The
+  // name truncates with an ellipsis instead of pushing the close away, and its full text stays in the title.
+  it("the row's close sits on the name's line, and the name truncates (mob4)", () => {
+    const name = "a long file name that goes on and on.pdf";
+    uploads.set([item({ id: 10, name, status: "queued" })]);
+    const { container } = render(<UploadTray />);
+    const li = container.querySelector('#tray-list li[data-status="queued"]') as HTMLElement;
+    const bdi = li.querySelector("bdi") as HTMLElement;
+    const nameRow = bdi.parentElement as HTMLElement;
+    const close = within(li).getByRole("button", { name: /^Cancel/ });
+    expect(nameRow.contains(close)).toBe(true);
+    expect(nameRow.style.flexWrap ?? "").not.toBe("wrap");
+    expect(bdi.style.whiteSpace).toBe("nowrap");
+    expect(bdi.style.overflow).toBe("hidden");
+    expect(bdi.style.textOverflow).toBe("ellipsis");
+    expect(bdi.style.minWidth).toBe("0px");
+    expect(bdi.style.flex).toMatch(/^1 1 0/);
+    expect(bdi.title).toBe(name);
+  });
+
+  it("a finished row's dismiss sits on the name's line too (mob4)", () => {
+    uploads.set([item({ id: 11, status: "done", offset: 1000 })]);
+    const { container } = render(<UploadTray />);
+    // Every upload has ended, so the tray folded: open it again to read the row.
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    const li = container.querySelector('#tray-list li[data-status="done"]') as HTMLElement;
+    const bdi = li.querySelector("bdi") as HTMLElement;
+    const close = within(li).getByRole("button", { name: /^Dismiss/ });
+    expect((bdi.parentElement as HTMLElement).contains(close)).toBe(true);
+  });
+
   it("shows a failed upload's error by its code, never server text, and offers retry", () => {
     uploads.set([item({ id: 2, status: "failed", error: new ApiError(413, "too_large", { message: "server text" }, 0) })]);
     render(<UploadTray />);

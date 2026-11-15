@@ -148,11 +148,13 @@ describe("a list row's name is one line (decision 161)", () => {
     expect(nameOf(container, "gone").contains(goneMarks)).toBe(false);
   });
 
-  it("the rename error keeps its own line, outside the cut name, and the field keeps its width", () => {
+  it("the rename error keeps its own line, outside the cut name, and the field grows from no basis (mob4)", () => {
     const { container } = render(<Listing {...props({ renameID: "long", renameValue: "taken", renameError: "Name is taken" })} />);
     const input = container.querySelector<HTMLInputElement>('[data-id="long"] input.rename');
     expect(input).not.toBeNull();
-    expect(input!.style.flex).toBe("1 1 160px");
+    // The field starts at no width and grows to the room there is: a 160 px basis was wider than a phone's name column
+    // and broke the row into three lines (mob4).
+    expect(input!.style.flex).toMatch(/^1 1 0/);
     expect(input!.style.minWidth).toBe("0px");
     const error = container.querySelector<HTMLElement>('[data-id="long"] #rename-error');
     expect(error).not.toBeNull();
@@ -166,10 +168,23 @@ describe("a list row's name is one line (decision 161)", () => {
     const { container } = render(<Listing {...props({ renameID: "long", renameValue: "new name" })} />);
     const input = container.querySelector<HTMLInputElement>('[data-id="long"] input.rename');
     expect(input).not.toBeNull();
-    expect(input!.style.flex).toBe("1 1 160px");
+    expect(input!.style.flex).toMatch(/^1 1 0/);
     expect(input!.style.minWidth).toBe("0px");
     // The field is not inside the cut name: its text is not clipped by the ellipsis.
     expect(input!.closest(".row-name")).toBeNull();
+  });
+
+  it("while renaming, the icon, the field and the marks share one line that does not wrap (mob4)", () => {
+    const { container } = render(<Listing {...props({ renameID: "long", renameValue: "new name" })} />);
+    const input = container.querySelector<HTMLInputElement>('[data-id="long"] input.rename')!;
+    const cell = input.parentElement as HTMLElement;
+    expect(cell.style.flexWrap).toBe("nowrap");
+    const marks = container.querySelector<HTMLElement>('[data-id="long"] .row-marks')!;
+    expect(cell.contains(marks)).toBe(true);
+    // Not renaming, the cell wraps as before (the marks may take a second line on a narrow column).
+    const { container: plain } = render(<Listing {...props()} />);
+    const name = plain.querySelector<HTMLElement>('[data-id="long"] .row-name')!;
+    expect((name.parentElement as HTMLElement).style.flexWrap).toBe("wrap");
   });
 });
 

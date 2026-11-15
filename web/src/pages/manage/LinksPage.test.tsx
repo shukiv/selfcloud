@@ -174,6 +174,24 @@ describe("links", () => {
     }
   });
 
+  // Each filter's label stays with its select (mob4): as separate flex items the "Kind" label sat on row 1 while its
+  // select wrapped to row 2 at 360 px. One wrapping unit holds the pair, so they wrap together or not at all.
+  it("each filter's label stays with its select in one wrapping unit (mob4)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    await screen.findByRole("region", { name: "Links" });
+    for (const text of ["Who can open", "Kind"]) {
+      const label = screen.getByText(text, { selector: "label" }) as HTMLLabelElement;
+      const unit = label.parentElement as HTMLElement;
+      expect(unit.style.display).toBe("flex");
+      expect(unit.style.flexWrap).toBe("nowrap");
+      expect(unit.querySelectorAll(".ant-select")).toHaveLength(1);
+      const select = document.getElementById(label.htmlFor);
+      expect(select).not.toBeNull();
+      expect(unit.contains(select)).toBe(true);
+    }
+  });
+
   it("an empty list keeps its header row, and its title is in the table body (decision 122)", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();

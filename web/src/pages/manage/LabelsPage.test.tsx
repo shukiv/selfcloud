@@ -117,7 +117,10 @@ describe("labels page", () => {
     renderPage();
     const region = await screen.findByRole("region", { name: "Labels" });
     const row = await within(region).findByRole("row", { name: "Status" });
-    expect(row.querySelector(".row-second")?.textContent).toBe("Choice · Restricted · 3");
+    // The cells are inline items of the wrapping row; the dots between them are CSS, not text (mob4).
+    const line = row.querySelector(".row-second");
+    expect([...(line?.querySelectorAll(".row-second-item") ?? [])].map((c) => c.textContent)).toEqual(["Choice", "Restricted", "3"]);
+    expect(line?.textContent).toBe("ChoiceRestricted3");
     expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Status"]);
   });
 

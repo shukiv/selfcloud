@@ -340,6 +340,33 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await sleep(300);
 
+    // At 360 px a rename keeps the icon, the field and the marks on one line (mob4): the name cell does not wrap while
+    // renaming, and the field grows from no basis into the room there is. A 160 px basis was wider than the phone's name
+    // column and broke the row into three lines. The file is starred first so its marks are not empty.
+    await size(360, 800);
+    await sleep(300);
+    await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
+    await pickMenuEntry(page, 'Star');
+    await page.waitFor(`!!document.querySelector(${q(rowSel(beta))} .row-marks svg)`, 10000);
+    await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
+    await pickMenuEntry(page, 'Rename');
+    await page.waitFor(`!!document.querySelector('input.rename')`, 10000);
+    const renameLine = await page.evaluate(`(() => {
+      const input = document.querySelector('input.rename');
+      const cell = input.parentElement;
+      const marks = cell.querySelector('.row-marks');
+      const f = input.getBoundingClientRect(), m = marks.getBoundingClientRect();
+      return { wrap: getComputedStyle(cell).flexWrap, basis: input.style.flex, fieldW: f.width, marksW: m.width,
+        sameLine: Math.abs((f.top + f.height / 2) - (m.top + m.height / 2)) <= 2 };
+    })()`);
+    check(renameLine.wrap === 'nowrap' && /^1 1 0/.test(renameLine.basis) && renameLine.fieldW > 0 && renameLine.marksW > 0 && renameLine.sameLine,
+      `at 360 px the rename field and the marks share one line that does not wrap (${JSON.stringify(renameLine)})`);
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await page.waitFor(`!document.querySelector('input.rename')`, 5000);
+    await size(1280, 800);
+    await sleep(300);
+
     // Move to trash from the menu asks, and the file leaves the listing when it is confirmed.
     await page.evaluate(`document.querySelector(${q(`${rowSel(files.gamma)} button[aria-haspopup="menu"]`)}).click(), true`);
     await pickMenuEntry(page, 'Move to trash');

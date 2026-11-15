@@ -8,6 +8,7 @@ import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { account, signedAs, usage, LINK } from "../../test/adminFixtures";
 import { expectEmptyTable } from "../../test/emptyTable";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 import TenantsPage from "./TenantsPage";
 
 // A client that does not retry, so a refused read shows at once.
@@ -53,24 +54,54 @@ describe("who sees the tenants list", () => {
   });
 
   it("an admin reads the list and shows each tenant with its status and its usage", async () => {
-    stubFetch((c) => {
-      if (path(c).pathname === "/api/v1/accounts") return { status: 200, body: { items: [account()] } };
-      return fail(404, "not_found");
-    });
-    renderPage();
-    const list = await screen.findByRole("region", { name: "Tenants" });
-    expect(within(list).getByText("Acme Ltd")).toBeTruthy();
-    expect(within(list).getByText("Active")).toBeTruthy();
-    expect(await screen.findByRole("meter")).toBeTruthy();
+    const undo = desktopViewport();
+    try {
+      stubFetch((c) => {
+        if (path(c).pathname === "/api/v1/accounts") return { status: 200, body: { items: [account()] } };
+        return fail(404, "not_found");
+      });
+      renderPage();
+      const list = await screen.findByRole("region", { name: "Tenants" });
+      expect(within(list).getByText("Acme Ltd")).toBeTruthy();
+      expect(within(list).getByText("Active")).toBeTruthy();
+      expect(await screen.findByRole("meter")).toBeTruthy();
+    } finally {
+      undo();
+    }
   });
 
   // tl1: the list carries each tenant's usage (used_bytes and quota_bytes, decision A1), so the page makes no request per row.
   it("the list makes no usage request for a tenant (the usage comes with the account)", async () => {
-    const { calls } = stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : fail(404, "not_found")));
-    renderPage();
-    await screen.findByRole("region", { name: "Tenants" });
-    await screen.findByRole("meter");
-    expect(calls.some((c) => path(c).pathname.endsWith("/usage"))).toBe(false);
+    const undo = desktopViewport();
+    try {
+      const { calls } = stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : fail(404, "not_found")));
+      renderPage();
+      await screen.findByRole("region", { name: "Tenants" });
+      await screen.findByRole("meter");
+      expect(calls.some((c) => path(c).pathname.endsWith("/usage"))).toBe(false);
+    } finally {
+      undo();
+    }
+  });
+
+  // A phone keeps the usage as one inline line of the name's second line (mob4): the meter's bar is a block grid, and as a
+  // cell of the wrapping row it broke the line. The text is the meter's own, with no request per row.
+  it("a phone shows the usage as inline text on the name's second line, with no meter", async () => {
+    const undo = phoneViewport();
+    try {
+      stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : fail(404, "not_found")));
+      renderPage();
+      const list = await screen.findByRole("region", { name: "Tenants" });
+      expect(screen.queryByRole("meter")).toBeNull();
+      expect(screen.queryByRole("columnheader", { name: "Storage" })).toBeNull();
+      const line = list.querySelector('tr[aria-label="Acme Ltd"] .row-second') as HTMLElement;
+      expect(line).not.toBeNull();
+      expect(line.textContent).toContain("1 GB of 5 GB used");
+      const item = [...line.querySelectorAll(".row-second-item")].find((c) => (c.textContent ?? "").includes("1 GB of 5 GB used"));
+      expect(item).toBeTruthy();
+    } finally {
+      undo();
+    }
   });
 
   // The list's order is the server's: Name is the default, asc, and a header click asks the server for the other key.

@@ -4,7 +4,9 @@
 // class and the empty body's class the page gives, and a click that opens a row while Ctrl and Shift select.
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import Listing, { type ItemListingProps } from "./Listing";
+import { desktopViewport } from "../../test/viewport";
 
 type Row = { id: string; name: string };
 const rows: Row[] = [
@@ -123,5 +125,57 @@ describe("a preset row opens on a click, and Ctrl or Shift select", () => {
     expect(rowOf("Alpha").getAttribute("aria-selected")).toBe("true");
     expect(rowOf("Beta").getAttribute("aria-selected")).toBe("true");
     expect(rowOf("Gamma").getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+// The phone's second line (mob4): the secondary cells are inline items of one wrapping row. The separator between two
+// items is drawn by the stylesheet (.row-second-item + .row-second-item::before), so no text node holds a "·", an empty
+// cell draws nothing and no separator, and none can sit before the first item, after the last, or twice in a row.
+describe("a preset list's phone second line joins inline items with CSS separators (mob4)", () => {
+  const secondColumns = (renders: ((r: Row) => ReactNode)[]): ItemListingProps<Row>["columns"] => [
+    { key: "name", title: "Name", render: (r) => r.name },
+    ...renders.map((render, i) => ({ key: `s${i}`, title: `S${i}`, secondary: true, render })),
+  ];
+  const lineOf = (name: string) => rowOf(name).querySelector(".row-second");
+  const itemsOf = (name: string) => [...(lineOf(name)?.querySelectorAll(".row-second-item") ?? [])];
+
+  it("joins the cells as inline items with no text separator nodes", () => {
+    list({ phone: true, columns: secondColumns([(r) => r.name, () => "today", () => "4 bytes"]) });
+    const line = lineOf("Alpha");
+    expect(itemsOf("Alpha").map((c) => c.textContent)).toEqual(["Alpha", "today", "4 bytes"]);
+    // No text node of the line holds a separator: the dot is the stylesheet's content, between the items only.
+    const walker = document.createTreeWalker(line!, globalThis.NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) expect(n.textContent).not.toContain("·");
+    expect(line?.textContent).toBe("Alphatoday4 bytes");
+    // Every item is one inline span of the row, not a block: the line wraps as one row of items.
+    for (const item of itemsOf("Alpha")) expect(item.tagName).toBe("SPAN");
+  });
+
+  it("an empty cell draws nothing and no separator, wherever it sits", () => {
+    list({ phone: true, columns: secondColumns([() => "", () => null, () => "kept", () => "   ", () => "last"]) });
+    expect(itemsOf("Alpha").map((c) => c.textContent)).toEqual(["kept", "last"]);
+    expect(lineOf("Alpha")?.textContent).toBe("keptlast");
+  });
+
+  it("a row whose cells are all empty has no second line at all", () => {
+    list({ phone: true, columns: secondColumns([() => "", () => null]) });
+    expect(lineOf("Alpha")).toBeNull();
+  });
+
+  it("a single cell stands alone, with no separator before or after it", () => {
+    list({ phone: true, columns: secondColumns([() => "only"]) });
+    expect(itemsOf("Alpha").map((c) => c.textContent)).toEqual(["only"]);
+    expect(lineOf("Alpha")?.textContent).toBe("only");
+  });
+
+  it("the desktop keeps the secondary columns, with no second line", () => {
+    const undo = desktopViewport();
+    try {
+      list({ columns: secondColumns([(r) => r.name, () => "today"]) });
+      expect(screen.getByRole("columnheader", { name: "S0" })).toBeTruthy();
+      expect(lineOf("Alpha")).toBeNull();
+    } finally {
+      undo();
+    }
   });
 });

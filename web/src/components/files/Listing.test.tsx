@@ -733,7 +733,10 @@ describe("Listing with columns: a preset list in the one table", () => {
     render(<Listing {...itemProps()} />);
     expect(screen.queryByRole("columnheader", { name: "Email" })).toBeNull();
     const line = itemRow("Acme Studio").querySelector(".row-second");
-    expect(line?.textContent).toBe("acme@example.com · Mar 3, 2026");
+    // The cells are inline items of one wrapping row; the separator between them is CSS, not a text node (mob4).
+    expect([...(line?.querySelectorAll(".row-second-item") ?? [])].map((c) => c.textContent)).toEqual(["acme@example.com", "Mar 3, 2026"]);
+    expect(line?.textContent).toBe("acme@example.comMar 3, 2026");
+    expect(line?.textContent).not.toContain("·");
   });
 
   it("a sortable header is a button that reports its key, and carries aria-sort on its th", () => {

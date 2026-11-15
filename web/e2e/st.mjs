@@ -192,6 +192,20 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     const reach = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.item-list tbody .ant-btn')].map((x) => x.getBoundingClientRect()); return b.length ? { n: b.length, left: Math.min(...b.map((r) => r.left)), right: Math.max(...b.map((r) => r.right)) } : null; })()`);
     check(reach !== null && reach.n > 0 && reach.left >= 0 && reach.right <= phone.width,
       `at 390 px the row actions are on the screen (${reach ? `${reach.n} actions from ${Math.round(reach.left)} to ${Math.round(reach.right)} px of ${phone.width}` : 'no actions'})`);
+    // The Size column keeps its 96 px, so a name wraps to at most two lines beside it, not four (mob4). The page is in
+    // Hebrew here, so the table is found by its class and its headers by their place (Name first, Size second), not their words.
+    const sizeCol = await page.evaluate(`(() => {
+      const r = document.querySelector('.item-list');
+      if (!r) return { width: null, name: 0, size: 0 };
+      const col = [...r.querySelectorAll('colgroup col')][1];
+      const ths = [...r.querySelectorAll('thead th')];
+      return { width: col ? col.style.width : null, name: ths[0]?.getBoundingClientRect().width ?? 0, size: ths[1]?.getBoundingClientRect().width ?? 0 };
+    })()`);
+    check(sizeCol.width === '96px' && sizeCol.name > sizeCol.size,
+      `at 390 px the Size column keeps 96 px and the Name column is wider (${JSON.stringify(sizeCol)})`);
+    const nameLines = await page.evaluate(`[...document.querySelectorAll('.item-list tbody .item-name')].map((b) => { const r = document.createRange(); r.selectNodeContents(b); return { name: b.textContent.trim().slice(0, 24), lines: new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size }; })`);
+    check(nameLines.length > 0 && nameLines.every((n) => n.lines <= 2),
+      `at 390 px a largest-file name wraps to at most two lines (${JSON.stringify(nameLines)})`);
     await snap('st-phone.png');
     await setPhone(page, false);
   } finally {

@@ -147,7 +147,10 @@ describe("the people list", () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const row = await screen.findByRole("row", { name: "Name usr_a" });
-    expect(row.querySelector(".row-second")?.textContent).toBe("Member · Active");
+    // The cells are inline items of the wrapping row; the dot between them is CSS, not text (mob4).
+    const line = row.querySelector(".row-second");
+    expect([...(line?.querySelectorAll(".row-second-item") ?? [])].map((c) => c.textContent)).toEqual(["Member", "Active"]);
+    expect(line?.textContent).toBe("MemberActive");
     const headers = within(screen.getByRole("region", { name: "People" })).getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).not.toContain("Role");
     expect(headers).not.toContain("Status");

@@ -77,17 +77,31 @@ export async function tl3Checks(h, { page, shots = null }) {
       check(before === 'ascending' && after === 'descending', `pressing the team space header turns its aria-sort from ascending to descending (${before} then ${after})`);
     }
 
-    // 5. At 375 pixels no page scrolls sideways, and a drive row keeps only its ⋮ menu (its icons are in the menu).
+    // 5. At 375 pixels no page scrolls sideways, a drive row keeps only its ⋮ menu (its icons are in the menu), and a list's
+    //    second line joins its cells with CSS separators: no text node of it holds a dot (mob4).
     await setPhone(page, true);
-    for (const path of ['/manage/audit', '/manage/links', '/manage/storage', '/storage']) {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 800, deviceScaleFactor: 1, mobile: true });
+    await sleep(300);
+    for (const path of ['/manage/audit', '/manage/links', '/manage/storage', '/trash', '/storage']) {
       await navigateTo(page, path);
       await sleep(600);
       check(!(await sideways(page)), `${path} at 375 px has no sideways scroll`);
+      const stray = await page.evaluate(`[...document.querySelectorAll('.row-second')].filter((l) => [...l.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== '')).length`);
+      check(stray === 0, `${path} at 375 px draws no text separator in a list's second line (${stray} stray)`);
     }
     await navigateTo(page, '/storage');
     await page.waitFor(`!!document.querySelector('[role="region"][aria-label="Largest files"]')`, 20000);
     const phoneIcons = await page.evaluate(`document.querySelectorAll('[role="region"][aria-label="Largest files"] .row-acts').length`);
     check(phoneIcons === 0, `a drive row at 375 px keeps only its ⋮ menu (${phoneIcons} inline icon groups)`);
+    // The Size column keeps its 96 px, so the Name column is wider than it, not half the table (mob4).
+    const cols = await page.evaluate(`(() => {
+      const r = document.querySelector('[role="region"][aria-label="Largest files"]');
+      const th = (name) => [...r.querySelectorAll('thead th')].find((x) => x.textContent.trim() === name);
+      const sizeCol = [...r.querySelectorAll('colgroup col')][1];
+      const name = th('Name'), size = th('Size');
+      return { name: name ? name.getBoundingClientRect().width : 0, size: size ? size.getBoundingClientRect().width : 0, colWidth: sizeCol ? sizeCol.style.width : null };
+    })()`);
+    check(cols.colWidth === '96px' && cols.name > cols.size, `the largest files' Size column keeps 96 px and the Name column is wider (${JSON.stringify(cols)})`);
     await setPhone(page, false);
 
     // 6. In Hebrew the audit table is drawn right to left, with its headers still in place.

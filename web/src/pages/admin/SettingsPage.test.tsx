@@ -667,29 +667,27 @@ describe("the layout", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 
-  it("shows tabs on a phone, one section at a time, and keeps an edit made in another tab", async () => {
+  // A phone stacks every section (mob4): antd's tabs cut the third one under its "···" at 360 and 412 px, so a section
+  // could not be reached. The stacked cards are the page's own layout for a narrow content, used on a phone whatever the
+  // content's width; every section is on the page and an edit stays while the person scrolls to another one.
+  it("stacks every section on a phone, with no tabs, and keeps an edit made in another section", async () => {
     undo();
     undo = phoneViewport();
     server();
     renderPage();
-    const tabs = await screen.findByRole("tablist");
-    expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual([
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual([
       "Branding",
       "Uploads and storage",
       "Sharing, trash and versions",
       "Sign-in, search, office and administration",
       "About",
     ]);
-    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
-    // Branding is the tab shown first.
-    expect(screen.getByRole("region", { name: "Branding" })).toBeTruthy();
-    fireEvent.click(within(tabs).getByRole("tab", { name: "Uploads and storage" }));
-    await waitFor(() => expect(numberBox("upload.max_file_size")).toBeTruthy());
     fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "5" } });
-    fireEvent.click(within(tabs).getByRole("tab", { name: "Sharing, trash and versions" }));
     await waitFor(() => expect(row("trash.retention")).toBeTruthy());
-    fireEvent.click(within(tabs).getByRole("tab", { name: "Uploads and storage" }));
-    await waitFor(() => expect(numberBox("upload.max_file_size").value).toBe("5"));
+    expect(numberBox("upload.max_file_size").value).toBe("5");
   });
 
   it("About gives the version, the addresses, the links and the facts the file owns", async () => {

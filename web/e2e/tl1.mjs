@@ -305,6 +305,17 @@ export async function tl1Checks(h, { page, base, adminKey, accountID, accountKey
       15000,
     );
     check(!(await sideways(page)), 'the tenants list at 375 px has no sideways scroll');
+    // The second line joins its cells with CSS separators, so no text node of it holds a dot, and the usage is one inline
+    // line of text, not the meter's block grid (mob4).
+    const secondLine = await page.evaluate(`(() => {
+      const lines = [...document.querySelectorAll('[role="region"][aria-label="Tenants"] .row-second')];
+      const stray = lines.filter((l) => [...l.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== '')).length;
+      const meters = document.querySelectorAll('[role="region"][aria-label="Tenants"] [role="meter"]').length;
+      const usage = lines.some((l) => /used/.test(l.textContent));
+      return { lines: lines.length, stray, meters, usage };
+    })()`);
+    check(secondLine.lines > 0 && secondLine.stray === 0, `the tenants' second line at 375 px has no text separator (${JSON.stringify(secondLine)})`);
+    check(secondLine.meters === 0 && secondLine.usage, `the tenants' usage at 375 px is inline text, not a meter (${JSON.stringify(secondLine)})`);
 
     // 2. The keyboard reaches the Name header with Tab from the search box (the box is focused by script, the rest is keys),
     //    and Enter on it turns its aria-sort.
