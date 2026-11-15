@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The embed site commands: embed show|set. They read and replace the sites that may show the account's pages in a
-// frame. Only the account's owner or key may change the list; the server checks and normalises the origins.
+// frame. The account's owner or key, or an installation admin, may change the list; a signed-in device's token
+// cannot. The server checks and normalises the origins.
 
 package manage
 
