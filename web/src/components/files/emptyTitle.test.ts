@@ -47,6 +47,8 @@ describe("empty table titles", () => {
       ...(JSON.parse(readFileSync(join(src, "i18n", "requests", `${lang}.json`), "utf8")) as Record<string, string>),
       ...(JSON.parse(readFileSync(join(src, "i18n", "notifications", `${lang}.json`), "utf8")) as Record<string, string>),
       ...(JSON.parse(readFileSync(join(src, "i18n", "comments", `${lang}.json`), "utf8")) as Record<string, string>),
+      // The outside-sharing list's titles are a catalogue of their own too (lib/share/externalText.ts).
+      ...(JSON.parse(readFileSync(join(src, "i18n", "external", `${lang}.json`), "utf8")) as Record<string, string>),
     };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];
