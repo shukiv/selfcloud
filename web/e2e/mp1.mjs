@@ -294,12 +294,10 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       // Wait for the tab's read to settle: a row, or the empty state inside the table's frame.
       await until(page, `(() => { const r = document.querySelector('[role="region"][aria-label="Videos"]'); return !!r && (!!r.querySelector('[role="row"]') || !!r.querySelector('.empty-title')); })()`, 15000, 'the Videos tab settles');
       const hasVideo = await page.evaluate(`!!document.querySelector(${q(rowSel('Videos', 'clip.webm'))})`);
-      if (!hasVideo) {
-        console.log('INFO mp1 Videos: no video listed; skipping the video row check');
-      } else {
-        const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'clip.webm'))}).textContent`);
-        check(vidText.includes('MP1 media'), `the Videos tab shows the folder (${vidText})`);
-      }
+      // waitListed already proved the search lists the video, so a missing row here is a bug, not a reason to skip.
+      check(hasVideo, 'the Videos tab lists the uploaded video');
+      const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'clip.webm'))}).textContent`);
+      check(vidText.includes('MP1 media'), `the Videos tab shows the folder (${vidText})`);
       // End the session so the phone check below starts from the empty state, as it expects.
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
