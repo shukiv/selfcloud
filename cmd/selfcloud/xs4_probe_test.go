@@ -165,19 +165,18 @@ func TestExternalSharingThroughTheRealAPI(t *testing.T) {
 		t.Fatalf("a second revoke of the slash address: exit %d, want 4", code)
 	}
 
-	// A terminal's device token gets the empty list from the server (decision 187), and the command says where to read
-	// it; the items themselves are proved by the API's own tests, not here.
+	// A terminal's device token reads the list as a session does (decision 192): the proved guest sees the grant.
 	guestToken := xs4DeviceToken(t, p, otherAcc, otherKey, guest)
 	t.Setenv("SELFCLOUD_TOKEN", guestToken)
 	code, out, errOut = p.sharingRun("shared", "--external")
-	if code != 0 || strings.Contains(out, node) || !strings.Contains(errOut, "terminal sign-in") {
+	if code != 0 || !strings.Contains(out, node) || !strings.Contains(out, "viewer") {
 		t.Fatalf("shared --external: exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
-	if strings.Contains(errOut, "not proved") {
-		t.Fatalf("a proved address got the unproved notice: %q", errOut)
+	if strings.Contains(errOut, "not proved") || strings.Contains(errOut, "terminal sign-in") {
+		t.Fatalf("a proved device token got a notice: %q", errOut)
 	}
 	if _, out, errOut := p.sharingRun("shared", "--external", "--json"); !strings.Contains(out, `"email_proved": true`) ||
-		strings.Contains(out, node) || strings.Contains(errOut, "terminal sign-in") {
+		!strings.Contains(out, node) || strings.Contains(errOut, "terminal sign-in") {
 		t.Fatalf("shared --external --json: stdout %q, stderr %q", out, errOut)
 	}
 

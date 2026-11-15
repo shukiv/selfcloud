@@ -385,7 +385,7 @@ var remoteCommands = []remoteCommand{
 		more:      []string{"GET /api/v1/shared/external"},
 		notProbed: "needs a device token (an account key has no shared items); internal/cli/sharing records its calls",
 		help: `  shared [--recent] [--all]      what other people shared with the signed-in person
-  shared --external              what other accounts shared with your email address; a terminal sign-in gets the empty list (read it in the web interface)
+  shared --external              what other accounts shared with your email address (one page; a terminal's device token reads it like a session)
 `, run: sharing.Shared},
 	{name: "webhook add", route: "POST /api/v1/accounts/{acc}/webhooks",
 		help: `  webhook add --account ACC --endpoint ADDRESS --event TYPE... [--description TEXT]

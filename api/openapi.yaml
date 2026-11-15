@@ -5118,8 +5118,9 @@ paths:
         empty — with the grant's role, the sharer account's name, the display name of the user that
         made the grant (empty for a key), and the grant's expiry. Trashed nodes and expired grants
         are left out. A user only: an account key and an installation admin get `forbidden`. A
-        delegated token, an impersonation, an unproved address and a switched-off account all get
-        the empty list; `email_proved` says whether the caller's address is proved.
+        terminal's device token reads the list as a browser session does; a token minted by an
+        account key, an impersonation, an unproved address and a switched-off account all get the
+        empty list; `email_proved` says whether the caller's address is proved.
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":

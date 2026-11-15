@@ -285,32 +285,31 @@ func TestSharedExternalRefusedFlagsCostNoCall(t *testing.T) {
 	f.wantNoCalls()
 }
 
-// A terminal's device token gets the empty list from the server (decision 187), so a proved address is told where to
-// read it; the line is absent under --json, which prints the document unchanged.
-func TestSharedExternalTerminalSignInSaysWhereToRead(t *testing.T) {
+// A terminal's device token reads the list as a session does (decision 192): the table is printed and no line is added
+// for a proved address; --json prints the document unchanged.
+func TestSharedExternalDeviceTokenReadsTheList(t *testing.T) {
 	isolate(t, testDeviceTk)
 	f := newFake(t)
-	f.on("GET", "/api/v1/shared/external", ok(map[string]any{"items": []map[string]any{}, "email_proved": true}))
+	f.on("GET", "/api/v1/shared/external", ok(map[string]any{
+		"items": []map[string]any{extSharedNode(testNode, "plan.pdf")}, "email_proved": true}))
 	res := f.run(Shared, "--external")
 	wantCode(t, res, 0)
-	line := "the server does not list what other accounts shared with you to a terminal sign-in; see it in the web interface"
-	if !strings.Contains(res.stderr, line) {
-		t.Fatalf("stderr %q does not carry the terminal sign-in line", res.stderr)
+	want := table([]string{"ID", "KIND", "ROLE", "NAME", "ACCOUNT", "BY", "EXPIRES"},
+		[]string{testNode, "file", "viewer", "plan.pdf", "Other account", "Dana", ""})
+	if res.stdout != want {
+		t.Fatalf("stdout %q, want %q", res.stdout, want)
 	}
-	if strings.Count(res.stderr, "\n") != 1 {
-		t.Fatalf("stderr %q, want one line", res.stderr)
-	}
-	if strings.Contains(res.stderr, "not proved") {
-		t.Fatalf("a proved address got the unproved notice: %q", res.stderr)
+	if res.stderr != "" {
+		t.Fatalf("stderr %q, want none for a proved device token", res.stderr)
 	}
 	res = f.run(Shared, "--external", "--json")
 	wantCode(t, res, 0)
-	if strings.Contains(res.stderr, line) || !strings.Contains(res.stdout, `"email_proved": true`) {
+	if res.stderr != "" || !strings.Contains(res.stdout, `"email_proved": true`) {
 		t.Fatalf("json: stdout %q, stderr %q", res.stdout, res.stderr)
 	}
 }
 
-// An unproved address gets the unproved notice, not the terminal sign-in line, even with a device token.
+// An unproved address gets the unproved notice even with a device token, and no other line.
 func TestSharedExternalUnprovedDeviceTokenGetsTheNotice(t *testing.T) {
 	isolate(t, testDeviceTk)
 	f := newFake(t)
@@ -319,9 +318,6 @@ func TestSharedExternalUnprovedDeviceTokenGetsTheNotice(t *testing.T) {
 	wantCode(t, res, 0)
 	if !strings.Contains(res.stderr, "your email address is not proved") {
 		t.Fatalf("stderr %q does not carry the unproved notice", res.stderr)
-	}
-	if strings.Contains(res.stderr, "terminal sign-in") {
-		t.Fatalf("an unproved address got the terminal line: %q", res.stderr)
 	}
 	if strings.Count(res.stderr, "\n") != 1 {
 		t.Fatalf("stderr %q, want one line", res.stderr)

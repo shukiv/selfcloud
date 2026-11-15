@@ -13,7 +13,6 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/output"
-	"github.com/shukiv/selfcloud/internal/cli/profile"
 )
 
 // requestableRoles are the roles the API lets a request ask for, and a decision give.
@@ -144,9 +143,9 @@ func Shared(args []string, stdout, stderr io.Writer) int {
 		[]string{"id", "kind", "role", "name", "shared_at", "place"})
 }
 
-// sharedExternal lists what other accounts shared with the caller's email address: one page. The server lists the items
-// to a browser session only (decision 187): a terminal's device token gets the empty list, so the command says where to
-// read it, and an unproved address is told to prove it. Proving an address stays in the web interface.
+// sharedExternal lists what other accounts shared with the caller's email address: one page. A terminal's device token
+// reads the list as a session does (decision 192); an unproved address is told to prove it. Proving an address stays in
+// the web interface.
 func (r *run) sharedExternal() int {
 	c, err := r.connect()
 	if err != nil {
@@ -173,11 +172,8 @@ func (r *run) sharedExternal() int {
 		[]string{"id", "kind", "role", "name", "account_name", "shared_by_name", "expires_at"}); code != exitcode.OK {
 		return code
 	}
-	switch {
-	case !doc.EmailProved:
+	if !doc.EmailProved {
 		_, _ = fmt.Fprintln(r.err, "selfcloud: your email address is not proved; prove it in the web interface to see what other accounts shared with you")
-	case c.Kind == profile.KindDevice:
-		_, _ = fmt.Fprintln(r.err, "selfcloud: the server does not list what other accounts shared with you to a terminal sign-in; see it in the web interface")
 	}
 	return exitcode.OK
 }
