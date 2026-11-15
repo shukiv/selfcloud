@@ -2,9 +2,11 @@
 
 import { StrictMode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../test/fetchStub";
+import { stubLocationAssign } from "../test/locationStub";
+import { setSignInInfo, SIGNED_OUT_PATH } from "../lib/outsideSignIn";
 import { peekSecret, stashSecret } from "../lib/sharing/links";
 import OpenLinkPage from "./OpenLinkPage";
 
@@ -45,6 +47,7 @@ function opens(answer: Answer) {
 
 beforeEach(() => {
   session.set(null);
+  setSignInInfo(null);
   sessionStorage.clear();
   localStorage.clear();
   visitFrom("");
@@ -52,6 +55,8 @@ beforeEach(() => {
 
 afterEach(() => {
   session.set(null);
+  setSignInInfo(null);
+  vi.unstubAllGlobals();
   sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
@@ -245,5 +250,46 @@ describe("the visit's credential and state end with the session", () => {
     });
     expect(calls.some((c) => c.url.startsWith("/api/v1/nodes/"))).toBe(false);
     expect(screen.queryByRole("heading", { name: "Plans" })).toBeNull();
+  });
+});
+
+// switchAnswers answers the dead open and the sign-out an account switch makes.
+function switchAnswers(c: Call): Answer {
+  if (c.url === "/api/v1/auth/logout") return { status: 204 };
+  return fail(404, "not_found");
+}
+
+async function switchFromDeadLink(): Promise<void> {
+  session.set(signedAs("olivia"));
+  visitFrom(`#${SECRET}`);
+  stubFetch(switchAnswers);
+  render(<OpenLinkPage />);
+  await screen.findByText(DEAD);
+  await act(async () => {
+    screen.getByRole("button", { name: "Sign in with another account" }).click();
+  });
+}
+
+describe("an account switch on an organisation link", () => {
+  it("at default settings keeps the link as sign-in's next, as before outside pages (guard: signInURL('/s') when neither is set)", async () => {
+    await switchFromDeadLink();
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/login?next=%2Fs"));
+    expect(window.location.hash).toBe("");
+    expect(sessionStorage.getItem("selfcloud.share.secret")).toContain(SECRET);
+  });
+
+  it("with an outside sign-in page set goes where a sign-out goes: the signed-out page (guard: goSignedOut)", async () => {
+    setSignInInfo({ externalUrl: "https://id.example.com/sign-in?next={next}", signedOutUrl: "", password: false });
+    await switchFromDeadLink();
+    await waitFor(() => expect(window.location.pathname).toBe(SIGNED_OUT_PATH));
+    expect(sessionStorage.getItem("selfcloud.share.secret")).toContain(SECRET);
+  });
+
+  it("with a signed-out URL set assigns it, as any sign-out does (guard: goSignedOut)", async () => {
+    setSignInInfo({ externalUrl: "", signedOutUrl: "https://id.example.com/signed-out", password: true });
+    const assign = stubLocationAssign();
+    await switchFromDeadLink();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://id.example.com/signed-out"));
+    expect(sessionStorage.getItem("selfcloud.share.secret")).toContain(SECRET);
   });
 });
