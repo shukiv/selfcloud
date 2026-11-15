@@ -205,7 +205,8 @@ a {
 }
 
 /* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
-   colours. The brand stays at the top and the storage block stays pinned at the bottom (decision 181). */
+   colours. The brand stays at the top and the storage block stays pinned at the bottom (decision 181). The scrollbar sits in
+   the sider's end padding: the region reaches into it by the scrollbar's width (Shell.tsx), so the rows keep the brand's end edge. */
 .shell-scroll {
   flex: 1 1 auto;
   min-height: 0;

@@ -284,6 +284,10 @@ export default function Shell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [admin, shortcutsOpen, navigate]);
+  // The width the middle's scrollbar takes from the rows inside it, at most the sider's end padding: the region reaches into that
+  // padding by this much, so the rows keep the end edge of the brand above and the storage block below. Overlay scrollbars and touch
+  // measure zero and change nothing.
+  const [scrollInset, setScrollInset] = useState(0);
   // The sidebar's middle (the folder tree and the menu) scrolls inside the sider. When the address moves to a place below the
   // fold, its row is brought into view inside that scroll area alone, so the page does not move.
   // The last time the person scrolled the sidebar's area (a wheel, a touch or a key in it), in milliseconds.
@@ -300,15 +304,27 @@ export default function Shell({ children }: { children: ReactNode }) {
     // The area is the sider's, or on a phone the drawer's, which exists only once the drawer has been opened: the effect runs again when it opens.
     const region = document.querySelector<HTMLElement>(".shell-scroll");
     if (!region) return;
+    // The scrollbar's width is the region's border box less its content box (the region has no border). It is measured once here and
+    // again on each resize below: a scrollbar that appears or goes changes the content box. The margin moves the border box and the
+    // content box by the same amount, so the width holds and the state changes only when the scrollbar does.
+    const measure = () => {
+      const inset = Math.min(region.offsetWidth - region.clientWidth, SIDE_PAD);
+      setScrollInset((was) => (was === inset ? was : inset));
+    };
+    measure();
     const observers: { disconnect: () => void }[] = [];
     const scrolled = () => {
       scrolledAt.current = Date.now();
     };
     const pointer = ["wheel", "touchstart", "keydown"] as const;
     for (const type of pointer) region.addEventListener(type, scrolled, { passive: true });
-    // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
+    // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box,
+    // and the scrollbar's width is measured again on the same resize.
     if (typeof ResizeObserver !== "undefined") {
-      const resize = new ResizeObserver(follow);
+      const resize = new ResizeObserver(() => {
+        measure();
+        follow();
+      });
       resize.observe(region);
       observers.push(resize);
     }
@@ -503,7 +519,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} background={sidebar.bg} inline={row.inline} edge={edge} width={width} />
         {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} inline={row.inline} onPick={pick} onFolder={(where) => setFolderWhere(where)}
           documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn, impersonating) : []} onDocument={makeDocument} />}
-        <div className="shell-scroll">
+        <div className="shell-scroll" style={{ marginInlineEnd: -scrollInset }}>
           {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
           {tree && (
             <div style={{ marginBlockEnd: 8 }}>
