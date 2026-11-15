@@ -11,6 +11,8 @@ const root = resolve(process.cwd(), "src");
 const read = (path: string) => JSON.parse(readFileSync(path, "utf8")) as Record<string, string>;
 const en = read(join(root, "i18n", "comments", "en.json"));
 const common = read(join(root, "i18n", "en.json"));
+// MediaQueueTable reads the media catalogue through mt.t(), whose keys the components/files scan below also catches.
+const media = read(join(root, "i18n", "media", "en.json"));
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -47,7 +49,7 @@ describe("the comments catalogue", () => {
       }
     }
     expect(used.size).toBeGreaterThan(20);
-    const missing = [...used].filter((k) => !(k in en) && !(k in common));
+    const missing = [...used].filter((k) => !(k in en) && !(k in common) && !(k in media));
     expect(missing).toEqual([]);
   });
 
