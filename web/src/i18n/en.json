@@ -135,6 +135,8 @@
   "files.view.label": "View",
   "files.view.list": "List",
   "files.view.grid": "Tiles",
+  "files.density.compact": "Compact rows",
+  "files.density.comfortable": "Comfortable rows",
   "files.sort.label": "Sort by",
   "files.sort.name": "Name",
   "files.sort.modified": "Modified",

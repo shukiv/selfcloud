@@ -135,6 +135,8 @@
   "files.view.label": "Vista",
   "files.view.list": "Lista",
   "files.view.grid": "Mosaico",
+  "files.density.compact": "Filas compactas",
+  "files.density.comfortable": "Filas cómodas",
   "files.sort.label": "Ordenar por",
   "files.sort.name": "Nombre",
   "files.sort.modified": "Modificación",

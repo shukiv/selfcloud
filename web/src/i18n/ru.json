@@ -135,6 +135,8 @@
   "files.view.label": "Вид",
   "files.view.list": "Список",
   "files.view.grid": "Плитки",
+  "files.density.compact": "Компактные строки",
+  "files.density.comfortable": "Просторные строки",
   "files.sort.label": "Сортировать по",
   "files.sort.name": "Имени",
   "files.sort.modified": "Изменению",

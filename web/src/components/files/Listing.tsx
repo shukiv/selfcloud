@@ -32,6 +32,7 @@ import { kindOf } from "../../lib/files/kind";
 import type { SortDir, SortKey } from "../../lib/files/sort";
 import type { Node } from "../../lib/files/types";
 import type { ViewMode } from "../../lib/files/viewPrefs";
+import { useDensity, type Density } from "../../lib/files/density";
 import { isTextField } from "../../lib/files/keys";
 import { useCoarsePointer } from "../../lib/pointer";
 import { HEADER_H, THEAD_H } from "../../lib/files/layout";
@@ -804,9 +805,16 @@ function WindowHeaderRow(props: Record<string, unknown>) {
 
 const FILES_TABLE_COMPONENTS = { table: WindowTable, header: { row: WindowHeaderRow }, body: { wrapper: WindowBody } };
 
-// rowHeights is each density's row height, measured from a drawn row. A row is one line (decision 183), so every row of a density
-// is the same height. It is 0 until a row has been drawn.
-const rowHeights = { fine: 0, coarse: 0 };
+// rowHeights is each pointer kind and density's row height, measured from a drawn row (decision 185). A row is one line
+// (decision 183), so every row of a density is the same height. It is 0 until a row has been drawn. A finger keeps the full
+// row whatever the choice, so its height has no density part.
+const rowHeights: Record<string, number> = { "fine:comfortable": 0, "fine:compact": 0, coarse: 0 };
+
+// heightKey is the row height the window reads: the pointer kind and, for a mouse, the density. A change of density reads
+// another height, so the new rows are measured and the drawn rows recomputed (decision 185).
+function heightKey(g: WindowInputs): string {
+  return g.coarse ? "coarse" : `fine:${g.density}`;
+}
 
 // measureRow is the height of a drawn row that is not being renamed: a renamed row has its field, and its error line.
 function measureRow(region: HTMLElement): number {
@@ -818,12 +826,13 @@ function measureRow(region: HTMLElement): number {
   return 0;
 }
 
-// WindowInputs are what the window is worked out from, as of the last render: the list's rows and their IDs, the density, the row
-// being renamed (pinned, or -1) and where the column header is pinned.
+// WindowInputs are what the window is worked out from, as of the last render: the list's rows and their IDs, the pointer kind,
+// the row height choice (decision 185), the row being renamed (pinned, or -1) and where the column header is pinned.
 interface WindowInputs {
   active: boolean;
   count: number;
   coarse: boolean;
+  density: Density;
   pinned: number;
   stickyTop: number;
   ids: string[];
@@ -849,7 +858,7 @@ function headHeight(region: HTMLElement): number {
 // computeWindow reads the page and says which rows to draw. The list's top and the visible part of the window are read from the
 // region, the header and the window; the row height is the density's, measured once.
 function computeWindow(region: HTMLElement, g: WindowInputs): WindowState {
-  const key = g.coarse ? "coarse" : "fine";
+  const key = heightKey(g);
   if (!g.active) return { range: { start: 0, end: g.count }, rowH: rowHeights[key] };
   if (!rowHeights[key]) rowHeights[key] = measureRow(region);
   const rowH = rowHeights[key];
@@ -987,7 +996,7 @@ function presetSig(inline: ListAction[], entries: ListMenuEntry[]): string {
 // a folder's items, a table in list view and tiles in grid view, whose keyboard handling belongs to the page; it reports
 // clicks, keys and focus, and marks what is selected. With columns it is a preset list: the page's columns, rows, actions
 // and menu, with the shared selection and keys. Both are drawn in the same frame: the region and its band variables, antd's
-// table at the middle size with a fixed layout, the header cell, the row's icons and ⋮ button, and the shared CSS group
+// table at the middle size with a fixed layout (the small size in compact, decision 185), the header cell, the row's icons and ⋮ button, and the shared CSS group
 // (.files-list, .item-list in index.css). A preset list never takes the files-list class, which e2e waits on.
 export default function Listing<T extends { id: string }>(p: ListingProps | ItemListingProps<T>) {
   const { t } = useT();
@@ -997,6 +1006,9 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const screens = Grid.useBreakpoint();
   const narrow = !screens.md;
   const coarse = useCoarsePointer();
+  // The row height choice (decision 185): compact with a mouse only. A finger keeps the full row, its tap targets as they are.
+  const [density] = useDensity();
+  const compact = density === "compact" && !coarse;
   const stickyTop = p.stickyTop ?? (isItems(p) ? HEADER_H : DEFAULT_STICKY_TOP);
   // A row or tile that the keyboard scrolls to keeps clear of the sticky header, the toolbar and, in the list, the column header.
   const scrollMarginTop = stickyTop + (isItems(p) || p.view === "list" ? THEAD_H : 0) + 4;
@@ -1220,8 +1232,8 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     [extRef],
   );
   // The inputs and the state are read by the page's listeners, which are set up once per windowing, so they are kept in refs.
-  const winInputs = useRef<WindowInputs>({ active: false, count: 0, coarse, pinned: -1, stickyTop, ids: [] });
-  winInputs.current = { active: winActive, count: rows.length, coarse, pinned, stickyTop, ids };
+  const winInputs = useRef<WindowInputs>({ active: false, count: 0, coarse, density, pinned: -1, stickyTop, ids: [] });
+  winInputs.current = { active: winActive, count: rows.length, coarse, density, pinned, stickyTop, ids };
   const [win, setWin] = useState<WindowState>({ range: { start: 0, end: 0 }, rowH: 0 });
   const winRef = useRef(win);
   winRef.current = win;
@@ -1280,7 +1292,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     }
     const index = ids.indexOf(id);
     const g = winInputs.current;
-    const rowH = rowHeights[g.coarse ? "coarse" : "fine"];
+    const rowH = rowHeights[heightKey(g)];
     if (!g.active || index < 0) {
       pendingFocus.current = null;
       return;
@@ -1521,7 +1533,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const menuList = menuRow ? entriesOf(menuRow) : [];
 
     return (
-      <div role="region" aria-label={q.label} ref={itemRef} className="item-list" data-has-selection={anyPicked ? "true" : "false"} style={bandVars}>
+      <div role="region" aria-label={q.label} ref={itemRef} className={`item-list${compact ? " list--compact" : ""}`} data-has-selection={anyPicked ? "true" : "false"} style={bandVars}>
         {selectable && anyPicked && (
           <SelectionBar
             label={t("files.selection.label")}
@@ -1534,7 +1546,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         )}
         <Table<T>
           rowKey="id"
-          size="middle"
+          size={compact ? "small" : "middle"}
           pagination={false}
           // The table is as wide as the page: a column that does not fit wraps, and the page never scrolls sideways.
           tableLayout="fixed"
@@ -1705,7 +1717,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         role="region"
         aria-label={p.label}
         ref={setRegion}
-        className={`files-list${visitor ? " files-list--visitor" : ""}`}
+        className={`files-list${compact ? " list--compact" : ""}${visitor ? " files-list--visitor" : ""}`}
         data-has-selection={someSelected ? "true" : "false"}
         style={bandVars}
         // A windowed list takes the focus when a row scrolls out of the window, so the arrow keys still reach it (decision 183).
@@ -1717,7 +1729,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         <WindowCtx.Provider value={{ windowed: winActive, top: gap.top, bottom: gap.bottom, rows: p.items.length + 1, cols: columns.length + (coarse ? 1 : 0) }}>
         <Table<Node>
           rowKey="id"
-          size="middle"
+          size={compact ? "small" : "middle"}
           pagination={false}
           // The column header is in this table, not in a table of its own (antd's sticky holder), so it shares the rows' columns in
           // every frame. The stylesheet pins its cells under the toolbar, at --sc-list-top (decision 77, item fu3b).

@@ -135,6 +135,8 @@
   "files.view.label": "Affichage",
   "files.view.list": "Liste",
   "files.view.grid": "Vignettes",
+  "files.density.compact": "Lignes compactes",
+  "files.density.comfortable": "Lignes confortables",
   "files.sort.label": "Trier par",
   "files.sort.name": "Nom",
   "files.sort.modified": "Modification",

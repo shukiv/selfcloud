@@ -135,6 +135,8 @@
   "files.view.label": "العرض",
   "files.view.list": "قائمة",
   "files.view.grid": "بلاط",
+  "files.density.compact": "صفوف مدمجة",
+  "files.density.comfortable": "صفوف مريحة",
   "files.sort.label": "ترتيب حسب",
   "files.sort.name": "الاسم",
   "files.sort.modified": "آخر تعديل",

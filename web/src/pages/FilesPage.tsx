@@ -31,6 +31,8 @@ import {
   Pencil,
   Play,
   Plus,
+  Rows3,
+  Rows4,
   Scissors,
   Share2,
   Star,
@@ -74,6 +76,7 @@ import { opensInViewer } from "../lib/code/kind";
 import { codeMenuEntry } from "../lib/code/edit";
 import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
+import { useDensity } from "../lib/files/density";
 import { UndoStack } from "../lib/files/undo";
 import { copyText, nodeAddress } from "../lib/files/copyText";
 import { alreadyIn, dropDecision, dropTrash, type Dest } from "../lib/files/drag";
@@ -335,6 +338,8 @@ export default function FilesPage() {
   const lang = useLang();
   const { token } = antdTheme.useToken();
   const coarse = useCoarsePointer();
+  // The list's row height choice, kept per person in this browser (decision 185).
+  const [density, setDensity] = useDensity();
   const roomy = useRoomy();
   const spacious = useRoomy(480);
   // Where the sidebar is shown, its New button holds the New actions, so the toolbar has none. A drawer has no New of its own,
@@ -2106,6 +2111,8 @@ export default function FilesPage() {
   };
   // The view toggle shows the view it switches to.
   const switchTo = view === "list" ? { to: "grid" as const, label: t("files.view.grid") } : { to: "list" as const, label: t("files.view.list") };
+  // The density toggle shows the rows it switches to, as the view toggle shows its view (decision 185).
+  const densityTo = density === "compact" ? { to: "comfortable" as const, label: t("files.density.comfortable") } : { to: "compact" as const, label: t("files.density.compact") };
   // The toolbar is one row that stays on screen above the listing: the shell's header is 56 pixels, and the rows scroll under it.
   // The selection panel takes the toolbar's row while something is selected: one full-width bar at the same height, above the
   // listing (on every width, as the owner asked). X clears, then the count, then icons with tooltips; the rest are in More.
@@ -2304,6 +2311,16 @@ export default function FilesPage() {
                   <IconButton label={t("files.sort.label")} icon={<ArrowUpDown {...ic} />} />
                 </Dropdown>
               </ConfigProvider>
+            )}
+            {/* The row height choice is a mouse's, in the list view only: a finger keeps the full row (decision 185). */}
+            {view === "list" && !coarse && (
+              <IconButton
+                data-testid="density-toggle"
+                data-density={densityTo.to}
+                label={densityTo.label}
+                icon={densityTo.to === "compact" ? <Rows4 {...ic} /> : <Rows3 {...ic} />}
+                onClick={() => setDensity(densityTo.to)}
+              />
             )}
             <IconButton
               data-testid="view-toggle"
