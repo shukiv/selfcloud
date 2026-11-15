@@ -5,6 +5,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import IconButton from "./IconButton";
 import { useT } from "../lib/i18n";
 import { useTheme, type Pref } from "../theme/theme";
+import { useCoarsePointer } from "../lib/pointer";
 
 const CHOICES: Pref[] = ["system", "light", "dark"];
 const GLYPH = { system: Monitor, light: Sun, dark: Moon } as const;
@@ -14,10 +15,13 @@ const GLYPH = { system: Monitor, light: Sun, dark: Moon } as const;
 export default function ThemeMenu() {
   const { t } = useT();
   const { pref, setPref } = useTheme();
+  const coarse = useCoarsePointer();
+  // A menu item is a finger's size on a coarse pointer (mob3): 44 px tall, its padding taken out of the height.
+  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   const Current = GLYPH[pref];
   const items = CHOICES.map((c) => {
     const Glyph = GLYPH[c];
-    return { key: c, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Glyph size={16} aria-hidden="true" focusable="false" />{t(`theme.${c}`)}</span> };
+    return { key: c, style: touchItem, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Glyph size={16} aria-hidden="true" focusable="false" />{t(`theme.${c}`)}</span> };
   });
   return (
     <Dropdown

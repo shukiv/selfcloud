@@ -367,13 +367,14 @@ function keysStop(e: { key: string; stopPropagation: () => void }) {
 const MORE_ICON = <EllipsisVertical size={18} aria-hidden="true" focusable="false" />;
 
 // menuItemOf is a ⋮ entry. An entry with an address is a real link: the browser opens a middle or a modified click in a new
-// tab, and a plain click or a key runs the entry here, in this tab.
-function menuItemOf(e: ListMenuEntry, select: () => void): NonNullable<MenuProps["items"]>[number] {
+// tab, and a plain click or a key runs the entry here, in this tab. On a coarse pointer the entry is a finger's size (mob3).
+function menuItemOf(e: ListMenuEntry, select: () => void, coarse: boolean): NonNullable<MenuProps["items"]>[number] {
   return {
     key: e.key,
     icon: e.icon,
     danger: e.danger,
     disabled: e.disabled,
+    style: coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined,
     label: e.href ? <a href={e.href}>{e.label}</a> : e.label,
     onClick: ({ domEvent }) => {
       if (e.href && "button" in domEvent && (domEvent.button !== 0 || domEvent.metaKey || domEvent.ctrlKey || domEvent.shiftKey || domEvent.altKey)) return;
@@ -930,12 +931,13 @@ interface PresetEndProps {
   moreLabel: string;
   moreTip: string;
   PH: PresetHandlers;
+  coarse: boolean;
 }
 
 // PresetEnd is a preset row's end: up to three icons inline, and the ⋮ menu with the rest of the actions and the page's entries.
 // A row is drawn again only when its item or its actions change. An icon and an entry run the page's latest action at the click.
 const PresetEnd = memo(
-  function PresetEnd({ row, inline, entries, moreLabel, moreTip, PH }: PresetEndProps) {
+  function PresetEnd({ row, inline, entries, moreLabel, moreTip, PH, coarse }: PresetEndProps) {
     const { token } = antdTheme.useToken();
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
@@ -972,7 +974,7 @@ const PresetEnd = memo(
           </span>
         )}
         {entries.length > 0 && (
-          <Dropdown menu={{ items: entries.map((e) => menuItemOf(e, () => PH.entry(row, e.key))) }} trigger={["click"]}>
+          <Dropdown menu={{ items: entries.map((e) => menuItemOf(e, () => PH.entry(row, e.key), coarse)) }} trigger={["click"]}>
             <IconButton
               aria-haspopup="menu"
               label={moreLabel}
@@ -989,7 +991,7 @@ const PresetEnd = memo(
       </div>
     );
   },
-  (a, b) => a.row === b.row && a.sig === b.sig && a.moreLabel === b.moreLabel && a.moreTip === b.moreTip && a.PH === b.PH,
+  (a, b) => a.row === b.row && a.sig === b.sig && a.moreLabel === b.moreLabel && a.moreTip === b.moreTip && a.PH === b.PH && a.coarse === b.coarse,
 );
 
 // presetSig is a preset row's end as text: each inline action and each ⋮ entry with the parts the page changes while the row is
@@ -1178,8 +1180,14 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         // The focus of a press is applied here, in the batch of the click's own update, so the two are one render.
         pf.settle(idOf(e));
-        // The checkbox column has its own handler, so a click on it must not also select the row.
-        if (inCheck(e)) return;
+        // The checkbox column has its own handler, so a click on it must not also select the row. On a finger the whole select
+        // cell is the target (mob3): a tap in it away from the box toggles the row, as a Ctrl click does, and opens nothing. A tap
+        // on the box itself is left to the checkbox, so it toggles once, not twice.
+        if (inCheck(e)) {
+          const t = e.target as HTMLElement;
+          if (coarse && t.closest(".ant-table-selection-column") && !t.closest(".ant-checkbox-wrapper")) H.click(idOf(e), CTRL_CLICK);
+          return;
+        }
         // A click in the row's own rename field places the cursor there; the item is not opened by it.
         if (files().renameID === idOf(e)) return;
         // The tap that ends a long press is part of the press: it selects and opens nothing.
@@ -1205,9 +1213,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       // A focus that comes from a press is the click's (settle); any other focus is the row's own.
       onFocus: (e: ReactFocusEvent<HTMLElement>) => pf.focus(idOf(e)),
     };
-    // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render.
+    // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render. coarse is a
+    // value, so the handlers are made again when it changes (the select cell's tap, mob3).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [H, pf]);
+  }, [H, pf, coarse]);
   // liftPending says a long press has opened its menu and no new press has begun since. Until one does, the mousedowns the
   // browser sends for the lifted finger are stopped, since the menu closes on a mousedown and would close at the lift. A
   // real mouse press always begins with a pointerdown, which clears the flag first. The listeners are added at mount, so
@@ -1338,7 +1347,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // the sort changes. dir is the list's direction when it is sorted by this column, null when it is not.
   const headCell = (label: string, dir: "asc" | "desc" | null, onSort: () => void) => ({
     title: (
-      <Button type="text" size="small" onClick={onSort} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <Button type="text" size="small" onClick={onSort} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4, minHeight: coarse ? 44 : undefined }}>
         {label}
         <span aria-hidden="true" style={{ display: "inline-flex", width: 14, height: 14, flex: "none" }}>
           {dir === null ? null : dir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
@@ -1437,6 +1446,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           moreLabel={q.moreLabel?.(r) ?? t("files.tile.menu", { name: q.rowLabel(r) })}
           moreTip={t("files.selection.more")}
           PH={PH}
+          coarse={coarse}
         />
       );
     };
@@ -1500,7 +1510,13 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         pf.settle(r.id);
-        if (isControl(e)) return;
+        if (isControl(e)) {
+          // On a finger the whole select cell is the target (mob3): a tap in it away from the box toggles the row, as the box does.
+          // A tap on the box itself is left to the checkbox, so it toggles once, not twice.
+          const t = e.target as HTMLElement;
+          if (coarse && selectable && t.closest(".ant-table-selection-column") && !t.closest(".ant-checkbox-wrapper")) PH.pick(r.id, { toggle: true });
+          return;
+        }
         // The tap that ends a long press is part of the press: it opens and selects nothing.
         if (pressed.current) {
           pressed.current = false;
@@ -1608,7 +1624,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             if (!open) setRowMenu(null);
           }}
           trigger={[]}
-          menu={{ items: menuList.map((e) => menuItemOf(e, e.onSelect)), onClick: () => setRowMenu(null) }}
+          menu={{ items: menuList.map((e) => menuItemOf(e, e.onSelect, coarse)), onClick: () => setRowMenu(null) }}
         >
           {/* The anchor sits at the pointer, which is a place in the window (clientX from the left), so its inset is physical. */}
           <span aria-hidden="true" style={{ position: "fixed", inset: `${rowMenu?.y ?? 0}px auto auto ${rowMenu?.x ?? 0}px`, width: 0, height: 0 }} />

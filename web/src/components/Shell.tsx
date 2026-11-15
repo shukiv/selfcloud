@@ -627,20 +627,23 @@ export default function Shell({ children }: { children: ReactNode }) {
   );
   // The keyboard shortcuts list's entry (ks1, decision 174), with its key at the right as the files page's menus draw theirs.
   // A finger has no keyboard to speak of, so the entry is not shown there.
+  // A menu item is a finger's size on a coarse pointer (mob3): 44 px tall, its padding taken out of the height.
+  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   const shortcutsEntry = {
     key: "shortcuts",
     label: t("shell.shortcuts"),
     extra: <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint("shortcuts", MAC_KEYS)} />,
     "aria-keyshortcuts": shortcutKeys("shortcuts", MAC_KEYS),
+    style: touchItem,
   };
   const accountEntries: NonNullable<MenuProps["items"]> = [
-    { key: "password", label: t("user.changePassword") },
+    { key: "password", label: t("user.changePassword"), style: touchItem },
     // An installation admin holds no device sign-in, so the page is not theirs (App.tsx refuses it as a drive page).
-    ...(me?.user.role === "admin" ? [] : [{ key: "devices", label: t("user.devices") }]),
-    ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
-    ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome") }] : []),
+    ...(me?.user.role === "admin" ? [] : [{ key: "devices", label: t("user.devices"), style: touchItem }]),
+    ...(offerInstall ? [{ key: "install", label: t("pwa.install"), style: touchItem }] : []),
+    ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome"), style: touchItem }] : []),
     ...(coarse ? [] : [shortcutsEntry]),
-    ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
+    ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut"), style: touchItem }]),
   ];
   // One group, titled by the header: its title is not a stop for the keyboard, so the first stop is Change password.
   const userItems: MenuProps["items"] = [{ type: "group", key: "account", label: accountHeader, children: accountEntries }];

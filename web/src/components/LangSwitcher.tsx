@@ -9,6 +9,7 @@ import { PREF_LANG, writePref } from "../lib/prefs";
 import { get } from "../lib/store";
 import { session } from "../lib/session";
 import { setLocale } from "../lib/auth";
+import { useCoarsePointer } from "../lib/pointer";
 
 // change applies the language at once and saves it: to the account when signed in, so every device
 // gets it; otherwise to this browser.
@@ -28,9 +29,13 @@ export async function change(next: Lang) {
 export default function LangSwitcher({ compact = false }: { compact?: boolean }) {
   const { t } = useT();
   const current = useLang();
+  const coarse = useCoarsePointer();
+  // A menu item is a finger's size on a coarse pointer (mob3): 44 px tall, its padding taken out of the height.
+  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   const items: MenuProps["items"] = LANGUAGES.map((code) => ({
     key: code,
     label: <span lang={code}>{NATIVE_NAMES[code]}</span>,
+    style: touchItem,
   }));
   return (
     <Dropdown

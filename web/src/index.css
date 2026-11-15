@@ -1427,6 +1427,15 @@ tr[data-drop-state="refused"] > td {
   background: linear-gradient(var(--sc-list-head-tint), var(--sc-list-head-tint)), var(--sc-list-head);
 }
 
+/* On a finger the sort header's button is 44 px tall (Listing), so the cell's own padding shrinks to keep the header at the 48 px
+   the windowing reads (THEAD_H, mob3): 44 + 2 + 2. A mouse keeps antd's roomier padding and its small button. */
+@media (pointer: coarse) {
+  .files-list .ant-table-thead > tr > th,
+  .item-list .ant-table-thead > tr > th {
+    padding-block: 2px;
+  }
+}
+
 /* A menu entry's keyboard shortcut is drawn after the entry's name, from its data-hint: it is not text, so the entry reads as its name. */
 .menu-hint::after {
   content: attr(data-hint);
@@ -1650,6 +1659,14 @@ tr[data-drop-state="refused"] > td {
   .search-filter.ant-input {
     min-height: 44px;
   }
+  /* The select's outer box is 44 px too (mob3): antd leaves a single select's root at 32 px, so the field sat taller than its
+     box and the filters overlapped on a narrow phone. A multiple select grows with its tags, so it only takes a floor. */
+  .search-filter.ant-select {
+    min-height: 44px;
+  }
+  .search-filter.ant-select:not(.ant-select-multiple) {
+    height: 44px;
+  }
   /* A single select is 44 px high, as antd's own 32 px would leave it. A multiple select grows with its tags. */
   .search-filter.ant-select:not(.ant-select-multiple) .ant-select-selector {
     height: 44px;
@@ -1856,4 +1873,33 @@ tr[data-drop-state="refused"] > td {
   .shell-theme-slot {
     display: none;
   }
+}
+
+/* A dialog's close button is a finger's target (mob3): 44 x 44 px on a coarse pointer. The drawer's close sits in its header's
+   flow, so the size alone is enough; the modal's close is pinned to the header's corner, so it moves in by half the growth to stay
+   centred in the 56 px header ((56 - 44) / 2 = 6). The class is doubled to outrank antd's own rule. A mouse keeps the small button. */
+@media (pointer: coarse) {
+  .ant-drawer .ant-drawer-close.ant-drawer-close {
+    width: 44px;
+    height: 44px;
+  }
+  .ant-modal .ant-modal-close.ant-modal-close {
+    width: 44px;
+    height: 44px;
+    inset-block-start: 6px;
+    inset-inline-end: 6px;
+  }
+  .ant-modal .ant-modal-close .ant-modal-close-x {
+    line-height: 44px;
+  }
+}
+
+/* In the dark theme a disabled primary button's text reads on its fill (mob3): antd's disabled colours are too faint here. The text
+   takes the secondary text colour and the fill the secondary border colour, which reach 4.5 to 1. This is not coarse-only: a disabled
+   button reads the same on a mouse. */
+:root[data-theme="dark"] .ant-btn-primary:disabled,
+:root[data-theme="dark"] .ant-btn-primary.ant-btn-disabled {
+  color: var(--ant-color-text-secondary);
+  background: var(--ant-color-border-secondary);
+  border-color: var(--ant-color-border);
 }
