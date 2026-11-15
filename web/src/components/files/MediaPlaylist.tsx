@@ -10,6 +10,7 @@ import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
 import { isPopupTarget } from "../../lib/files/mediaKeys";
+import { setSleep, stopsAtEnd } from "../../lib/files/sleepTimer";
 import {
   addEnd,
   addNext,
@@ -442,6 +443,15 @@ export default function MediaPlaylist({
     const b = back(qRef.current);
     if (b) pick(b.queue);
   };
+  // The sleep timer's End of this file keeps the file ended instead of advancing: the choice is spent (Off again) and
+  // the queue moves nothing. Any other choice ends the file as always, into the next one.
+  const onFileEnded = () => {
+    if (stopsAtEnd()) {
+      setSleep("off");
+      return;
+    }
+    next();
+  };
 
   // The owner of a session reaches Previous and Next through onNav; the functions read the current ones when they run.
   const stepFns = useRef({ next, previous });
@@ -628,7 +638,7 @@ export default function MediaPlaylist({
               link={current.link}
               mint={() => fetchRef.current(currentNode)}
               onFail={onFail}
-              onEnded={next}
+              onEnded={onFileEnded}
               onPlaying={onPlaying}
               onPlayState={setPlaying}
               loop={q.repeat === "one"}

@@ -5,6 +5,7 @@ import { ConfigProvider, Dropdown, Select, Slider, theme as antdTheme, type Menu
 import type { MenuItemType } from "antd/es/menu/interface";
 import { Captions, Check, Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import IconButton from "../IconButton";
+import MediaExtras from "./MediaExtras";
 import { useT } from "../../lib/i18n";
 import { readNonce } from "../../csp/nonce";
 import { usePaletteOrLight } from "../../theme/theme";
@@ -592,6 +593,8 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
             if (m) m.playbackRate = v;
           }}
         />
+
+        <MediaExtras media={m} popupHost={popupHost} />
 
         {kind === "video" &&
           typeof document !== "undefined" &&
