@@ -471,8 +471,8 @@ describe("subtitles beside a video", () => {
     await waitFor(() => expect(tracks).toHaveLength(1));
     expect(tracks[0].cues).toEqual([[1, 2.5, "Hello there"]]);
     expect(tracks[0].mode).toBe("disabled");
-    const sub = await screen.findByRole("combobox", { name: "Subtitles" });
-    fireEvent.mouseDown(sub.closest(".ant-select")?.querySelector(".ant-select-selector") as Element);
+    const sub = await screen.findByRole("button", { name: "Subtitles" });
+    fireEvent.click(sub);
     fireEvent.click(await screen.findByText("clip.vtt"));
     await waitFor(() => expect(tracks[0].mode).toBe("showing"));
     delete (HTMLMediaElement.prototype as { addTextTrack?: unknown }).addTextTrack;
@@ -490,7 +490,12 @@ describe("subtitles beside a video", () => {
     fireEvent.loadedMetadata(await element("video"));
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(add).not.toHaveBeenCalled();
-    expect(screen.queryByRole("combobox", { name: "Subtitles" })).toBeNull();
+    // The button is on every video; the refused file gives no track in its menu.
+    const sub = await screen.findByRole("button", { name: "Subtitles" });
+    fireEvent.click(sub);
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByText("Off")).toBeTruthy();
+    expect(within(menu).queryByText("clip.srt")).toBeNull();
     delete (HTMLMediaElement.prototype as { addTextTrack?: unknown }).addTextTrack;
   });
 });
