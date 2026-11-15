@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, Button, Input } from "antd";
 import { useT } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
-import { go } from "../lib/router";
-import { goSignedOut, sendToSignIn } from "../lib/outsideSignIn";
+import { go, signInURL } from "../lib/router";
+import { goSignedOut, sendToSignIn, signInInfo } from "../lib/outsideSignIn";
 import { validID } from "../lib/files/route";
 import { signOut } from "../lib/auth";
 import { session, sessionChanged, sessionKey } from "../lib/session";
@@ -174,15 +174,21 @@ export default function OpenLinkPage() {
   };
 
   // switchAccount signs the visitor out, for an organisation link opened from the wrong account. The secret waits for
-  // the sign-in; the browser goes where a sign-out goes (decision 185).
+  // the sign-in. With no outside sign-in set the sign-in keeps the link as its next, as before; when one is set the
+  // browser goes where a sign-out goes (decision 185).
   const switchAccount = async (): Promise<void> => {
     stashSecret(secretRef.current, window.sessionStorage);
     try {
       await signOut();
     } catch {
-      // The session is cleared either way; the signed-out page is shown below.
+      // The session is cleared either way; the sign-in move below still happens.
     }
     stripAddress();
+    const { externalUrl, signedOutUrl } = signInInfo();
+    if (externalUrl === "" && signedOutUrl === "") {
+      go(signInURL("/s"), { replace: true });
+      return;
+    }
     goSignedOut();
   };
 
