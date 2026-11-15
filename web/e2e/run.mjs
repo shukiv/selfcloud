@@ -220,6 +220,12 @@ const EXPECTED = [
     name: 'zip refused',
     matches: (e) => e.source === 'network' && /\/api\/v1\/zips\/[^/?]+$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
   },
+  // A visitor's zip still being made answers 409 zip_not_ready until it is ready; the share page waits the Retry-After
+  // and asks again (pz1b). The browser logs each refusal, and the run counts them instead.
+  {
+    name: 'zip not ready',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/zips\/[^/]+\/links$/.test(e.url ?? '') && /status of 409\b/.test(e.text ?? ''),
+  },
   // A text read the no-download rule refuses: the code viewer sniffs a file stored as octet-stream, the server answers 403, and
   // the viewer says the file is restricted (ce1Checks, decision 115). Only a node the section locked counts.
   {

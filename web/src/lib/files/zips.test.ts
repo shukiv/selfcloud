@@ -53,6 +53,43 @@ describe('zipFailureText', () => {
   });
 });
 
+describe('zipFailureText for a visitor of a link that anyone can open', () => {
+  beforeAll(async () => {
+    await Promise.all([loadLang('he'), loadLang('ar')]);
+  });
+
+  it('names the visitor refusals with their own text, and no raw code or reason', () => {
+    const cases: Array<[string | undefined, string | undefined, string]> = [
+      ['conflict', 'too_many_zips_link', 'files.zip.linkBusy'],
+      ['conflict', 'too_many_zips_account', 'files.zip.visitorLimit'],
+      ['too_large', undefined, 'files.zip.visitorLimit'],
+      ['rate_limited', undefined, 'files.zip.slowDown'],
+      ['conflict', 'zip_not_ready', 'files.zip.slow'],
+      ['conflict', 'zip_failed', 'files.zip.failed'],
+      ['download_restricted', undefined, 'files.err.downloadRestricted'],
+      ['storage_full', 'zip_disk', 'files.zip.storage'],
+      [undefined, undefined, 'files.zip.failed'],
+    ];
+    for (const [code, reason, key] of cases) {
+      const shown = zipFailureText(code, reason, 'en', true);
+      expect(shown, `${code}/${reason}`).toBe(translate('en', key));
+      expect(shown).not.toMatch(/_/);
+    }
+  });
+
+  it('keeps the signed-in text when no visitor asks', () => {
+    expect(zipFailureText('conflict', 'too_many_zips_account', 'en')).toBe(text(KEYS.tooManyAccount));
+    expect(zipFailureText('too_large', undefined, 'en')).toBe(text(KEYS.tooLarge));
+    expect(zipFailureText('conflict', 'too_many_zips_link', 'en')).toBe(text(KEYS.failed));
+  });
+
+  it('translates the visitor refusals into the language asked for', () => {
+    expect(zipFailureText('conflict', 'too_many_zips_link', 'he', true)).toBe(translate('he', 'files.zip.linkBusy'));
+    expect(zipFailureText('rate_limited', undefined, 'ar', true)).toBe(translate('ar', 'files.zip.slowDown'));
+    expect(translate('he', 'files.zip.linkBusy')).not.toBe(translate('en', 'files.zip.linkBusy'));
+  });
+});
+
 describe('zipErrorText', () => {
   it('maps the refusals of the zip request before the file API does', () => {
     expect(zipErrorText(new ApiError(507, 'storage_full', { reason: 'zip_account_disk' }, 0), 'en')).toBe(text(KEYS.storageAccount));

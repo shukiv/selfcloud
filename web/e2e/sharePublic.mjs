@@ -178,6 +178,33 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   for (let i = 0; i < 100 && !(await readdir(downloads)).includes('brief.txt'); i++) await sleep(100);
   await rm(downloads, { recursive: true, force: true });
 
+  // Download all (pz1b): the visitor zips the folder on screen. The button sits beside the view and sort controls; the
+  // page waits while the link's zip is made, then starts the download through a signed link that needs no credential.
+  const zipDownloads = await mkdtemp(join(tmpdir(), 'pz1b-downloads-'));
+  await page.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: zipDownloads });
+  let zipLinkReq = null;
+  const watchZipLink = (p) => {
+    if (p.response && /\/api\/v1\/zips\/[^/]+\/links$/.test(p.response.url) && p.response.status === 200) zipLinkReq = p.requestId;
+  };
+  page.on('Network.responseReceived', watchZipLink);
+  h.check(await page.evaluate(`!!document.querySelector('[data-testid="download-all"]')`), 'the folder has a Download all button beside the view and sort controls');
+  await page.evaluate(`document.querySelector('[data-testid="download-all"]').click()`);
+  await page.waitFor(`[...document.querySelectorAll('.public-browse [role="status"]')].some((p) => p.textContent.includes(${q('The zip is ready')}))`, 60000);
+  page.off('Network.responseReceived', watchZipLink);
+  h.check(true, 'Download all makes the zip and says it is ready');
+  // The browser saves the archive through the signed link, as it saves a file's download.
+  for (let i = 0; i < 150 && !(await readdir(zipDownloads)).some((f) => f.endsWith('.zip')); i++) await sleep(100);
+  h.check((await readdir(zipDownloads)).some((f) => f.endsWith('.zip')), 'the signed link starts the browser download of the zip');
+  await rm(zipDownloads, { recursive: true, force: true });
+  // The signed link downloads with no credential: the harness fetches it with no cookie and no bearer, and reads the
+  // archive's first bytes and its entry names.
+  const zipBody = await page.send('Network.getResponseBody', { requestId: zipLinkReq });
+  const zipUrl = JSON.parse(zipBody.body).url;
+  const zipRes = await fetch(zipUrl);
+  const zipBytes = Buffer.from(await zipRes.arrayBuffer());
+  h.check(zipRes.status === 200 && (zipRes.headers.get('content-type') ?? '').includes('application/zip'), `the signed zip link answers 200 application/zip with no credential (${zipRes.status}, ${zipRes.headers.get('content-type')})`);
+  h.check(zipBytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) && zipBytes.includes('Plans/brief.txt') && zipBytes.includes('Plans/plan.png'), "the archive holds the folder's files");
+
   // The view toggle shows tiles, and the choice is kept under the share's own key; the owner's key is left as it was (earlier
   // sections of a full run may have set it, so it is read before the toggle and compared after).
   const ownerBefore = await page.evaluate(`localStorage.getItem('selfcloud.files')`);
@@ -221,6 +248,7 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   const src = await page.evaluate(`document.querySelector('img.public-preview').getAttribute('src')`);
   h.check(src.includes('/api/v1/links/'), 'the file opens with a preview from a signed link');
   h.check(await page.evaluate(`!!document.querySelector('a.btn[download]')`), 'the file has a Download button');
+  h.check(!(await page.evaluate(`!!document.querySelector('[data-testid="download-all"]')`)), 'a file link has no Download all button');
   // The path stops at the link's root: no item above it is named.
   const crumbs = await page.evaluate(`[...document.querySelectorAll('.crumbs button')].map((b) => b.textContent)`);
   h.check(JSON.stringify(crumbs) === JSON.stringify(['Plans']), `the path stops at the link's root (${crumbs.join(' / ')})`);
