@@ -2,12 +2,13 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Alert, Button, Dropdown, theme as antdTheme } from "antd";
-import { ArrowUpDown, ChevronRight, Download, LayoutGrid, List, Play } from "lucide-react";
+import { ArrowUpDown, ChevronRight, Download, FolderDown, LayoutGrid, List, Play } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import type { Node, Page } from "../../lib/files/types";
-import { visitorChildren, visitorLink, visitorNode } from "../../lib/sharing/api";
+import { visitorChildren, visitorLink, visitorNode, visitorZip, visitorZipLink } from "../../lib/sharing/api";
 import { childrenPage, signedLink, statNode } from "../../lib/files/api";
+import { zipFailureText } from "../../lib/files/zips";
 import { crumbsTo, previewKind, type NodeRef } from "../../lib/sharing/anyone";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
@@ -59,6 +60,10 @@ export interface BrowseSource {
   children: (id: string, cursor?: string) => Promise<Page<Node>>;
   link: (id: string, disposition: "inline" | "attachment") => Promise<{ url: string }>;
   deferLinks?: boolean;
+  // zip asks for a zip of the folder on screen and gives its signed download link when it is ready. Only the visitor
+  // source has one: a signed-in folder is zipped from the drive's own toolbar. signal ends the wait when the visitor
+  // leaves the folder or the page. expires_at, when given, is when the signed link stops working.
+  zip?: (folderId: string, signal?: AbortSignal) => Promise<{ url: string; expires_at?: string }>;
 }
 
 // visitorSource reads through the visitor's calls with the bearer the page holds.
@@ -67,7 +72,52 @@ export function visitorSource(token: string): BrowseSource {
     node: (id) => visitorNode(token, id),
     children: (id, cursor) => visitorChildren(token, id, cursor),
     link: (id, disposition) => visitorLink(token, id, disposition),
+    zip: (folderId, signal) => visitorZipAll(token, folderId, signal),
   };
+}
+
+// ZIP_WAIT_MS is how long the page waits for the link's zip in all: fifteen minutes, as the drive's own zip watch waits.
+const ZIP_WAIT_MS = 15 * 60_000;
+
+// visitorZipAll makes the link's zip of the folder, then asks for its signed link until the zip is ready. A zip still being
+// made is asked again after the server's Retry-After, clamped to 1..10 seconds; any other refusal ends the wait, and a wait
+// that runs out throws the last not-ready answer, which the page reads as slow. signal ends the wait at once: the ask in
+// flight is aborted, and no further ask is made.
+async function visitorZipAll(token: string, folderId: string, signal?: AbortSignal): Promise<{ url: string; expires_at: string }> {
+  const zip = await visitorZip(token, folderId, signal);
+  const deadline = Date.now() + ZIP_WAIT_MS;
+  for (;;) {
+    try {
+      return await visitorZipLink(token, zip, signal);
+    } catch (err) {
+      const waiting = err instanceof ApiError && err.code === "conflict" && err.details.reason === "zip_not_ready";
+      const wait = Math.min(10, Math.max(1, err instanceof ApiError ? err.retryAfter : 1)) * 1000;
+      if (!waiting || signal?.aborted || Date.now() + wait > deadline) throw err;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, wait);
+        const onAbort = (): void => {
+          clearTimeout(timer);
+          reject(new ApiError(0, "cancelled", {}, 0));
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    }
+  }
+}
+
+// startDownload starts a download of a signed link as a browser link, as downloadZip does (lib/files/zips.ts), so the
+// browser resumes it if it is interrupted. The link carries no credential.
+function startDownload(url: string): void {
+  const a = document.createElement("a");
+  a.href = url;
+  a.setAttribute("download", "");
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // sessionSource reads through the drive's own calls, and defers a file's link to the click that needs it.
@@ -143,6 +193,12 @@ export default function PublicBrowse({ token, root, onlost, source, byline }: Pu
   const [mediaDownload, setMediaDownload] = useState<{ id: string; allowed: boolean } | null>(null);
   const [downloadURL, setDownloadURL] = useState<string | null>(null);
   const [downloadRestricted, setDownloadRestricted] = useState(false);
+  // The folder's zip (pz1b): zipBusy while it is made, zipReady the signed link the download started with (kept for
+  // Download again until it expires), zipError the text of a refusal. zipCtl ends the wait when the visitor leaves.
+  const [zipBusy, setZipBusy] = useState(false);
+  const [zipReady, setZipReady] = useState<{ url: string; expiresAt: number } | null>(null);
+  const [zipError, setZipError] = useState<string | null>(null);
+  const zipCtlRef = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // The view and sort, and the row the keyboard's focus is on (pb1).
@@ -300,6 +356,12 @@ export default function PublicBrowse({ token, root, onlost, source, byline }: Pu
       setMediaDownload(null);
       setDownloadURL(null);
       setDownloadRestricted(false);
+      // A zip wait of the folder left behind ends here: no further ask, and no answer of it may set the screen.
+      zipCtlRef.current?.abort();
+      zipCtlRef.current = null;
+      setZipBusy(false);
+      setZipReady(null);
+      setZipError(null);
       setFocusID(null);
       if (node.kind === "dir") {
         const read = await allChildren(id);
@@ -343,9 +405,60 @@ export default function PublicBrowse({ token, root, onlost, source, byline }: Pu
     void show(root);
     return () => {
       aliveRef.current = false;
+      zipCtlRef.current?.abort();
     };
     // The first show reads the root; later moves come from the user's clicks.
   }, []);
+
+  // startZip asks for the zip of the folder on screen, once: a second click while one is in flight does nothing. The
+  // source waits for the signed link; the download starts as a browser link when it arrives. Only the latest move may
+  // set the screen, so an answer that arrives after the visitor left sets nothing.
+  const startZip = (): void => {
+    const zip = srcRef.current.zip;
+    if (!zip || current === null || current.kind !== "dir" || zipCtlRef.current !== null) return;
+    const folderId = current.id;
+    const move = moveRef.current;
+    const live = (): boolean => aliveRef.current && move === moveRef.current;
+    const ctl = new AbortController();
+    zipCtlRef.current = ctl;
+    setZipBusy(true);
+    setZipError(null);
+    setZipReady(null);
+    void zip(folderId, ctl.signal).then(
+      (got) => {
+        if (!live()) return;
+        zipCtlRef.current = null;
+        setZipBusy(false);
+        const expiresAt = got.expires_at !== undefined ? Date.parse(got.expires_at) : 0;
+        setZipReady({ url: got.url, expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0 });
+        startDownload(got.url);
+      },
+      (err: unknown) => {
+        if (!live()) return;
+        zipCtlRef.current = null;
+        setZipBusy(false);
+        if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
+          lost(err);
+          return;
+        }
+        // A no-download answer turns downloads off for this link: the button goes with the refusal.
+        if (err instanceof ApiError && err.code === "download_restricted") setDownloadRestricted(true);
+        const code = err instanceof ApiError ? err.code : undefined;
+        const reason = err instanceof ApiError && typeof err.details.reason === "string" ? err.details.reason : undefined;
+        setZipError(zipFailureText(code, reason, lang, true));
+      },
+    );
+  };
+
+  // zipAgain starts the download again with the same signed link while it lives; past its end it asks for a new one
+  // (the server reuses the link's zip of the same folder, so nothing is made twice).
+  const zipAgain = (): void => {
+    if (zipReady !== null && Date.now() < zipReady.expiresAt) {
+      startDownload(zipReady.url);
+      return;
+    }
+    startZip();
+  };
 
   const kind = current ? previewKind(current.mime_type) : null;
   const playing = current !== null && current.kind !== "dir" && media !== null;
@@ -455,10 +568,20 @@ export default function PublicBrowse({ token, root, onlost, source, byline }: Pu
 
           {current.kind === "dir" ? (
             <>
-              {/* The toolbar row, as My files draws its own: Play, a spacer, the sort menu in tiles, and the view toggle. */}
+              {/* The toolbar row, as My files draws its own: Play, a spacer, Download all, the sort menu in tiles, and the view toggle. */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 {hasMedia && <IconButton label={t("files.act.playMedia")} icon={<Play size={16} aria-hidden="true" />} onClick={playFirst} />}
                 <span style={{ flex: "1 1 auto" }} />
+                {srcRef.current.zip !== undefined && !downloadRestricted && (
+                  <IconButton
+                    data-testid="download-all"
+                    label={t("share.downloadAll")}
+                    icon={<FolderDown size={16} aria-hidden="true" />}
+                    loading={zipBusy}
+                    disabled={zipBusy}
+                    onClick={startZip}
+                  />
+                )}
                 {prefs.view === "grid" && (
                   <Dropdown trigger={["click"]} menu={sortMenu}>
                     <IconButton label={t("files.sort.label")} icon={<ArrowUpDown size={16} aria-hidden="true" />} />
@@ -472,6 +595,22 @@ export default function PublicBrowse({ token, root, onlost, source, byline }: Pu
                   onClick={() => changePrefs({ ...prefs, view: switchTo.to })}
                 />
               </div>
+              {zipBusy && (
+                <p role="status" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)", marginBottom: 8 }}>
+                  {t("share.zipMaking")}
+                </p>
+              )}
+              {zipReady !== null && (
+                <p role="status" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)", marginBottom: 8 }}>
+                  {t("share.zipReady")}{" "}
+                  <Button type="text" size="small" onClick={zipAgain}>
+                    {t("files.zip.again")}
+                  </Button>
+                </p>
+              )}
+              {zipError !== null && (
+                <Alert type="error" closable showIcon role="alert" message={zipError} onClose={() => setZipError(null)} style={{ marginBottom: 12 }} />
+              )}
               {children.length === 0 ? (
                 <EmptyState text={t("share.open.empty")} />
               ) : (

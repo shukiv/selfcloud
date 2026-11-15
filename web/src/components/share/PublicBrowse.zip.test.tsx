@@ -143,7 +143,7 @@ describe("making the zip", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(0); });
       expect(sharingApi.visitorZipLink).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("status").textContent).toContain(translate("en", "share.zipMaking"));
-      expect(screen.getByRole("button", { name: "Download all" })).toBeDisabled();
+      expect((screen.getByRole("button", { name: "Download all" }) as HTMLButtonElement).disabled).toBe(true);
       expect(clicks.urls).toEqual([]);
       // The first wait is the server's two seconds.
       await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
@@ -219,7 +219,9 @@ describe("a refused zip", () => {
     render(<PublicBrowse token="tok_v" root="nod_root" onlost={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Download all" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    const close = screen.getByRole("alert").querySelector(".ant-alert-close-icon");
+    expect(close).not.toBeNull();
+    fireEvent.click(close as Element);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 

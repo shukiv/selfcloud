@@ -18,8 +18,19 @@ export function zipPath(zip: string): string {
 }
 
 // zipFailureText is the text for a refused zip, by its error code and reason. An unknown refusal, and a failed job with no
-// code, get the generic text: the server's text is never shown.
-export function zipFailureText(code: string | undefined, reason: string | undefined, lang: Lang): string {
+// code, get the generic text: the server's text is never shown. visitor names the refusals a visitor of a link that anyone
+// can open reads with its own words: the link's busy zip, the visitor caps (per account, per zip size), the address rate,
+// and a wait that ran out while the zip was still being made. The signed-in texts are unchanged.
+export function zipFailureText(code: string | undefined, reason: string | undefined, lang: Lang, visitor = false): string {
+  if (visitor) {
+    if (code === 'rate_limited') return translate(lang, 'files.zip.slowDown');
+    if (code === 'too_large') return translate(lang, 'files.zip.visitorLimit');
+    if (code === 'conflict') {
+      if (reason === 'too_many_zips_link') return translate(lang, 'files.zip.linkBusy');
+      if (reason === 'too_many_zips_account') return translate(lang, 'files.zip.visitorLimit');
+      if (reason === 'zip_not_ready') return translate(lang, 'files.zip.slow');
+    }
+  }
   switch (code) {
     case 'too_large':
       return translate(lang, 'files.zip.tooLarge');

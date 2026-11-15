@@ -2,7 +2,7 @@
 
 // The sharing calls the browser makes. Each returns what the server answers, or throws an ApiError.
 import { api } from '../api';
-import type { Page, Node, Role } from '../files/types';
+import type { Page, Job, Node, Role } from '../files/types';
 import type { AccessRequest, DirectoryEntry, Permission, SetPermissionReply } from '../files/types';
 import type { ShareLink, ShareLinkCreated } from './links';
 import type { DropInfo } from './drop';
@@ -256,6 +256,22 @@ export function visitorLink(
     // No ttl: the server gives the longest life the visitor's credential has left.
     body: { disposition },
   });
+}
+
+// visitorZip asks for a zip of a folder the visitor reaches, as the signed-in create asks (lib/files/api.ts): the
+// body names one root, and the job's target is the zip. The zip is the link's, shared by every visitor of it, so the
+// same folder asked again answers the same zip. signal ends the call when the visitor leaves.
+export async function visitorZip(token: string, folderId: string, signal?: AbortSignal): Promise<string> {
+  const job = await api<Job>('POST', '/api/v1/zips', { ...visitorOpts(token), body: { nodes: [folderId] }, signal });
+  return job.target;
+}
+
+// visitorZipLink asks for a signed download link to the zip the visitor's link made: the archive downloads through it
+// with no credential. While the zip is made the server answers 409 zip_not_ready with Retry-After; a failed zip is
+// 409 zip_failed, and one past its expiry 404. The error carries its status, code, reason and Retry-After, as the
+// other calls do.
+export function visitorZipLink(token: string, zip: string, signal?: AbortSignal): Promise<{ url: string; expires_at: string }> {
+  return api<{ url: string; expires_at: string }>('POST', `/api/v1/zips/${zip}/links`, { ...visitorOpts(token), signal });
 }
 
 // visitorInfo reads what a drop link says to its visitor: its title and message, whether it asks for a name, when it
