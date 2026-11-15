@@ -539,8 +539,9 @@ func changeShareLink(ctx context.Context, tx *store.Tx, p *auth.Principal, linkI
 // handleUpdateShareLink changes a link: its audience, role, expiry or password. An absent field keeps its value;
 // expires_at null clears the expiry, which an anyone link refuses. Switching to anyone gives the viewer role and,
 // when the link has none, an end date; switching to organisation clears the password and ends the anyone visitors.
-// A new password, or a removed one, ends the visitors' credentials issued before it. A drop link keeps its audience
-// and has no role; its title, message, ask_name and notify may change, and it must keep an end date.
+// A new password, or a removed one, ends the visitors' credentials issued before it. Each change of credentials
+// removes the zips the old ones made (decision 205). A drop link keeps its audience and has no role; its title,
+// message, ask_name and notify may change, and it must keep an end date.
 func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -603,6 +604,7 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 	var (
 		out      *store.ShareLink
 		released []*store.Upload
+		zipIDs   []string
 	)
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -709,7 +711,7 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 		switch {
 		case final != orig:
 			// A change of audience ends every visitor and every earlier copy's credentials, and the visits of
-			// the old audience. The secret stays the same.
+			// the old audience. The secret stays the same. The zips the old credentials made go with them.
 			l.Audience = final
 			l.CredentialsAt = now
 			details["audience"] = final
@@ -723,9 +725,14 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 			if anyone {
 				l.PasswordHash = passwordHash
 			}
+			zids, err := s.releaseLinkZips(ctx, tx, p.AccountID, l.ID)
+			if err != nil {
+				return err
+			}
+			zipIDs = zids
 		case anyone && newPassword:
 			// A new password, or none, ends the visitors' credentials issued before it, and with them a drop
-			// link's open uploads.
+			// link's open uploads and the zips they made.
 			l.PasswordHash = passwordHash
 			l.CredentialsAt = now
 			ups, err := s.releaseDropUploads(r, tx, l)
@@ -733,6 +740,11 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 				return err
 			}
 			released = ups
+			zids, err := s.releaseLinkZips(ctx, tx, p.AccountID, l.ID)
+			if err != nil {
+				return err
+			}
+			zipIDs = zids
 		}
 		if anyone {
 			details["password_set"] = l.PasswordHash != ""
@@ -753,13 +765,14 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 	for _, up := range released {
 		s.discardUploadFile(up)
 	}
+	s.discardZipFiles(p.AccountID, zipIDs)
 	writeJSON(w, http.StatusOK, toShareLinkJSON(out, &store.ShareLinkView{ShareLink: *out}, out.NodeID, true))
 	return nil
 }
 
 // handleResetShareLink gives the link a new secret. The old copies stop working: every visit made
-// before the reset no longer counts, and a member opens the new link to get in again. The new URL is
-// returned here, once.
+// before the reset no longer counts, and a member opens the new link to get in again. The zips the old
+// credentials made are removed (decision 205). The new URL is returned here, once.
 func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -774,6 +787,7 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 		out      *store.ShareLink
 		secret   string
 		released []*store.Upload
+		zipIDs   []string
 	)
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -789,12 +803,18 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 		if err := tx.UpdateShareLink(ctx, l); err != nil {
 			return err
 		}
-		// The old credentials die with the reset, so the visitors' open uploads die with them.
+		// The old credentials die with the reset, so the visitors' open uploads and the zips they made die
+		// with them.
 		ups, err := s.releaseDropUploads(r, tx, l)
 		if err != nil {
 			return err
 		}
 		released = ups
+		zids, err := s.releaseLinkZips(ctx, tx, p.AccountID, l.ID)
+		if err != nil {
+			return err
+		}
+		zipIDs = zids
 		out = l
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.reset", l.ID,
 			map[string]any{"upload_only": l.UploadOnly}, n.FolderID))
@@ -805,6 +825,7 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 	for _, up := range released {
 		s.discardUploadFile(up)
 	}
+	s.discardZipFiles(p.AccountID, zipIDs)
 	writeJSON(w, http.StatusCreated, shareLinkCreated{
 		Link: toShareLinkJSON(out, &store.ShareLinkView{ShareLink: *out}, out.NodeID, true), URL: s.shareURL(secret)})
 	return nil

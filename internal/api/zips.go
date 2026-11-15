@@ -57,8 +57,8 @@ type zipPayload struct {
 }
 
 // zipMaker is the caller a zip job runs for, re-read live. A link visitor's zip runs as its link: the link must still
-// exist, not be a drop link, and still be openable, or the zip is refused. A signed-in caller's zip runs as the caller
-// its payload records (decision 192).
+// exist, not be a drop link, and still be openable, and the zip must have been made after the link's current
+// credentials, or the zip is refused. A signed-in caller's zip runs as the caller its payload records (decision 192).
 func (s *Server) zipMaker(ctx context.Context, z *store.Zip, pl zipPayload) (*auth.Principal, error) {
 	if z.CreatedKind != string(auth.KindShareLink) {
 		return jobPrincipal(pl.Actor, z.AccountID), nil
@@ -75,6 +75,11 @@ func (s *Server) zipMaker(ctx context.Context, z *store.Zip, pl zipPayload) (*au
 		return nil, err
 	}
 	if st.Link.UploadOnly || !shareOpenable(st, time.Now()) {
+		return nil, apierr.New(apierr.Forbidden, zipRefusedGone)
+	}
+	// A rotation of the link's credentials ends the zips its old ones made. A row a race left behind is refused
+	// here too, so it can neither run, be linked nor be served (decision 205).
+	if !z.CreatedAt.After(st.Link.CredentialsAt) {
 		return nil, apierr.New(apierr.Forbidden, zipRefusedGone)
 	}
 	return &auth.Principal{Kind: auth.KindShareLink, ID: st.Link.ID, AccountID: st.Link.AccountID,
@@ -298,14 +303,36 @@ func (s *Server) insertMemberZip(ctx context.Context, tx *store.Tx, p *auth.Prin
 	return s.queueZip(ctx, tx, p, acc, nodes, now, "")
 }
 
-// insertVisitorZip queues a link visitor's zip, inside the create write. A link has one live zip: the same roots reuse
-// it, other roots are refused while it lives. The account's visitors share a cap of their own (decision 192).
+// insertVisitorZip queues a link visitor's zip, inside the create write. The link is re-read here: a credential
+// issued before its current credentials is refused, so a create racing a rotation makes nothing (decision 205).
+// A link has one live zip: the same roots reuse it, other roots are refused while it lives. The account's visitors
+// share a cap of their own (decision 192).
 func (s *Server) insertVisitorZip(ctx context.Context, tx *store.Tx, p *auth.Principal, acc string, nodes []string, now time.Time) (*store.Job, error) {
+	st, err := tx.ShareLinkStateByID(ctx, acc, p.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("link")
+	}
+	if err != nil {
+		return nil, err
+	}
+	// The presented credential must have been issued after the link's current credentials, judged on this read:
+	// a rotation that landed after the credential was checked ends it here, and no zip is made for it.
+	if !p.Link.IssuedAt.After(st.Link.CredentialsAt) {
+		return nil, notFound("link")
+	}
+	// A zip made in the very millisecond of a rotation is not already void: its creation is judged at the
+	// precision the store keeps and bumped past the credentials, as a credential's issue time is
+	// (issueShareCredential).
+	now = now.Truncate(time.Millisecond)
+	if !now.After(st.Link.CredentialsAt) {
+		now = st.Link.CredentialsAt.Add(time.Millisecond)
+	}
 	live, err := s.store.LiveZipOfLink(ctx, acc, p.ID, now)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	if live != nil {
+	// Only a zip made after the link's current credentials is live for reuse: one a rotation left behind is dead.
+	if live != nil && live.CreatedAt.After(st.Link.CredentialsAt) {
 		if sameZipRoots(live.Roots, nodes) {
 			return s.store.JobByTarget(ctx, acc, jobZip, live.ID)
 		}
@@ -566,9 +593,9 @@ func (s *Server) handleCreateZipLink(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// releaseLinkZips removes the zips a link made, in the transaction that ends the link: their rows go with it. The zip
-// IDs it returns still have their files; the caller removes them with discardZipFiles once the transaction has
-// committed, as a drop link's open uploads are released (decision 192).
+// releaseLinkZips removes the zips a link made, in the transaction that ends the link or rotates its credentials:
+// their rows go with it. The zip IDs it returns still have their files; the caller removes them with discardZipFiles
+// once the transaction has committed, as a drop link's open uploads are released (decisions 192, 205).
 func (s *Server) releaseLinkZips(ctx context.Context, tx *store.Tx, accountID, linkID string) ([]string, error) {
 	ids, err := s.store.ZipIDsOfLink(ctx, accountID, linkID)
 	if err != nil {

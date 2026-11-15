@@ -614,3 +614,42 @@ func TestZipVisitorCreateRefusedWhenARotationLandsBeforeTheWrite(t *testing.T) {
 		t.Errorf("the create left zips %v under the old credentials", ids)
 	}
 }
+
+// TestInsertVisitorZipBumpsCreationPastTheCredentials: a create that lands in the very millisecond of the link's
+// credentials makes a zip zipMaker accepts. The creation is judged at the precision the store keeps, and bumped
+// past the credentials, as a credential's issue time is.
+func TestInsertVisitorZipBumpsCreationPastTheCredentials(t *testing.T) {
+	fx := anyoneZipFixture(t)
+	link, _ := fx.makeAnyone(t, fx.b.ID, nil)
+	ctx := context.Background()
+	st, err := fx.s.store.ShareLinkStateByID(ctx, fx.acc.ID, link.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &auth.Principal{Kind: auth.KindShareLink, ID: link.ID, AccountID: fx.acc.ID,
+		Link: &auth.LinkScope{Node: st.Link.NodeID, Role: store.RoleViewer,
+			IssuedAt: st.Link.CredentialsAt.Add(time.Millisecond)}}
+	// The create lands 400 µs after the credentials: after them at nanosecond precision, equal at the stored one.
+	now := st.Link.CredentialsAt.Add(400 * time.Microsecond)
+	var job *store.Job
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		j, werr := fx.s.insertVisitorZip(ctx, tx, p, fx.acc.ID, []string{fx.b.ID}, now)
+		if werr != nil {
+			return werr
+		}
+		job = j
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	z, err := fx.s.store.Zip(ctx, fx.acc.ID, job.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !z.CreatedAt.After(st.Link.CredentialsAt) {
+		t.Errorf("the zip was created at %v, not after the credentials at %v", z.CreatedAt, st.Link.CredentialsAt)
+	}
+	if _, err := fx.s.zipMaker(ctx, z, zipPayload{}); err != nil {
+		t.Errorf("zipMaker refused the brand-new zip: %v", err)
+	}
+}
