@@ -2,11 +2,16 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../../lib/session";
+import { loadAudit } from "../../lib/audit/i18n";
 import { stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import TenantAudit from "./TenantAudit";
 import { signedAs } from "../../test/adminFixtures";
+
+beforeAll(async () => {
+  await loadAudit("en");
+});
 
 function renderAudit() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

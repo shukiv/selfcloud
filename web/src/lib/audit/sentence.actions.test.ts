@@ -6,8 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { isolateText, renderSentence, sentence, type AuditEntry, type Names } from './sentence';
 
 // Every audit action the server writes reads as its own sentence (slice audit-s1), with full details and with none. A
-// sentence never shows a raw ID, a placeholder or "undefined", and a name the row holds is shown as text.
-const en = JSON.parse(readFileSync(join(process.cwd(), 'src/i18n/en.json'), 'utf8')) as Record<string, string>;
+// sentence never shows a raw ID, a placeholder or "undefined", and a name the row holds is shown as text. The sentences
+// are the audit catalogue of their own (lib/audit/i18n.ts), so the texts are read from there.
+const en = JSON.parse(readFileSync(join(process.cwd(), 'src/i18n/audit/en.json'), 'utf8')) as Record<string, string>;
 
 // translate fills the English text the way the page does. A parameter the sentence did not pass is kept as a marker,
 // so a missing one shows up in the output instead of reading as an empty word.

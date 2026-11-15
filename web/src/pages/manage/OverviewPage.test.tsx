@@ -2,12 +2,17 @@
 
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
+import { loadAudit } from "../../lib/audit/i18n";
 import { session, type Session } from "../../lib/session";
 import { desktopViewport, phoneViewport } from "../../test/viewport";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import OverviewPage from "./OverviewPage";
+
+beforeAll(async () => {
+  await loadAudit("en");
+});
 
 function signedAs(): Session {
   return {

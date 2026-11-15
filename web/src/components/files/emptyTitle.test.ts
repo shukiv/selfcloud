@@ -19,7 +19,7 @@ function titleKeys(): Map<string, string> {
     for (const block of text.matchAll(/empty=\{\{([\s\S]*?)\}\}/g)) {
       const title = /title:\s*([^,\n]*)/.exec(block[1]);
       if (!title) continue;
-      for (const k of title[1].matchAll(/\bt\("([^"]+)"\)/g)) keys.set(k[1], file);
+      for (const k of title[1].matchAll(/\b(?:t|at)\("([^"]+)"\)/g)) keys.set(k[1], file);
     }
   }
   return keys;
@@ -49,6 +49,8 @@ describe("empty table titles", () => {
       ...(JSON.parse(readFileSync(join(src, "i18n", "comments", `${lang}.json`), "utf8")) as Record<string, string>),
       // The outside-sharing list's titles are a catalogue of their own too (lib/share/externalText.ts).
       ...(JSON.parse(readFileSync(join(src, "i18n", "external", `${lang}.json`), "utf8")) as Record<string, string>),
+      // The audit log's empty title is in the audit catalogue, the activity log's sentences (lib/audit/i18n.ts).
+      ...(JSON.parse(readFileSync(join(src, "i18n", "audit", `${lang}.json`), "utf8")) as Record<string, string>),
     };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];

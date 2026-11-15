@@ -4,7 +4,7 @@
 // loaded with the pages that show them, so the main catalogues (which every page loads) do not grow with them. These tests hold
 // the catalogues to the same shape as the share catalogue: every language has every key and nothing more, no text is empty, each
 // placeholder is the one the English text uses, and no key is in both the main and the external catalogue. The audit words of
-// external sharing stay in the main catalogues with the rest of the audit family, which the shared audit machinery reads.
+// external sharing stay with the rest of the audit family, which the shared audit machinery reads from the audit catalogue.
 
 import { describe, expect, it } from "vitest";
 import en from "../../i18n/external/en.json";
@@ -21,9 +21,17 @@ import mainFr from "../../i18n/fr.json";
 import mainHe from "../../i18n/he.json";
 import mainPt from "../../i18n/pt.json";
 import mainRu from "../../i18n/ru.json";
+import auditEn from "../../i18n/audit/en.json";
+import auditAr from "../../i18n/audit/ar.json";
+import auditEs from "../../i18n/audit/es.json";
+import auditFr from "../../i18n/audit/fr.json";
+import auditHe from "../../i18n/audit/he.json";
+import auditPt from "../../i18n/audit/pt.json";
+import auditRu from "../../i18n/audit/ru.json";
 
 const EXTERNAL: Record<string, Record<string, string>> = { en, ar, es, fr, he, pt, ru };
 const MAIN: Record<string, Record<string, string>> = { en: mainEn, ar: mainAr, es: mainEs, fr: mainFr, he: mainHe, pt: mainPt, ru: mainRu };
+const AUDIT: Record<string, Record<string, string>> = { en: auditEn, ar: auditAr, es: auditEs, fr: auditFr, he: auditHe, pt: auditPt, ru: auditRu };
 
 // The placeholders a sentence takes, as the English text names them, such as {email}.
 const placeholders = (s: string) => [...s.matchAll(/\{([a-z]+)\}/g)].map((m) => m[1]).sort();
@@ -52,8 +60,8 @@ describe("the external-sharing catalogues", () => {
     }
   });
 
-  it("the audit words of external sharing stay in the main catalogues with the audit family", () => {
-    for (const [lang, cat] of Object.entries(MAIN)) {
+  it("the audit words of external sharing stay in the audit catalogues with the audit family", () => {
+    for (const [lang, cat] of Object.entries(AUDIT)) {
       expect(cat["audit.user.email_proved"], lang).toBeTruthy();
       expect(cat["audit.permission.external.set"], lang).toBeTruthy();
       expect(cat["audit.permission.external.remove"], lang).toBeTruthy();

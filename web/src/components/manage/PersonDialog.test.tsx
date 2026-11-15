@@ -2,13 +2,18 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { formatBytes } from "../../lib/files/format";
 import { createQueryClient } from "../../lib/query";
+import { loadAudit } from "../../lib/audit/i18n";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import type { Person } from "../../lib/manage/types";
 import PersonDialog from "./PersonDialog";
+
+beforeAll(async () => {
+  await loadAudit("en");
+});
 
 const person: Person = {
   id: "usr_ada",

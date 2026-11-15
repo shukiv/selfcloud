@@ -3,6 +3,7 @@
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { setLang } from "../../lib/i18n";
+import { loadAudit } from "../../lib/audit/i18n";
 import AuditItem from "./AuditItem";
 
 const names = {
@@ -16,6 +17,7 @@ const HOSTILE = "<img src=x onerror=alert(1)>";
 describe("AuditItem", () => {
   beforeEach(async () => {
     await setLang("en");
+    await loadAudit("en");
   });
 
   it("shows a file name with markup in it literally, and adds no element", () => {

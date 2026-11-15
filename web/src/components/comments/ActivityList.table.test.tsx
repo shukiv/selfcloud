@@ -7,12 +7,14 @@ import { act, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadComments } from "../../lib/comments/i18n";
+import { loadAudit } from "../../lib/audit/i18n";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { desktopViewport } from "../../test/viewport";
 import ActivityList from "./ActivityList";
 
 beforeAll(async () => {
   await loadComments("en");
+  await loadAudit("en");
 });
 
 const entry = {

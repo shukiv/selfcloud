@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderSentence, sentence, type AuditEntry, type Names } from './sentence';
 
-// Every key the sentences name is in all seven catalogues, and the rows of this slice read as who did what to whom
+// Every key the sentences name is in all seven audit catalogues, and the rows of this slice read as who did what to whom
 // (decision 41): the admin by name, a removed admin as "an installation admin", never a raw ID or "Someone".
 const LANGS = ['en', 'fr', 'es', 'pt', 'ru', 'ar', 'he'] as const;
 const catalogues = Object.fromEntries(
-  LANGS.map((l) => [l, JSON.parse(readFileSync(join(process.cwd(), 'src/i18n', `${l}.json`), 'utf8')) as Record<string, string>]),
+  LANGS.map((l) => [l, JSON.parse(readFileSync(join(process.cwd(), 'src/i18n/audit', `${l}.json`), 'utf8')) as Record<string, string>]),
 ) as Record<(typeof LANGS)[number], Record<string, string>>;
 
 const source = readFileSync(join(process.cwd(), 'src/lib/audit/sentence.ts'), 'utf8');

@@ -6,6 +6,7 @@ import { App } from "antd";
 import type { ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ctranslate, loadComments } from "../../lib/comments/i18n";
+import { loadAudit } from "../../lib/audit/i18n";
 import { ApiError } from "../../lib/apiError";
 import { faultMessage } from "./faults";
 import { session, type Session } from "../../lib/session";
@@ -22,6 +23,7 @@ import { nextPage } from "../../lib/comments/logic";
 
 beforeAll(async () => {
   await loadComments("en");
+  await loadAudit("en");
 });
 
 function signedIn(): Session {
