@@ -592,11 +592,11 @@ selfcloud folder rm fld_... --yes
 
 These commands give other people access to files, make share links, and answer requests for access. **They take an account
 key** (the account routes also take an admin key). The API's sharing routes refuse any token that acts for a user, which
-includes the device token that `login` saves, so a person signed in at a terminal can run only `shared` (and sees the API's
-refusal for the rest, exit 3; for making, changing and resetting a link it is the reason `device_token`). A route that
-needs an account (`/accounts/{acc}/...`) answers that token "no such account" (exit 4). The commands add no rule of their
-own: what a role may share, the account's switch for links that anyone can open, and a team space's settings are the
-server's, and its message comes back as it is.
+includes the device token that `login` saves, so a person signed in at a terminal can run only `shared` and
+`shared --external` (and sees the API's refusal for the rest, exit 3; for making, changing and resetting a link it is the
+reason `device_token`). A route that needs an account (`/accounts/{acc}/...`) answers that token "no such account" (exit 4).
+The commands add no rule of their own: what a role may share, the account's switch for links that anyone can open, and a
+team space's settings are the server's, and its message comes back as it is.
 
 A person is named by a `usr_` id, a group by a `grp_` id, a link by a `shl_` id, an access request by an `arq_` id, a node
 by a `nod_` id and a team folder by a `fld_` id. The commands that act on an account (`--folder`, `link ls --account`,
@@ -606,10 +606,13 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | Command | What it does |
 |---|---|
 | `share ls NODE` | who holds a role on a node and on the folders above it: subject, kind, role, where it sits, its end, a name |
+| `share ls NODE --external` | the addresses of other accounts the node is shared with: address, role, end, when, by whom |
 | `share ls --folder F [--account A]` | the grants of a team folder: user, level, when |
 | `share grant NODE SUBJECT --role R [--expires T \| --expires-in D] [--message M] [--no-notify]` | gives a user or a group a role: `viewer`, `commenter`, `contributor`, `editor` or `manager` |
+| `share grant NODE --external ADDRESS [--expires T \| --expires-in D]` | shares with an email address of another account, as a viewer |
 | `share grant --folder F [--account A] USER --level read\|write` | gives a user a level on a team folder (read is viewer, write is editor; members only) |
 | `share revoke NODE SUBJECT... [--yes]` | takes roles away (asks first) |
+| `share revoke NODE --external ADDRESS [--yes]` | takes an address's access away (asks first) |
 | `share revoke --folder F [--account A] USER... [--yes]` | takes a team folder's grants away (asks first) |
 | `share transfer-ownership NODE --to USER [--yes]` | gives a file or folder to another active user (asks first) |
 | `share no-download NODE on\|off` | turns the node's no-download rule on or off (needs editor) |
@@ -627,6 +630,7 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | `access approve REQUEST... [--role R]` | gives the role the person asked for, or `viewer`, `commenter` or `editor` |
 | `access deny REQUEST...` | refuses |
 | `shared [--recent] [--all]` | what other people shared with the signed-in person: id, kind, role, name, when, place |
+| `shared --external` | what other accounts shared with the signed-in person's email address; a terminal sign-in gets the empty list and is pointed to the web interface |
 
 **Sharing switches.** `share no-download` and `share editors-can-share` change one switch on a node and send only that
 field, so a switch never renames the node. The second argument must be exactly `on` or `off`, and the node must be named by
@@ -644,6 +648,32 @@ A time is RFC 3339 (`2026-12-31T00:00:00Z`); a duration is a Go duration or whol
 `link rm`, `access approve` and `deny`) print one row each and exit 7 when only some were done, as the file commands do.
 The output of `--json` is the API's own document (a list for a list), except that a link document (`link ls`, `update`, and
 the link in `create` and `reset`) keeps only the fields the API names for a link, and create and reset print `{link, url}`.
+
+**External sharing.** `--external` shares a node with an email address of another account, as a viewer and nothing else:
+`--role` takes only `viewer` (or is left out), and `--folder`, `--level`, `--message` and `--no-notify` are refused with it
+before any request (exit 2). The address is passed as given, never trimmed; an empty address, one longer than 254 bytes,
+one without an `@`, or one holding whitespace or a control character is refused before any request (exit 2). On its way to
+the server the address is escaped into one path segment, so it can never add a segment or a query. Both accounts need the
+external-sharing switch on (`sharing policy set --external-sharing true`); the server refuses otherwise, and its message
+comes back as it is. Turning the switch off keeps every grant already made.
+
+The person the address belongs to reads the list in the web interface. `shared --external` reads the same route at a
+terminal, signed in with `login` (a device token), and prints one page; `--recent` and `--all` are refused with it. The
+server lists the items to a browser session only (decision 187: every token that acts for a user, a device token among
+them, gets the empty list), so a terminal sign-in prints the empty table and one line on standard error saying to see the
+list in the web interface. When the person's email address is not proved, the line says so instead and asks to prove it;
+proving an address stays in the web interface. An account key is refused (exit 3), as for any refusal. Under `--json` the
+whole answer is printed unchanged, `items` and `email_proved` together, and neither line is written. `share ls NODE
+--external` lists the addresses a node is shared with, and `share revoke NODE --external ADDRESS` takes one away (asks
+first; the phrase is the address). A grant that is not there keeps the server's not-found exit 4.
+
+```sh
+selfcloud sharing policy set --external-sharing true
+selfcloud share grant nod_… --external guest@other.example --expires-in 30d
+selfcloud share ls nod_… --external
+selfcloud shared --external
+selfcloud share revoke nod_… --external guest@other.example --yes
+```
 
 **Links.** A link's audience is `organisation` (members of the account who sign in) unless `--audience anyone` is given. A
 link that anyone can open gives the viewer role, needs the node's manager, an end date (30 days by default, 365 at most)
@@ -677,9 +707,9 @@ selfcloud access approve arq_… --role viewer
 ```
 
 **Destructive commands** (`share revoke`, `share transfer-ownership`, `link rm`, `link rm --public`) ask first. At a terminal
-the question names what will happen (the node and the person, the links, or how many links the account has that anyone can
-open) and the person types the phrase it shows: the subject's id, the node's name, the link's id, or `yes`. Without a
-terminal the command refuses with exit 2 unless `--yes` is given; nothing is sent before the answer.
+the question names what will happen (the node and the person or address, the links, or how many links the account has that
+anyone can open) and the person types the phrase it shows: the subject's id, the address, the node's name, the link's id, or
+`yes`. Without a terminal the command refuses with exit 2 unless `--yes` is given; nothing is sent before the answer.
 
 **Exit codes.** 0 done; 2 a usage error, or the server's 400; 3 a refusal by role, policy, a device token (reason
 `device_token`: use the browser to make or change a link) or a conflict; 4 not found (a link, a node, a person, an account);
@@ -1107,9 +1137,9 @@ before a request. A refusal from the server keeps its code: for example a 403 ex
 ## Label fields and the sharing policy
 
 An account's label fields are the fields the web interface offers on a file; the sharing policy is the account's
-switches for public links, comments and who viewed. Defining a field and changing the policy are the account owner's or
-its account key's work: a signed-in device cannot do either, and an installation admin key does not reach an account's
-labels. The values on files have their own commands, in Labels on files below.
+switches for public links, comments, who viewed and external sharing. Defining a field and changing the policy are the
+account owner's or its account key's work: a signed-in device cannot do either, and an installation admin key does not
+reach an account's labels. The values on files have their own commands, in Labels on files below.
 
 | Command | What it does |
 |---|---|
@@ -1117,8 +1147,8 @@ labels. The values on files have their own commands, in Labels on files below.
 | `label field update [--account ACC] FIELD [--name NAME] [--type TYPE] [--restricted true\|false] [--add-choice NAME]... [--rename-choice ID=NAME]... [--archive-choice ID]... [--restore-choice ID]...` | changes only what is given |
 | `label field rm [--account ACC] FIELD [--yes]` | removes a field and every value it holds on files; asks first |
 | `label field ls [--json]` | prints `ID`, `NAME`, `TYPE`, `RESTRICTED`, `CHOICES` and `VALUES`; the values count comes only with an account key; a signed-in device's token does not get it |
-| `sharing policy show [--account ACC]` | prints `public_links`, `anyone_links`, `comments` and `who_viewed` |
-| `sharing policy set [--account ACC] [--public-links true\|false] [--comments true\|false] [--who-viewed true\|false] [--yes]` | changes only the switches given |
+| `sharing policy show [--account ACC]` | prints `public_links`, `anyone_links`, `comments`, `who_viewed` and `external_sharing` |
+| `sharing policy set [--account ACC] [--public-links true\|false] [--comments true\|false] [--who-viewed true\|false] [--external-sharing true\|false] [--yes]` | changes only the switches given |
 
 A choice is added, renamed, archived or restored by its id: `label field update` lists the field's choices on the server
 so that an archive or a restore can send the choice's name, which the update route requires. A field's type cannot change
@@ -1126,9 +1156,10 @@ once a file holds a value of it; the server refuses that, and a name another fie
 keeps the values that use it, and `label field rm` does not. A choice id in the table is the one to give an update.
 
 `sharing policy set --public-links false` asks first, because every anyone link of the account stops working at once; the
-person types the account's id, or gives `--yes`. `anyone_links` counts the account's anyone links, and the server decides
-whether a switch can change: for example, turning public links on may be refused. `--json` prints the field or the policy,
-with only the keys named in the table.
+person types the account's id, or gives `--yes`. The other switches ask nothing: `--external-sharing` turns sharing with
+other accounts' email addresses on or off (see External sharing above), and turning it off keeps every grant already made.
+`anyone_links` counts the account's anyone links, and the server decides whether a switch can change: for example, turning
+public links on may be refused. `--json` prints the field or the policy, with only the keys named in the table.
 
 ```sh
 selfcloud label field add --type choice --choice High --choice Low Priority
@@ -1137,6 +1168,7 @@ selfcloud label field update lbf_… --restricted true --add-choice Later
 selfcloud label field rm lbf_… --yes
 selfcloud sharing policy show
 selfcloud sharing policy set --comments false --who-viewed true
+selfcloud sharing policy set --external-sharing true
 ```
 
 ## Stars and recent
