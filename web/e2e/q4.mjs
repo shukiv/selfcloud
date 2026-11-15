@@ -189,13 +189,23 @@ async function shotsDir() {
 }
 
 // waitIndexed waits until a text search finds the word: the text of a file is indexed by a job after the upload.
+// It asks every 2 s, well under the search's sixty a minute per caller, so a slow index on a loaded machine cannot spend
+// the account key's minute and refuse the later sections' searches. A 429 is not a failure: it waits 10 s and asks again,
+// within the deadline.
 async function waitIndexed(api, base, accountKey, word) {
-  const until = Date.now() + 30000;
+  const until = Date.now() + 45000;
   for (;;) {
-    const found = await api(base, 'GET', `${SEARCH_PATH}?in=content&q=${encodeURIComponent(word)}&limit=5`, accountKey);
+    if (Date.now() > until) throw new Error(`the text with the word ${word} was not indexed in 45 seconds`);
+    let found;
+    try {
+      found = await api(base, 'GET', `${SEARCH_PATH}?in=content&q=${encodeURIComponent(word)}&limit=5`, accountKey);
+    } catch (e) {
+      if (!/: 429\b/.test(e.message)) throw e;
+      await sleep(10000);
+      continue;
+    }
     if (found.items.length >= 1) return;
-    if (Date.now() > until) throw new Error(`the text with the word ${word} was not indexed in 30 seconds`);
-    await sleep(300);
+    await sleep(2000);
   }
 }
 
