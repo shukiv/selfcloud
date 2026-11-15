@@ -1170,6 +1170,36 @@ selfcloud sharing policy set --comments false --who-viewed true
 selfcloud sharing policy set --external-sharing true
 ```
 
+## Embed sites
+
+An account's embed sites are the host origins that may show the account's pages in a frame: a host application names
+its origin, and Selfcloud then lets a frame session of the account be framed by it. The installation's own list
+(`embed.origins` in the config) and the account's list are unioned. Reading and replacing the account's list are the
+account owner's or its account key's work; a signed-in device cannot do either.
+
+| Command | What it does |
+|---|---|
+| `embed show [--account ACC]` | prints one origin per line, or `no sites may embed this account` when the list is empty |
+| `embed set [--account ACC] ORIGIN...` | replaces the list with the origins given |
+| `embed set [--account ACC] --clear [--yes]` | empties the list; asks first |
+
+`embed set` sends the origins in the order given, duplicates included; the server checks each one, normalises it
+(lower-cased host, no default port), drops duplicates and sorts the list, and the command prints the result as
+`embed show` does. At most ten origins. An origin that is empty, longer than 2048 bytes, or holds whitespace or a
+control character is refused before any request (exit 2); the rest of the check is the server's — a scheme and host
+with an optional port, at most 255 bytes, `https` for any host or `http` on `localhost` and `127.0.0.1` — and its
+refusal comes back with its exit code (`invalid_request`, exit 2). `--json` prints the server's document as it came.
+
+`embed set --clear` asks first, because every frame of the account stops working at once; the person types the
+account's id, or gives `--yes`. Without a terminal and without `--yes` it refuses (exit 2) before any request.
+No origins may be given with `--clear`, and neither origins nor `--clear` is a usage error.
+
+```sh
+selfcloud embed show
+selfcloud embed set https://app.example.com http://localhost:5173
+selfcloud embed set --clear --yes
+```
+
 ## Stars and recent
 
 Stars and the recent list belong to a person, so these commands take a signed-in device's token and an account key is

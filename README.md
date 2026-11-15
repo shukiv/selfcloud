@@ -224,6 +224,32 @@ docker run --rm -e SELFCLOUD_URL=https://selfcloud.example -e SELFCLOUD_TOKEN="$
 The image has no persistent home, so a profile written with `profile add` does not survive `--rm`; the environment
 variables are the way to give a container its address and key.
 
+## Embedding Selfcloud in another application
+
+A host application can show an account's drive inside its own page, in an `<iframe>`, or open it in a new tab.
+SelfCloud keeps its own users and sign-in: the host vouches for its user with a one-time sign-in link, and the
+browser gets a session of its own.
+
+1. **Name the host's origin.** Per account, with the account's key or the owner's session:
+   `selfcloud embed set --account acc_… https://app.example.com`, or
+   `PUT /api/v1/accounts/{acc}/embed` with `{"origins": ["https://app.example.com"]}`. For the whole installation,
+   `embed.origins` in the config. The two lists are unioned; each holds at most ten origins. An origin is a scheme
+   and host with an optional port: `https` for any host, `http` only for `localhost` and `127.0.0.1`.
+2. **Make a sign-in link for the user.** The host's server makes the user if needed (verified, with a folder), then
+   asks `POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links` with `"mode": "frame"` (or `"tab"`), using the
+   account's own key — an admin key, a session and a delegated token are refused. The answer is a single-use `url`,
+   short-lived (60 seconds by default). A frame link needs the account to have allowed origins and an `https`
+   `public_url`; otherwise the request is refused.
+3. **Open the link.** In frame mode, put the URL in an `<iframe>`; in tab mode, open it in a new tab. The token sits
+   in the URL's fragment, so it never reaches a server log. Redeeming a frame link starts a frame session whose
+   cookie is partitioned: it is kept only inside that host's frame, never sent as a top-level cookie.
+
+Serve SelfCloud on a subdomain of the host's site (for example `drive.example.com` for a host on
+`app.example.com`): the two are then the same site, and every browser keeps the frame's cookie. A browser that
+blocks third-party cookies may refuse a frame session even so; the host should offer the tab mode then.
+
+The framed pages send no messages to the parent page yet; a later web slice adds them.
+
 ## Configuration
 
 Defaults, then an optional YAML file (`-config FILE` or `$SELFCLOUD_CONFIG`), then environment
