@@ -163,6 +163,34 @@ decision 100 of `docs/design.md`. Files in quarantine are outside the server's d
 operator empties the folder. On a network file system, run the check where the clocks agree with the file server, since
 a clock difference larger than `--min-age` can make a fresh blob look old (decision 100).
 
+## Backing up
+
+`selfcloud backup --to DIR` writes an online snapshot of the metadata database while the server keeps running, and
+`selfcloud backup --check FILE` verifies a snapshot. The snapshot is taken with SQLite's `VACUUM INTO` from a
+read-only connection, so the live database is never written. It is one file, `selfcloud-<UTC stamp>.db`, mode 0600,
+written under a temporary name and published only after it passes `integrity_check`, `foreign_key_check` and the
+schema-version check. An existing file is never overwritten. Exit status 0 means good, 1 means the copy failed its
+check (or the checked file has problems, each listed), 2 means the command could not run.
+
+```sh
+./bin/selfcloud backup --to /backups          # snapshot the database into /backups
+./bin/selfcloud backup --to /backups --json   # one JSON document: path, bytes, sha256, schema version, duration
+./bin/selfcloud backup --check /backups/selfcloud-20261114T020000Z.db
+# in Docker, with /backups a mounted volume:
+docker compose exec <service> selfcloud backup --to /backups
+```
+
+The snapshot holds the database only. Copy `blobs/` and `keys/` with other tools (rsync, restic, ...) **after** the
+snapshot: committed blobs never change, and a deleted blob stays on disk for `blobs.delete_grace` (default 7 days,
+to be set longer than the gap between backups), so every blob the snapshot refers to is still there while the copy
+runs (design section 12). Uploads in progress are not backed up. `--check` opens the file read-only and immutable,
+with the app's `selfcloud_name` collation registered, and writes nothing beside it; a plain SQLite copy cannot be
+checked outside Selfcloud without that collation.
+
+To restore: stop the server, put the snapshot at `store.path` (the database file in the data directory), restore
+`blobs/` and `keys/` beside it, start the server, then run `selfcloud fsck` — it reports missing blobs and, with
+`--repair`, moves orphans into quarantine.
+
 ## Remote client
 
 `selfcloud info`, `selfcloud api spec` and `selfcloud profile add|use|ls|rm` call a server's API. Profiles keep a
