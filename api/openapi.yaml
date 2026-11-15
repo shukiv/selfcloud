@@ -2567,6 +2567,13 @@ paths:
         own key may call this: an admin key, a session and a delegated token are refused. The audit
         entry (`user.sign_in_link`) names the user and never holds the token, the URL or the path.
         Rate-limited per account, 60 a minute.
+        An installation whose users come from another application sets `users.external_sign_in_url`
+        (decision 185): `GET /login` then answers `302` to that page, with `{next}` replaced by the
+        URL-escaped `next` query path when it is a path on this site (the same rule as here), else
+        `/`, and `Cache-Control: no-store`. The outside application checks its own session, asks
+        for a sign-in link with `next`, and sends the browser to it; one link per visit. The query
+        `password` (any value) keeps Selfcloud's own page, the installation admins' way in.
+        `info.sign_in` names the settings.
       security: [{ bearer: [] }]
       requestBody:
         required: false
@@ -8234,7 +8241,7 @@ components:
 
     Info:
       type: object
-      required: [name, version, public_url, web_interface, brand, password_min_length, limits, sharing_max_expiry_days, features]
+      required: [name, version, public_url, web_interface, brand, password_min_length, limits, sharing_max_expiry_days, features, sign_in]
       properties:
         name: { type: string, example: SelfCloud, description: "The software's identity, SelfCloud. It is not the installation's name, which is brand.name, and it does not change with the configuration." }
         version: { type: string, example: 0.1.0 }
@@ -8262,6 +8269,7 @@ components:
           type: array
           description: "Optional features this server has enabled. `office_convert` means document previews and exports are offered (`office.enabled`, decision 59). `office_edit` means the office editor is offered (decision 72). Both are listed while `office.enabled` is on; the list is empty otherwise."
           items: { type: string }
+        sign_in: { $ref: "#/components/schemas/SignIn" }
 
     DirectoryEntry:
       type: object
@@ -9288,6 +9296,32 @@ components:
         token: { type: string }
         password: { type: string, minLength: 8, maxLength: 256 }
 
+    SignIn:
+      type: object
+      description: |
+        How this installation signs its users in (decision 185). The URLs are empty strings when
+        their settings are unset.
+      required: [external_url, signed_out_url, password]
+      properties:
+        external_url:
+          type: string
+          description: |
+            `users.external_sign_in_url`: the outside sign-in page a browser with no session is
+            sent to. While it is set, `GET /login` answers `302` to it, with `{next}` replaced by
+            the URL-escaped `next` query path when that is a path on this site, else `/`, unless
+            the query carries `password` (any value), which keeps the page. The answer carries
+            `Cache-Control: no-store`. Empty when unset.
+        signed_out_url:
+          type: string
+          description: |
+            `users.external_signed_out_url`: where the outside application sends a browser that
+            signed out. Empty when unset.
+        password:
+          type: boolean
+          description: |
+            `users.password_sign_in`. False refuses password sign-in for every account that is
+            not an installation admin's, with the wrong-password answer; installation admins
+            always keep password sign-in. Sign-in links are unchanged either way.
     SignInLinkRequest:
       type: object
       additionalProperties: false

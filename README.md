@@ -327,6 +327,28 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `ui.brand.icon_file` | none | A square PNG of 512 to 2048 pixels a side, or an SVG, at most 256 KiB, read at start. It is the favicon and the app icons, and nothing else. An SVG is the tab's icon as it is, so it needs a `viewBox`, or a tab shows it blank; the app icons then come from a PNG logo, or show the SelfCloud mark. Installation-wide only. Without it, an installation admin may upload an icon while the server runs (`PUT /api/v1/settings/brand/icon`, the same checks); setting it locks the upload. |
 | `log.level`, `log.format` | `info`, `json` | |
 
+## Sign-in from another application
+
+An installation whose users come from another application can send a browser with no session to that
+application's sign-in page instead of Selfcloud's own form, and turn password sign-in off for users who
+are not installation admins. Three settings, in the config file or the admin Settings:
+
+| Setting | Default | |
+|---|---|---|
+| `users.external_sign_in_url` | empty (off) | The outside sign-in page. An absolute `https` URL (`http` only for `localhost` or `127.0.0.1`), no user info, no fragment, at most 2048 bytes. May carry the placeholder `{next}` once. While it is set, `GET /login` answers `302` to it with `{next}` replaced by the URL-escaped `next` query path when that is a path on this site, else `/`, and `Cache-Control: no-store`. |
+| `users.external_signed_out_url` | empty | Where the outside application sends a browser that signed out. The same URL rules, with no placeholder. |
+| `users.password_sign_in` | `true` | `false` refuses password sign-in for every account that is not an installation admin's, with the same answer as a wrong password, and sends such an account no reset mail. Installation admins always keep password sign-in. Sign-in links work either way. |
+
+The flow: the outside application checks its own session; for a signed-in user it asks Selfcloud for a
+sign-in link with `next` (the account's own key, `POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links`)
+and sends the browser to that link. One link per visit: each link works once and expires after
+`users.sign_in_link_ttl`. A browser with no session lands on `/login` and is redirected to the outside
+sign-in page, which signs its user in and starts the flow again. `/api/v1/info` names the three settings
+under `sign_in`.
+
+Installation admins keep their way in: `/login?password` (any value) serves Selfcloud's own form even
+while the outside page is set, and their password sign-in is never refused.
+
 ## Office editing and conversion (Collabora Online)
 
 `office.enabled` turns on the office editor and the document previews and exports. Both use a Collabora Online server, which
