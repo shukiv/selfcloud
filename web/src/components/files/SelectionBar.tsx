@@ -91,6 +91,12 @@ export default function SelectionBar({
         alignItems: "center",
         gap: PANEL_GAP,
         minWidth: 0,
+        // The first draw keeps every icon until the width is measured below, and that measure lays the row out once with them
+        // all. Without a clip the icons past the edge widen the page for that one layout: on a phone the layout viewport grows,
+        // the page zooms out, and the window's scrollY is clamped down, which closes a menu opened next (the More tap). The clip
+        // keeps that first layout inside the bar, so nothing is ever wider than the viewport. clip, not hidden: a focus on an
+        // icon must not scroll the bar sideways.
+        overflow: "clip",
         flex: "1 1 auto",
         boxSizing: "border-box",
         height: panelH(coarse),
