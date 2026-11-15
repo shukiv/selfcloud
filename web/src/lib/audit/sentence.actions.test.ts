@@ -107,6 +107,7 @@ const ROWS: Row[] = [
   { action: 'user.login_failed', actor: { kind: 'user', id: 'usr_mateo' }, target: 'usr_mateo', details: {} },
   { action: 'user.logout', actor: { kind: 'user', id: 'usr_mateo' }, target: 'usr_mateo', details: {} },
   { action: 'user.sign_in_link', actor: user, target: 'usr_mateo', details: {} },
+  { action: 'user.sessions_end', actor: user, target: 'usr_mateo', details: { ref_given: true, ended: 2 } },
   { action: 'user.tokens_revoke', actor: user, target: 'usr_mateo', details: { user: 'usr_mateo', tokens_not_before: '2026-10-31T10:00:00Z' } },
   { action: 'webhook.create', actor: user, target: 'wh_1', details: { url, events: ['file.created'] } },
   { action: 'webhook.delete', actor: user, target: 'wh_1', details: { url } },

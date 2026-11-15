@@ -178,6 +178,7 @@
   "audit.user.login_failed": "{actor} não conseguiu entrar.",
   "audit.user.logout": "{actor} saiu.",
   "audit.user.sign_in_link": "{actor} criou um link de acesso para {target}.",
+  "audit.user.sessions_end": "{actor} encerrou as sessões web de {target}.",
   "audit.user.device_confirm_sent": "Foi enviada a {actor} uma ligação para confirmar um novo navegador.",
   "audit.user.device_confirm_not_sent": "{actor} pediu para confirmar um novo navegador, e não foi enviada nenhuma ligação.",
   "audit.user.device_confirmed": "{actor} confirmou um novo navegador.",

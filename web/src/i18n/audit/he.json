@@ -178,6 +178,7 @@
   "audit.user.login_failed": "{actor} לא הצליח להיכנס.",
   "audit.user.logout": "{actor} יצא.",
   "audit.user.sign_in_link": "{actor} יצר קישור כניסה עבור {target}.",
+  "audit.user.sessions_end": "{actor} סיים את ההתחברויות של {target} בדפדפן.",
   "audit.user.device_confirm_sent": "נשלח ל‑{actor} קישור לאישור דפדפן חדש.",
   "audit.user.device_confirm_not_sent": "{actor} ביקש לאשר דפדפן חדש, ולא נשלח קישור.",
   "audit.user.device_confirmed": "{actor} אישר דפדפן חדש.",

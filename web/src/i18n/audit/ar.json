@@ -178,6 +178,7 @@
   "audit.user.login_failed": "فشل {actor} في تسجيل الدخول.",
   "audit.user.logout": "سجّل {actor} الخروج.",
   "audit.user.sign_in_link": "أنشأ {actor} رابط تسجيل دخول لـ {target}.",
+  "audit.user.sessions_end": "أنهى {actor} جلسات الويب الخاصة بـ {target}.",
   "audit.user.device_confirm_sent": "أُرسل إلى {actor} رابط لتأكيد متصفح جديد.",
   "audit.user.device_confirm_not_sent": "طلب {actor} تأكيد متصفح جديد، ولم يُرسل أي رابط.",
   "audit.user.device_confirmed": "أكّد {actor} متصفحاً جديداً.",

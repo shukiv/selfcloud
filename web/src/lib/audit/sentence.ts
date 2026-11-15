@@ -389,6 +389,8 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       return { key: 'audit.user.logout', params: { actor } };
     case 'user.sign_in_link':
       return { key: 'audit.user.sign_in_link', params: { actor, target } };
+    case 'user.sessions_end':
+      return { key: 'audit.user.sessions_end', params: { actor, target } };
     // A confirmation mail that was not sent (over its cap, or refused by the mailer) says so (sec2, decision 86).
     case 'user.device_confirm_sent':
       return {
