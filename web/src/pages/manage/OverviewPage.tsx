@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense } from "react";
-import { Alert } from "antd";
+import { Alert, Skeleton } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAT } from "../../lib/audit/i18n";
 import { useAdminText } from "../../lib/manage/adminText";
 import { formatNumber } from "../../lib/files/format";
 import { auditLog, listSpaces, usage } from "../../lib/manage/api";
@@ -14,6 +15,7 @@ import { queryKey } from "../../lib/query";
 import type { Usage } from "../../lib/manage/types";
 import UsageMeter from "../../components/UsageMeter";
 import { auditColumns, auditSaid, type AuditRow } from "../../components/manage/auditColumns";
+import AuditTextFailure from "../../components/manage/AuditTextFailure";
 import Listing from "../../components/files/Listing";
 import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
 import TemplatesFolderSetting from "../../components/manage/TemplatesFolderSetting";
@@ -40,6 +42,7 @@ async function readOverview(account: string): Promise<Overview> {
 
 function OverviewView() {
   const { t, tp } = useT();
+  const { ready: auditReady, failed: auditFailed, t: at } = useAT();
   const adminText = useAdminText();
   const lang = useLang();
   const account = useAccountID();
@@ -58,7 +61,7 @@ function OverviewView() {
     refetchOnMount: "always",
   });
   const lookup = names.data?.names ?? NO_NAMES;
-  const said = (e: AuditRow) => auditSaid(e, lookup, lang);
+  const said = (e: AuditRow) => auditSaid(e, lookup, t, at);
   const data = q.data;
   const people = data ? data.usage.users_active + data.usage.users_pending : 0;
   const fresh = data !== undefined && people <= 1 && data.spaceCount === 0;
@@ -138,13 +141,24 @@ function OverviewView() {
               </h2>
               <a href="/manage/audit">{t("manage.overview.fullLog")}</a>
             </div>
-            <Listing
-              label={t("manage.overview.activity")}
-              items={data.activity}
-              rowLabel={said}
-              columns={auditColumns(t, lang, said, { whenSecondary: true })}
-              empty={{ title: t("manage.overview.noActivity"), description: adminText ? t("manage.empty.activity") : undefined }}
-            />
+            {/* The sentences wait for their catalogue: a skeleton until it is there, and the main catalogue's error
+                with Retry when it fails. The figures above do not wait. */}
+            {auditFailed ? (
+              <AuditTextFailure />
+            ) : !auditReady ? (
+              <div role="status" aria-busy="true">
+                <span className="sr-only">{t("app.loading")}</span>
+                <Skeleton active paragraph={{ rows: 4 }} />
+              </div>
+            ) : (
+              <Listing
+                label={t("manage.overview.activity")}
+                items={data.activity}
+                rowLabel={said}
+                columns={auditColumns(at, lang, said, { whenSecondary: true })}
+                empty={{ title: t("manage.overview.noActivity"), description: adminText ? t("manage.empty.activity") : undefined }}
+              />
+            )}
           </section>
         </>
       )}

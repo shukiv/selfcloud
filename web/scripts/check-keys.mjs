@@ -11,7 +11,8 @@ const src = fileURLToPath(new URL('../src/', import.meta.url));
 // The search page's own catalogue (lib/search/text.ts), the share page's (lib/share/text.ts) and the admin lists' (lib/manage/
 // adminText.ts) and the command-line sign-in strings' (lib/cli/cliText.ts, decision 125) and the keyboard shortcuts list's
 // (lib/shortcutsText.ts, decision 174) are read with the main one: their keys are translation keys too. The install card's
-// (lib/pwa/text.ts, decision 179) and the external-sharing words' (lib/share/externalText.ts, decision 187) are as well.
+// (lib/pwa/text.ts, decision 179) and the external-sharing words' (lib/share/externalText.ts, decision 187) are as well. The
+// activity log's sentences (lib/audit/sentence.ts) name the audit catalogue's keys, so it is read with them too.
 const en = {
   ...JSON.parse(await readFile(join(src, 'i18n', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'search', 'en.json'), 'utf8')),
@@ -23,6 +24,7 @@ const en = {
   ...JSON.parse(await readFile(join(src, 'i18n', 'shortcuts', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'pwa', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'external', 'en.json'), 'utf8')),
+  ...JSON.parse(await readFile(join(src, 'i18n', 'audit', 'en.json'), 'utf8')),
 };
 
 async function files(dir) {

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Select } from "antd";
+import { Alert, Button, Select, Skeleton } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
+import { useAT } from "../../lib/audit/i18n";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
 import type { AuditRange } from "../../lib/manage/auditRange";
@@ -14,6 +15,7 @@ import { type AuditEntry, type Names } from "../../lib/audit/sentence";
 import Listing from "../files/Listing";
 import { auditColumns, auditSaid } from "../manage/auditColumns";
 import AuditRangeBar from "../manage/AuditRangeBar";
+import AuditTextFailure from "../manage/AuditTextFailure";
 import { more, sectionTitle, toolbar } from "./adminStyles";
 import { useAdminText } from "../../lib/manage/adminText";
 
@@ -24,6 +26,7 @@ type Entry = AuditEntry & { id: string; time: string };
 // them each sentence reads with its generic words.
 export default function TenantAudit({ account }: { account: string }) {
   const { t } = useT();
+  const { ready: auditReady, failed: auditFailed, t: at } = useAT();
   const lang = useLang();
   const [action, setAction] = useState("");
   const [range, setRange] = useState<AuditRange>({});
@@ -45,14 +48,17 @@ export default function TenantAudit({ account }: { account: string }) {
   const firstFailed = q.isError && q.data === undefined;
   const loaded = q.data !== undefined;
   // An entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it.
-  const said = (e: Entry) => auditSaid(e, names, lang);
+  const said = (e: Entry) => auditSaid(e, names, t, at);
+
+  // The sentences' catalogue did not load: the main catalogue says so, and Retry asks again (as the media page does).
+  if (auditFailed) return <AuditTextFailure />;
 
   return (
     <div>
       <div style={toolbar}>
         <h2 style={sectionTitle}>{t("tenant.audit.title")}</h2>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <label htmlFor="tenant-audit-action">{t("audit.filter")}</label>
+          <label htmlFor="tenant-audit-action">{auditReady ? at("audit.filter") : null}</label>
           <Select
             id="tenant-audit-action"
             value={action}
@@ -60,24 +66,31 @@ export default function TenantAudit({ account }: { account: string }) {
             // Every action is in the list: the virtual list would draw only the first few.
             virtual={false}
             style={{ minWidth: 200, maxInlineSize: "100%" }}
-            options={[{ value: "", label: t("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
+            // The options wait for the catalogue: the first one's word is its.
+            options={auditReady ? [{ value: "", label: at("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))] : []}
           />
           <AuditRangeBar account={account} action={action} idPrefix="tenant-audit" loaded={loaded} onRange={setRange} />
         </div>
       </div>
 
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
-      {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
+      {/* The sentences wait for their catalogue as the entries wait for the server: one skeleton for both. */}
+      {!firstFailed && (!auditReady || q.isPending) && (
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{t("app.loading")}</span>
+          <Skeleton active paragraph={{ rows: 4 }} />
+        </div>
+      )}
       {/* Newest first, so the When column says so with aria-sort and no button. The event column is the
           sentence and its code, named Action as the filter above it is. */}
-      {!firstFailed && q.data !== undefined && (
+      {!firstFailed && auditReady && q.data !== undefined && (
         <Listing
           label={t("tenant.audit.title")}
           items={entries}
           rowLabel={said}
-          columns={auditColumns(t, lang, said, { whenSecondary: false })}
+          columns={auditColumns(at, lang, said, { whenSecondary: false })}
           // The audit log has no create action.
-          empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
+          empty={{ title: at("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />
       )}
       {!firstFailed && q.hasNextPage && (

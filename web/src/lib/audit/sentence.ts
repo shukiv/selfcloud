@@ -507,36 +507,43 @@ export function isolateText(text: string): string {
 const ISOLATE_MARKS = /[⁦-⁩]/g;
 
 // renderSentence turns a sentence into text. translate looks a catalogue key up with parameters, so the same
-// function serves any language; text parameters are isolated, and key parameters are translated first.
-export function renderSentence(s: Sentence, translate: (key: string, params?: Record<string, string>) => string): string {
-  const main = fill(s.key, s.params, translate);
+// function serves any language; text parameters are isolated, and key parameters are translated first. refText reads
+// one key parameter as a word; by default it goes through translate, and a page with catalogues of its own passes its
+// own reader (lib/audit/i18n.ts).
+export function renderSentence(
+  s: Sentence,
+  translate: (key: string, params?: Record<string, string>) => string,
+  refText: (ref: Ref) => string = (ref) => ("text" in ref ? ref.text : translate(ref.key)),
+): string {
+  const main = fill(s.key, s.params, translate, refText);
   if (!s.via) return main;
-  return `${main} ${fill(s.via.key, s.via.params, translate)}`;
+  return `${main} ${fill(s.via.key, s.via.params, translate, refText)}`;
 }
 
 // fill translates one sentence. A generic word the catalogue puts first is capitalised ("A person verified their
 // account"); the same word in the middle of a sentence is not. The word that leads is found by translating the key with
 // a marker for each parameter, so the catalogue decides and no word is listed here. A name is text, and is never changed.
-function fill(key: string, refs: Record<string, Ref>, translate: (key: string, params?: Record<string, string>) => string): string {
+function fill(
+  key: string,
+  refs: Record<string, Ref>,
+  translate: (key: string, params?: Record<string, string>) => string,
+  refText: (ref: Ref) => string,
+): string {
   const markers: Record<string, string> = {};
   for (const name of Object.keys(refs)) markers[name] = `\u0001${name}\u0002`;
   // The probe is read without isolate marks: a right-to-left translation wraps each marker in them (decision 67).
   const probe = Object.keys(refs).length > 0 ? translate(key, markers).replace(ISOLATE_MARKS, '') : '';
   const lead = Object.keys(refs).find((name) => probe.startsWith(markers[name]) && 'key' in refs[name]);
-  return translate(key, refParams(refs, translate, lead));
+  return translate(key, refParams(refs, refText, lead));
 }
 
-function refParams(
-  refs: Record<string, Ref>,
-  translate: (key: string, params?: Record<string, string>) => string,
-  lead?: string,
-): Record<string, string> {
+function refParams(refs: Record<string, Ref>, refText: (ref: Ref) => string, lead?: string): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [name, ref] of Object.entries(refs)) {
     if ('text' in ref) {
       params[name] = isolateText(ref.text);
     } else {
-      const word = translate(ref.key);
+      const word = refText(ref);
       params[name] = name === lead ? word.charAt(0).toLocaleUpperCase() + word.slice(1) : word;
     }
   }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Download } from "lucide-react";
-import { useT } from "../../lib/i18n";
+import { useAT } from "../../lib/audit/i18n";
 import { auditRange, downloadAuditExport, rangeInvalid, type AuditRange } from "../../lib/manage/auditRange";
 import { useCoarsePointer } from "../../lib/pointer";
 import { dateField, dateInput, fieldError } from "../admin/adminStyles";
@@ -25,7 +25,8 @@ export default function AuditRangeBar({
   loaded: boolean;
   onRange: (range: AuditRange) => void;
 }) {
-  const { t } = useT();
+  // The bar's labels are the audit catalogue's: they draw nothing until it is there (a failed load is the page's alert).
+  const { ready, t: at } = useAT();
   const coarse = useCoarsePointer();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -75,7 +76,7 @@ export default function AuditRangeBar({
   return (
     <>
       <div style={dateField}>
-        <label htmlFor={fromID}>{t("audit.from")}</label>
+        <label htmlFor={fromID}>{ready ? at("audit.from") : null}</label>
         <input
           id={fromID}
           type="date"
@@ -87,7 +88,7 @@ export default function AuditRangeBar({
         />
       </div>
       <div style={dateField}>
-        <label htmlFor={toID}>{t("audit.to")}</label>
+        <label htmlFor={toID}>{ready ? at("audit.to") : null}</label>
         <input
           id={toID}
           type="date"
@@ -98,17 +99,17 @@ export default function AuditRangeBar({
           style={inputStyle}
         />
       </div>
-      {loaded && (
+      {loaded && ready && (
         <IconButton
-          label={t("audit.export")}
+          label={at("audit.export")}
           icon={<Download size={18} />}
           disabled={invalid || held}
           onClick={startExport}
         />
       )}
-      {invalid && (
+      {invalid && ready && (
         <p id={errorID} role="alert" style={fieldError}>
-          {t("audit.rangeInvalid")}
+          {at("audit.rangeInvalid")}
         </p>
       )}
     </>

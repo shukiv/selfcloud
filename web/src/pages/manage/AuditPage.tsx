@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState } from "react";
-import { Alert, Button, Select } from "antd";
+import { Alert, Button, Select, Skeleton } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAT } from "../../lib/audit/i18n";
 import { useAdminText } from "../../lib/manage/adminText";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
@@ -13,6 +14,7 @@ import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import { auditColumns, auditSaid, type AuditRow } from "../../components/manage/auditColumns";
 import AuditRangeBar from "../../components/manage/AuditRangeBar";
+import AuditTextFailure from "../../components/manage/AuditTextFailure";
 import Listing from "../../components/files/Listing";
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
 
@@ -20,6 +22,7 @@ import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage
 // everyone but its user, and this page shows the list exactly as the server answers it.
 function AuditView() {
   const { t } = useT();
+  const { ready: auditReady, failed: auditFailed, t: at } = useAT();
   const adminText = useAdminText();
   const lang = useLang();
   const account = useAccountID();
@@ -48,7 +51,10 @@ function AuditView() {
   const entries: AuditRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
-  const said = (e: AuditRow) => auditSaid(e, lookup, lang);
+  const said = (e: AuditRow) => auditSaid(e, lookup, t, at);
+
+  // The sentences' catalogue did not load: the main catalogue says so, and Retry asks again (as the media page does).
+  if (auditFailed) return <AuditTextFailure />;
 
   return (
     <div>
@@ -57,13 +63,14 @@ function AuditView() {
           {t("manage.audit.title")}
         </h1>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <label htmlFor="audit-action">{t("audit.filter")}</label>
+          <label htmlFor="audit-action">{auditReady ? at("audit.filter") : null}</label>
           <Select
             id="audit-action"
             value={action}
             onChange={(v: string) => setAction(v)}
             style={{ minWidth: 220 }}
-            options={[{ value: "", label: t("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
+            // The options wait for the catalogue: the first one's word is its.
+            options={auditReady ? [{ value: "", label: at("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))] : []}
           />
           <AuditRangeBar account={account} action={action} idPrefix="audit" loaded={loaded} onRange={setRange} />
         </div>
@@ -71,22 +78,29 @@ function AuditView() {
 
       {namesPartial && (
         <p role="note" style={{ margin: "0 0 12px", color: "var(--ant-color-text-secondary)" }}>
-          {t("audit.namesPartial")}
+          {at("audit.namesPartial")}
         </p>
       )}
       {failure !== null && <Alert type={loaded ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />}
 
-      {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
+      {/* The sentences wait for their catalogue as the entries wait for the server: one skeleton for both, and the
+          table only when both are there. Newest first: the When column says so with aria-sort and no button (decision 122). */}
+      {!(q.isError && !loaded) && (!auditReady || (!loaded && q.isPending && account !== "")) && (
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{t("app.loading")}</span>
+          <Skeleton active paragraph={{ rows: 4 }} />
+        </div>
+      )}
 
-      {/* Newest first: the When column says so with aria-sort and no button (decision 122). The table keeps its headers when empty. */}
-      {loaded && (
+      {/* The table keeps its headers when empty. */}
+      {auditReady && loaded && (
         <Listing
           label={t("manage.audit.title")}
           items={entries}
           rowLabel={said}
-          columns={auditColumns(t, lang, said, { whenSecondary: true })}
+          columns={auditColumns(at, lang, said, { whenSecondary: true })}
           // The audit log has no create action.
-          empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
+          empty={{ title: at("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />
       )}
 
