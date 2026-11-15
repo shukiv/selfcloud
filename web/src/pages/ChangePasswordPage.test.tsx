@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
 import { stubFetch } from "../test/fetchStub";
+import { setSignInInfo, SIGNED_OUT_PATH } from "../lib/outsideSignIn";
+import { stubLocationAssign } from "../test/locationStub";
 import ChangePasswordPage from "./ChangePasswordPage";
 
 const member = { id: "usr_m", email: "mateo@example.com", display_name: "Mateo", role: "member", locale: "en", status: "active" };
@@ -34,5 +36,47 @@ describe("the change-password page", () => {
     expect(screen.getByRole("alert").textContent).toContain("You can't do this while signed in as another person.");
     expect(document.getElementById("change-current")).toBeNull();
     expect(screen.queryByRole("button", { name: "Change password" })).toBeNull();
+  });
+});
+
+describe("the forced page's sign-out with an outside sign-in page (decision 185)", () => {
+  let assign: ReturnType<typeof stubLocationAssign>;
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/change-password");
+    setSignInInfo(null);
+    assign = stubLocationAssign();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setSignInInfo(null);
+    window.sessionStorage.clear();
+  });
+
+  it("goes to the signed-out URL when one is set", async () => {
+    setSignInInfo({ externalUrl: "https://id.example.com/sign-in?next={next}", signedOutUrl: "https://id.example.com/signed-out", password: false });
+    session.set(signedIn({ mustChange: true }));
+    render(<ChangePasswordPage forced />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://id.example.com/signed-out"));
+  });
+
+  it("shows the signed-out page when only the outside sign-in page is set", async () => {
+    setSignInInfo({ externalUrl: "https://id.example.com/sign-in?next={next}", signedOutUrl: "", password: false });
+    session.set(signedIn({ mustChange: true }));
+    render(<ChangePasswordPage forced />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(window.location.pathname).toBe(SIGNED_OUT_PATH));
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("goes to /login when neither is set", async () => {
+    session.set(signedIn({ mustChange: true }));
+    render(<ChangePasswordPage forced />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(assign).not.toHaveBeenCalled();
   });
 });

@@ -64,6 +64,7 @@ import { nt2GalleryChecks } from './nt2gallery.mjs';
 import { ks1Checks } from './ks1.mjs';
 import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
+import { xs1Checks } from './xs1.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
@@ -816,6 +817,8 @@ async function main() {
   let ksBrowser = null;
   // sec2Browser is the new-browser confirmation's own browser, while its checks run (see the sec2 call).
   let sec2Browser = null;
+  // xs1Browser is the outside sign-in's own browser, while its checks run (see the xs1 call).
+  let xs1Browser = null;
   let page = null;
   // runner records the failed sections and names them at the end (decision 190); it is made once the page is up.
   let runner = null;
@@ -1045,7 +1048,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, xs1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1264,6 +1267,23 @@ async function main() {
         sec2Browser = null;
       }
     }, { as: 'member' });
+    // Slice xs1 (decision 185): the interface follows the installation's outside sign-in page. Its own browser, so the
+    // shared page's same-origin check never sees the outside addresses; a local server plays them.
+    if (!only || onlySet.has('xs1')) await section('xs1', async () => {
+      const xs1Launch = await launchBrowser(await findBrowser(), join(dir, 'xs1-profile'));
+      xs1Browser = xs1Launch.proc;
+      const xs1Page = new Page(xs1Launch.wsUrl);
+      xs1Page.base = base;
+      try {
+        await xs1Page.start(EXPECTED);
+        await xs1Checks(h, { page: xs1Page, base, adminKey, accountID, accountKey, memberID, teamA });
+        check(xs1Page.errors.length === 0, `the outside sign-in browser has no console errors or policy violations (${xs1Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        xs1Page.close();
+        xs1Browser.kill();
+        xs1Browser = null;
+      }
+    }, { as: 'member' });
     // Slice myfiles: the member's star, open and recent checks, run alone (SELFCLOUD_E2E_ONLY=myfiles), signed in as the
     // member the run leaves the shared page as. The full run reaches the same checks below.
     if (only && onlySet.has('myfiles')) await section('myfiles', () => owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }), { as: 'member' });
@@ -1396,6 +1416,7 @@ async function main() {
     ic2Browser?.kill();
     ksBrowser?.kill();
     sec2Browser?.kill();
+    xs1Browser?.kill();
     server.kill();
     await fake.close();
     crashWatch?.close();
