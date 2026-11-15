@@ -3678,6 +3678,8 @@ describe("the page's menus on a phone (decision 200)", () => {
     expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
   });
 
+  // Move to… is a bar action since decision 201 (an icon, or the overflow at the top of More), not one of More's Organize
+  // entries, so the slide is named for Copy to…, the Organize dialog action the fitted selection bar leaves in More.
   it("the selection panel's More slides its submenus in the same popup", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
@@ -3688,7 +3690,7 @@ describe("the page's menus on a phone (decision 200)", () => {
     expect(organize.getAttribute("aria-haspopup")).toBeNull();
     fireEvent.click(organize);
     expect(await screen.findByRole("menuitem", { name: "Back to Organize" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Move to…" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Copy to…" })).toBeTruthy();
     expect(screen.getAllByRole("menu")).toHaveLength(1);
     expect(document.querySelector(".ant-dropdown-menu-submenu-popup")).toBeNull();
   });
