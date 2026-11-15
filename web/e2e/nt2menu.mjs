@@ -255,7 +255,9 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await setPhoneWidth(390);
     await backToFolder();
     await tapSel('[data-testid="nav-open"]');
-    await page.waitFor(`!!document.querySelector('.ant-drawer [data-testid="new-button"]:not([disabled])')`, 10000);
+    // The drawer slides in: its New button is in the DOM before it is on the window, so wait for it to be drawn inside the
+    // viewport before tapping, or the tap lands where the button was and opens nothing (decision 185).
+    await page.waitFor(`(() => { const b = document.querySelector('.ant-drawer [data-testid="new-button"]:not([disabled])'); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; })()`, 10000);
     await tapSel('.ant-drawer [data-testid="new-button"]');
     await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
     await hoverMenuTitle(page, 'Document');
