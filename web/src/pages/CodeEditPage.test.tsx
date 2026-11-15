@@ -9,7 +9,11 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const goMock = vi.hoisted(() => vi.fn());
-vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
+vi.mock("../lib/router", async (orig) => ({
+  ...(await orig<typeof import("../lib/router")>()),
+  go: goMock,
+  signInURL: () => "/login",
+}));
 
 import CodeEditPage from "./CodeEditPage";
 import { signOut } from "../lib/auth";
