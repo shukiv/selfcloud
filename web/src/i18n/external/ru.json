@@ -15,7 +15,7 @@
   "shared.external.proveSent": "Мы отправили ссылку на {email}. Откройте её на этом или любом другом устройстве.",
   "shared.external.proveFailed": "Не удалось отправить письмо для подтверждения. Попробуйте позже.",
   "shared.external.by": "{name} · {account}",
-  "shared.external.empty": "Пока ничем из других аккаунтов с вами не поделились.",
+  "shared.external.empty": "Пока ничем из других аккаунтов с вами не поделились",
   "external.gone": "Этот элемент не открыт вам или больше недоступен.",
   "external.sharedBy": "Поделился",
   "policy.externalSharing": "Делиться с людьми из других аккаунтов на этом сервере",

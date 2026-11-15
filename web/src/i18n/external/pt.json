@@ -15,7 +15,7 @@
   "shared.external.proveSent": "Enviamos um link para {email}. Abra-o neste dispositivo ou em qualquer outro.",
   "shared.external.proveFailed": "O e-mail de verificação não pôde ser enviado. Tente novamente mais tarde.",
   "shared.external.by": "{name} · {account}",
-  "shared.external.empty": "Ainda não há nada de outras contas compartilhado com você.",
+  "shared.external.empty": "Ainda não há nada de outras contas compartilhado com você",
   "external.gone": "Este item não está compartilhado com você, ou não está mais disponível.",
   "external.sharedBy": "Compartilhado por",
   "policy.externalSharing": "Compartilhar com pessoas de outras contas neste servidor",

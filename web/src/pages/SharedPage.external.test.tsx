@@ -153,7 +153,7 @@ describe("the From other accounts section", () => {
     session.set(signedAs(true, true));
     stub(true, { items: [] });
     renderPage();
-    expect(await screen.findByText("Nothing from other accounts is shared with you yet.")).toBeTruthy();
+    expect(await screen.findByText("Nothing from other accounts is shared with you yet")).toBeTruthy();
     expect(document.querySelector(".empty-table")).not.toBeNull();
   });
 });

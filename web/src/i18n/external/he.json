@@ -15,7 +15,7 @@
   "shared.external.proveSent": "שלחנו קישור אל {email}. פתח אותו במכשיר זה או בכל מכשיר אחר.",
   "shared.external.proveFailed": "לא ניתן לשלוח את אימייל האימות. נסה שוב מאוחר יותר.",
   "shared.external.by": "{name} · {account}",
-  "shared.external.empty": "עדיין לא שותף איתך דבר מחשבונות אחרים.",
+  "shared.external.empty": "עדיין לא שותף איתך דבר מחשבונות אחרים",
   "external.gone": "פריט זה לא משותף איתך, או שאינו זמין עוד.",
   "external.sharedBy": "שותף על ידי",
   "policy.externalSharing": "שיתוף עם אנשים בחשבונות אחרים בשרת זה",
