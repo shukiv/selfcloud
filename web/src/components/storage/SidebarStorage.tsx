@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { ReactNode } from "react";
-import { Tooltip } from "antd";
+import { Tooltip, theme } from "antd";
 import { Cloud } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useT, useLang } from "../../lib/i18n";
@@ -26,14 +26,15 @@ export function storageTitle(s: MeStorage | null, t: (key: string, params?: Reco
 
 // SidebarStorage is the storage block pinned at the bottom of the sidebar (decision 181's pin, decision 185's look): a sidebar
 // row, not a card. It takes the rows' inline margin, radius and hover tint, with no border and no background of its own. Line 1 is
-// a Cloud icon in the rows' icon column and the storage title in the rows' label column; line 2 the bar, only with a limit, from
-// the icon's start edge to the block's end edge; line 3 the figures in the caption colour. With no limit there is no bar. A null
-// read (not yet known) shows the title alone. selected says the Storage page is the current place: the stylesheet fills the block
+// a Cloud icon in the rows' icon column and the storage title in the rows' label column; line 2 the bar, only with a limit, from the
+// icon's start edge to a menu row's padding short of the block's end edge; line 3 the figures in the caption colour. With no limit there
+// is no bar. A null read (not yet known) shows the title alone. selected says the Storage page is the current place: the stylesheet fills the block
 // with the active colour as the selected menu row is, and the title, the figures and the bar's outline and normal fill take the
 // on-active ink. onNavigate closes the phone drawer when the block opens the page.
 export default function SidebarStorage({ my, sidebar, inline, selected = false, onNavigate }: { my: MeStorage | null; sidebar: Sidebar; inline: number; selected?: boolean; onNavigate?: () => void }): ReactNode {
   const { t } = useT();
   const lang = useLang();
+  const { token } = theme.useToken();
   const held = my ? heldBytes(my) : 0;
   const quota = my?.quota_bytes ?? null;
   const level = sidebarMeterLevel(held, quota);
@@ -59,8 +60,11 @@ export default function SidebarStorage({ my, sidebar, inline, selected = false, 
         marginBlockStart: 8,
         paddingBlock: 8,
         // The content starts in the rows' icon column (the shell sets --sc-icon-col from the block's own start edge), so the icon,
-        // the bar and the figures all start where the rows' icons start, and the bar runs to the block's end edge.
+        // the bar and the figures all start where the rows' icons start.
         paddingInlineStart: "var(--sc-icon-col, 24px)",
+        // The content ends one menu-row inline padding short of the block's end edge (antd's Menu uses token.padding for its rows'
+        // itemPaddingInline), so the bar, the title and the figures do not run into the block's end edge and its hover/active fill.
+        paddingInlineEnd: token.padding,
         borderRadius: RADIUS,
         color: selected ? sidebar.onActive : sidebar.text,
         textDecoration: "none",
