@@ -347,7 +347,7 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     await sleep(300);
     await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
     await pickMenuEntry(page, 'Star');
-    await page.waitFor(`!!document.querySelector(${q(rowSel(beta))} .row-marks svg)`, 10000);
+    await page.waitFor(`!!document.querySelector(${q(`${rowSel(beta)} .row-marks svg`)})`, 10000);
     await page.evaluate(`document.querySelector(${q(`${rowSel(beta)} button[aria-haspopup="menu"]`)}).click(), true`);
     await pickMenuEntry(page, 'Rename');
     await page.waitFor(`!!document.querySelector('input.rename')`, 10000);
