@@ -22,16 +22,35 @@ import { PREF_LANG, readPref } from "./lib/prefs";
 import { useStore } from "./lib/store";
 import Shell from "./components/Shell";
 import AuthLayout from "./components/AuthLayout";
-import LoginPage from "./pages/LoginPage";
-import ForgotPage from "./pages/ForgotPage";
-import ResetPage from "./pages/ResetPage";
-import ConfirmDevicePage from "./pages/ConfirmDevicePage";
-import VerifyPage from "./pages/VerifyPage";
-import EmailChangePage from "./pages/EmailChangePage";
-import SignInPage from "./pages/SignInPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import { markSignedIn } from "./lib/pwa/cacheState";
 import ShareHold from "./components/share/ShareHold";
+import { warmImport } from "./lib/warm";
+
+// The auth pages load on first use (decision 185): a signed-in person's first screen never draws them, and their antd
+// Input, Radio and Typography stay out of the first load. A signed-out visitor's first screen is one of them, so Boot
+// starts their chunks while it reads the session, and the signed-in shell warms them on idle for the sign-out to come.
+const authLoaders = {
+  login: () => import("./pages/LoginPage"),
+  forgot: () => import("./pages/ForgotPage"),
+  reset: () => import("./pages/ResetPage"),
+  verify: () => import("./pages/VerifyPage"),
+  confirmDevice: () => import("./pages/ConfirmDevicePage"),
+  emailChange: () => import("./pages/EmailChangePage"),
+  signIn: () => import("./pages/SignInPage"),
+};
+const LoginPage = lazy(authLoaders.login);
+const ForgotPage = lazy(authLoaders.forgot);
+const ResetPage = lazy(authLoaders.reset);
+const VerifyPage = lazy(authLoaders.verify);
+const ConfirmDevicePage = lazy(authLoaders.confirmDevice);
+const EmailChangePage = lazy(authLoaders.emailChange);
+const SignInPage = lazy(authLoaders.signIn);
+
+// warmAuthPages starts every auth chunk; a failed one is left to its own page's load, which reports it where it draws.
+function warmAuthPages(): Promise<unknown> {
+  return Promise.all(Object.values(authLoaders).map((load) => load().catch(() => undefined)));
+}
 
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
 const FilesPage = lazy(() => import("./pages/FilesPage"));
@@ -193,6 +212,9 @@ export function Boot({ children }: { children: ReactNode }) {
       if (info?.limits) seedLimits(qc, info.limits);
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
+      // A signed-out visitor's next screen is an auth page: start its chunks now, alongside the language read, so the
+      // form waits for nothing the entry used to carry (decision 185).
+      if (!me) void warmAuthPages();
       chooseLang(me);
       setReady(true);
     })();
@@ -228,20 +250,21 @@ export function Direction({ children }: { children: ReactNode }) {
   );
 }
 
-// The public pages a signed-out visitor may see; the shell and its pages need a session.
+// The public pages a signed-out visitor may see; the shell and its pages need a session. The auth pages are lazy
+// chunks (decision 185): while one is on its way, the boot's loading placeholder is what shows, not a blank page.
 function Public({ view }: { view: View }) {
   switch (view) {
-    case "login": return <LoginPage />;
-    case "verify": return <VerifyPage />;
+    case "login": return <Suspense fallback={<Loading />}><LoginPage /></Suspense>;
+    case "verify": return <Suspense fallback={<Loading />}><VerifyPage /></Suspense>;
     case "prove":
       return (
         <Suspense fallback={<PageLoading />}>
           <ProvePage />
         </Suspense>
       );
-    case "reset": return <ResetPage />;
-    case "confirm-device": return <ConfirmDevicePage />;
-    case "email-change": return <EmailChangePage />;
+    case "reset": return <Suspense fallback={<Loading />}><ResetPage /></Suspense>;
+    case "confirm-device": return <Suspense fallback={<Loading />}><ConfirmDevicePage /></Suspense>;
+    case "email-change": return <Suspense fallback={<Loading />}><EmailChangePage /></Suspense>;
     case "cli-approve":
       // The page draws its own layout, and needs the signed-in person's session to approve.
       return (
@@ -249,8 +272,8 @@ function Public({ view }: { view: View }) {
           <CliApprovePage />
         </Suspense>
       );
-    case "forgot": return <ForgotPage />;
-    case "sign-in": return <SignInPage />;
+    case "forgot": return <Suspense fallback={<Loading />}><ForgotPage /></Suspense>;
+    case "sign-in": return <Suspense fallback={<Loading />}><SignInPage /></Suspense>;
     case "share-link":
       return (
         <AuthLayout variant="share">
@@ -289,6 +312,12 @@ export function Gate() {
   const search = loc.search;
   const view = viewFor(path);
   const signedIn = me !== null;
+
+  // The signed-in first screen warms the auth pages on idle (decision 185), so the sign-out to come opens the sign-in
+  // form with no wait. A signed-out visitor's pages are started by Boot instead: they are its first screen.
+  useEffect(() => {
+    if (signedIn) warmImport(warmAuthPages);
+  }, [signedIn]);
 
   // A person who must change the password gets nothing else: the server refuses every route until it is changed, so
   // every other address goes to the change-password page, which is drawn without the shell (its sidebar reads the drive).

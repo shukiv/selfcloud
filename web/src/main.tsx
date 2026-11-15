@@ -13,6 +13,7 @@ import { loadLang } from "./lib/i18n";
 import { ThemeProvider } from "./theme/theme";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { Boot, Direction, Gate } from "./App";
+import { warmImport } from "./lib/warm";
 import { listenForInstall } from "./lib/pwa/install";
 import { registerWorker } from "./lib/pwa/worker";
 import UpdatePrompt from "./components/pwa/UpdatePrompt";
@@ -64,6 +65,9 @@ void loadLang("en")
           </QueryClientProvider>
         </StrictMode>,
       );
+      // The crash view is a lazy chunk (decision 185): start it once the first screen is drawn, so a render error
+      // finds its message and reload already there instead of waiting for another fetch.
+      warmImport(() => import("./components/CrashView"));
     },
     () => showRetry(root),
   );
