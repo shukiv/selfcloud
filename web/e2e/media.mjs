@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pngOf } from './s4a.mjs';
 import { playerChecks, stopMini } from './player.mjs';
-import { hoverMenuTitle, pickMenuEntry } from './menu.mjs';
+import { hoverMenuTitle, pickMenuEntry, TITLE_SEL } from './menu.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const q = (v) => JSON.stringify(v);
@@ -443,22 +443,50 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
     // The tile's More button is the one target on a tile (decision 70: the star is a mark, changed in the menu). A tap on it opens the
     // item's menu, and opens nothing. A tile is taller in the tile view (slice d1): the button is brought into the window first.
-    const more = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-haspopup="menu"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+    // The install offer (decision 179) is a card lifted above the mini-player; on this listing it can sit over the tile's More button
+    // and take a tap meant for it. The person answers Not now, so the card is closed if it is up and does not come back: the choice is
+    // kept under the browser key, exactly as the close icon keeps it.
+    const dismissInstallCard = async () => {
+      await page.evaluate(`window.localStorage.setItem('selfcloud.installPrompt', JSON.stringify({ at: Date.now(), forever: false }))`);
+      if (await page.evaluate(`!!document.querySelector('[data-testid="install-prompt"]')`)) {
+        await page.evaluate(`document.querySelector('[data-testid="install-prompt"] button')?.click()`);
+        await page.waitFor(`!document.querySelector('[data-testid="install-prompt"]')`, 5000);
+      }
+    };
+    // The More button is measured again right before each tap: brought into the window and its centre read fresh, so a tap lands on the
+    // button as it is now, not where it was.
+    const morePoint = () => page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-haspopup="menu"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+    // After a tap the menu is waited for by its Rename entry, up to five seconds: a busy machine can take longer than a fixed pause to
+    // draw it, and a lost tap still fails at the end of the wait.
+    const RENAME = `[...document.querySelectorAll(${q(TITLE_SEL)})].some((x) => x.textContent.trim() === 'Rename')`;
+    const waitMenu = () => page.waitFor(RENAME, 5000).catch(() => undefined);
+    await dismissInstallCard();
+    const more = await morePoint();
     check(more !== null && more.w >= 44 && more.h >= 44, `the More button of a tile is a 44 pixel target on a phone (${JSON.stringify(more)})`);
+    const scrollBefore = await page.evaluate(`window.scrollY`);
     await tap(page, more);
-    await sleep(800);
-    const menuOpened = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].some((x) => x.textContent.trim() === 'Rename')`);
+    await waitMenu();
+    const menuOpened = await page.evaluate(RENAME);
     const moreOpened = await openedName(page);
     check(menuOpened && moreOpened === null, `a tap on the More button opens the item's menu and opens nothing (menu ${menuOpened}; opened ${moreOpened ?? 'nothing'})`);
     // The star is changed from the menu on a phone: Star in Organize stars the tile, and Unstar takes the mark away.
     await pickMenuEntry(page, 'Star');
-    await sleep(800);
+    await page.waitFor(`!!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`, 5000).catch(() => undefined);
     const starredOn = await page.evaluate(`!!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`);
     check(starredOn, `on a phone the tile's menu stars the file, and its mark shows (${starredOn})`);
-    await tap(page, more);
-    await sleep(800);
+    // Starring from the menu must not move the view: the More button stays where it was and the page does not scroll, so a person's next
+    // tap on it lands. The rect is read in place, without bringing it into view, so a jump is not hidden.
+    const still = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-haspopup="menu"]'); const r = b?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+    const scrollAfter = await page.evaluate(`window.scrollY`);
+    check(still !== null && Math.abs(still.x - more.x) <= 1 && Math.abs(still.y - more.y) <= 1 && scrollAfter === scrollBefore, `starring from the menu leaves the More button and the scroll where they were (button ${JSON.stringify(still)} vs ${JSON.stringify({ x: more.x, y: more.y })}; scroll ${scrollBefore} to ${scrollAfter})`);
+    await dismissInstallCard();
+    const moreAgain = await morePoint();
+    await tap(page, moreAgain);
+    await waitMenu();
+    const menuAgain = await page.evaluate(RENAME);
+    check(menuAgain, `a second tap on the More button opens the item's menu again (menu ${menuAgain})`);
     await pickMenuEntry(page, 'Unstar');
-    await sleep(800);
+    await page.waitFor(`!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`, 5000).catch(() => undefined);
     const starredOff = await page.evaluate(`!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`);
     check(starredOff, `on a phone the tile's menu unstars the file, and its mark goes (${starredOff})`);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
