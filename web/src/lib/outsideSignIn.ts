@@ -8,6 +8,7 @@
 import { go, location, signInURL } from './router';
 import { get } from './store';
 import { safeNext } from './next';
+import { signingOut } from './session';
 
 // SignInInfo is what the installation says of sign-in: the outside sign-in page (empty for none), the page a sign-out
 // goes to (empty for none), and whether account users may sign in with a password. Installation admins always may.
@@ -64,6 +65,9 @@ function hopAllowed(): boolean {
 
 // goOutside assigns the outside page, or shows the signed-out page when the loop guard refuses a third hop in a minute.
 export function goOutside(url: string): void {
+  // An explicit sign-out picks its own destination (goSignedOut) once it ends, so no redirect leaves while one is under
+  // way; nothing is counted in the loop guard.
+  if (signingOut()) return;
   if (hopAllowed()) {
     window.location.assign(url);
     return;

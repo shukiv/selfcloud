@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { goSignedOut, outsideSignIn, sendToSignIn, setSignInInfo, SIGNED_OUT_PATH } from "./outsideSignIn";
+import { goOutside, goSignedOut, outsideSignIn, sendToSignIn, setSignInInfo, SIGNED_OUT_PATH } from "./outsideSignIn";
+import { beginSignOut, endSignOut } from "./session";
 import { stubLocationAssign } from "../test/locationStub";
 
 const OUTSIDE = "https://id.example.com/sign-in?next={next}";
@@ -134,5 +135,25 @@ describe("goSignedOut", () => {
     goSignedOut();
     expect(assign).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/login");
+  });
+});
+
+describe("goOutside while a sign-out is under way", () => {
+  it("neither assigns nor counts a hop until the sign-out ends, then assigns as before", () => {
+    setOutside();
+    const assign = stubLocationAssign();
+    const url = "https://id.example.com/sign-in?next=%2Ffiles%2Fa";
+    beginSignOut();
+    try {
+      goOutside(url);
+      expect(assign).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem("selfcloud.outsideSignInHops")).toBeNull();
+      expect(window.location.pathname).toBe("/");
+    } finally {
+      endSignOut();
+    }
+    goOutside(url);
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith(url);
   });
 });
