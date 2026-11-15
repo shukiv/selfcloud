@@ -166,8 +166,9 @@ a clock difference larger than `--min-age` can make a fresh blob look old (decis
 ## Backing up
 
 `selfcloud backup --to DIR` writes an online snapshot of the metadata database while the server keeps running, and
-`selfcloud backup --check FILE` verifies a snapshot. The snapshot is taken with SQLite's `VACUUM INTO` from a
-read-only connection, so the live database is never written. It is one file, `selfcloud-<UTC stamp>.db`, mode 0600,
+`selfcloud backup --check FILE` verifies a snapshot. `--check` needs no configuration file, so a snapshot can be
+checked on any machine with the binary. The snapshot is taken with SQLite's `VACUUM INTO` from a read-only
+connection, so the live database is never written. It is one file, `selfcloud-<UTC stamp>.db`, mode 0600,
 written under a temporary name and published only after it passes `integrity_check`, `foreign_key_check` and the
 schema-version check. An existing file is never overwritten. Exit status 0 means good, 1 means the copy failed its
 check (or the checked file has problems, each listed), 2 means the command could not run.
