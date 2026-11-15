@@ -630,7 +630,7 @@ by a `nod_` id and a team folder by a `fld_` id. The commands that act on an acc
 | `access approve REQUEST... [--role R]` | gives the role the person asked for, or `viewer`, `commenter` or `editor` |
 | `access deny REQUEST...` | refuses |
 | `shared [--recent] [--all]` | what other people shared with the signed-in person: id, kind, role, name, when, place |
-| `shared --external` | what other accounts shared with the signed-in person's email address; a terminal sign-in gets the empty list and is pointed to the web interface |
+| `shared --external` | what other accounts shared with the signed-in person's email address: id, kind, role, name, account, by whom, end (one page) |
 
 **Sharing switches.** `share no-download` and `share editors-can-share` change one switch on a node and send only that
 field, so a switch never renames the node. The second argument must be exactly `on` or `off`, and the node must be named by
@@ -657,15 +657,14 @@ the server the address is escaped into one path segment, so it can never add a s
 external-sharing switch on (`sharing policy set --external-sharing true`); the server refuses otherwise, and its message
 comes back as it is. Turning the switch off keeps every grant already made.
 
-The person the address belongs to reads the list in the web interface. `shared --external` reads the same route at a
-terminal, signed in with `login` (a device token), and prints one page; `--recent` and `--all` are refused with it. The
-server lists the items to a browser session only (decision 187: every token that acts for a user, a device token among
-them, gets the empty list), so a terminal sign-in prints the empty table and one line on standard error saying to see the
-list in the web interface. When the person's email address is not proved, the line says so instead and asks to prove it;
-proving an address stays in the web interface. An account key is refused (exit 3), as for any refusal. Under `--json` the
-whole answer is printed unchanged, `items` and `email_proved` together, and neither line is written. `share ls NODE
---external` lists the addresses a node is shared with, and `share revoke NODE --external ADDRESS` takes one away (asks
-first; the phrase is the address). A grant that is not there keeps the server's not-found exit 4.
+The person the address belongs to reads the list with `shared --external`, signed in with `login` (a device token): a
+terminal's device token reads the list as a browser session does (decision 192), and the command prints one page;
+`--recent` and `--all` are refused with it. A token minted by an account key gets the empty list, and an account key itself
+is refused (exit 3), as for any refusal. When the person's email address is not proved, the list is empty and one line on
+standard error asks to prove it; proving an address stays in the web interface. Under `--json` the whole answer is printed
+unchanged, `items` and `email_proved` together, and the notice is absent. `share ls NODE --external` lists the addresses a
+node is shared with, and `share revoke NODE --external ADDRESS` takes one away (asks first; the phrase is the address). A
+grant that is not there keeps the server's not-found exit 4.
 
 ```sh
 selfcloud sharing policy set --external-sharing true

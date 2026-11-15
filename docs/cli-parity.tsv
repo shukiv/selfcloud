@@ -322,7 +322,7 @@ route	GET /api/v1/search	search	cli11e	built in cli11e
 route	GET /api/v1/settings	settings get	se4	built in se4
 route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	shared	cli7	built in cli7
-route	GET /api/v1/shared/external	shared	xs4	built in xs4 (decision 187): shared --external; a terminal sign-in gets the empty list, read in the web interface
+route	GET /api/v1/shared/external	shared	xs4	built in xs4 (decision 187): shared --external; a terminal's device token reads it like a session
 route	GET /api/v1/starred	starred	cli11a	built in cli11a
 route	GET /api/v1/templates	template ls	cli11g	built in cli11g
 route	GET /api/v1/templates/{id}/thumbnail	-	-	display only: the New menu's picture of a built-in template; template ls lists them
