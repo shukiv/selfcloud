@@ -307,6 +307,62 @@ func TestStreamStallLimitReturnsWithTheAnswersHeaders(t *testing.T) {
 	}
 }
 
+// lateEndUpload hands out its data, then holds the read past the declared length until release is closed. The transport
+// makes that read after the declared bytes, to see whether the body is longer than declared; holding it lets a test
+// place it after the answer has arrived.
+type lateEndUpload struct {
+	data    *bytes.Reader
+	release chan struct{}
+}
+
+func (u *lateEndUpload) Read(p []byte) (int, error) {
+	if u.data.Len() == 0 {
+		<-u.release
+		return 0, io.EOF
+	}
+	return u.data.Read(p)
+}
+
+// TestStreamLateBodyEndReadKeepsTheStallLimit: the transport reads the body once more after the declared bytes. When that
+// read lands after the answer's headers (a busy machine, the race detector), it must not bring the longer tail limit
+// back: the answer's body still ends after the stall limit. The read past the declared length is held until the answer
+// has arrived, so the ordering is forced, not left to chance.
+func TestStreamLateBodyEndReadKeepsTheStallLimit(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	const stall, header = 200 * time.Millisecond, 3 * time.Second
+	c := newClient(t, srv.URL, func(o *Options) { o.HeaderTimeout = header })
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	data := patterned(64 << 10)
+	resp, err := c.Stream(context.Background(), Request{Method: "PATCH", Path: "/api/v1/uploads/x",
+		Upload: &lateEndUpload{data: bytes.NewReader(data), release: release}, UploadLength: int64(len(data))}, stall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	// The answer's headers are here, so the watch has been kicked back to the stall limit. Only now let the transport's
+	// read past the declared length finish.
+	unblock()
+	start := time.Now()
+	_, err = io.ReadAll(resp.Body)
+	var te *TransportError
+	if !errors.As(err, &te) || te.Kind != KindTimeout {
+		t.Fatalf("a body that stops after the headers: err = %v, want a timeout", err)
+	}
+	if d := time.Since(start); d > stall+300*time.Millisecond {
+		t.Errorf("the stalled body ended after %v, want about %v, not the longer %v", d, stall, header)
+	}
+}
+
 // TestStreamServerWorkAfterTheLastByteIsNotCutShort: a server that takes longer than the stall limit, but not longer than
 // the header limit, to answer a piece it has read whole (hashing, a sync) still gets its answer.
 func TestStreamServerWorkAfterTheLastByteIsNotCutShort(t *testing.T) {
