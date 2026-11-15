@@ -70,17 +70,6 @@ async function answerInstallCard(page) {
   await page.waitFor(`!document.querySelector('[data-testid="install-prompt"]')`, 5000).catch(() => undefined);
 }
 
-// The page can still scroll by itself for a beat after a selection is cleared or a mark changes (a known issue, handled elsewhere):
-// read a tile's More button rect only once scrollY is equal across two animation frames, so the tap that follows lands on it.
-async function stillMorePoint(page, name) {
-  await answerInstallCard(page);
-  await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel(name))})?.querySelector('button[aria-haspopup="menu"]'); if (b) b.scrollIntoView({ block: 'center' }); })()`);
-  await page.evaluate(`(() => { window.__still = { prev: null, ok: false }; const tick = () => { const s = window.__still; if (!s) return; const y = window.scrollY; s.ok = s.prev === y; s.prev = y; if (!s.ok) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()`);
-  await page.waitFor(`window.__still && window.__still.ok`, 2000).catch(() => undefined);
-  await page.evaluate(`window.__still = null`);
-  return page.evaluate(`(() => { const b = document.querySelector(${q(itemSel(name))})?.querySelector('button[aria-haspopup="menu"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
-}
-
 // openedName waits for the preview to open and returns the name it shows, or null when none opens.
 async function openedName(page) {
   await sleep(900);
