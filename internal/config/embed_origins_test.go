@@ -9,7 +9,7 @@ import (
 
 // TestNormalizeOrigin pins the rules for one embed origin: https on any host, or http on localhost and
 // 127.0.0.1 only; the origin alone, with no path, query, fragment, userinfo or wildcard; lower-cased
-// scheme and host, the default port and a trailing slash dropped (decision 185).
+// scheme and host, the default port and a trailing slash dropped (decision 197).
 func TestNormalizeOrigin(t *testing.T) {
 	t.Parallel()
 	accept := map[string]string{
@@ -74,7 +74,7 @@ func TestNormalizeOrigin(t *testing.T) {
 }
 
 // TestEmbedOriginsValidation: the installation list is checked at start, naming the bad origin, and
-// holds at most ten (decision 185).
+// holds at most ten (decision 197).
 func TestEmbedOriginsValidation(t *testing.T) {
 	t.Parallel()
 	cfg := Defaults()
@@ -97,7 +97,7 @@ func TestEmbedOriginsValidation(t *testing.T) {
 	}
 }
 
-// TestEmbedOriginsEnv: SELFCLOUD_EMBED_ORIGINS is a comma list, trimmed and normalised (decision 185).
+// TestEmbedOriginsEnv: SELFCLOUD_EMBED_ORIGINS is a comma list, trimmed and normalised (decision 197).
 func TestEmbedOriginsEnv(t *testing.T) {
 	t.Parallel()
 	cfg, err := Load("", env(map[string]string{
@@ -111,7 +111,7 @@ func TestEmbedOriginsEnv(t *testing.T) {
 	}
 }
 
-// TestEmbedOriginsFact: the settings API shows the installation list as a read-only fact (decision 185).
+// TestEmbedOriginsFact: the settings API shows the installation list as a read-only fact (decision 197).
 func TestEmbedOriginsFact(t *testing.T) {
 	t.Parallel()
 	cfg := Defaults()

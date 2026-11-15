@@ -97,7 +97,7 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	// mode tab (the default) is the link as before; mode frame makes a link for a host application's frame
-	// (decision 185). A frame link needs allowed origins and a secure public address, checked below.
+	// (decision 197). A frame link needs allowed origins and a secure public address, checked below.
 	frame := false
 	switch in.Mode {
 	case "", "tab":
@@ -333,7 +333,7 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		next = l.Next
 		// An application's sign-in link decides the lifetime, as before: the session is kept (decision 75).
 		secret, sess = s.newSession(r, u, at, false)
-		// A frame link starts a frame session: its cookie is partitioned (decision 185). An admin user is
+		// A frame link starts a frame session: its cookie is partitioned (decision 197). An admin user is
 		// refused above, so an admin session never becomes a frame session.
 		sess.Frame = l.Frame
 		if err := tx.InsertSession(ctx, sess); err != nil {

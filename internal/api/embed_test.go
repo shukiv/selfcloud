@@ -21,7 +21,7 @@ type embedBody struct {
 
 // TestEmbedOriginsRoutes: the account key and the owner read and replace the account's embed origins;
 // a member and another account's key are refused; a bad origin writes nothing; the change is audited;
-// and the origins go with the account (decision 185).
+// and the origins go with the account (decision 197).
 func TestEmbedOriginsRoutes(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -122,7 +122,7 @@ func TestEmbedOriginsRoutes(t *testing.T) {
 }
 
 // TestEmbedOriginsImpersonation: an admin signed in as the owner may read the list but not replace it
-// (decision 185, decision 41).
+// (decision 197, decision 41).
 func TestEmbedOriginsImpersonation(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
@@ -136,7 +136,7 @@ func TestEmbedOriginsImpersonation(t *testing.T) {
 }
 
 // TestEmbedOriginsUnion: the origins allowed for an account are the installation list and the
-// account's together, sorted, each once (decision 185).
+// account's together, sorted, each once (decision 197).
 func TestEmbedOriginsUnion(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {

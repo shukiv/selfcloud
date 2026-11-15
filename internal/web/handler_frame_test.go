@@ -9,7 +9,7 @@ import (
 )
 
 // TestFrameAncestorsHook: the hook's origins reach the page's frame-ancestors and drop X-Frame-Options;
-// assets and the not-built page keep 'none' and DENY; a nil or empty hook changes nothing (decision 185).
+// assets and the not-built page keep 'none' and DENY; a nil or empty hook changes nothing (decision 197).
 func TestFrameAncestorsHook(t *testing.T) {
 	t.Parallel()
 	h := newTestHandler(t, testFiles(), Options{FrameAncestors: func(r *http.Request) []string {

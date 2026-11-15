@@ -319,7 +319,7 @@ func (s *Server) handleEndImpersonation(w http.ResponseWriter, r *http.Request) 
 	sess, err := s.store.SessionByHash(ctx, hash)
 	if errors.Is(err, store.ErrNotFound) {
 		// This branch is reached only by an impersonation, whose cookie is never a frame's, so the ordinary
-		// clear is the one the browser holds (decision 185).
+		// clear is the one the browser holds (decision 197).
 		s.clearSessionCookie(w, false)
 		s.clearReturnCookie(w)
 		return apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")

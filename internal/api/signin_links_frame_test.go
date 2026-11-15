@@ -47,7 +47,7 @@ func sessionCookieOf(t *testing.T, s *Server, rec *httptest.ResponseRecorder) *h
 }
 
 // TestSignInLinkTabUnchanged: a link with no mode, or mode tab, is the link as before: the token alone
-// in the fragment, no frame query (decision 185).
+// in the fragment, no frame query (decision 197).
 func TestSignInLinkTabUnchanged(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -63,7 +63,7 @@ func TestSignInLinkTabUnchanged(t *testing.T) {
 }
 
 // TestSignInLinkFrameRefused: a frame link needs allowed origins and an https public address (localhost
-// excepted), and mode must be tab or frame (decision 185).
+// excepted), and mode must be tab or frame (decision 197).
 func TestSignInLinkFrameRefused(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -88,7 +88,7 @@ func TestSignInLinkFrameRefused(t *testing.T) {
 }
 
 // TestSignInLinkFrameURL: a frame link names the account in a query before the fragment, and the
-// installation's own origins suffice (decision 185).
+// installation's own origins suffice (decision 197).
 func TestSignInLinkFrameURL(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
@@ -106,7 +106,7 @@ func TestSignInLinkFrameURL(t *testing.T) {
 }
 
 // TestRedeemFrameSession: redeeming a frame link starts a frame session whose cookie is partitioned,
-// Secure and SameSite=None; a tab link's cookie is unchanged; /me reports the frame (decision 185).
+// Secure and SameSite=None; a tab link's cookie is unchanged; /me reports the frame (decision 197).
 func TestRedeemFrameSession(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
@@ -152,7 +152,7 @@ func TestRedeemFrameSession(t *testing.T) {
 }
 
 // TestFrameSignOutClearsPartitioned: signing out of a frame session clears the partitioned cookie
-// (decision 185).
+// (decision 197).
 func TestFrameSignOutClearsPartitioned(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
@@ -171,7 +171,7 @@ func TestFrameSignOutClearsPartitioned(t *testing.T) {
 }
 
 // TestFrameLocalhostHTTP: on a localhost http address a frame link is allowed, and its cookie is still
-// Secure and partitioned (decision 185).
+// Secure and partitioned (decision 197).
 func TestFrameLocalhostHTTP(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}) // public_url defaults to http://localhost:8080

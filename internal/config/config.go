@@ -738,7 +738,7 @@ type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
-// EmbedConfig lists the host origins the installation allows to frame its pages (decision 185). Each
+// EmbedConfig lists the host origins the installation allows to frame its pages (decision 197). Each
 // account adds its own list through the embed routes; the two are unioned. Empty allows no host: a frame
 // sign-in link is then refused, and every page keeps frame-ancestors 'none'.
 type EmbedConfig struct {
@@ -748,7 +748,7 @@ type EmbedConfig struct {
 }
 
 // MaxEmbedOrigins is the most origins one embed list holds, the installation's and each account's alike
-// (decision 185).
+// (decision 197).
 const MaxEmbedOrigins = 10
 
 // UIConfig controls the web interface.
@@ -1238,7 +1238,7 @@ func checkOrigin(s string) error {
 }
 
 // NormalizeOrigin is normalizeOrigin for callers outside config: the embed routes check a host origin
-// with the same rules the installation list is checked with (decision 185).
+// with the same rules the installation list is checked with (decision 197).
 func NormalizeOrigin(s string) (string, error) { return normalizeOrigin(s) }
 
 // normalizeOrigin checks one embed origin and returns it in a canonical form: lower-cased scheme and
@@ -1246,7 +1246,7 @@ func NormalizeOrigin(s string) (string, error) { return normalizeOrigin(s) }
 // and 127.0.0.1 only; the origin alone, with no path, query, fragment, userinfo or wildcard. The host is
 // 127.0.0.1, localhost or an ASCII DNS name (punycode for anything else), and the port, when present, is
 // 1 to 65535, so the origin can never carry a CSP separator into frame-ancestors. Every refusal names the
-// origin (decision 185).
+// origin (decision 197).
 func normalizeOrigin(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	bad := func(reason string) (string, error) {
@@ -1321,7 +1321,7 @@ func normalizeOrigin(s string) (string, error) {
 // validEmbedHost reports whether host is an ASCII DNS name: labels of [a-z0-9-], 1 to 63 bytes, not
 // starting or ending with a hyphen, joined by single dots, at most 253 bytes in all. A punycode (xn--)
 // label is an ordinary label here. This is the check that keeps a host from carrying a CSP directive
-// separator (;) or policy separator (,) into frame-ancestors (decision 185).
+// separator (;) or policy separator (,) into frame-ancestors (decision 197).
 func validEmbedHost(host string) bool {
 	if len(host) == 0 || len(host) > 253 {
 		return false

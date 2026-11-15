@@ -27,7 +27,7 @@ type Session struct {
 	// Short is true for a session the browser did not keep ("Keep me signed in" unticked, decision 75): its cookie
 	// is a browser-session cookie and the server ends it sessions.short_idle_timeout after its last use.
 	Short bool
-	// Frame is true for a session a frame sign-in link started (decision 185): its cookie is partitioned, and the
+	// Frame is true for a session a frame sign-in link started (decision 197): its cookie is partitioned, and the
 	// pages it opens may be framed by the account's allowed origins. An ordinary session is not a frame.
 	Frame bool
 }

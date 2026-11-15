@@ -119,7 +119,7 @@ type Server struct {
 	origin string
 	// signInPagePath is the path of users.sign_in_url_template with public_url substituted, and
 	// signInPageLocal says whether that template's host is this installation's public URL. The frame
-	// hook allows the sign-in page a frame link names only on that path, and only when local (decision 185).
+	// hook allows the sign-in page a frame link names only on that path, and only when local (decision 197).
 	signInPagePath  string
 	signInPageLocal bool
 	// contentHost is the host of content_url, or "" when it is not set. Requests on that host

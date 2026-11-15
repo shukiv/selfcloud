@@ -72,7 +72,7 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short
 // keeps it off cross-site requests; Path=/ and the __Host- name (https only) pin it to this site.
 // A kept session's cookie lasts sessions.max_age; a session the browser did not keep (short) is a
 // browser-session cookie, with neither Max-Age nor Expires, so the browser drops it when it closes.
-// A frame session's cookie (decision 185) is SameSite=None, Secure and Partitioned, so it works in the
+// A frame session's cookie (decision 197) is SameSite=None, Secure and Partitioned, so it works in the
 // host application's third-party frame; it is secure even on a localhost http address.
 func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short, frame bool) {
 	var maxAge int
@@ -97,7 +97,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short, fr
 }
 
 // clearSessionCookie expires the session cookie in the browser. A frame session's clear carries the same
-// partitioned attributes as its cookie, so the browser drops the one it holds (decision 185).
+// partitioned attributes as its cookie, so the browser drops the one it holds (decision 197).
 func (s *Server) clearSessionCookie(w http.ResponseWriter, frame bool) {
 	c := &http.Cookie{
 		Name:     s.sessionCookie,
@@ -794,7 +794,7 @@ type meResponse struct {
 	// Impersonation is set while an installation admin is signed in as this user. EndsAt is the hard limit.
 	Impersonation *impersonationJSON `json:"impersonation,omitempty"`
 	// Frame is true when this session was started by a frame sign-in link: the page is embedded in a host
-	// application, and its cookie is partitioned (decision 185).
+	// application, and its cookie is partitioned (decision 197).
 	Frame bool `json:"frame"`
 	// TenantAccess and MailConfigured are set for an installation admin only. The admin pages read them to show the
 	// ways in to a tenant user; nobody else learns them (decision 41).
@@ -1103,7 +1103,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		if _, err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
 			return err
 		}
-		// The new session keeps the choice of the one it replaces (decision 75), and its frame (decision 185).
+		// The new session keeps the choice of the one it replaces (decision 75), and its frame (decision 197).
 		secret, sess = s.newSession(r, found, now, sessionOf(r).Short)
 		sess.Frame = sessionOf(r).Frame
 		if err := tx.InsertSession(ctx, sess); err != nil {

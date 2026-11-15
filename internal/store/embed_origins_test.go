@@ -12,7 +12,7 @@ import (
 )
 
 // TestEmbedOriginsStore: an account's embed origins start empty, are replaced whole, read back sorted,
-// and go with the account (decision 185).
+// and go with the account (decision 197).
 func TestEmbedOriginsStore(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
@@ -66,7 +66,7 @@ func TestEmbedOriginsStore(t *testing.T) {
 }
 
 // TestSessionFrameRoundTrip: a session carries whether it was made for a frame, and an ordinary one
-// does not (decision 185).
+// does not (decision 197).
 func TestSessionFrameRoundTrip(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestSessionFrameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSignInLinkFrameRoundTrip: a sign-in link carries whether it was made for a frame (decision 185).
+// TestSignInLinkFrameRoundTrip: a sign-in link carries whether it was made for a frame (decision 197).
 func TestSignInLinkFrameRoundTrip(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

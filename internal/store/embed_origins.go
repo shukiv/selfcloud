@@ -8,7 +8,7 @@ import (
 )
 
 // EmbedOrigins returns the account's allowed host origins, sorted. An account with none gets an empty
-// list. The installation's own list is the config's embed.origins; the caller unions the two (decision 185).
+// list. The installation's own list is the config's embed.origins; the caller unions the two (decision 197).
 func (s *Store) EmbedOrigins(ctx context.Context, accountID string) ([]string, error) {
 	return embedOrigins(ctx, s.r, accountID)
 }
@@ -36,7 +36,7 @@ func embedOrigins(ctx context.Context, q querier, accountID string) ([]string, e
 }
 
 // ReplaceEmbedOrigins replaces the account's allowed host origins with origins, in one transaction. An
-// empty list clears them. The caller normalises and deduplicates the list before it reaches here (decision 185).
+// empty list clears them. The caller normalises and deduplicates the list before it reaches here (decision 197).
 func (tx *Tx) ReplaceEmbedOrigins(ctx context.Context, accountID string, origins []string, at time.Time) error {
 	if _, err := tx.q.ExecContext(ctx, "DELETE FROM account_embed_origins WHERE account_id = ?", accountID); err != nil {
 		return err

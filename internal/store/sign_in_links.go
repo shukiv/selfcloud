@@ -20,7 +20,7 @@ type SignInLink struct {
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	CreatedAt time.Time
-	// Frame is true for a link made for a host application's frame (decision 185): its URL names the account in a
+	// Frame is true for a link made for a host application's frame (decision 197): its URL names the account in a
 	// query before the fragment, and redeeming it starts a frame session with a partitioned cookie.
 	Frame bool
 }

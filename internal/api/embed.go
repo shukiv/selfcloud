@@ -16,7 +16,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// Embedding lets a host application frame Selfcloud's pages (decision 185). The origins allowed for an
+// Embedding lets a host application frame Selfcloud's pages (decision 197). The origins allowed for an
 // account are the installation's embed.origins and the account's own list, unioned. A frame sign-in link
 // names the account before the fragment; redeeming it starts a frame session whose cookie is partitioned,
 // and the pages that session opens may be framed by those origins.
@@ -71,7 +71,7 @@ func (s *Server) handlePutEmbedOrigins(w http.ResponseWriter, r *http.Request) e
 }
 
 // cleanEmbedOrigins checks an account's list: at most MaxEmbedOrigins, each a valid origin, deduplicated
-// after normalisation and sorted. A refusal names the bad origin (decision 185).
+// after normalisation and sorted. A refusal names the bad origin (decision 197).
 func cleanEmbedOrigins(raw []string) ([]string, error) {
 	if len(raw) > config.MaxEmbedOrigins {
 		return nil, apierr.Newf(apierr.InvalidRequest, "an embed list holds at most %d origins", config.MaxEmbedOrigins)
@@ -93,7 +93,7 @@ func cleanEmbedOrigins(raw []string) ([]string, error) {
 }
 
 // allowedEmbedOrigins returns the origins that may frame an account's pages: the installation's list and
-// the account's together, sorted, each once (decision 185).
+// the account's together, sorted, each once (decision 197).
 func (s *Server) allowedEmbedOrigins(ctx context.Context, accountID string) ([]string, error) {
 	acct, err := s.store.EmbedOrigins(ctx, accountID)
 	if err != nil {
@@ -132,7 +132,7 @@ func (s *Server) unionEmbedOrigins(account []string) ([]string, error) {
 }
 
 // framePublicURLAllowed reports whether a frame sign-in link may be made: the public address is https, or
-// http on localhost and 127.0.0.1 (decision 185). A partitioned cookie needs a secure context.
+// http on localhost and 127.0.0.1 (decision 197). A partitioned cookie needs a secure context.
 func (s *Server) framePublicURLAllowed() bool {
 	u, err := url.Parse(s.cfg.PublicURL)
 	if err != nil {
@@ -149,7 +149,7 @@ func (s *Server) framePublicURLAllowed() bool {
 }
 
 // frameLinkURL adds frame=<acc> to the part of a sign-in link before the fragment, so the page knows which
-// account's origins to allow before the token is read. The token stays in the fragment (decision 185).
+// account's origins to allow before the token is read. The token stays in the fragment (decision 197).
 func frameLinkURL(link, accID string) string {
 	base, frag := link, ""
 	if i := strings.Index(link, "#"); i >= 0 {
@@ -165,7 +165,7 @@ func frameLinkURL(link, accID string) string {
 // signInPageLocation works out, once, the path of the sign-in page from users.sign_in_url_template with
 // public_url substituted, and whether the template's host is this installation's public URL. A template
 // that points at another host never frames its sign-in page here, so local is false and the hook's first
-// case does not apply (decision 185).
+// case does not apply (decision 197).
 func signInPageLocation(tmpl, publicURL string) (path string, local bool) {
 	link := strings.NewReplacer("{public_url}", publicURL, "{token}", "").Replace(tmpl)
 	u, err := url.Parse(link)
@@ -185,7 +185,7 @@ func signInPageLocation(tmpl, publicURL string) (path string, local bool) {
 	return u.Path, true
 }
 
-// frameAncestors names the host origins that may frame the page r opens, or nil (decision 185). It is the
+// frameAncestors names the host origins that may frame the page r opens, or nil (decision 197). It is the
 // web handler's hook, consulted only for the app page. The sign-in page a frame link names — the path of
 // users.sign_in_url_template, on this installation's host — allows that account's origins; otherwise a live
 // frame session's account does. It reads by hash, as the auth middleware does, and writes nothing.

@@ -4820,7 +4820,7 @@ paths:
       operationId: getEmbedOrigins
       summary: Read the account's allowed embed origins
       description: |
-        The account's own list of host origins that may frame its pages, sorted (decision 185). The
+        The account's own list of host origins that may frame its pages, sorted (decision 197). The
         installation's `embed.origins` is unioned with this list when a page is framed; this route answers
         only the account's own part. The owner's session, the account key and an installation admin may read it.
       security: [{ bearer: [] }, { session: [] }]
@@ -4836,7 +4836,7 @@ paths:
       operationId: setEmbedOrigins
       summary: Replace the account's allowed embed origins
       description: |
-        Replaces the account's list of host origins that may frame its pages (decision 185). At most ten
+        Replaces the account's list of host origins that may frame its pages (decision 197). At most ten
         origins; each is checked and normalised (an `https` origin, or `http` for localhost only), then
         deduplicated and sorted. A bad origin is named and nothing is written. Absent or empty clears the
         list. Audited as `account.embed_origins` with the new list. Only the account's owner or key may make
@@ -8036,7 +8036,7 @@ components:
           maxItems: 10
           items: { type: string }
           description: |
-            The account's host origins that may frame its pages, sorted (decision 185). Each is a scheme and
+            The account's host origins that may frame its pages, sorted (decision 197). Each is a scheme and
             host with an optional port, no path, query, fragment or user info: `https` for any host, `http`
             only for `localhost` or `127.0.0.1`. Default ports are dropped and the host is lower-cased.
 
@@ -8050,7 +8050,7 @@ components:
           items: { type: string }
           description: |
             The new list, checked and normalised as for EmbedOrigins. Absent or empty clears the account's
-            list. A bad origin is named in the refusal and nothing is written (decision 185).
+            list. A bad origin is named in the refusal and nothing is written (decision 197).
 
     ViewerList:
       type: object
@@ -9304,7 +9304,7 @@ components:
           default: tab
           description: |
             `tab` (the default) is the ordinary link, opened in a top-level tab. `frame` makes a link for a
-            host application's iframe (decision 185): redeeming it starts a frame session whose cookie is
+            host application's iframe (decision 197): redeeming it starts a frame session whose cookie is
             partitioned. A frame link needs the account to have allowed embed origins and an `https`
             `public_url`; otherwise the request is refused.
 
@@ -9317,7 +9317,7 @@ components:
           description: |
             Absolute, from `users.sign_in_url_template` (default `{public_url}/sign-in#token={token}`).
             Carries only the token, in its fragment. A frame link also carries `frame=<acc>` before the
-            fragment, so the page knows which account's origins to allow before the token is read (decision 185).
+            fragment, so the page knows which account's origins to allow before the token is read (decision 197).
         expires_at: { type: string, format: date-time }
 
     SignInLinkRedeemRequest:
@@ -9390,7 +9390,7 @@ components:
           type: boolean
           description: |
             True when this session was started by a frame sign-in link: the page is embedded in a host
-            application and its cookie is partitioned (decision 185). False for an ordinary tab session.
+            application and its cookie is partitioned (decision 197). False for an ordinary tab session.
         storage:
           description: The caller's own My files against its limit. Absent for an installation admin.
           type: object

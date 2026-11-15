@@ -53,7 +53,7 @@ func wantNotFramable(t *testing.T, rec *httptest.ResponseRecorder) {
 }
 
 // TestEmbedPageHeaders: the sign-in page named by a frame link, and the pages of a frame session, allow
-// the account's origins; everything else keeps frame-ancestors 'none' and DENY (decision 185).
+// the account's origins; everything else keeps frame-ancestors 'none' and DENY (decision 197).
 func TestEmbedPageHeaders(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
@@ -97,7 +97,7 @@ func TestEmbedPageHeaders(t *testing.T) {
 	wantNotFramable(t, serveRaw(t, s, http.MethodGet, "/sign-in?frame="+acc.ID))
 }
 
-// TestEmbedPageHeadersPerAccount: one account's origins never reach another account's page (decision 185).
+// TestEmbedPageHeadersPerAccount: one account's origins never reach another account's page (decision 197).
 func TestEmbedPageHeadersPerAccount(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
@@ -125,7 +125,7 @@ func TestEmbedPageHeadersPerAccount(t *testing.T) {
 
 // TestEmbedFrameAncestorsHasNoSeparators: an account's list, built from the accepted origin forms, can never
 // put a CSP directive separator (;), a policy separator (,) or a quote into frame-ancestors. The directive
-// is exactly 'self' followed by the space-joined, normalised, sorted origins (decision 185).
+// is exactly 'self' followed by the space-joined, normalised, sorted origins (decision 197).
 func TestEmbedFrameAncestorsHasNoSeparators(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
@@ -159,7 +159,7 @@ func TestEmbedFrameAncestorsHasNoSeparators(t *testing.T) {
 
 // TestEmbedSignInPageFollowsTemplate: the sign-in page a frame link names is the path of
 // users.sign_in_url_template, not a literal /sign-in. A custom template path frames; the old path does not
-// (decision 185).
+// (decision 197).
 func TestEmbedSignInPageFollowsTemplate(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
@@ -175,7 +175,7 @@ func TestEmbedSignInPageFollowsTemplate(t *testing.T) {
 }
 
 // TestEmbedSignInPageForeignTemplateHost: when the template's host is not this installation's public URL,
-// the sign-in page case never applies here; a frame session's own pages still frame (decision 185).
+// the sign-in page case never applies here; a frame session's own pages still frame (decision 197).
 func TestEmbedSignInPageForeignTemplateHost(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {

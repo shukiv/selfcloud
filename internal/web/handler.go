@@ -73,7 +73,7 @@ type Options struct {
 	// upload's. The icons and the favicon are drawn from them (decision 119).
 	IconFile *Logo
 	LogoFile *Logo
-	// FrameAncestors, when set, names the host origins that may frame the page this request opens (decision 185). It
+	// FrameAncestors, when set, names the host origins that may frame the page this request opens (decision 197). It
 	// is consulted only for the app page (index.html), never for an asset. A nil result, or a nil hook, keeps the page
 	// at frame-ancestors 'none' with X-Frame-Options DENY. The hook reads only; it writes nothing.
 	FrameAncestors func(*http.Request) []string
@@ -95,7 +95,7 @@ type Handler struct {
 	// brand is the brand in use. A change builds a new one whole and swaps it in (decision 141), and a request reads it once,
 	// so no answer mixes two brands.
 	brand atomic.Pointer[Brand]
-	// frameAncestors names the host origins that may frame the app page, or nil (decision 185).
+	// frameAncestors names the host origins that may frame the app page, or nil (decision 197).
 	frameAncestors func(*http.Request) []string
 }
 
@@ -244,7 +244,7 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 
 // policy returns the content policy. With no nonce it is the policy for assets and the not-built
 // page; with one, style-src also allows the inline styles that carry that nonce. ancestors is the
-// frame-ancestors value: "'none'" for every page but the app page a host may frame (decision 185).
+// frame-ancestors value: "'none'" for every page but the app page a host may frame (decision 197).
 func (h *Handler) policy(nonce, ancestors string) string {
 	style := "'self'"
 	if nonce != "" {
@@ -355,7 +355,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			data = []byte(strings.ReplaceAll(notBuiltPage, brandPlaceholder, brandHTML(b.info.name)))
 		}
 	}
-	// The app page a host may frame allows that host's origins; every other answer keeps 'none' (decision 185).
+	// The app page a host may frame allows that host's origins; every other answer keeps 'none' (decision 197).
 	// A missing asset answers 404 with the strict policy below, so the hook is not consulted for it.
 	ancestors := "'none'"
 	if !missingAsset && name == "index.html" && h.frameAncestors != nil {
@@ -421,7 +421,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Content-Security-Policy", h.policy(nonce, ancestors))
 	} else {
 		// Any other file and the not-built page: the policy with no nonce. The not-built page is still the app
-		// page, so it carries the ancestors the hook allowed; every other file keeps 'none' (decision 185).
+		// page, so it carries the ancestors the hook allowed; every other file keeps 'none' (decision 197).
 		hd.Set("Content-Security-Policy", h.policy("", ancestors))
 	}
 	hd.Set("Content-Type", contentType(name))
