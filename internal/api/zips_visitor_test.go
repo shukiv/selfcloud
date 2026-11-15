@@ -4,6 +4,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -417,4 +420,197 @@ func TestZipVisitorMustChangePaused(t *testing.T) {
 	wantStatus(t, visitor("POST", "/api/v1/zips", map[string]any{"nodes": []string{fx.b.ID}}), 404)
 	// The zip it made is unreadable through its signed link.
 	wantStatus(t, getLink(t, fx.s, url, nil), 404)
+}
+
+// zipRotation is one of the three writes that give a link new credentials. It performs the rotation and returns the
+// secret and password a new visitor of the link needs.
+type zipRotation struct {
+	name   string
+	rotate func(t *testing.T, fx *anyoneFixture, linkID, secret string) (string, string)
+}
+
+// zipRotations are the three rotations: a reset gives a new secret, a new password keeps the secret, and a change of
+// audience keeps it too (here anyone to organisation and back, so a new visitor can open the link again).
+func zipRotations() []zipRotation {
+	return []zipRotation{
+		{"reset", func(t *testing.T, fx *anyoneFixture, linkID, secret string) (string, string) {
+			rec := call(t, fx.s, "POST", "/api/v1/share-links/"+linkID+"/reset", fx.key, nil)
+			wantStatus(t, rec, 201)
+			return secretOf(t, decode[shareLinkCreated](t, rec).URL), ""
+		}},
+		{"new password", func(t *testing.T, fx *anyoneFixture, linkID, secret string) (string, string) {
+			const password = "a new long password"
+			wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/share-links/"+linkID, fx.key,
+				map[string]any{"password": password}), 200)
+			return secret, password
+		}},
+		{"audience", func(t *testing.T, fx *anyoneFixture, linkID, secret string) (string, string) {
+			wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/share-links/"+linkID, fx.key,
+				map[string]any{"audience": "organisation"}), 200)
+			wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/share-links/"+linkID, fx.key,
+				map[string]any{"audience": "anyone"}), 200)
+			return secret, ""
+		}},
+	}
+}
+
+// TestZipVisitorRotationEndsTheZips: each rotation of a link's credentials ends the zips its old ones made. The
+// signed URL answers not_found, the row and the file are gone, the old credential cannot link the zip again, and a
+// visitor with the new credential gets a NEW zip of the same folder. A pending job publishes nothing. The zips of a
+// second link of the account and a member's own zip survive.
+func TestZipVisitorRotationEndsTheZips(t *testing.T) {
+	for _, rot := range zipRotations() {
+		t.Run(rot.name, func(t *testing.T) {
+			t.Run("ready zip", func(t *testing.T) {
+				fx := anyoneZipFixture(t)
+				link, secret := fx.makeAnyone(t, fx.b.ID, nil)
+				// A second link of the account with its own ready zip, and a member's own zip.
+				_, secret2 := fx.makeAnyone(t, fx.c.ID, nil)
+				v2 := byCred(t, fx.s, fx.visitAnyone(t, secret2, ""))
+				job2 := visitorZip(t, v2, fx.c.ID)
+				runZip(t, fx.sharingFixture, job2.ID)
+				url2, _ := visitorZipLink(t, v2, job2.Target)
+				member := createZip(t, fx.sharingFixture, nil, fx.a.ID)
+				runZip(t, fx.sharingFixture, member.ID)
+				// The link's visitor makes a ready zip and holds its signed URL.
+				visitor := byCred(t, fx.s, fx.visitAnyone(t, secret, ""))
+				job := visitorZip(t, visitor, fx.b.ID)
+				if j := runZip(t, fx.sharingFixture, job.ID); j.Status != "succeeded" {
+					t.Fatalf("job %s: %s", j.Status, j.Error)
+				}
+				url, _ := visitorZipLink(t, visitor, job.Target)
+				wantStatus(t, getLink(t, fx.s, url, nil), 200)
+				path, _ := fx.s.zipFiles.Path(fx.acc.ID, job.Target)
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("zip file missing before the rotation: %v", err)
+				}
+				newSecret, newPassword := rot.rotate(t, fx, link.ID, secret)
+				// The signed URL fetched before the rotation is dead after it.
+				wantStatus(t, getLink(t, fx.s, url, nil), 404)
+				// The zip's row and file are gone.
+				if _, err := fx.s.store.Zip(context.Background(), fx.acc.ID, job.Target); !errors.Is(err, store.ErrNotFound) {
+					t.Errorf("the zip row survived the rotation: %v", err)
+				}
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Errorf("the zip file survived the rotation: %v", err)
+				}
+				// The old credential cannot link the zip again.
+				wantStatus(t, visitor("POST", "/api/v1/zips/"+job.Target+"/links", nil), 404)
+				// A visitor with the new credential gets a NEW zip of the same folder, and it is made.
+				fresh := byCred(t, fx.s, fx.visitAnyone(t, newSecret, newPassword))
+				again := visitorZip(t, fresh, fx.b.ID)
+				if again.Target == job.Target {
+					t.Errorf("the new credential reused the old zip %s", job.Target)
+				}
+				if j := runZip(t, fx.sharingFixture, again.ID); j.Status != "succeeded" {
+					t.Fatalf("the new zip's job %s: %s", j.Status, j.Error)
+				}
+				// The second link's zip and the member's zip survive the rotation.
+				if _, err := fx.s.store.Zip(context.Background(), fx.acc.ID, job2.Target); err != nil {
+					t.Errorf("the second link's zip row is gone: %v", err)
+				}
+				wantStatus(t, getLink(t, fx.s, url2, nil), 200)
+				if _, err := fx.s.store.Zip(context.Background(), fx.acc.ID, member.Target); err != nil {
+					t.Errorf("the member's zip row is gone: %v", err)
+				}
+				wantStatus(t, getZip(t, fx.sharingFixture, nil, member.Target, nil), 200)
+			})
+			t.Run("pending job", func(t *testing.T) {
+				fx := anyoneZipFixture(t)
+				link, secret := fx.makeAnyone(t, fx.b.ID, nil)
+				visitor := byCred(t, fx.s, fx.visitAnyone(t, secret, ""))
+				job := visitorZip(t, visitor, fx.b.ID)
+				rot.rotate(t, fx, link.ID, secret)
+				runZip(t, fx.sharingFixture, job.ID)
+				// Nothing was published: the row and the file are gone.
+				if _, err := fx.s.store.Zip(context.Background(), fx.acc.ID, job.Target); !errors.Is(err, store.ErrNotFound) {
+					t.Errorf("the pending zip's row survived the rotation: %v", err)
+				}
+				path, _ := fx.s.zipFiles.Path(fx.acc.ID, job.Target)
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Errorf("the pending zip published a file: %v", err)
+				}
+			})
+		})
+	}
+}
+
+// TestZipMakerRefusesAZipOlderThanTheCredentials: a row a race left behind, made before the link's current
+// credentials, can neither run, be linked nor be served, and a create does not reuse it.
+func TestZipMakerRefusesAZipOlderThanTheCredentials(t *testing.T) {
+	fx := anyoneZipFixture(t)
+	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
+	st, err := fx.s.store.ShareLinkStateByID(context.Background(), fx.acc.ID, link.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert the row directly, an hour before the link's current credentials, with a job of its own.
+	z := &store.Zip{ID: id.New("zip"), AccountID: fx.acc.ID, CreatedBy: link.ID, CreatedKind: string(auth.KindShareLink),
+		CreatedAt: st.Link.CredentialsAt.Add(-time.Hour), Roots: []string{fx.b.ID}}
+	body, err := json.Marshal(zipPayload{Link: link.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := &store.Job{ID: id.New("job"), AccountID: fx.acc.ID, Kind: jobZip, Target: z.ID, Status: store.JobQueued,
+		Payload: string(body), CreatedAt: store.Now(), UpdatedAt: store.Now()}
+	if err := fx.s.store.Write(context.Background(), func(tx *store.Tx) error {
+		if err := tx.InsertZip(context.Background(), z); err != nil {
+			return err
+		}
+		return tx.InsertJob(context.Background(), job)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// zipMaker refuses it with the gone answer.
+	if _, err := fx.s.zipMaker(context.Background(), z, zipPayload{}); apierr.From(err).Code != apierr.Forbidden ||
+		!strings.Contains(err.Error(), zipRefusedGone) {
+		t.Errorf("zipMaker answered %v, want the gone refusal", err)
+	}
+	// The job fails and publishes nothing.
+	if j := runZip(t, fx.sharingFixture, job.ID); j.Status != "failed" {
+		t.Fatalf("job %s %q, want failed for a zip older than the credentials", j.Status, j.Error)
+	}
+	// Ready and unexpired, it is still refused by the link route and by a signed URL over its own SHA-256.
+	sha := strings.Repeat("ab", 32)
+	fx.execDB(t, "UPDATE zips SET state = 'ready', sha256 = ?, expires_at = ? WHERE id = ?",
+		sha, time.Now().Add(time.Hour).UnixMilli(), z.ID)
+	visitor := byCred(t, fx.s, fx.visitAnyone(t, secret, ""))
+	wantStatus(t, visitor("POST", "/api/v1/zips/"+z.ID+"/links", nil), 404)
+	tok := fx.s.links.sign(linkClaims{nod: z.ID, acc: fx.acc.ID, disp: dispZip, exp: time.Now().Add(time.Hour).Unix()}, sha)
+	wantStatus(t, getLink(t, fx.s, linkPrefix+tok, nil), 404)
+	// A create of the same roots does not reuse it: the link gets a new zip, and it is made.
+	again := visitorZip(t, visitor, fx.b.ID)
+	if again.Target == z.ID {
+		t.Error("the create reused the zip made before the credentials")
+	}
+	if j := runZip(t, fx.sharingFixture, again.ID); j.Status != "succeeded" {
+		t.Fatalf("the new zip's job %s: %s", j.Status, j.Error)
+	}
+}
+
+// TestZipVisitorCreateRefusedWhenARotationLandsBeforeTheWrite: the rotation lands after the visitor's credential is
+// checked and before the create's write reads the link. The create must not insert a zip under the old credentials.
+func TestZipVisitorCreateRefusedWhenARotationLandsBeforeTheWrite(t *testing.T) {
+	fx := anyoneZipFixture(t)
+	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
+	visitor := byCred(t, fx.s, fx.visitAnyone(t, secret, ""))
+	// The reset is later than the credential, so the credential's own check still passes.
+	time.Sleep(2 * time.Millisecond)
+	fired := false
+	fx.s.beforeWrite = func() {
+		fx.s.beforeWrite = nil
+		fired = true
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/share-links/"+link.ID+"/reset", fx.key, nil), 201)
+	}
+	deadVisitor(t, visitor("POST", "/api/v1/zips", map[string]any{"nodes": []string{fx.b.ID}}))
+	if !fired {
+		t.Fatal("the reset was not injected into the create")
+	}
+	ids, err := fx.s.store.ZipIDsOfLink(context.Background(), fx.acc.ID, link.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("the create left zips %v under the old credentials", ids)
+	}
 }
