@@ -33,7 +33,8 @@ import { startDownload } from "../lib/files/ops";
 import { can, downloadAllowed } from "../lib/files/roles";
 import type { Node } from "../lib/files/types";
 import { useLang, useT } from "../lib/i18n";
-import { go, signInURL } from "../lib/router";
+import { go } from "../lib/router";
+import { sendToSignIn } from "../lib/outsideSignIn";
 import { clearSession, session, signingOut, type Session } from "../lib/session";
 import { get, useStore } from "../lib/store";
 import { useModeOrLight } from "../theme/theme";
@@ -547,7 +548,7 @@ export default function CodeEditPage() {
     leaving.current = true;
     setAskSignIn(false);
     clearSession();
-    go(signInURL(), { replace: true });
+    sendToSignIn();
   };
   // askSignInFirst is the page's Sign in choice. Without unsaved text the sign-in goes at once. With unsaved text, this tab keeps the text
   // first (decision 133), and the sign-in goes at once when it does, since nothing is lost, text typed after the session ended included.

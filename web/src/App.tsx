@@ -14,6 +14,7 @@ import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
 import { EDIT_FEATURE, officeEdit } from "./lib/files/editor";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
+import { outsideSignIn } from "./lib/outsideSignIn";
 import { session } from "./lib/session";
 import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./lib/routes";
 import type { User } from "./lib/types";
@@ -22,6 +23,7 @@ import { PREF_LANG, readPref } from "./lib/prefs";
 import { useStore } from "./lib/store";
 import Shell from "./components/Shell";
 import AuthLayout from "./components/AuthLayout";
+import OutsideRedirect from "./components/OutsideRedirect";
 import NotFoundPage from "./pages/NotFoundPage";
 import { markSignedIn } from "./lib/pwa/cacheState";
 import ShareHold from "./components/share/ShareHold";
@@ -89,15 +91,17 @@ const DevicesPage = lazy(() => import("./pages/DevicesPage"));
 // The proof page redeems a mailed token; the external item page opens what another account shared (decision 189).
 const ProvePage = lazy(() => import("./pages/ProvePage"));
 const ExternalItemPage = lazy(() => import("./pages/ExternalItemPage"));
+// The signed-out page (decision 185) is reached only with an outside sign-in page set, so it stays out of the first load.
+const SignedOutPage = lazy(() => import("./pages/SignedOutPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
 type View =
-  | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change" | "prove"
+  | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change" | "prove" | "signed-out"
   | "files" | "node" | "starred" | "media" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
   | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "devices" | "cli-approve" | "external" | "notfound";
 
-const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change", "cli-approve", "prove"];
+const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change", "cli-approve", "prove", "signed-out"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
 const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "media", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices", "external"];
@@ -120,6 +124,7 @@ export function viewFor(path: string): View {
     case "/email-change": return "email-change";
     case "/forgot": return "forgot";
     case "/sign-in": return "sign-in";
+    case "/signed-out": return "signed-out";
     case "/s": return "share-link";
     case "/shared": return "shared";
     case "/starred": return "starred";
@@ -274,6 +279,12 @@ function Public({ view }: { view: View }) {
       );
     case "forgot": return <Suspense fallback={<Loading />}><ForgotPage /></Suspense>;
     case "sign-in": return <Suspense fallback={<Loading />}><SignInPage /></Suspense>;
+    case "signed-out":
+      return (
+        <Suspense fallback={<PageLoading />}>
+          <SignedOutPage />
+        </Suspense>
+      );
     case "share-link":
       return (
         <AuthLayout variant="share">
@@ -333,9 +344,13 @@ export function Gate() {
   // A share opened while signed out: its files are taken into the page's memory first, then the person signs in and the share
   // page shows them (decision 82).
   if (!signedIn && view === "share") {
-    return <ShareHold id={new URLSearchParams(search).get("id") ?? ""} to={signInURL(path + search)} />;
+    return <ShareHold id={new URLSearchParams(search).get("id") ?? ""} from={path + search} />;
   }
   if (!signedIn) {
+    // The installation's outside sign-in page (decision 185): the move leaves the app, so it is made in an effect. With
+    // no outside page set, the sign-in page is opened as today.
+    const outside = outsideSignIn(path + search);
+    if (outside !== null) return <OutsideRedirect url={outside} />;
     return <Navigate to={signInURL(path + search)} replace />;
   }
   // The root is a person's home, not a page: My files, or the tenants list for an admin. A replace, so Back leaves the root.

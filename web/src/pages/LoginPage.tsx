@@ -10,12 +10,14 @@ import { keepChoice, saveKeepChoice } from "../lib/signin";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { afterSignIn } from "../lib/next";
+import { outsideSignIn } from "../lib/outsideSignIn";
 import { useT } from "../lib/i18n";
 import type { AccountChoice } from "../lib/types";
 import AuthLayout from "../components/AuthLayout";
 import Alert from "../components/Alert";
 import Field, { describedBy } from "../components/Field";
 import PasswordField from "../components/PasswordField";
+import OutsideRedirect from "../components/OutsideRedirect";
 
 // LoginPage signs in with an email and a password. An email in several accounts asks which one. "Keep me signed in"
 // is unticked by default; the browser remembers the last choice (decision 75).
@@ -33,6 +35,13 @@ export default function LoginPage() {
   // confirm is set when the server holds the sign-in until the browser is confirmed by a link mailed to the person
   // (sec2, decision 86). The page says so and offers the way back to the form; it shows no error.
   const [confirm, setConfirm] = useState(false);
+
+  // The installation's outside sign-in page (decision 185): /login goes to it with the next path, as the server's own
+  // redirect does. The query password keeps this form, the installation admin's way in. With no outside page set, the
+  // form is drawn as today.
+  const params = new URLSearchParams(window.location.search);
+  const outside = params.has("password") ? null : outsideSignIn(params.get("next") ?? "/");
+  if (outside !== null) return <OutsideRedirect url={outside} />;
 
   async function submit(event: FormEvent) {
     event.preventDefault();

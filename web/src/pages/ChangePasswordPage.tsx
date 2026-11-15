@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "antd";
 import { changePassword, loadMe, signOut } from "../lib/auth";
+import { goSignedOut } from "../lib/outsideSignIn";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { useT } from "../lib/i18n";
@@ -98,7 +99,7 @@ export default function ChangePasswordPage({ forced = false }: { forced?: boolea
       {forced && (
         <p style={{ marginBlockStart: 16 }}>
           {/* The accent link colour is faint on the dark card, so the text takes the paragraph's colour, underlined. */}
-          <Button type="link" style={{ padding: 0, color: "inherit", textDecoration: "underline" }} onClick={() => void signOut().then(() => go("/login", { replace: true }))}>
+          <Button type="link" style={{ padding: 0, color: "inherit", textDecoration: "underline" }} onClick={() => void signOut().then(() => goSignedOut())}>
             {t("user.signOut")}
           </Button>
         </p>

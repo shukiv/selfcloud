@@ -7,6 +7,7 @@ import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
 import { markSignedOut } from "./pwa/cacheState";
 import { announceSignOut, purgeAllUnsaved } from "./code/unsaved";
+import { setSignInInfo, type SignInInfo } from './outsideSignIn';
 
 export interface Info {
   brand: Brand | null;
@@ -17,10 +18,13 @@ export interface Info {
   features: unknown;
   // limits is the upload limits the server gives, or null when it gives none (the files page keeps its own default).
   limits: { max_chunk_size: number; max_file_size: number } | null;
+  // signIn is what the installation says of sign-in: the outside sign-in page, the signed-out page, password sign-in.
+  signIn: SignInInfo;
 }
 
 // loadInfo reads the installation's name, colours and password rule; it needs no sign-in. A missing
-// or odd minimum falls back to 8, the server's floor.
+// or odd minimum falls back to 8, the server's floor. The sign-in settings are kept for the moves the
+// interface makes itself (lib/outsideSignIn.ts); a missing or odd field falls back to its default.
 export async function loadInfo(): Promise<Info> {
   const info = await api<{
     brand?: Brand;
@@ -28,15 +32,23 @@ export async function loadInfo(): Promise<Info> {
     sharing_max_expiry_days?: unknown;
     features?: unknown;
     limits?: { max_chunk_size: number; max_file_size: number };
+    sign_in?: { external_url?: unknown; signed_out_url?: unknown; password?: unknown };
   }>('GET', '/api/v1/info', { noRedirect: true });
   const n = info.password_min_length;
   const min = typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : 8;
+  const signIn: SignInInfo = {
+    externalUrl: typeof info.sign_in?.external_url === 'string' ? info.sign_in.external_url : '',
+    signedOutUrl: typeof info.sign_in?.signed_out_url === 'string' ? info.sign_in.signed_out_url : '',
+    password: info.sign_in?.password !== false,
+  };
+  setSignInInfo(signIn);
   return {
     brand: info.brand ?? null,
     passwordMinLength: min,
     sharingMaxExpiryDays: sharingMaxExpiryDays(info),
     features: info.features,
     limits: info.limits ?? null,
+    signIn,
   };
 }
 

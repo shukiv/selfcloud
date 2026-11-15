@@ -6,7 +6,8 @@
 import { api, onSignInAsEnded } from './api';
 import { clearSession, flash, session, setMe, setSignedIn } from './session';
 import { get } from './store';
-import { go, signInURL } from './router';
+import { go } from './router';
+import { sendToSignIn } from './outsideSignIn';
 import { homeFor } from './routes';
 import type { Me, SignedIn } from './types';
 
@@ -34,7 +35,7 @@ export function endImpersonation(expired = false): Promise<void> {
       go(homeFor(me.user), { replace: true });
     } catch {
       clearSession();
-      go(signInURL(), { replace: true });
+      sendToSignIn();
     } finally {
       ending = null;
     }

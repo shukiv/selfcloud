@@ -3,7 +3,8 @@
 import { ApiError } from './apiError';
 import { clearSession, currentCsrf, forcePasswordChange, session, sessionKey, signingOut, trackRequest } from './session';
 import { get } from './store';
-import { go, signInURL } from './router';
+import { go } from './router';
+import { sendToSignIn } from './outsideSignIn';
 
 export { ApiError } from './apiError';
 
@@ -136,7 +137,8 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   }
   if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
     clearSession();
-    go(signInURL(), { replace: true });
+    // The installation's outside sign-in page when one is set (decision 185), else the app's own sign-in page.
+    sendToSignIn();
   }
   // The person must change the password first: every route refuses until then, so the change-password page is opened.
   if (res.status === 403 && !opts.noRedirect && details.reason === 'password_change_required') {

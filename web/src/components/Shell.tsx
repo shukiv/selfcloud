@@ -19,6 +19,7 @@ import { setHidden } from "../lib/sharing/api";
 import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestCount";
 import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
+import { goSignedOut } from "../lib/outsideSignIn";
 import { canInstall, iosDialogOpen, isIOS, isStandalone, promptInstall } from "../lib/pwa/install";
 import { endImpersonation } from "../lib/impersonation";
 
@@ -447,7 +448,8 @@ export default function Shell({ children }: { children: ReactNode }) {
     try {
       await signOut();
     } finally {
-      navigate("/login", { replace: true });
+      // The signed-out URL, the signed-out page, or today's sign-in page (decision 185).
+      goSignedOut();
     }
   }
 

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState } from "react";
+import { Button } from "antd";
 import { establish, signInWithLink } from "../lib/auth";
 import { errorMessage, isLinkFailure, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { signInTarget, looksLikeToken, switchPromptOf, tokenFromFragment, type SwitchPrompt as SwitchQuestion } from "../lib/signin";
+import { outsideSignIn, signInInfo } from "../lib/outsideSignIn";
 import { useT } from "../lib/i18n";
 import AuthLayout from "../components/AuthLayout";
 import Alert from "../components/Alert";
@@ -71,6 +73,21 @@ export default function SignInPage() {
         </p>
       )}
       <Alert message={error} />
+      {/* A failed redeem offers the outside sign-in page when the installation names one (decision 185). Only the button
+          moves: the page never redirects by itself, so a link that cannot be redeemed cannot loop. */}
+      {error && signInInfo().externalUrl !== "" && (
+        <Button
+          type="primary"
+          block
+          style={{ marginBlockStart: 16 }}
+          onClick={() => {
+            const url = outsideSignIn("/");
+            if (url !== null) window.location.assign(url);
+          }}
+        >
+          {t("signin.again")}
+        </Button>
+      )}
       <SwitchPrompt prompt={prompt} onConfirm={() => void redeem(token, true)} onStay={stay} />
     </AuthLayout>
   );

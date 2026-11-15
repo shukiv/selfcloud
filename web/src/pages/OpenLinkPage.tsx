@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, Button, Input } from "antd";
 import { useT } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
-import { go, signInURL } from "../lib/router";
+import { go } from "../lib/router";
+import { goSignedOut, sendToSignIn } from "../lib/outsideSignIn";
 import { validID } from "../lib/files/route";
 import { signOut } from "../lib/auth";
 import { session, sessionChanged, sessionKey } from "../lib/session";
@@ -74,7 +75,7 @@ export default function OpenLinkPage() {
   const toSignIn = (): void => {
     stashSecret(secretRef.current, window.sessionStorage);
     stripAddress();
-    go(signInURL("/s"), { replace: true });
+    sendToSignIn("/s");
   };
 
   // attempt opens the link once, with a password when one is given, and shows where the answer leads. An answer that
@@ -172,17 +173,17 @@ export default function OpenLinkPage() {
     setStep("dead");
   };
 
-  // switchAccount signs the visitor out and sends it to sign in, for an organisation link opened from the wrong
-  // account. The secret waits for the sign-in.
+  // switchAccount signs the visitor out, for an organisation link opened from the wrong account. The secret waits for
+  // the sign-in; the browser goes where a sign-out goes (decision 185).
   const switchAccount = async (): Promise<void> => {
     stashSecret(secretRef.current, window.sessionStorage);
     try {
       await signOut();
     } catch {
-      // The session is cleared either way; the sign-in page is shown below.
+      // The session is cleared either way; the signed-out page is shown below.
     }
     stripAddress();
-    go(signInURL("/s"), { replace: true });
+    goSignedOut();
   };
 
   // endVisit drops everything the visit holds when the session changes under it: the credential, the timer, the

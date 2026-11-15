@@ -33,9 +33,9 @@ describe("outsideSignIn", () => {
     expect(outsideSignIn("/files/abc")).toBe("https://id.example.com/sign-in?next=%2Ffiles%2Fabc");
   });
 
-  it("encodes a query and a space in the path", () => {
+  it("encodes a query in the path", () => {
     setOutside();
-    expect(outsideSignIn("/search?q=two words")).toBe("https://id.example.com/sign-in?next=%2Fsearch%3Fq%3Dtwo%20words");
+    expect(outsideSignIn("/search?q=a&b=c")).toBe("https://id.example.com/sign-in?next=%2Fsearch%3Fq%3Da%26b%3Dc");
   });
 
   it("sends an unsafe next to the home path", () => {
@@ -94,13 +94,22 @@ describe("sendToSignIn", () => {
   it("still redirects when the tab's storage cannot be read", () => {
     setOutside();
     const assign = stubLocationAssign();
-    vi.spyOn(window.sessionStorage, "getItem").mockImplementation(() => {
-      throw new Error("refused");
+    // jsdom's storage proxy does not let a method be spied on, so the whole store refuses here, as a browser's can.
+    const real = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      get() {
+        throw new Error("refused");
+      },
     });
-    sendToSignIn("/files/a");
-    sendToSignIn("/files/b");
-    sendToSignIn("/files/c");
-    expect(assign).toHaveBeenCalledTimes(3);
+    try {
+      sendToSignIn("/files/a");
+      sendToSignIn("/files/b");
+      sendToSignIn("/files/c");
+      expect(assign).toHaveBeenCalledTimes(3);
+    } finally {
+      if (real) Object.defineProperty(window, "sessionStorage", real);
+    }
   });
 });
 
