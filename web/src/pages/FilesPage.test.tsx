@@ -1408,21 +1408,22 @@ describe("the selection bar fits its own width (decision 185)", () => {
     folders.set([]);
   });
 
-  it("a 360 px phone's bar keeps three icons, and Move and Delete go to the top of More, in order, and run from there", async () => {
+  it("a 360 px phone's bar keeps Share, Download and Delete as icons; Copy link and Move go to the top of More, in display order, and Move runs from there", async () => {
     reportBarWidth(332);
     api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { editors_can_share: true })], next_cursor: undefined });
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     fireEvent.click(rows("alpha.txt") as Element);
     const panel = await screen.findByTestId("selection-panel");
-    for (const name of ["Share", "Copy link", "Download"]) expect(within(panel).getByRole("button", { name })).toBeTruthy();
-    for (const name of ["Move to…", "Delete"]) expect(within(panel).queryByRole("button", { name })).toBeNull();
+    for (const name of ["Share", "Download", "Delete"]) expect(within(panel).getByRole("button", { name })).toBeTruthy();
+    for (const name of ["Copy link", "Move to…"]) expect(within(panel).queryByRole("button", { name })).toBeNull();
     fireEvent.click(within(panel).getByRole("button", { name: "More" }));
     const items = await screen.findAllByRole("menuitem");
-    expect(items.slice(0, 2).map((i) => i.textContent?.trim())).toEqual(["Move to…", "Move to trash"]);
-    expect(items[0].getAttribute("aria-disabled")).not.toBe("true");
+    expect(items.slice(0, 2).map((i) => i.textContent?.trim())).toEqual(["Copy link", "Move to…"]);
+    const move = items.find((i) => i.textContent?.trim() === "Move to…") as HTMLElement;
+    expect(move.getAttribute("aria-disabled")).not.toBe("true");
     // The entry runs the same action as the icon: Move opens the destination picker.
-    fireEvent.click(items[0]);
+    fireEvent.click(move);
     expect(await screen.findByTestId("pick")).toBeTruthy();
   });
 
@@ -1434,11 +1435,11 @@ describe("the selection bar fits its own width (decision 185)", () => {
     fireEvent.click(rows("alpha.txt") as Element);
     fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
     const panel = await screen.findByTestId("selection-panel");
+    // Delete keeps its icon (decision 68's rule) but is disabled for the mixed selection.
+    expect((within(panel).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(panel).getByRole("button", { name: "More" }));
     const move = await screen.findByRole("menuitem", { name: "Move to…" });
-    const del = screen.getByRole("menuitem", { name: "Move to trash" });
     expect(move.getAttribute("aria-disabled")).toBe("true");
-    expect(del.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(move);
     expect(screen.queryByTestId("pick")).toBeNull();
   });
@@ -1865,8 +1866,9 @@ describe("pastes, the clipboard's lifetime, the menus and the narrow toolbar", (
   });
 
   // Decision 185: the bar fits its own width, not the window's. A 260 px bar with a mouse keeps floor((260 - 148) / 44) = 2
-  // icons (Share, Copy link); Download, Move and Delete go to the top of More, in the bar's order, ahead of its own entries.
-  it("a narrow bar keeps the first two actions as icons, and the rest go into its More menu in order", async () => {
+  // icons. Decision 68's rule decides which stay: Share and Download; Copy link, Move and Delete go to the top of More, in
+  // display order, ahead of its own entries.
+  it("a narrow bar keeps Share and Download as icons (decision 68's rule), and the rest go into its More menu in display order", async () => {
     const saved = globalThis.ResizeObserver;
     reportBarWidth(260);
     try {
@@ -1876,12 +1878,12 @@ describe("pastes, the clipboard's lifetime, the menus and the narrow toolbar", (
       fireEvent.click(rows("alpha.txt") as Element);
       const panel = await screen.findByTestId("selection-panel");
       expect(within(panel).getByRole("button", { name: "Share" })).toBeTruthy();
-      expect(within(panel).getByRole("button", { name: "Copy link" })).toBeTruthy();
-      expect(within(panel).queryByRole("button", { name: "Download" })).toBeNull();
+      expect(within(panel).getByRole("button", { name: "Download" })).toBeTruthy();
+      expect(within(panel).queryByRole("button", { name: "Copy link" })).toBeNull();
       expect(within(panel).queryByRole("button", { name: "Delete" })).toBeNull();
       fireEvent.click(within(panel).getByRole("button", { name: "More" }));
       const items = await screen.findAllByRole("menuitem");
-      expect(items.slice(0, 3).map((i) => i.textContent?.trim())).toEqual(["Download", "Move to…", "Move to trash"]);
+      expect(items.slice(0, 3).map((i) => i.textContent?.trim())).toEqual(["Copy link", "Move to…", "Move to trash"]);
     } finally {
       globalThis.ResizeObserver = saved;
     }

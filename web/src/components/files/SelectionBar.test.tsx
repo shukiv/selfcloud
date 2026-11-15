@@ -121,6 +121,7 @@ describe("SelectionBar fits its own width (decision 185)", () => {
           actions={actions(run)}
           moreMenu={more([])}
           overflow={more}
+          hideOrder={["copyLink", "move", "delete", "download", "share"]}
           coarse={opts.coarse ?? false}
         />
       </ThemeProvider>,
@@ -139,18 +140,18 @@ describe("SelectionBar fits its own width (decision 185)", () => {
     expect(entryNames()).toEqual(["Details"]);
   });
 
-  it("a 360 px bar on a coarse pointer shows floor((360 - 156) / 48) = 4 icons, and the rest go to More first, in order", () => {
+  it("a 360 px bar on a coarse pointer shows floor((360 - 156) / 48) = 4 icons: Copy link goes to More first and Delete keeps its icon (decision 68's rule)", () => {
     const { bar } = fitRenders({ width: 360, coarse: true });
-    expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Copy link", "Download", "Move to…", "More actions"]);
-    expect(entryNames()).toEqual(["Delete", "Details"]);
+    expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "Move to…", "Delete", "More actions"]);
+    expect(entryNames()).toEqual(["Copy link", "Details"]);
     const count = (Array.from(bar.children) as HTMLElement[])[1];
     expect(count.style.minWidth).toBe("48px");
   });
 
-  it("a fine-pointer bar of 260 px shows floor((260 - 148) / 44) = 2 icons, and the rest go to More in order", () => {
+  it("a fine-pointer bar of 260 px shows floor((260 - 148) / 44) = 2 icons: Share and Download stay, the rest go to More in display order", () => {
     const { bar } = fitRenders({ width: 260 });
-    expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Copy link", "More actions"]);
-    expect(entryNames()).toEqual(["Download", "Move to…", "Delete", "Details"]);
+    expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "More actions"]);
+    expect(entryNames()).toEqual(["Copy link", "Move to…", "Delete", "Details"]);
   });
 
   it("when no icon fits, every action is in More, a disabled one stays disabled, and an entry runs its action", () => {
