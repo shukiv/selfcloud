@@ -126,6 +126,9 @@ export const SECTIONS: SectionSpec[] = [
           { key: "sessions.admin_max_age", type: "duration", range: { min: HOUR, max: 7 * DAY }, notes: [LOWERING] },
           { key: "users.verification_ttl", type: "duration", range: { min: 15 * MINUTE, max: 30 * DAY } },
           { key: "users.reset_ttl", type: "duration", range: { min: 5 * MINUTE, max: DAY } },
+          { key: "users.external_sign_in_url", type: "string", maxLength: 2048 },
+          { key: "users.external_signed_out_url", type: "string", maxLength: 2048 },
+          { key: "users.password_sign_in", type: "bool" },
         ],
       },
       {
