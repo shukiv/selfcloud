@@ -408,6 +408,119 @@ func TestBackupUsage(t *testing.T) {
 	if code, out, _ := runCmd(t, "help"); code != 0 || !strings.Contains(out, "backup") {
 		t.Errorf("help does not list backup: %d\n%s", code, out)
 	}
+	snap := backupSnapshot(t, cfg, t.TempDir())
+	if code, _, errOut := runCmd(t, "backup", "-config", cfg, "-check", snap, "extra"); code != 2 ||
+		!strings.Contains(errOut, "expected 0 argument(s), got 1") {
+		t.Errorf("--check with a positional argument = %d\nstderr:\n%s\nwant 2 with the argument count", code, errOut)
+	}
+}
+
+// TestBackupHelpProbe pins the probe: production backups run in a one-off container that asks for the command with
+// `selfcloud backup -h`, so help must exit 0 and name the flags on stderr, whatever the configuration says.
+func TestBackupHelpProbe(t *testing.T) {
+	t.Setenv("SELFCLOUD_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
+	for _, help := range []string{"-h", "--help"} {
+		code, stdout, stderr := runCmd(t, "backup", help)
+		if code != 0 {
+			t.Errorf("backup %s = %d, want 0\nstderr:\n%s", help, code, stderr)
+		}
+		if stdout != "" {
+			t.Errorf("backup %s printed to stdout: %q", help, stdout)
+		}
+		for _, name := range []string{"-to", "-check", "-json", "-config"} {
+			if !strings.Contains(stderr, name) {
+				t.Errorf("backup %s usage does not name %s:\n%s", help, name, stderr)
+			}
+		}
+	}
+}
+
+// TestBackupCheckWithoutConfig proves --check reads no configuration: a snapshot is checked where the binary runs,
+// and a one-off container may not mount the configuration file.
+func TestBackupCheckWithoutConfig(t *testing.T) {
+	_, cfg, _ := backupDataDir(t)
+	snap := backupSnapshot(t, cfg, t.TempDir())
+	t.Run("missing SELFCLOUD_CONFIG", func(t *testing.T) {
+		t.Setenv("SELFCLOUD_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
+		code, stdout, stderr := runCmd(t, "backup", "-check", snap)
+		if code != 0 {
+			t.Fatalf("backup --check = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, "integrity: ok") {
+			t.Errorf("check output does not say integrity ok:\n%s", stdout)
+		}
+	})
+	t.Run("invalid --config", func(t *testing.T) {
+		bad := filepath.Join(t.TempDir(), "bad.yaml")
+		if err := os.WriteFile(bad, []byte("{{not yaml"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		code, stdout, stderr := runCmd(t, "backup", "-config", bad, "-check", snap)
+		if code != 0 {
+			t.Fatalf("backup --check = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, "integrity: ok") {
+			t.Errorf("check output does not say integrity ok:\n%s", stdout)
+		}
+	})
+}
+
+// TestBackupCheckJSONWithoutConfig proves the --json document of --check is the same as TestBackupJSON's, with no
+// configuration to load.
+func TestBackupCheckJSONWithoutConfig(t *testing.T) {
+	_, cfg, _ := backupDataDir(t)
+	snap := backupSnapshot(t, cfg, t.TempDir())
+	t.Setenv("SELFCLOUD_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
+	code, stdout, stderr := runCmd(t, "backup", "-check", snap, "-json")
+	if code != 0 {
+		t.Fatalf("backup --check -json = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	var doc struct {
+		Path          string   `json:"path"`
+		Bytes         int64    `json:"bytes"`
+		SHA256        string   `json:"sha256"`
+		SchemaVersion int      `json:"schema_version"`
+		DurationMS    int64    `json:"duration_ms"`
+		Integrity     string   `json:"integrity"`
+		Problems      []string `json:"problems"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace([]byte(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%s", err, stdout)
+	}
+	fi, err := os.Stat(doc.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := store.LatestSchemaVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Path != snap || doc.Bytes != fi.Size() || doc.SHA256 != backupFileHash(t, doc.Path) ||
+		doc.SchemaVersion != want || doc.Integrity != "ok" || len(doc.Problems) != 0 || doc.DurationMS < 0 {
+		t.Fatalf("check JSON = %+v", doc)
+	}
+}
+
+// TestBackupToWithoutConfigExitsTwo proves --to still loads the configuration: a missing one exits 2 with the same
+// message as before and writes nothing into DIR.
+func TestBackupToWithoutConfigExitsTwo(t *testing.T) {
+	out := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	t.Setenv("SELFCLOUD_CONFIG", missing)
+	code, stdout, stderr := runCmd(t, "backup", "-to", out)
+	if code != 2 {
+		t.Fatalf("backup --to with a missing configuration = %d, want 2\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "config:") || !strings.Contains(stderr, missing) {
+		t.Errorf("stderr does not name the configuration problem:\n%s", stderr)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("--to wrote into DIR without a configuration: %v", entries)
+	}
 }
 
 // backupNoLinks stands in for a filesystem without hard links: every link is refused with EPERM.
