@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The web interface follows the installation's outside sign-in page (xs1, decision 185). It runs inside the shared
-// end-to-end run (run.mjs) in its own browser with its own profile, or alone with SELFCLOUD_E2E_ONLY=xs1, so the shared
+// The web interface follows the installation's outside sign-in page (eb4, decision 185). It runs inside the shared
+// end-to-end run (run.mjs) in its own browser with its own profile, or alone with SELFCLOUD_E2E_ONLY=eb4, so the shared
 // page's same-origin check never sees the outside addresses. A local server plays the outside page: the three settings
 // name it, GET /login answers 302 to it, a signed-out visit goes there with its next, /login?password keeps the form,
 // a sign-in link with next lands on that path, and a sign-out goes to the signed-out URL. The settings are reset after.
@@ -18,7 +18,7 @@ async function clickNamed(page, selector, text) {
   );
 }
 
-export async function xs1Checks(h, { page, base, adminKey, accountID, accountKey, memberID, teamA }) {
+export async function eb4Checks(h, { page, base, adminKey, accountID, accountKey, memberID, teamA }) {
   const { check, api } = h;
 
   // The outside pages: a local server with a sign-in page that reads its next, and a signed-out page.
