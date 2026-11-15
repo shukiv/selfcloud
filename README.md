@@ -187,9 +187,10 @@ runs (design section 12). Uploads in progress are not backed up. `--check` opens
 with the app's `selfcloud_name` collation registered, and writes nothing beside it; a plain SQLite copy cannot be
 checked outside Selfcloud without that collation.
 
-To restore: stop the server, put the snapshot at `store.path` (the database file in the data directory), restore
-`blobs/` and `keys/` beside it, start the server, then run `selfcloud fsck` — it reports missing blobs and, with
-`--repair`, moves orphans into quarantine.
+To restore: stop the server; remove `<store.path>-wal` and `<store.path>-shm` if present (a stale log left from the
+old database would be applied to the snapshot by SQLite and corrupt it); put the snapshot at `store.path` (the
+database file in the data directory); restore `blobs/` and `keys/` beside it; start the server; then run
+`selfcloud fsck` — it reports missing blobs and, with `--repair`, moves orphans into quarantine.
 
 ## Remote client
 
