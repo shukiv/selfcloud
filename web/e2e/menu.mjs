@@ -45,7 +45,7 @@ export async function pickMenuEntry(page, label) {
 }
 
 // hoverMenuTitle opens a submenu from its title, as a person does: a hover first, then a press on the title. The title is read again
-// at each try, because the menu may still be moving in. On a phone (decision 185) the submenu is a slide row: a press replaces the
+// at each try, because the menu may still be moving in. On a phone (decision 200) the submenu is a slide row: a press replaces the
 // level with the back row and the same children in the same popup, so the press is a tap and the wait is for the back row.
 export async function hoverMenuTitle(page, title) {
   // A slide row carries data-menu-level="slide"; a desktop submenu title does not. When the title is a slide row, tap it and wait
@@ -54,7 +54,7 @@ export async function hoverMenuTitle(page, title) {
   if (slideAt) {
     // The popup opens with an appear animation that starts scaled to nothing: wait for it to end and the row to be drawn at its
     // full height before reading its place, or the tap lands on the page behind the still-growing menu, which closes it (the
-    // desktop steps wait for the animation the same way, decision 185).
+    // desktop steps wait for the animation the same way, decision 200).
     await page.waitFor(`(() => { const d = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((x) => x.querySelector('[data-menu-level="slide"]')); const t = d && [...d.querySelectorAll('[data-menu-level="slide"]')].find((x) => x.textContent.trim() === ${q(title)}); return !!t && !d.className.includes('ant-slide-up-appear') && t.getBoundingClientRect().height > 0; })()`, 5000);
     const at = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"] .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });

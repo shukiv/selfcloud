@@ -174,7 +174,7 @@ const BUSY_NOTICE_KEYS: ReadonlySet<string> = new Set(["copy", "cut", "paste", "
 
 // useRoomy says whether the window is at least min pixels wide. The toolbar's New button keeps its word from 480 px (decision
 // 68); a window that cannot say its width is taken as roomy. The selection bar no longer reads the window: it fits its own
-// measured width (decision 185).
+// measured width (decision 201).
 function useRoomy(min: number): boolean {
   const query = `(min-width: ${min}px)`;
   const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
@@ -354,7 +354,7 @@ export default function FilesPage() {
   const coarse = useCoarsePointer();
   // The list's row height choice, kept per person in this browser (decision 194).
   const [density, setDensity] = useDensity();
-  // Below md the page's menus slide one level at a time in the same popup (decision 185), the same phone test the list reads.
+  // Below md the page's menus slide one level at a time in the same popup (decision 200), the same phone test the list reads.
   const phone = !Grid.useBreakpoint().md;
   const spacious = useRoomy(480);
   // Where the sidebar is shown, its New button holds the New actions, so the toolbar has none. A drawer has no New of its own,
@@ -1668,7 +1668,7 @@ export default function FilesPage() {
   // ---- render ----
 
   // The selection the toolbar and the menus act on. The three menu hooks below run on every render (a phone's New, More and
-  // right-click menus slide one level at a time, decision 185), so the place's guards sit after them, not before: a hook may
+  // right-click menus slide one level at a time, decision 200), so the place's guards sit after them, not before: a hook may
   // not follow a return that some renders take and others do not.
   const selectedNodes = picked;
 
@@ -1941,7 +1941,7 @@ export default function FilesPage() {
   const acts = buildActs(selectedNodes);
   // The rights decide what is hidden, so the toolbar keeps its shape as the selection changes.
   const barActs = acts.filter((a) => !a.hidden);
-  // The panel's actions in their display order (decision 185). The bar shows as many of them as fit its own measured width and
+  // The panel's actions in their display order (decision 201). The bar shows as many of them as fit its own measured width and
   // gives the rest to its overflow, which puts them at the top of More, in this same display order, ahead of More's own entries.
   // The window's width no longer decides the icon count. Which actions leave first keeps decision 68's rule (panelHideOrder):
   // Copy link goes first, then Move and Delete, and Share and Download stay longest, so Delete keeps its icon on a phone.
@@ -2042,7 +2042,7 @@ export default function FilesPage() {
     disabled: !a.enabled,
     // The shortcut is drawn at the entry's right from its data-hint (index.css), so the entry's text is its name alone.
     // The hint is hidden from a screen reader: the entry's name is its text alone, and the shortcut is named by
-    // aria-keyshortcuts. A touch pointer draws no hint (decision 185); the keys stay named, since a keyboard may be attached.
+    // aria-keyshortcuts. A touch pointer draws no hint (decision 200); the keys stay named, since a keyboard may be attached.
     extra: !coarse && shortcutHint(a.key, MAC_KEYS) ? <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint(a.key, MAC_KEYS)} /> : undefined,
     "aria-keyshortcuts": shortcutKeys(a.key, MAC_KEYS),
     // A finger needs 44 pixels, as on each other item.
@@ -2071,7 +2071,7 @@ export default function FilesPage() {
         children: piece.acts.map(actItem),
       };
     });
-  // The toolbar's New and the right-click menu each slide one level at a time on a phone (decision 185), through the one
+  // The toolbar's New and the right-click menu each slide one level at a time on a phone (decision 200), through the one
   // helper the sidebar's New reads too; the selection panel's More slides the same way in MoreMenu. The right-click menu owns
   // its open state (the page sets menu to null to close it), so the hook reads that open and forwards the closes that reach it;
   // a slide keeps it open.
@@ -2162,7 +2162,7 @@ export default function FilesPage() {
   const moreButton = (items: MenuProps["items"]) => (
     <MoreMenu items={items} phone={phone} coarse={coarse} theme={menuTheme} label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} />
   );
-  // overflow is the bar's hidden actions at the top of More, in the bar's order, ahead of More's own entries (decision 185).
+  // overflow is the bar's hidden actions at the top of More, in the bar's order, ahead of More's own entries (decision 201).
   // Each keeps its label, icon, disabled state and run: it is the same action the icon would have drawn, a divider apart from
   // the grouped entries below. More is always there when anything is hidden, even with no entries of its own.
   const overflow = (hidden: SelectionAction[]) => {

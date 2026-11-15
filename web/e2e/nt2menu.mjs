@@ -204,7 +204,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
 
-    // ---- Phone (decision 185): below md the New menu slides one level at a time in the same popup. At 360, 390 and 412 touch
+    // ---- Phone (decision 200): below md the New menu slides one level at a time in the same popup. At 360, 390 and 412 touch
     // widths the toolbar's New opens a menu that stays on the window, shows no chord hint and no side submenu popup; Document is
     // a slide row that opens to a back row and its children, and the back row returns to the first level.
     const PHONE_NEW = '[data-testid="browser-toolbar"] button[aria-label="New"]';
@@ -256,7 +256,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await backToFolder();
     await tapSel('[data-testid="nav-open"]');
     // The drawer slides in: its New button is in the DOM before it is on the window, so wait for it to be drawn inside the
-    // viewport before tapping, or the tap lands where the button was and opens nothing (decision 185).
+    // viewport before tapping, or the tap lands where the button was and opens nothing (decision 200).
     await page.waitFor(`(() => { const b = document.querySelector('.ant-drawer [data-testid="new-button"]:not([disabled])'); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; })()`, 10000);
     await tapSel('.ant-drawer [data-testid="new-button"]');
     await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);

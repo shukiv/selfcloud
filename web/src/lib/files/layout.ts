@@ -13,7 +13,7 @@ export const PANEL_INSET = 4;
 export const panelH = (coarse: boolean): number => buttonH(coarse) + 2 * PANEL_INSET;
 
 // The selection bar's parts sit 4 px apart, and its count keeps one short word (48 px, ellipsized) even when the bar is narrow.
-// The bar shows as many action icons as fit its own width (decision 185): an icon's slot is its button plus one gap, and the
+// The bar shows as many action icons as fit its own width (decision 201): an icon's slot is its button plus one gap, and the
 // fixed part is Clear + the count's minimum + More + the padding + the three gaps between those four.
 export const PANEL_GAP = 4;
 export const COUNT_MIN_W = 48;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The auth pages are lazy chunks (decision 185): the signed-in first load does not carry their antd Input, Radio and
+// The auth pages are lazy chunks (decision 198): the signed-in first load does not carry their antd Input, Radio and
 // Typography. This file runs the lazy path through the gate, and the idle warm that keeps the first open quick. The
 // shell and the files page are stubs, as in App.roles.test.tsx: this file is about the gate, not about what they draw.
 

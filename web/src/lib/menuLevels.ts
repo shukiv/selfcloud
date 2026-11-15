@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The phone menus slide one level at a time (decision 185). Below antd's md breakpoint (768 px, the same test the file list
+// The phone menus slide one level at a time (decision 200). Below antd's md breakpoint (768 px, the same test the file list
 // reads for its phone layout) a submenu cannot open to the side: the popup is as wide as the screen less a gutter, so a side
 // popup falls past the window's edge and widens the page. useMenuLevel turns antd items that carry children into two levels
 // drawn in the same popup, at the same width: a first level where each submenu is a plain row ending in a chevron, and a

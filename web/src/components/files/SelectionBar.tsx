@@ -12,7 +12,7 @@ export type SelectionAction = { key: string; label: string; icon: ReactNode; ena
 // rounded pill with no borders. The clear icon, then the count, then the action icons, started right after the count, then a
 // spacer, then More (the rest of the actions, in a menu the caller gives).
 //
-// The bar shows as many of its actions as fit its own width (decision 185): shown = floor((width - fixed) / slot), never fewer
+// The bar shows as many of its actions as fit its own width (decision 201): shown = floor((width - fixed) / slot), never fewer
 // than 0. The width is the bar's own border box, read by a ResizeObserver on its root, so the count comes from the room the bar
 // has, not from what it draws: hiding an icon cannot widen the bar, and the measure cannot flicker. The slot is the icon button
 // plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's minimum + More + the padding + the
@@ -86,7 +86,7 @@ export default function SelectionBar({
       style={{
         display: "flex",
         // One row, always: the bar's block size never depends on how many icons fit, so drawing or hiding an icon cannot
-        // change its height and scroll the page (decision 185).
+        // change its height and scroll the page (decision 201).
         flexWrap: "nowrap",
         alignItems: "center",
         gap: PANEL_GAP,

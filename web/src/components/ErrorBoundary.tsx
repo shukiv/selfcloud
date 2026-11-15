@@ -3,7 +3,7 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
 import SectionBoundary from "./SectionBoundary";
 
-// The crash view is a lazy chunk (decision 185): antd's Result and its pictures are not on the first load's path.
+// The crash view is a lazy chunk (decision 198): antd's Result and its pictures are not on the first load's path.
 // The entry warms it once the first screen is drawn (main.tsx), so a crash finds it already there. A chunk that
 // cannot load (an open tab after a deploy has new file names) leaves the section's own message and reload, not a
 // blank page: the boundary around it keeps the failure to this place.

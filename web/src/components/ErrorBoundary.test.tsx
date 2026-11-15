@@ -30,7 +30,7 @@ describe("ErrorBoundary", () => {
   it("shows a message and a reload button in place of the failed page", async () => {
     window.history.replaceState(null, "", "/files");
     renderBoundary();
-    // The crash view is a lazy chunk (decision 185); the message arrives with it.
+    // The crash view is a lazy chunk (decision 198); the message arrives with it.
     expect(await screen.findByRole("button", { name: /reload/i })).toBeTruthy();
   });
 

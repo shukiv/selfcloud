@@ -65,7 +65,7 @@ void loadLang("en")
           </QueryClientProvider>
         </StrictMode>,
       );
-      // The crash view is a lazy chunk (decision 185): start it once the first screen is drawn, so a render error
+      // The crash view is a lazy chunk (decision 198): start it once the first screen is drawn, so a render error
       // finds its message and reload already there instead of waiting for another fetch.
       warmImport(() => import("./components/CrashView"));
     },

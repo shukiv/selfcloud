@@ -112,7 +112,7 @@ export interface NewMenuOptions {
   dark: boolean;
   coarse: boolean;
   // phone is true below antd's md breakpoint (768 px): each submenu row then ends in a chevron and keeps its children for the
-  // slide (useMenuLevel), instead of opening a side popup. Off a phone the submenus open to the side as before (decision 185).
+  // slide (useMenuLevel), instead of opening a side popup. Off a phone the submenus open to the side as before (decision 200).
   phone: boolean;
   // onRun is called with the node chosen: an action, a blank kind, or a template kind.
   onRun: (node: NewMenuNode) => void;
@@ -143,7 +143,7 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
   const rowPx = o.coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine;
   const rowStyle: CSSProperties = { height: rowPx, boxSizing: "border-box" };
   const ink = o.dark ? KIND_INK.dark : KIND_INK.light;
-  // A touch pointer shows no chord hint (decision 185): the keys stay named for a screen reader through aria-keyshortcuts,
+  // A touch pointer shows no chord hint (decision 200): the keys stay named for a screen reader through aria-keyshortcuts,
   // since a keyboard may be attached, but nothing is drawn at the row's end.
   const hint = (chord: NewChordAction | undefined) =>
     chord === undefined || o.coarse ? undefined : createElement("span", { "aria-hidden": "true", className: "menu-hint", "data-hint": `Alt+C, ${CHORD_LETTER[chord]}`, title: o.text.shortcut });
@@ -199,7 +199,7 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
           label,
           icon: createElement(icon, { ...ICON, ...(color ? { color } : {}) }),
           // On a phone the row ends in the slide chevron (mirrored in RTL through icon-dir) and keeps its children for the
-          // slide; useMenuLevel draws them in the same popup. Off a phone antd opens them to the side (decision 185).
+          // slide; useMenuLevel draws them in the same popup. Off a phone antd opens them to the side (decision 200).
           extra: o.phone ? FORWARD : undefined,
           style: rowStyle,
           children: newMenuItems(node.children, o),

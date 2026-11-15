@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The crash view is a lazy chunk: antd's Result and its pictures are not on the first load's path (decision 185).
+// The crash view is a lazy chunk: antd's Result and its pictures are not on the first load's path (decision 198).
 // This file runs the lazy path: the boundary draws nothing while the chunk is on its way, then the message and the
 // reload button. It stays in its own file so the other tests, which may find the chunk already loaded, do not hide it.
 

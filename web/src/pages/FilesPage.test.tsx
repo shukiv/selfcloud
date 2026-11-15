@@ -176,7 +176,7 @@ async function inPanel(name: string): Promise<HTMLElement> {
 }
 
 // reportBarWidth installs a ResizeObserver that tells the selection bar its border-box width as soon as it is observed
-// (decision 185). jsdom has no layout, so the bar's width is stated here; the caller restores the saved observer after.
+// (decision 201). jsdom has no layout, so the bar's width is stated here; the caller restores the saved observer after.
 function reportBarWidth(width: number) {
   globalThis.ResizeObserver = class {
     private cb: ResizeObserverCallback;
@@ -231,7 +231,7 @@ function renderAt(path: string, client?: QueryClient) {
 export const FOLDER = "/files/fld_aaaaaaaa";
 export const rows = (name: string) => document.querySelector(`[role="row"][aria-label="${name}"]`);
 
-// The desktop tests below read a window at least md wide, so the menus keep their hover submenus (decision 185 slides them
+// The desktop tests below read a window at least md wide, so the menus keep their hover submenus (decision 200 slides them
 // only below md). It is the setup's window with md added: lg stays false, so the toolbar keeps its New (the sidebar is not
 // drawn here). Each test restores the setup's stub afterwards.
 let undoDesktop: () => void;
@@ -1396,7 +1396,7 @@ describe("the selection bar at phone width", () => {
 // Decision 185: on a finger the bar shows as many of its ordered actions as fit its own width; the rest go to the top of More,
 // in order, with the same labels, icons, disabled state and run. A 360 px phone's bar is 332 px (the page's 14 px gutter each
 // side): floor((332 - 156) / 48) = 3 icons, so Move and Delete are in More.
-describe("the selection bar fits its own width (decision 185)", () => {
+describe("the selection bar fits its own width (decision 201)", () => {
   const saved = globalThis.ResizeObserver;
   beforeEach(() => {
     folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
@@ -3552,7 +3552,7 @@ describe("the density toggle (decision 194)", () => {
 // Decision 185: below md the page's menus slide one level at a time in the same popup: the toolbar's New, the row and space
 // menus, and the selection panel's More. A submenu is a plain row with a chevron; its children follow a back row; an action
 // runs and closes; a close resets to the first level. On a coarse pointer no row shows a shortcut hint.
-describe("the page's menus on a phone (decision 185)", () => {
+describe("the page's menus on a phone (decision 200)", () => {
   const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   // phonePointer answers for a phone below md: no min-width matches, and the pointer is a finger only when asked.
   const phonePointer = (coarse: boolean): (() => void) => {

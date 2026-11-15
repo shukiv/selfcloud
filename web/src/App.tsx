@@ -27,7 +27,7 @@ import { markSignedIn } from "./lib/pwa/cacheState";
 import ShareHold from "./components/share/ShareHold";
 import { warmImport } from "./lib/warm";
 
-// The auth pages load on first use (decision 185): a signed-in person's first screen never draws them, and their antd
+// The auth pages load on first use (decision 198): a signed-in person's first screen never draws them, and their antd
 // Input, Radio and Typography stay out of the first load. A signed-out visitor's first screen is one of them, so Boot
 // starts their chunks while it reads the session, and the signed-in shell warms them on idle for the sign-out to come.
 const authLoaders = {
@@ -213,7 +213,7 @@ export function Boot({ children }: { children: ReactNode }) {
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
       // A signed-out visitor's next screen is an auth page: start its chunks now, alongside the language read, so the
-      // form waits for nothing the entry used to carry (decision 185).
+      // form waits for nothing the entry used to carry (decision 198).
       if (!me) void warmAuthPages();
       chooseLang(me);
       setReady(true);
@@ -251,7 +251,7 @@ export function Direction({ children }: { children: ReactNode }) {
 }
 
 // The public pages a signed-out visitor may see; the shell and its pages need a session. The auth pages are lazy
-// chunks (decision 185): while one is on its way, the boot's loading placeholder is what shows, not a blank page.
+// chunks (decision 198): while one is on its way, the boot's loading placeholder is what shows, not a blank page.
 function Public({ view }: { view: View }) {
   switch (view) {
     case "login": return <Suspense fallback={<Loading />}><LoginPage /></Suspense>;
@@ -313,7 +313,7 @@ export function Gate() {
   const view = viewFor(path);
   const signedIn = me !== null;
 
-  // The signed-in first screen warms the auth pages on idle (decision 185), so the sign-out to come opens the sign-in
+  // The signed-in first screen warms the auth pages on idle (decision 198), so the sign-out to come opens the sign-in
   // form with no wait. A signed-out visitor's pages are started by Boot instead: they are its first screen.
   useEffect(() => {
     if (signedIn) warmImport(warmAuthPages);

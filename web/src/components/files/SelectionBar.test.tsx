@@ -64,7 +64,7 @@ describe("SelectionBar (decision 68)", () => {
 // (the top of More), in order. The count keeps a minimum of one short word (48 px). The slot is the icon button plus the gap:
 // 44 + 4 on a coarse pointer, 40 + 4 otherwise. The fixed part is Clear + the count's minimum + More + the bar's padding + the
 // three gaps between those four: 2 * button + 48 + 2 * 4 + 3 * 4, so 156 on a finger and 148 with a mouse.
-describe("SelectionBar fits its own width (decision 185)", () => {
+describe("SelectionBar fits its own width (decision 201)", () => {
   const saved = globalThis.ResizeObserver;
   afterEach(() => {
     globalThis.ResizeObserver = saved;

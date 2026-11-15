@@ -1480,7 +1480,7 @@ tr[data-drop-state="refused"] > td {
   content: attr(data-hint);
 }
 
-/* A touch pointer shows no chord hint (decision 185). The menus already draw none on a coarse pointer; this hides any that
+/* A touch pointer shows no chord hint (decision 200). The menus already draw none on a coarse pointer; this hides any that
    remain, belt and braces. The keys stay named for a screen reader through aria-keyshortcuts, since a keyboard may be attached. */
 @media (pointer: coarse) {
   .menu-hint {

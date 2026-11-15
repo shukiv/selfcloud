@@ -30,7 +30,7 @@ async function pickMenuItem(page, text) {
 
 // pickBlank opens a kind's submenu and clicks its Blank entry (the New menu's submenus, nt2). hoverMenuTitle opens it as a
 // person does: a hover (then a press) on a desktop submenu title, or a tap on a phone's slide row, which replaces the level
-// with the back row and the same children in the same popup (decision 185). Either way Blank is then among the open entries.
+// with the back row and the same children in the same popup (decision 200). Either way Blank is then among the open entries.
 async function pickBlank(page, kind) {
   await hoverMenuTitle(page, kind);
   await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);

@@ -107,7 +107,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   // The dark menu is the one whose ground is dark: read from the antd token, which the palette sets (no provider needed here).
   const dark = menuIsDark(String(token.colorBgElevated));
   const writable = place !== null && !place.readOnly;
-  // Below md the menu slides one level at a time in the same popup (decision 185), the same phone test the file list reads.
+  // Below md the menu slides one level at a time in the same popup (decision 200), the same phone test the file list reads.
   const phone = !Grid.useBreakpoint().md;
   const tree = place ? newMenuTree({ entries: newEntries(place), blanks: documents, hints: writable }) : [];
   const body: NonNullable<MenuProps["items"]> = newMenuItems(tree, { text, dark, coarse, phone, onRun: (node) => run(node) });
@@ -139,7 +139,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
     if (node.type === "blank") onDocument(node.kind);
     if (node.type === "template") navigate(newURL(place.where.folder, place.where.dirID, node.kind));
   }
-  // A finger opens a submenu on a tap, a mouse on a hover (decision 185); on a phone the submenus slide instead (useMenuLevel).
+  // A finger opens a submenu on a tap, a mouse on a hover (decision 200); on a phone the submenus slide instead (useMenuLevel).
   const menu: MenuProps = { items, onClick: () => undefined, style: MENU_STYLE, triggerSubMenuAction: coarse ? "click" : "hover", "aria-labelledby": place?.readOnly ? reasonId : undefined };
   // A place that is still being read shows the button, disabled.
   const disabled = place === null;

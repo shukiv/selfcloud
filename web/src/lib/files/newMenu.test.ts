@@ -126,7 +126,7 @@ describe("the New menu's rows are the same height in every row", () => {
 
 // Decision 185: on a phone the New menu's submenus slide in the same popup (the hook reads the children the items keep);
 // on a coarse pointer the chord hints are gone from every row, and the keys stay named for a screen reader.
-describe("the New menu's phone rows and touch hints (decision 185)", () => {
+describe("the New menu's phone rows and touch hints (decision 200)", () => {
   const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };
   const opts = (over: Partial<NewMenuOptions> = {}): NewMenuOptions => ({ text, dark: false, coarse: false, phone: false, onRun: () => undefined, ...over });
   type Item = NonNullable<MenuProps["items"]>[number];

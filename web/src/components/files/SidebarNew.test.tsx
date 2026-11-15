@@ -19,7 +19,7 @@ const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" },
 const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
 
 // The desktop tests below read the desktop window: every min-width query matches, so the menu keeps its hover submenus
-// (decision 185 slides them only below md). Each test restores the setup's stub afterwards.
+// (decision 200 slides them only below md). Each test restores the setup's stub afterwards.
 let undoDesktop: () => void;
 beforeEach(() => {
   undoDesktop = desktopViewport();
@@ -491,7 +491,7 @@ describe("the New menu's submenus, template link, and chord", () => {
 // Decision 185: below md the New menu slides one level at a time in the same popup. A submenu is a plain row with a chevron;
 // tapping it shows the back row, a divider and the same children; the back row returns; an action runs and closes; a close
 // resets to the first level. On a coarse pointer no row shows a chord hint.
-describe("the New menu on a phone (decision 185)", () => {
+describe("the New menu on a phone (decision 200)", () => {
   let undo: () => void;
   beforeEach(async () => {
     await setLang("en");
