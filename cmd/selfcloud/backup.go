@@ -25,6 +25,10 @@ import (
 // backupClock names the snapshot with the time it starts. Tests fix it to make the name predictable.
 var backupClock = time.Now
 
+// backupLink publishes the snapshot under its final name. Tests replace it to stand in for a filesystem without
+// hard links.
+var backupLink = os.Link
+
 // backupCommand snapshots the database (--to DIR) or verifies a snapshot (--check FILE). The snapshot holds the
 // database only; blobs/ and keys/ are copied with other tools after it (design section 12). Exit 0 is good, 1 means
 // the copy failed its check or the checked file has problems, 2 means the command could not run.
@@ -155,15 +159,27 @@ func backupTo(ctx context.Context, cfg *config.Config, dir string, asJSON bool, 
 	}
 	// Publish under the final name only now that the copy is whole, checked and synced. A link refuses a name that
 	// appeared meanwhile, so an existing file is never overwritten; the temporary name then goes.
-	if err := os.Link(tmp, final); err != nil {
-		os.Remove(tmp)
+	if err := backupLink(tmp, final); err != nil {
 		if errors.Is(err, os.ErrExist) {
+			os.Remove(tmp)
 			return fail(2, "%s already exists; refusing to overwrite it", final)
 		}
-		return fail(2, "%v", err)
-	}
-	if err := os.Remove(tmp); err != nil {
-		return fail(2, "%v", err)
+		// Filesystems without hard links (some CIFS/FUSE mounts) answer EPERM/ENOTSUP/EOPNOTSUPP; publish by rename
+		// there. The fallback has a narrow window the link path does not: a file created at the final name between
+		// the Lstat and the rename would be replaced. The Lstat refuses a name that is already there.
+		if _, lerr := os.Lstat(final); lerr == nil {
+			os.Remove(tmp)
+			return fail(2, "%s already exists; refusing to overwrite it", final)
+		} else if !errors.Is(lerr, os.ErrNotExist) {
+			os.Remove(tmp)
+			return fail(2, "%v", lerr)
+		}
+		if rerr := os.Rename(tmp, final); rerr != nil {
+			os.Remove(tmp)
+			return fail(2, "%v", rerr)
+		}
+	} else if rerr := os.Remove(tmp); rerr != nil {
+		return fail(2, "%v", rerr)
 	}
 	if err := backupFsync(dir); err != nil {
 		return fail(2, "%v", err)

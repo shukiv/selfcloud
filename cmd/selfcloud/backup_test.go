@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -406,5 +407,100 @@ func TestBackupUsage(t *testing.T) {
 	}
 	if code, out, _ := runCmd(t, "help"); code != 0 || !strings.Contains(out, "backup") {
 		t.Errorf("help does not list backup: %d\n%s", code, out)
+	}
+}
+
+// backupNoLinks stands in for a filesystem without hard links: every link is refused with EPERM.
+func backupNoLinks(oldname, newname string) error {
+	return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: syscall.EPERM}
+}
+
+func TestBackupPublishesByRenameWithoutHardLinks(t *testing.T) {
+	_, cfg, _ := backupDataDir(t)
+	old := backupLink
+	backupLink = backupNoLinks
+	defer func() { backupLink = old }()
+	out := t.TempDir()
+	code, stdout, stderr := runCmd(t, "backup", "-config", cfg, "-to", out)
+	if code != 0 {
+		t.Fatalf("backup without hard links = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "selfcloud-") || !strings.HasSuffix(entries[0].Name(), ".db") {
+		t.Fatalf("directory holds %v, want only the stamped snapshot (no temporary file)", entries)
+	}
+	snap := filepath.Join(out, entries[0].Name())
+	fi, err := os.Stat(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("snapshot mode = %o, want 600", fi.Mode().Perm())
+	}
+	if code, _, _ := runCmd(t, "backup", "-config", cfg, "-check", snap); code != 0 {
+		t.Errorf("check of the renamed snapshot = %d, want 0", code)
+	}
+}
+
+func TestBackupNoHardLinksKeepsExistingFile(t *testing.T) {
+	_, cfg, _ := backupDataDir(t)
+	oldClock := backupClock
+	backupClock = func() time.Time { return time.Date(2026, 11, 14, 9, 5, 3, 0, time.UTC) }
+	defer func() { backupClock = oldClock }()
+	oldLink := backupLink
+	backupLink = backupNoLinks
+	defer func() { backupLink = oldLink }()
+	out := t.TempDir()
+	target := filepath.Join(out, "selfcloud-20261114T090503Z.db")
+	if err := os.WriteFile(target, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runCmd(t, "backup", "-config", cfg, "-to", out)
+	if code != 2 {
+		t.Fatalf("backup onto an existing name without hard links = %d, want 2 (stderr: %s)", code, stderr)
+	}
+	b, err := os.ReadFile(target)
+	if err != nil || string(b) != "keep me" {
+		t.Fatalf("existing file changed: %q, %v", b, err)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("directory holds %v, want only the untouched file", entries)
+	}
+}
+
+// TestBackupNoHardLinksFileAppearsDuringPublish exercises the fallback's Lstat guard: the link is refused and the
+// final name appears meanwhile, so the rename must not replace it.
+func TestBackupNoHardLinksFileAppearsDuringPublish(t *testing.T) {
+	_, cfg, _ := backupDataDir(t)
+	old := backupLink
+	backupLink = func(oldname, newname string) error {
+		if err := os.WriteFile(newname, []byte("appeared"), 0o600); err != nil {
+			return err
+		}
+		return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: syscall.EPERM}
+	}
+	defer func() { backupLink = old }()
+	out := t.TempDir()
+	code, _, stderr := runCmd(t, "backup", "-config", cfg, "-to", out)
+	if code != 2 {
+		t.Fatalf("backup with a name appearing during publish = %d, want 2 (stderr: %s)", code, stderr)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("directory holds %v, want only the file that appeared", entries)
+	}
+	b, err := os.ReadFile(filepath.Join(out, entries[0].Name()))
+	if err != nil || string(b) != "appeared" {
+		t.Fatalf("the file that appeared changed: %q, %v", b, err)
 	}
 }
