@@ -121,12 +121,15 @@ func TestEmbedOriginsRoutes(t *testing.T) {
 	}
 }
 
-// TestEmbedOriginsImpersonation: an admin signed in as a user may read the list but not replace it
+// TestEmbedOriginsImpersonation: an admin signed in as the owner may read the list but not replace it
 // (decision 185, decision 41).
 func TestEmbedOriginsImpersonation(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
-	imp, _ := fx.signedInAsMember(t)
+	owner := makeOwner(t, fx.s, fx.accKey, fx.acc.ID, "owner@example.com")
+	rec := fx.signInAs(t, owner.ID)
+	wantStatus(t, rec, 200)
+	imp := sessionFrom(t, fx.s, rec)
 	path := "/api/v1/accounts/" + fx.acc.ID + "/embed"
 	wantStatus(t, callSession(t, fx.s, imp, "GET", path, nil), 200)
 	wantError(t, callSession(t, fx.s, imp, "PUT", path, embedBody{Origins: []string{"https://x.example"}}), 403, apierr.Forbidden)

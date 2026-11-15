@@ -117,6 +117,7 @@ var webhookAuditNoEvent = map[string]string{
 	"account.deleted":            "an account is deleted with its events (cascade)",
 	"account.storage_policy":     "quota settings are not on the event list",
 	"account.sharing_policy":     "sharing settings are not on the event list",
+	"account.embed_origins":      "embed origins are not on the event list",
 	"key.create":                 "keys are not on the event list",
 	"key.revoke":                 "keys are not on the event list",
 	"token.mint":                 "tokens are not on the event list",

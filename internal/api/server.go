@@ -610,7 +610,7 @@ func New(opts Options) (*Server, error) {
 		brand := brandOptions(s.settings(), pics)
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
 			PublicURL: cfg.PublicURL, BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
-			IconFile: brand.Icon, LogoFile: brand.Logo}); err != nil {
+			IconFile: brand.Icon, LogoFile: brand.Logo, FrameAncestors: s.frameAncestors}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 		s.buildBrand = s.ui.BuildBrand
@@ -864,6 +864,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/labels/{lbf}", handle: s.handleClearNodeLabel, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true, imp: impAllow},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/embed", handle: s.handleGetEmbedOrigins, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/embed", handle: s.handlePutEmbedOrigins, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/share-links", handle: s.handleListAccountShareLinks, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/share-links/delete-public", handle: s.handleDeletePublicShareLinks, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true, imp: impAllow},

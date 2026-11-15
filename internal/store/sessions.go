@@ -27,10 +27,13 @@ type Session struct {
 	// Short is true for a session the browser did not keep ("Keep me signed in" unticked, decision 75): its cookie
 	// is a browser-session cookie and the server ends it sessions.short_idle_timeout after its last use.
 	Short bool
+	// Frame is true for a session a frame sign-in link started (decision 185): its cookie is partitioned, and the
+	// pages it opens may be framed by the account's allowed origins. An ordinary session is not a frame.
+	Frame bool
 }
 
 const sessionCols = `id_hash, user_id, account_id, csrf_token, created_at, last_seen_at, expires_at,
-	ip, user_agent, impersonator_user_id, impersonator_session_hash, short`
+	ip, user_agent, impersonator_user_id, impersonator_session_hash, short, frame`
 
 // SessionByHash returns the session with the given cookie hash. Expired sessions are returned
 // too; the caller checks ExpiresAt. It returns ErrNotFound if there is none.
@@ -59,9 +62,9 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 	var created, seen, expires int64
 	var acc, imp sql.NullString
 	var impHash []byte
-	var short int
+	var short, frame int
 	err := row.Scan(&sess.IDHash, &sess.UserID, &acc, &sess.CSRFToken, &created, &seen, &expires,
-		&sess.IP, &sess.UserAgent, &imp, &impHash, &short)
+		&sess.IP, &sess.UserAgent, &imp, &impHash, &short, &frame)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +75,7 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 	sess.ImpersonatorID = imp.String
 	sess.ImpersonatorSessionHash = impHash
 	sess.Short = short == 1
+	sess.Frame = frame == 1
 	return &sess, nil
 }
 
@@ -79,10 +83,10 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 // (users.last_sign_in_at, decision 114), which outlives the session. Every way of signing in makes its session here, so
 // none can miss it. A sign-in-as (a session with an impersonator) is the admin's, and records nothing on the user.
 func (tx *Tx) InsertSession(ctx context.Context, sess *Session) error {
-	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		sess.IDHash, sess.UserID, nullString(sess.AccountID), sess.CSRFToken, millis(sess.CreatedAt),
 		millis(sess.LastSeenAt), millis(sess.ExpiresAt), sess.IP, sess.UserAgent,
-		nullString(sess.ImpersonatorID), nullBytes(sess.ImpersonatorSessionHash), boolInt(sess.Short))
+		nullString(sess.ImpersonatorID), nullBytes(sess.ImpersonatorSessionHash), boolInt(sess.Short), boolInt(sess.Frame))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

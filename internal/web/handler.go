@@ -73,6 +73,10 @@ type Options struct {
 	// upload's. The icons and the favicon are drawn from them (decision 119).
 	IconFile *Logo
 	LogoFile *Logo
+	// FrameAncestors, when set, names the host origins that may frame the page this request opens (decision 185). It
+	// is consulted only for the app page (index.html), never for an asset. A nil result, or a nil hook, keeps the page
+	// at frame-ancestors 'none' with X-Frame-Options DENY. The hook reads only; it writes nothing.
+	FrameAncestors func(*http.Request) []string
 }
 
 // Handler serves the built files of the web interface.
@@ -91,6 +95,8 @@ type Handler struct {
 	// brand is the brand in use. A change builds a new one whole and swaps it in (decision 141), and a request reads it once,
 	// so no answer mixes two brands.
 	brand atomic.Pointer[Brand]
+	// frameAncestors names the host origins that may frame the app page, or nil (decision 185).
+	frameAncestors func(*http.Request) []string
 }
 
 // Brand is one build of the installation's look in the web interface: the name the pages and the manifest carry, the drawn
@@ -217,7 +223,8 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, publicURL: opts.PublicURL}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, publicURL: opts.PublicURL,
+		frameAncestors: opts.FrameAncestors}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
@@ -236,8 +243,9 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 }
 
 // policy returns the content policy. With no nonce it is the policy for assets and the not-built
-// page; with one, style-src also allows the inline styles that carry that nonce.
-func (h *Handler) policy(nonce string) string {
+// page; with one, style-src also allows the inline styles that carry that nonce. ancestors is the
+// frame-ancestors value: "'none'" for every page but the app page a host may frame (decision 185).
+func (h *Handler) policy(nonce, ancestors string) string {
 	style := "'self'"
 	if nonce != "" {
 		style += " 'nonce-" + nonce + "'"
@@ -245,7 +253,7 @@ func (h *Handler) policy(nonce string) string {
 	return "default-src 'self'; script-src 'self'; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
 		"; media-src 'self'" + h.origins +
 		"; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self'" + h.origins + h.officeOrigin +
-		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" + h.officeOrigin
+		"; frame-ancestors " + ancestors + "; base-uri 'none'; form-action 'self'" + h.officeOrigin
 }
 
 // robotsTxt keeps crawlers away from the pages that open share links. The pages also answer with
@@ -313,7 +321,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if UnsafeAssetRequest(r) {
 		hd := w.Header()
-		hd.Set("Content-Security-Policy", h.policy(""))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
@@ -347,10 +355,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			data = []byte(strings.ReplaceAll(notBuiltPage, brandPlaceholder, brandHTML(b.info.name)))
 		}
 	}
+	// The app page a host may frame allows that host's origins; every other answer keeps 'none' (decision 185).
+	// A missing asset answers 404 with the strict policy below, so the hook is not consulted for it.
+	ancestors := "'none'"
+	if !missingAsset && name == "index.html" && h.frameAncestors != nil {
+		if origins := h.frameAncestors(r); len(origins) > 0 {
+			ancestors = "'self' " + strings.Join(origins, " ")
+		}
+	}
 	hd := w.Header()
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Referrer-Policy", "same-origin")
-	hd.Set("X-Frame-Options", "DENY")
+	if ancestors == "'none'" {
+		hd.Set("X-Frame-Options", "DENY")
+	}
 	if sharePagePath(r.URL.Path) {
 		// The page that opens a share link holds the link's secret in its address. Nothing it links to may see
 		// that address in a Referer, and no search engine may index it.
@@ -360,7 +378,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if missingAsset {
 		// A build asset that is not there is a stale or mistyped reference; answering with the app
 		// page would hide that behind a script or style that fails to parse.
-		hd.Set("Content-Security-Policy", h.policy(""))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
@@ -400,10 +418,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = []byte(strings.Join(b.index, nonce))
-		hd.Set("Content-Security-Policy", h.policy(nonce))
+		hd.Set("Content-Security-Policy", h.policy(nonce, ancestors))
 	} else {
-		// Any other file and the not-built page: the policy with no nonce.
-		hd.Set("Content-Security-Policy", h.policy(""))
+		// Any other file and the not-built page: the policy with no nonce. The not-built page is still the app
+		// page, so it carries the ancestors the hook allowed; every other file keeps 'none' (decision 185).
+		hd.Set("Content-Security-Policy", h.policy("", ancestors))
 	}
 	hd.Set("Content-Type", contentType(name))
 	if name == "offline.html" && err == nil {

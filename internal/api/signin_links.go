@@ -76,6 +76,7 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	// The body is optional: a request with no body means the default path.
 	var in struct {
 		Next *string `json:"next"`
+		Mode string  `json:"mode"`
 	}
 	if r.ContentLength != 0 {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
@@ -94,6 +95,19 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 		if next, err = cleanNext(*in.Next); err != nil {
 			return err
 		}
+	}
+	// mode tab (the default) is the link as before; mode frame makes a link for a host application's frame
+	// (decision 185). A frame link needs allowed origins and a secure public address, checked below.
+	frame := false
+	switch in.Mode {
+	case "", "tab":
+	case "frame":
+		frame = true
+		if !s.framePublicURLAllowed() {
+			return apierr.New(apierr.InvalidRequest, "a frame sign-in link needs an https public_url")
+		}
+	default:
+		return apierr.New(apierr.InvalidRequest, "mode must be tab or frame")
 	}
 	switch acc.Status {
 	case store.AccountSuspended:
@@ -123,8 +137,21 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 		case store.UserDisabled:
 			return apierr.New(apierr.UserDisabled, "the user is disabled")
 		}
+		if frame {
+			acct, err := tx.EmbedOrigins(ctx, acc.ID)
+			if err != nil {
+				return err
+			}
+			origins, err := s.unionEmbedOrigins(acct)
+			if err != nil {
+				return err
+			}
+			if len(origins) == 0 {
+				return apierr.New(apierr.InvalidRequest, "the account has no allowed embed origins")
+			}
+		}
 		if err := tx.InsertSignInLink(ctx, &store.SignInLink{ID: id.New("sil"), AccountID: acc.ID,
-			UserID: u.ID, TokenHash: hash, Next: next, ExpiresAt: expires, CreatedAt: now}); err != nil {
+			UserID: u.ID, TokenHash: hash, Next: next, ExpiresAt: expires, CreatedAt: now, Frame: frame}); err != nil {
 			return err
 		}
 		// The audit entry names the user. It never holds the token, the URL or the path.
@@ -133,8 +160,12 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
+	link := s.tokenLink(s.cfg.Users.SignInURLTemplate, secret)
+	if frame {
+		link = frameLinkURL(link, acc.ID)
+	}
 	writeJSON(w, http.StatusCreated, signInLinkJSON{
-		URL:       s.tokenLink(s.cfg.Users.SignInURLTemplate, secret),
+		URL:       link,
 		ExpiresAt: expires,
 	})
 	return nil
@@ -302,6 +333,9 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		next = l.Next
 		// An application's sign-in link decides the lifetime, as before: the session is kept (decision 75).
 		secret, sess = s.newSession(r, u, at, false)
+		// A frame link starts a frame session: its cookie is partitioned (decision 185). An admin user is
+		// refused above, so an admin session never becomes a frame session.
+		sess.Frame = l.Frame
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -315,7 +349,7 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 	if stateErr != nil {
 		return stateErr
 	}
-	s.setSessionCookie(w, secret, sess.Short)
+	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
 	writeJSON(w, http.StatusOK, signedInLink{
 		signedIn: signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken},
 		Next:     next,

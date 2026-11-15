@@ -331,7 +331,7 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) boo
 		// A brand file this brand has none of: the wordmark once the installation has its own logo (decision 126). Serves
 		// says so, but a request that read an older brand there reaches here; it gets 404, never the app page.
 		hd := w.Header()
-		hd.Set("Content-Security-Policy", h.policy(""))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return true

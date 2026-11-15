@@ -145,7 +145,7 @@ func (s *Server) confirmAdminPassword(w http.ResponseWriter, r *http.Request, p 
 	}
 	if ended {
 		s.pwFails.clear(sess.IDHash)
-		s.clearSessionCookie(w)
+		s.clearSessionCookie(w, sess.Frame)
 		return apierr.New(apierr.Unauthenticated, "too many wrong passwords; the session has ended, sign in again")
 	}
 	return apierr.New(apierr.Forbidden, "your password is not correct")
@@ -298,7 +298,7 @@ func (s *Server) handleSignInAs(w http.ResponseWriter, r *http.Request) error {
 	s.pwFails.clear(sess.IDHash)
 	parked, _ := r.Cookie(s.sessionCookie)
 	s.setReturnCookie(w, parked.Value, sess.Short)
-	s.setSessionCookie(w, secret, next.Short)
+	s.setSessionCookie(w, secret, next.Short, next.Frame)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(target), CSRFToken: next.CSRFToken})
 	return nil
 }
@@ -318,7 +318,9 @@ func (s *Server) handleEndImpersonation(w http.ResponseWriter, r *http.Request) 
 	hash := auth.HashToken(c.Value)
 	sess, err := s.store.SessionByHash(ctx, hash)
 	if errors.Is(err, store.ErrNotFound) {
-		s.clearSessionCookie(w)
+		// This branch is reached only by an impersonation, whose cookie is never a frame's, so the ordinary
+		// clear is the one the browser holds (decision 185).
+		s.clearSessionCookie(w, false)
 		s.clearReturnCookie(w)
 		return apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
 	}
@@ -351,15 +353,15 @@ func (s *Server) handleEndImpersonation(w http.ResponseWriter, r *http.Request) 
 	s.clearReturnCookie(w)
 	if rerr != nil || !auth.ValidToken(rc.Value) ||
 		subtle.ConstantTimeCompare(auth.HashToken(rc.Value), sess.ImpersonatorSessionHash) != 1 {
-		s.clearSessionCookie(w)
+		s.clearSessionCookie(w, sess.Frame)
 		return apierr.New(apierr.Unauthenticated, "the admin's session cannot be restored; sign in again")
 	}
 	admin, err := s.restoreAdminSession(ctx, sess.ImpersonatorSessionHash)
 	if err != nil {
-		s.clearSessionCookie(w)
+		s.clearSessionCookie(w, sess.Frame)
 		return err
 	}
-	s.setSessionCookie(w, rc.Value, admin.session.Short)
+	s.setSessionCookie(w, rc.Value, admin.session.Short, admin.session.Frame)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(admin.user), CSRFToken: admin.session.CSRFToken})
 	return nil
 }

@@ -86,6 +86,7 @@ type Config struct {
 	CLI       CLIConfig       `yaml:"cli"`
 	Webhooks  WebhooksConfig  `yaml:"webhooks"`
 	CORS      CORSConfig      `yaml:"cors"`
+	Embed     EmbedConfig     `yaml:"embed"`
 	UI        UIConfig        `yaml:"ui"`
 	Office    OfficeConfig    `yaml:"office"`
 	Users     UsersConfig     `yaml:"users"`
@@ -737,6 +738,19 @@ type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
+// EmbedConfig lists the host origins the installation allows to frame its pages (decision 185). Each
+// account adds its own list through the embed routes; the two are unioned. Empty allows no host: a frame
+// sign-in link is then refused, and every page keeps frame-ancestors 'none'.
+type EmbedConfig struct {
+	// Origins are the allowed host origins: https on any host, or http on localhost and 127.0.0.1. At most
+	// MaxEmbedOrigins, each at most 255 bytes, normalised and deduplicated.
+	Origins []string `yaml:"origins"`
+}
+
+// MaxEmbedOrigins is the most origins one embed list holds, the installation's and each account's alike
+// (decision 185).
+const MaxEmbedOrigins = 10
+
 // UIConfig controls the web interface.
 type UIConfig struct {
 	// Enabled serves the web interface at /. The API is unaffected either way.
@@ -920,6 +934,11 @@ func (c *Config) normalize() {
 	for i, o := range c.CORS.AllowedOrigins {
 		c.CORS.AllowedOrigins[i] = strings.ToLower(strings.TrimSpace(o))
 	}
+	for i, o := range c.Embed.Origins {
+		if n, err := normalizeOrigin(o); err == nil {
+			c.Embed.Origins[i] = n
+		}
+	}
 	if c.Store.Path == "" && c.DataDir != "" {
 		c.Store.Path = filepath.Join(c.DataDir, "selfcloud.db")
 	}
@@ -1045,6 +1064,14 @@ func (c *Config) Validate() error {
 	for _, o := range c.CORS.AllowedOrigins {
 		if err := checkOrigin(o); err != nil {
 			bad("cors.allowed_origins: %v", err)
+		}
+	}
+	if len(c.Embed.Origins) > MaxEmbedOrigins {
+		bad("embed.origins holds more than %d origins", MaxEmbedOrigins)
+	}
+	for _, o := range c.Embed.Origins {
+		if _, err := normalizeOrigin(o); err != nil {
+			bad("embed.origins: %v", err)
 		}
 	}
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
@@ -1208,6 +1235,71 @@ func checkOrigin(s string) error {
 		return fmt.Errorf("%q must be the origin only: scheme, host and port, with no path, query or fragment", s)
 	}
 	return nil
+}
+
+// NormalizeOrigin is normalizeOrigin for callers outside config: the embed routes check a host origin
+// with the same rules the installation list is checked with (decision 185).
+func NormalizeOrigin(s string) (string, error) { return normalizeOrigin(s) }
+
+// normalizeOrigin checks one embed origin and returns it in a canonical form: lower-cased scheme and
+// host, the default port and a trailing slash dropped. It accepts https on any host, or http on localhost
+// and 127.0.0.1 only; the origin alone, with no path, query, fragment, userinfo or wildcard, and no IP
+// literal other than 127.0.0.1. Every refusal names the origin (decision 185).
+func normalizeOrigin(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	bad := func(reason string) (string, error) {
+		return "", fmt.Errorf("%q is not an allowed origin: %s", s, reason)
+	}
+	if s == "" {
+		return bad("it is empty")
+	}
+	if len(s) > 255 {
+		return bad("it is longer than 255 bytes")
+	}
+	if strings.Contains(s, "*") {
+		return bad("wildcards are not allowed; list each origin")
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] <= 0x20 || s[i] == 0x7f {
+			return bad("it holds a space or control character")
+		}
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return bad(err.Error())
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "https" && scheme != "http" {
+		return bad("only https is allowed, or http on localhost and 127.0.0.1")
+	}
+	if u.User != nil {
+		return bad("it carries userinfo")
+	}
+	if u.RawQuery != "" || u.Fragment != "" || u.ForceQuery || strings.HasSuffix(s, "?") || strings.HasSuffix(s, "#") {
+		return bad("it carries a query or fragment")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return bad("it carries a path")
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return bad("it has no host")
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip != netip.MustParseAddr("127.0.0.1") {
+		return bad("an IP literal other than 127.0.0.1 is not allowed")
+	}
+	if scheme == "http" && host != "localhost" && host != "127.0.0.1" {
+		return bad("http is allowed only on localhost and 127.0.0.1")
+	}
+	port := u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	out := scheme + "://" + host
+	if port != "" {
+		out += ":" + port
+	}
+	return out, nil
 }
 
 // ParsePrefixes parses addresses and CIDRs; a bare address becomes a single-host prefix.

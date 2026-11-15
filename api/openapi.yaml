@@ -4812,6 +4812,48 @@ paths:
                   expires_at: { type: string, format: date-time }
                   max_file_size: { type: integer, description: The account's upload.max_file_size, in bytes. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/embed:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getEmbedOrigins
+      summary: Read the account's allowed embed origins
+      description: |
+        The account's own list of host origins that may frame its pages, sorted (decision 185). The
+        installation's `embed.origins` is unioned with this list when a page is framed; this route answers
+        only the account's own part. The owner's session, the account key and an installation admin may read it.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The account's allowed host origins.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmbedOrigins" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Accounts]
+      operationId: setEmbedOrigins
+      summary: Replace the account's allowed embed origins
+      description: |
+        Replaces the account's list of host origins that may frame its pages (decision 185). At most ten
+        origins; each is checked and normalised (an `https` origin, or `http` for localhost only), then
+        deduplicated and sorted. A bad origin is named and nothing is written. Absent or empty clears the
+        list. Audited as `account.embed_origins` with the new list. Only the account's owner or key may make
+        the change; an installation admin signed in as a user is refused.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmbedOriginsUpdate" }
+      responses:
+        "200":
+          description: The list as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmbedOrigins" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/sharing-policy:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -7984,6 +8026,32 @@ components:
         who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
         external_sharing: { type: boolean, description: "Sharing with other accounts is allowed (decision 187). Default off." }
 
+    EmbedOrigins:
+      type: object
+      required: [origins]
+      additionalProperties: false
+      properties:
+        origins:
+          type: array
+          maxItems: 10
+          items: { type: string }
+          description: |
+            The account's host origins that may frame its pages, sorted (decision 185). Each is a scheme and
+            host with an optional port, no path, query, fragment or user info: `https` for any host, `http`
+            only for `localhost` or `127.0.0.1`. Default ports are dropped and the host is lower-cased.
+
+    EmbedOriginsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        origins:
+          type: array
+          maxItems: 10
+          items: { type: string }
+          description: |
+            The new list, checked and normalised as for EmbedOrigins. Absent or empty clears the account's
+            list. A bad origin is named in the refusal and nothing is written (decision 185).
+
     ViewerList:
       type: object
       required: [items]
@@ -9230,6 +9298,15 @@ components:
             The path to open after sign-in, such as `/files/x`. Optional; empty or absent means
             `/files`. Checked on the server: it must start with exactly one `/`, not be `//`, and
             have no backslash, scheme, host, control character or space.
+        mode:
+          type: string
+          enum: [tab, frame]
+          default: tab
+          description: |
+            `tab` (the default) is the ordinary link, opened in a top-level tab. `frame` makes a link for a
+            host application's iframe (decision 185): redeeming it starts a frame session whose cookie is
+            partitioned. A frame link needs the account to have allowed embed origins and an `https`
+            `public_url`; otherwise the request is refused.
 
     SignInLink:
       type: object
@@ -9239,7 +9316,8 @@ components:
           type: string
           description: |
             Absolute, from `users.sign_in_url_template` (default `{public_url}/sign-in#token={token}`).
-            Carries only the token, in its fragment.
+            Carries only the token, in its fragment. A frame link also carries `frame=<acc>` before the
+            fragment, so the page knows which account's origins to allow before the token is read (decision 185).
         expires_at: { type: string, format: date-time }
 
     SignInLinkRedeemRequest:
@@ -9297,7 +9375,7 @@ components:
 
     Me:
       type: object
-      required: [user, account, csrf_token]
+      required: [user, account, csrf_token, frame]
       properties:
         user: { $ref: "#/components/schemas/User" }
         account:
@@ -9308,6 +9386,11 @@ components:
             id: { type: string }
             name: { type: string }
         csrf_token: { type: string }
+        frame:
+          type: boolean
+          description: |
+            True when this session was started by a frame sign-in link: the page is embedded in a host
+            application and its cookie is partitioned (decision 185). False for an ordinary tab session.
         storage:
           description: The caller's own My files against its limit. Absent for an installation admin.
           type: object

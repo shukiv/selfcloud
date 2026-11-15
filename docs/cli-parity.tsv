@@ -252,6 +252,7 @@ route	GET /api/v1/accounts	account ls	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}	account show	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/audit	account audit	cli9a2	built in cli9a2
 route	GET /api/v1/accounts/{acc}/audit/export	account audit export	u1c	built in u1c
+route	GET /api/v1/accounts/{acc}/embed	-	eb1	the account's embed sites, read by the owner in the browser; no CLI command in eb1
 route	GET /api/v1/accounts/{acc}/folders	folder ls	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}	folder show	cli8	built in cli8
 route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	share ls	cli7	built in cli7
@@ -434,6 +435,7 @@ route	POST /api/v1/zips	zip create	cli12	built in cli12
 route	POST /api/v1/zips/{zip}/links	-	-	a visitor's signed link to the zip its link made, asked in the browser; the CLI's zip commands act as a signed-in member
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
+route	PUT /api/v1/accounts/{acc}/embed	-	eb1	the owner replaces the account's embed sites in the browser; no CLI command in eb1
 route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	share grant	cli7	built in cli7
 route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	group add-member	cli8	built in cli8
 route	PUT /api/v1/accounts/{acc}/imports/archive	import archive set	cli10	built in cli10

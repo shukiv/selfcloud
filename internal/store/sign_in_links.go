@@ -20,14 +20,17 @@ type SignInLink struct {
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	CreatedAt time.Time
+	// Frame is true for a link made for a host application's frame (decision 185): its URL names the account in a
+	// query before the fragment, and redeeming it starts a frame session with a partitioned cookie.
+	Frame bool
 }
 
 // InsertSignInLink adds l.
 func (tx *Tx) InsertSignInLink(ctx context.Context, l *SignInLink) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO sign_in_links
-		(id, account_id, user_id, token_hash, next, expires_at, used_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.AccountID, l.UserID, l.TokenHash, l.Next, millis(l.ExpiresAt), nullMillis(l.UsedAt), millis(l.CreatedAt))
+		(id, account_id, user_id, token_hash, next, expires_at, used_at, created_at, frame)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.AccountID, l.UserID, l.TokenHash, l.Next, millis(l.ExpiresAt), nullMillis(l.UsedAt), millis(l.CreatedAt), boolInt(l.Frame))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -39,9 +42,10 @@ func (tx *Tx) SignInLinkByHash(ctx context.Context, hash []byte) (*SignInLink, e
 	var l SignInLink
 	var expires, created int64
 	var used sql.NullInt64
-	err := tx.q.QueryRowContext(ctx, `SELECT id, account_id, user_id, token_hash, next, expires_at, used_at, created_at
+	var frame int
+	err := tx.q.QueryRowContext(ctx, `SELECT id, account_id, user_id, token_hash, next, expires_at, used_at, created_at, frame
 		FROM sign_in_links WHERE token_hash = ?`, hash).
-		Scan(&l.ID, &l.AccountID, &l.UserID, &l.TokenHash, &l.Next, &expires, &used, &created)
+		Scan(&l.ID, &l.AccountID, &l.UserID, &l.TokenHash, &l.Next, &expires, &used, &created, &frame)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -51,6 +55,7 @@ func (tx *Tx) SignInLinkByHash(ctx context.Context, hash []byte) (*SignInLink, e
 	l.ExpiresAt = fromMillis(expires)
 	l.UsedAt = fromNullMillis(used)
 	l.CreatedAt = fromMillis(created)
+	l.Frame = frame == 1
 	return &l, nil
 }
 

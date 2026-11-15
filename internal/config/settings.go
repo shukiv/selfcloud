@@ -125,7 +125,7 @@ var settingDefs = []settingDef{
 // factKeys are the read-only facts the settings API shows: infrastructure the file owns. No secret is among them: not
 // the mail password or user, not the admin key file, not the signing key files.
 var factKeys = []string{
-	"client_ip_header", "content_url", "cors.allowed_origins", "data_dir", "listen", "log.format", "log.level",
+	"client_ip_header", "content_url", "cors.allowed_origins", "data_dir", "embed.origins", "listen", "log.format", "log.level",
 	"mail.from", "mail.smtp_host", "mail.smtp_port", "mail.smtp_tls", "metrics_listen", "metrics_on_main", "public_url",
 	"rate_limit.capped_email_per_hour", "rate_limit.capped_per_email_per_hour", "rate_limit.per_email_per_minute",
 	"rate_limit.per_ip_per_minute", "store.driver", "store.path", "trusted_proxies", "ui.enabled",

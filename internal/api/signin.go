@@ -72,12 +72,14 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short
 // keeps it off cross-site requests; Path=/ and the __Host- name (https only) pin it to this site.
 // A kept session's cookie lasts sessions.max_age; a session the browser did not keep (short) is a
 // browser-session cookie, with neither Max-Age nor Expires, so the browser drops it when it closes.
-func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short bool) {
+// A frame session's cookie (decision 185) is SameSite=None, Secure and Partitioned, so it works in the
+// host application's third-party frame; it is secure even on a localhost http address.
+func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short, frame bool) {
 	var maxAge int
 	if !short {
 		maxAge = int(s.settings().Sessions.MaxAge.D().Seconds())
 	}
-	http.SetCookie(w, &http.Cookie{
+	c := &http.Cookie{
 		Name:     s.sessionCookie,
 		Value:    value,
 		Path:     "/",
@@ -85,12 +87,19 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short boo
 		HttpOnly: true,
 		Secure:   s.sessionCookie != "selfcloud_session",
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	if frame {
+		c.SameSite = http.SameSiteNoneMode
+		c.Secure = true
+		c.Partitioned = true
+	}
+	http.SetCookie(w, c)
 }
 
-// clearSessionCookie expires the session cookie in the browser.
-func (s *Server) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+// clearSessionCookie expires the session cookie in the browser. A frame session's clear carries the same
+// partitioned attributes as its cookie, so the browser drops the one it holds (decision 185).
+func (s *Server) clearSessionCookie(w http.ResponseWriter, frame bool) {
+	c := &http.Cookie{
 		Name:     s.sessionCookie,
 		Value:    "",
 		Path:     "/",
@@ -98,7 +107,13 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 		HttpOnly: true,
 		Secure:   s.sessionCookie != "selfcloud_session",
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	if frame {
+		c.SameSite = http.SameSiteNoneMode
+		c.Secure = true
+		c.Partitioned = true
+	}
+	http.SetCookie(w, c)
 }
 
 // signedIn is the answer when a session begins: the user and the CSRF token to send back.
@@ -110,7 +125,7 @@ type signedIn struct {
 // writeSignedIn sets the cookie and answers with the user. The CSRF token is in the body, so
 // the page can make unsafe requests.
 func (s *Server) writeSignedIn(w http.ResponseWriter, secret string, u *store.User, sess *store.Session) {
-	s.setSessionCookie(w, secret, sess.Short)
+	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken})
 }
 
@@ -516,7 +531,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.pwFails.clear(sess.IDHash)
-	s.clearSessionCookie(w)
+	s.clearSessionCookie(w, sess.Frame)
 	// A pending confirmation link cannot be redeemed in this browser after sign-out.
 	s.clearConfirmCookie(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -778,6 +793,9 @@ type meResponse struct {
 	MustChangePassword bool `json:"must_change_password"`
 	// Impersonation is set while an installation admin is signed in as this user. EndsAt is the hard limit.
 	Impersonation *impersonationJSON `json:"impersonation,omitempty"`
+	// Frame is true when this session was started by a frame sign-in link: the page is embedded in a host
+	// application, and its cookie is partitioned (decision 185).
+	Frame bool `json:"frame"`
 	// TenantAccess and MailConfigured are set for an installation admin only. The admin pages read them to show the
 	// ways in to a tenant user; nobody else learns them (decision 41).
 	TenantAccess   *bool `json:"tenant_access,omitempty"`
@@ -826,7 +844,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 	sess := sessionOf(r)
 	out := meResponse{User: toUserJSON(u), CSRFToken: sess.CSRFToken, MustChangePassword: u.MustChangePassword,
-		EmailProved: u.EmailProved()}
+		EmailProved: u.EmailProved(), Frame: sess.Frame}
 	if sess.ImpersonatorID != "" {
 		out.Impersonation = &impersonationJSON{EndsAt: sess.CreatedAt.Add(impersonationTTL)}
 	}
@@ -998,7 +1016,7 @@ func (s *Server) failedPasswordChange(w http.ResponseWriter, r *http.Request) er
 	}
 	if ended {
 		s.pwFails.clear(sess.IDHash)
-		s.clearSessionCookie(w)
+		s.clearSessionCookie(w, sess.Frame)
 		return apierr.New(apierr.Unauthenticated, "too many wrong passwords; the session has ended, sign in again")
 	}
 	return apierr.New(apierr.Forbidden, "the current password is not correct")
@@ -1085,8 +1103,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		if _, err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
 			return err
 		}
-		// The new session keeps the choice of the one it replaces (decision 75).
+		// The new session keeps the choice of the one it replaces (decision 75), and its frame (decision 185).
 		secret, sess = s.newSession(r, found, now, sessionOf(r).Short)
+		sess.Frame = sessionOf(r).Frame
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -1095,7 +1114,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	s.setSessionCookie(w, secret, sess.Short)
+	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
