@@ -6,27 +6,53 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getPlayback, startPlayback, stopPlayback } from "../lib/files/playback";
 import { Pager } from "../lib/files/pager";
 import type { Node } from "../lib/files/types";
 import { session } from "../lib/session";
+import { fail, stubFetch } from "../test/fetchStub";
 import MediaPage from "./MediaPage";
 
 const audio = { id: "n-a", name: "a.ogg", kind: "file", mime_type: "audio/ogg", size: 1 } as unknown as Node;
 const seed = { start: audio, folder: new Pager([audio], null, async () => ({ items: [] })) };
 
-function renderPage(strict = false) {
+// The address the page is at, for the tab checks: the tab is written with replace, and playing turns back to Now playing.
+function LocationProbe() {
+  const loc = useLocation();
+  return <span data-testid="media-loc">{loc.search}</span>;
+}
+
+function renderPage(strict = false, entry = "/media") {
   const page = (
-    <MemoryRouter initialEntries={["/media"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/media" element={<MediaPage />} />
+        <Route
+          path="/media"
+          element={
+            <>
+              <MediaPage />
+              <LocationProbe />
+            </>
+          }
+        />
         <Route path="/files" element={<p>files page</p>} />
       </Routes>
     </MemoryRouter>
   );
   return render(strict ? <StrictMode>{page}</StrictMode> : page);
+}
+
+// The library tabs read the search and the played list; these answers keep them empty but for the rows a check asks for.
+function stubLibrary(items: unknown[] = []) {
+  return stubFetch((c) => {
+    if (c.url.startsWith("/api/v1/search")) return { status: 200, body: { items } };
+    if (c.url.startsWith("/api/v1/media/played")) return { status: 200, body: { items: [] } };
+    if (c.url.startsWith("/api/v1/media/tags")) return { status: 200, body: { items: {} } };
+    if (c.url.startsWith("/api/v1/folders")) return { status: 200, body: { items: [] } };
+    return fail(404, "not_found");
+  });
 }
 
 afterEach(async () => {
@@ -75,5 +101,73 @@ describe("the Media page", () => {
     });
     expect(getPlayback().seed).not.toBeNull();
     expect(told).not.toHaveBeenCalled();
+  });
+
+  it("?tab= opens that tab, and an unknown value falls back to Now playing", async () => {
+    const { calls } = stubLibrary();
+    renderPage(false, "/media?tab=music");
+    const music = await screen.findByRole("tab", { name: "Music" });
+    expect(music.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("media-loc").textContent).toBe("?tab=music");
+    // The Music tab asked the search for audio files.
+    await waitFor(() => expect(calls.some((c) => c.url.startsWith("/api/v1/search") && c.url.includes("type=audio"))).toBe(true));
+  });
+
+  it("an unknown tab value opens Now playing", async () => {
+    stubLibrary();
+    renderPage(false, "/media?tab=bogus");
+    expect(await screen.findByText("Nothing is playing")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Now playing" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("changing tabs keeps the stage and queue hosts mounted, the same nodes, and the session running", async () => {
+    stubLibrary();
+    startPlayback(seed);
+    renderPage();
+    await screen.findByRole("tab", { name: "Music" });
+    const stage = screen.getByTestId("media-page-stage");
+    const queue = screen.getByTestId("media-page-queue");
+    const page = getPlayback().page;
+    expect(page).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Music" }));
+    expect(await screen.findByRole("region", { name: "Music" })).toBeTruthy();
+    expect(screen.getByTestId("media-page-stage")).toBe(stage);
+    expect(screen.getByTestId("media-page-queue")).toBe(queue);
+    expect(getPlayback().page).toBe(page);
+    expect(getPlayback().seed).not.toBeNull();
+    expect(screen.getByTestId("media-loc").textContent).toBe("?tab=music");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Videos" }));
+    expect(await screen.findByRole("region", { name: "Videos" })).toBeTruthy();
+    expect(screen.getByTestId("media-page-stage")).toBe(stage);
+    expect(screen.getByTestId("media-page-queue")).toBe(queue);
+    expect(getPlayback().page).toBe(page);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Now playing" }));
+    await waitFor(() => expect(screen.getByTestId("media-loc").textContent).toBe(""));
+    expect(screen.getByTestId("media-page-stage")).toBe(stage);
+    expect(screen.getByTestId("media-page-queue")).toBe(queue);
+  });
+
+  it("the hosts are mounted even when a library tab is the address from the first load", async () => {
+    stubLibrary();
+    startPlayback(seed);
+    renderPage(false, "/media?tab=recent");
+    expect(await screen.findByRole("region", { name: "Recently played" })).toBeTruthy();
+    const page = getPlayback().page;
+    expect(page).not.toBeNull();
+    expect(page!.stage).toBe(screen.getByTestId("media-page-stage"));
+    expect(page!.queue).toBe(screen.getByTestId("media-page-queue"));
+  });
+
+  it("playing a library row turns the page back to Now playing", async () => {
+    stubLibrary([audio]);
+    renderPage(false, "/media?tab=music");
+    const r = await screen.findByRole("row", { name: "a.ogg" });
+    fireEvent.click(r);
+    expect(getPlayback().seed?.start.id).toBe("n-a");
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Now playing" }).getAttribute("aria-selected")).toBe("true"));
+    expect(screen.getByTestId("media-loc").textContent).toBe("");
   });
 });
