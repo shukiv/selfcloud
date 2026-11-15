@@ -814,6 +814,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/resume", handle: s.handleGetMediaResume, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/resume", handle: s.handlePutMediaResume, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/media/played", handle: s.handleListPlayed, auth: true, imp: impRefuse},
 		// Saved playlists (decision 58): the signed-in user's own, with no token and no impersonation.
 		{method: http.MethodGet, path: "/api/v1/playlists", handle: s.handleListPlaylists, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/playlists", handle: s.handleCreatePlaylist, auth: true, imp: impRefuse},

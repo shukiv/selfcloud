@@ -20,12 +20,14 @@ const (
 
 // ListFilter is a file list's filter (decision 110): a type, one value only, and a modified range. A type is either a
 // kind (a folder or a shortcut) or a file group. ModAfter is inclusive and ModBefore exclusive, in milliseconds; a nil
-// bound is no bound. The zero value filters nothing.
+// bound is no bound. The zero value filters nothing. Unfinished narrows the played list of media files to the places
+// worth resuming; it is not a node filter (Active and Where ignore it), but the cursor binds it (Tag).
 type ListFilter struct {
-	Kind      string // KindDir or KindShortcut; "" for none
-	Group     string // a file group ID (fileGroups); "" for none
-	ModAfter  *int64
-	ModBefore *int64
+	Kind       string // KindDir or KindShortcut; "" for none
+	Group      string // a file group ID (fileGroups); "" for none
+	ModAfter   *int64
+	ModBefore  *int64
+	Unfinished bool
 }
 
 // ListTypeFilter reads the type value of a list: "" is no type, "folder" and "shortcut" name a kind, and any group ID names
@@ -61,12 +63,17 @@ func (f ListFilter) Active() bool {
 }
 
 // Tag is the canonical text of the filter, for the cursor's consistency tag. It is "" for the zero filter, so an
-// unfiltered cursor is the same as before.
+// unfiltered cursor is the same as before. The played list's unfinished flag is part of it, so a cursor of one list
+// does not open the other.
 func (f ListFilter) Tag() string {
-	if !f.Active() {
+	if !f.Active() && !f.Unfinished {
 		return ""
 	}
-	return "k=" + f.Kind + ";g=" + f.Group + ";a=" + bound(f.ModAfter) + ";b=" + bound(f.ModBefore)
+	t := "k=" + f.Kind + ";g=" + f.Group + ";a=" + bound(f.ModAfter) + ";b=" + bound(f.ModBefore)
+	if f.Unfinished {
+		t += ";u=1"
+	}
+	return t
 }
 
 // encodeFilteredCursor is encodeCursor with the filter's tag as one more part, when the filter narrows anything. With no

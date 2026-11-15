@@ -4414,6 +4414,40 @@ paths:
           headers:
             Retry-After: { schema: { type: integer } }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/media/played:
+    get:
+      tags: [Media]
+      operationId: listPlayed
+      summary: List the media files the caller played, latest place first
+      description: |
+        The signed-in user's own places in video and audio files (the resume routes store them), latest
+        first: each item is the node's JSON with the caller's `role` and `place`, plus `position_seconds`,
+        `duration_seconds` and `played_at`, the time the place was last stored. `type` narrows the list to
+        one media kind; `unfinished=true` keeps only the places worth resuming: at least 5 seconds in, and
+        more than 10 seconds before a known end (a duration of 0 is unknown, as a stream has none). A node
+        the caller no longer reaches, or one in the trash, is kept but not listed, so a page can come back
+        shorter than its limit. A delegated token, a device token, an account key and an installation admin
+        get `forbidden`, and an admin signed in as a user gets `forbidden` too. Nobody else can read a
+        place: another user's places are never listed.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - name: type
+          in: query
+          description: "One value: video or audio. Any other value, another file group included, is `invalid_request`."
+          schema: { type: string, enum: [video, audio] }
+        - name: unfinished
+          in: query
+          description: "Only `true` or absent; any other value is `invalid_request`. `true` keeps the places worth resuming: at least 5 seconds in, and more than 10 seconds before a known end."
+          schema: { type: string, enum: ["true"] }
+      responses:
+        "200":
+          description: The played files.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlayedList" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/content:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -7404,6 +7438,27 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/RecentItem" }
+        next_cursor: { type: string }
+
+    PlayedItem:
+      description: A media file in the caller's played list, with the place they stopped at.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          required: [position_seconds, duration_seconds, played_at]
+          properties:
+            position_seconds: { type: number, minimum: 0, description: Where the caller stopped, in seconds of media time. }
+            duration_seconds: { type: number, minimum: 0, description: The file's length in seconds of media time; 0 when unknown. }
+            played_at: { type: string, format: date-time, description: When the place was last stored. }
+            place: { $ref: "#/components/schemas/Place" }
+
+    PlayedList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PlayedItem" }
         next_cursor: { type: string }
 
     SharedItem:

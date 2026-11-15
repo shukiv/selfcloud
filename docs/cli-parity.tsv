@@ -288,6 +288,7 @@ route	GET /api/v1/label-fields	label field ls	cli11f	built in cli11f
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
+route	GET /api/v1/media/played	-	-	CLI command later, slice mp4c (decision 206)
 route	GET /api/v1/media/tags	tag ls	cli11e	built in cli11e
 route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/access-requests	access ls	cli7	built in cli7

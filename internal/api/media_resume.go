@@ -134,3 +134,114 @@ func (s *Server) handlePutMediaResume(w http.ResponseWriter, r *http.Request) er
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
+
+// playedItem is a media file in the played list, with the place the caller stopped at.
+type playedItem struct {
+	nodeJSON
+	PositionSeconds float64   `json:"position_seconds"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	PlayedAt        time.Time `json:"played_at"`
+	// Place is the name of the item's parent, when the caller reaches the parent (placeNames).
+	Place string `json:"place,omitempty"`
+}
+
+// playedFilterParams reads the played list's filter through the list filter, with only video and audio as types: a
+// place sits in a media file, so any other type value, another valid group included, is invalid_request naming type.
+func playedFilterParams(r *http.Request) (store.ListFilter, error) {
+	f, err := listFilterParams(r)
+	if err != nil {
+		return store.ListFilter{}, err
+	}
+	if f.Kind != "" || (f.Group != "" && f.Group != "video" && f.Group != "audio") {
+		return store.ListFilter{}, apierr.New(apierr.InvalidRequest, "type must be video or audio")
+	}
+	return f, nil
+}
+
+// playedUnfinishedParam reads ?unfinished=: absent is false, true is true, and any other value is invalid_request.
+func playedUnfinishedParam(r *http.Request) (bool, error) {
+	vals := r.URL.Query()["unfinished"]
+	if len(vals) == 0 {
+		return false, nil
+	}
+	if len(vals) > 1 || vals[0] != "true" {
+		return false, apierr.New(apierr.InvalidRequest, "unfinished must be true or absent")
+	}
+	return true, nil
+}
+
+// handleListPlayed lists the media files the signed-in user stopped at, the latest place first. As for the recent list,
+// a place whose node the caller no longer reaches or that is in the trash is kept in the database and not listed, so a
+// page can come back shorter.
+func (s *Server) handleListPlayed(w http.ResponseWriter, r *http.Request) error {
+	p := principalOf(r)
+	if err := resumeOwnCaller(p); err != nil {
+		return err
+	}
+	page, err := pageParams(r)
+	if err != nil {
+		return err
+	}
+	filter, err := playedFilterParams(r)
+	if err != nil {
+		return err
+	}
+	unfinished, err := playedUnfinishedParam(r)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	rows, err := s.store.PlayedPage(ctx, p.UserID, filter, unfinished, page)
+	if err != nil {
+		return storeErr(err)
+	}
+	ids := make([]string, len(rows))
+	for i, rw := range rows {
+		ids[i] = rw.NodeID
+	}
+	reach, err := reachRoles(ctx, s.store, p, ids)
+	if err != nil {
+		return err
+	}
+	nodes, err := s.store.NodesByID(ctx, p.AccountID, ids)
+	if err != nil {
+		return err
+	}
+	var items []playedItem
+	for _, rw := range rows {
+		n, role := nodes[rw.NodeID], reach[rw.NodeID]
+		if n == nil || role == "" {
+			continue
+		}
+		j := toNodeJSON(n)
+		j.Role = role
+		items = append(items, playedItem{nodeJSON: j,
+			PositionSeconds: float64(rw.PositionMS) / 1000,
+			DurationSeconds: float64(rw.DurationMS) / 1000,
+			PlayedAt:        rw.UpdatedAt})
+	}
+	kept := make([]*nodeJSON, len(items))
+	for i := range items {
+		kept[i] = &items[i].nodeJSON
+	}
+	places, err := s.placesOfItems(ctx, p, kept)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].Place = places[i]
+	}
+	if err := s.withTargets(ctx, p, kept...); err != nil {
+		return err
+	}
+	if err := s.withStarred(r, p.UserID, kept); err != nil {
+		return err
+	}
+	out := listResponse[playedItem]{Items: []playedItem{}}
+	out.Items = append(out.Items, items...)
+	if len(rows) == page.Limit {
+		out.NextCursor = store.PlayedCursorOf(rows[len(rows)-1], filter, unfinished)
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
