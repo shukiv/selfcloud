@@ -206,14 +206,17 @@ describe("MediaPlaylist with the queue in a page slot", () => {
     return view;
   }
 
-  it("draws the queue in the slot, with no drawer and no toggle", async () => {
+  it("draws the queue as a table in the slot, with no drawer, no toggle and no drawer rows", async () => {
     const slot = document.createElement("div");
     document.body.appendChild(slot);
     const { container } = mountSlot(slot);
     await flush();
     expect(screen.queryByRole("button", { name: "Playlist" })).toBeNull();
     expect(container.querySelector("[data-media-drawer]")).toBeNull();
-    expect(slot.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    // The table is lazy (Listing stays out of the drawer's load), so it arrives a tick after the slot is given.
+    await waitFor(() => expect(slot.querySelector('[data-testid="media-queue-table"]')).not.toBeNull());
+    expect(slot.querySelectorAll('[data-testid="media-qrow"]').length).toBe(2);
+    expect(slot.querySelector('[data-testid="media-row"]')).toBeNull();
     expect(container.querySelector('[data-testid="media-screen"] video')).not.toBeNull();
     slot.remove();
   });
@@ -252,7 +255,7 @@ describe("MediaPlaylist with the queue in a page slot", () => {
     rerender(<MediaPlaylist {...props} queueSlot={slot} />);
     await flush();
     expect(container.querySelector("video")).toBe(video);
-    expect(slot.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    await waitFor(() => expect(slot.querySelector('[data-testid="media-queue-table"]')).not.toBeNull());
     expect(container.querySelector("[data-media-drawer]")).toBeNull();
     // And back: the drawer returns with the queue in it, and the player is still the same element.
     rerender(<MediaPlaylist {...props} />);

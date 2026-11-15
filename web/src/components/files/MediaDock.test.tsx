@@ -601,7 +601,8 @@ describe("the Media page hosts the session", () => {
     expect(screen.queryByTestId("media-mini")).toBeNull();
     expect(stage.querySelector("audio")).toBe(audio);
     expect(document.body.style.overflow).not.toBe("hidden");
-    expect(queue.querySelector('[data-testid="media-queue"]')).not.toBeNull();
+    // The page's queue is the table (mp1b), lazy as the viewer's own pieces are.
+    await waitFor(() => expect(queue.querySelector('[data-testid="media-queue-table"]')).not.toBeNull());
     expect(document.querySelector("[data-media-drawer]")).toBeNull();
     expect(screen.queryByRole("button", { name: "Playlist" })).toBeNull();
   });

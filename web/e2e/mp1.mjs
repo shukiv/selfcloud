@@ -3,8 +3,9 @@
 // The Media page checks (slice mp1, decision 186), run inside the shared end-to-end run (run.mjs) on the shared page,
 // server and accounts: the sidebar's Media entry right after Starred, the page's empty state with its way back to My
 // files, a file played from My files that goes on in the mini player and then on the Media page — the same element,
-// marked, never made again — with the queue panel below it and no mini player beside it, the mini player back on My
-// files, the page's Stop and close that ends the session, and the page fitting a phone with no sideways scroll. Run it
+// marked, never made again — with the queue table below it (mp1b: a click on row 2 plays it in the page's one player)
+// and no mini player beside it, the mini player back on My files, the page's Stop and close that ends the session, and
+// the page fitting a phone with no sideways scroll. Run it
 // alone with SELFCLOUD_E2E_ONLY=mp1. The checks end signed in as the member, which the rest of the run expects; the
 // interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
@@ -156,13 +157,37 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `location.pathname === '/media'`, 10000, 'the Media page');
       await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page stage');
       check(await page.evaluate(`document.querySelector('[data-testid="media-page-stage"] audio') === window.__mp1el && window.__mp1el.__mp1 === 1`), 'the same marked element is on the page stage');
-      check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue"]')`), 'the queue panel is in the page queue host');
+      // The table is lazy (mp1b), so it arrives a tick after the page's host is given.
+      await until(page, `!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]')`, 15000, 'the queue table in the page host');
+      check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]')`), 'the queue table is in the page queue host');
       check(await page.evaluate(`!document.querySelector('[data-testid="media-mini"]') && !document.querySelector('[data-testid="preview"]')`), 'no mini player and no dialog beside the page');
       check(await page.evaluate(`!window.__mp1el.paused`), 'the file plays on');
       const t1 = await page.evaluate(`window.__mp1el.currentTime`);
       await sleep(1200);
       const t2 = await page.evaluate(`window.__mp1el.currentTime`);
       check(t2 > t1 + 0.5, `the place goes on (${t1.toFixed(2)} s, then ${t2.toFixed(2)} s), not restarted`);
+    });
+
+    await step('the page queue is a table, and a click on row 2 plays it in the page player', async () => {
+      await until(page, `document.querySelectorAll('[data-testid="media-page-queue"] [data-testid="media-qrow"]').length === 2`, 15000, 'the two queue rows');
+      check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]') && !document.querySelector('[data-testid="media-page-queue"] [data-testid="media-row"]')`), 'the queue is the table, with no drawer rows');
+      check(await page.evaluate(`(() => { const r = document.querySelectorAll('[data-testid="media-qrow"]'); return r[0].classList.contains('media-qrow--on') && !r[1].classList.contains('media-qrow--on'); })()`), 'the playing row is marked');
+      // A click on row 2's name plays it through the session's one player, on the page's stage.
+      const p = await page.evaluate(`(() => {
+        const row = document.querySelectorAll('[data-testid="media-qrow"]')[1];
+        row.scrollIntoView({ block: 'center' });
+        const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`);
+      await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', buttons: 0, clickCount: 1 });
+      await until(page, `(() => { const v = ${MEDIA}; return !!v && v.getAttribute('aria-label') === 'track-two.ogg' && v.readyState >= 2; })()`, 20000, 'row 2 has data');
+      await playing(page);
+      check(await page.evaluate(`document.querySelectorAll('audio').length === 1 && document.querySelector('[data-testid="media-page-stage"] audio') === document.querySelector('audio')`), 'one player, in the page stage, plays row 2');
+      check(await page.evaluate(`(() => { const r = document.querySelectorAll('[data-testid="media-qrow"]'); return !r[0].classList.contains('media-qrow--on') && r[1].classList.contains('media-qrow--on'); })()`), 'the mark moves to row 2');
+      // The element is made once for the file that plays (decision 186): carry the identity mark to the session's current
+      // element, so the checks that follow judge the same one.
+      await page.evaluate(`(() => { const el = document.querySelector('audio'); el.__mp1 = 1; window.__mp1el = el; return true; })()`);
     });
 
     await step('My files brings the mini player back with the same element', async () => {
