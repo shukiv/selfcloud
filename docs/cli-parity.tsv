@@ -204,6 +204,8 @@ fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory;
 fn	lib/sharing/api.ts:visitorInfo	-	-	a drop link's page; get refuses a drop link, which takes uploads only (decision 142)
 fn	lib/sharing/api.ts:visitorLink	-	-	a link visitor's preview address in the browser; link create --signed makes one for a signed-in credential
 fn	lib/sharing/api.ts:visitorNode	get	cli6	built in cli6
+fn	lib/sharing/api.ts:visitorZip	-	-	a visitor's zip of the folder on screen, asked in the browser (decision 208); the CLI's zip commands act as a signed-in member
+fn	lib/sharing/api.ts:visitorZipLink	-	-	a visitor's signed link to the zip its link made, asked in the browser (decision 208); the download rides the signed link with no credential
 fn	lib/stars.ts:clearRecent	-	-	browser session only: the server refuses every token on this route
 fn	lib/stars.ts:listRecent	recent	cli11a	built in cli11a
 fn	lib/stars.ts:listSharedRecent	shared	cli7	built in cli7
