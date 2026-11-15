@@ -27,23 +27,26 @@ describe("ErrorBoundary", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("shows a message and a reload button in place of the failed page", () => {
+  it("shows a message and a reload button in place of the failed page", async () => {
     window.history.replaceState(null, "", "/files");
     renderBoundary();
-    expect(screen.getByRole("button", { name: /reload/i })).toBeTruthy();
+    // The crash view is a lazy chunk (decision 185); the message arrives with it.
+    expect(await screen.findByRole("button", { name: /reload/i })).toBeTruthy();
   });
 
-  it("strips the secret fragment from the share-link address when the page fails", () => {
+  it("strips the secret fragment from the share-link address when the page fails", async () => {
     window.history.replaceState(null, "", "/s?x=1#" + "a".repeat(43));
     renderBoundary();
+    await screen.findByRole("button", { name: /reload/i });
     expect(window.location.pathname).toBe("/s");
     expect(window.location.search).toBe("?x=1");
     expect(window.location.hash).toBe("");
   });
 
-  it("leaves the fragment of any other address alone", () => {
+  it("leaves the fragment of any other address alone", async () => {
     window.history.replaceState(null, "", "/files#keep");
     renderBoundary();
+    await screen.findByRole("button", { name: /reload/i });
     expect(window.location.hash).toBe("#keep");
   });
 });
