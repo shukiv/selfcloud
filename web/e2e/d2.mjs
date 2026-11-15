@@ -392,6 +392,11 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at61 = await storageLine(page);
     check(at61.title === 'Storage (61% full)' && at61.width === '61%', `the block's title is the storage title and the bar is at the share held (${at61.title}, ${at61.width})`);
+    // Decision 185: the bar runs from the Cloud icon's start edge to the block's end edge. Read here, where the limit gives a bar
+    // (the alignment section below restores the member's own limit, which may be none, so the block has no bar there).
+    const geo61 = await cardGeometry(page);
+    const near61 = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
+    check(geo61.meter !== null && geo61.icon !== null && geo61.card !== null && near61(geo61.meter.l, geo61.icon.l) && near61(geo61.meter.r, geo61.card.r), `the bar runs from the icon's start edge to the block's end edge (${JSON.stringify({ meter: geo61.meter, icon: geo61.icon, card: geo61.card })})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
     // The block's title and figures colours, read here where the block is not the current place, to compare with the Storage page
     // below: there the block takes the selected row's fill and ink (decision 185).
@@ -489,11 +494,10 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(cardGeo.card !== null && cardNear(cardGeo.card.b, cardGeo.sider.b - cardGeo.padB), `the block sits at the sider's foot, above its bottom padding (${JSON.stringify({ cardB: cardGeo.card?.b, siderB: cardGeo.sider?.b, padB: cardGeo.padB })})`);
     check(cardGeo.titleFs === '14px' && cardGeo.lineFs === '12px', `the block's title is the rows' 14 px and its figures 12 px (${cardGeo.titleFs}, ${cardGeo.lineFs})`);
     // Decision 185: no card frame. The block has no border and no background of its own off its page; its Cloud icon is in the rows'
-    // icon column and its title in the rows' name column (Starred's, within a pixel); the bar runs from the icon's start edge to the
-    // block's end edge.
+    // icon column and its title in the rows' name column (Starred's, within a pixel). The bar's own edges are read above, at the 61%
+    // limit, because the member's own limit restored here may be none, so the block has no bar in this section.
     check(cardGeo.borderWidth === '0px' && cardGeo.background === 'rgba(0, 0, 0, 0)', `off its page the storage block has no border and no background (${cardGeo.borderWidth}, ${cardGeo.background})`);
     check(cardGeo.icon !== null && geo.starred.icon !== null && cardNear(cardGeo.icon.l, geo.starred.icon.l) && cardGeo.title !== null && geo.starred.name !== null && cardNear(cardGeo.title.l, geo.starred.name.l), `the block's Cloud icon and title are in the rows' icon and name columns (${JSON.stringify({ icon: cardGeo.icon, title: cardGeo.title, starredIcon: geo.starred.icon, starredName: geo.starred.name })})`);
-    check(cardGeo.meter !== null && cardGeo.icon !== null && cardGeo.card !== null && cardNear(cardGeo.meter.l, cardGeo.icon.l) && cardNear(cardGeo.meter.r, cardGeo.card.r), `the bar runs from the icon's start edge to the block's end edge (${JSON.stringify({ meter: cardGeo.meter, icon: cardGeo.icon, card: cardGeo.card })})`);
     // Clicking the block opens the Storage page (decision 181), at this 1280x800 window.
     await page.evaluate(`document.querySelector('.shell-sider [data-testid="storage-card"]').click(), true`);
     await page.waitFor(`location.pathname === '/storage'`, 15000);
