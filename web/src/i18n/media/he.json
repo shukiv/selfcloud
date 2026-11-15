@@ -1,6 +1,7 @@
 {
   "media.title": "מדיה",
   "media.tab.nowPlaying": "מתנגן עכשיו",
+  "media.queue.length": "אורך",
   "media.empty.title": "שום דבר לא מתנגן",
   "media.empty.body": "נגנו סרטון או שיר מהקבצים שלכם והוא יופיע כאן.",
   "media.empty.action": "מעבר לקבצים שלי"

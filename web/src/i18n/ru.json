@@ -342,6 +342,7 @@
   "files.media.lost": "Этот общий доступ больше недоступен.",
   "files.media.drag": "Перетащите {name}, чтобы изменить порядок",
   "files.media.more": "Другие действия для {name}",
+  "files.media.playThis": "Воспроизвести {name}",
   "files.media.moveUp": "Переместить {name} выше",
   "files.media.moveDown": "Переместить {name} ниже",
   "files.media.remove": "Убрать {name} из списка воспроизведения",

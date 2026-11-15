@@ -342,6 +342,7 @@
   "files.media.lost": "هذه المشاركة لم تعد متاحة.",
   "files.media.drag": "اسحب {name} لتغيير ترتيبه",
   "files.media.more": "إجراءات أخرى لـ {name}",
+  "files.media.playThis": "تشغيل {name}",
   "files.media.moveUp": "نقل {name} لأعلى",
   "files.media.moveDown": "نقل {name} لأسفل",
   "files.media.remove": "إزالة {name} من قائمة التشغيل",

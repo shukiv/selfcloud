@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import { Alert, Button, Dropdown, type MenuProps } from "antd";
+import { Dropdown, type MenuProps } from "antd";
 import IconButton from "../IconButton";
-import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Pause, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
 import { displayArtist, displayTitle, getTags, hasCover, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
 import TagCover from "./TagCover";
-import { MAX_QUEUE, type Entry, type Repeat as RepeatMode } from "../../lib/files/queue";
+import type { Entry, Repeat as RepeatMode } from "../../lib/files/queue";
 import type { Node } from "../../lib/files/types";
 import { usePaletteOrLight } from "../../theme/theme";
 import EmptyState from "../EmptyState";
+import { QueueAdd, QueueCapped, QueueHead, QueueMore } from "./MediaQueueParts";
 
 // MediaQueue is the playlist panel: the files in play order, the one on screen marked, and the actions on the list.
 // A row is one line at every width: a grip to drag it, its name (cut with an ellipsis, the full name on hover), the mark
 // of the file on screen, and a More menu with Move up, Move down and Remove. Alt with the arrow keys on a focused row moves
 // it too. The row on screen is kept in view. The panel's colours come from the palette, so they follow the page's theme.
 
-interface Props {
+// MediaQueueProps are the queue's state and actions, shared by the drawer's panel (MediaQueue) and the Media page's table
+// (MediaQueueTable, mp1b), which draw the same head, capped note, loading-more status and add panel (MediaQueueParts).
+export interface MediaQueueProps {
   entries: Entry[];
   currentId: string | null;
   repeat: RepeatMode;
@@ -44,7 +47,7 @@ interface Props {
   saved?: ReactNode;
 }
 
-export default function MediaQueue(p: Props) {
+export default function MediaQueue(p: MediaQueueProps) {
   const { t } = useT();
   const palette = usePaletteOrLight();
   const drag = useRef<string | null>(null);
@@ -59,8 +62,6 @@ export default function MediaQueue(p: Props) {
     // The batch follows the queue's audio files; a change of the list is the same key.
   }, [audioKey]);
   const list = useRef<HTMLOListElement | null>(null);
-  const repeatLabel = p.repeat === "all" ? t("files.media.repeatAll") : p.repeat === "one" ? t("files.media.repeatOne") : t("files.media.repeatOff");
-  const RepeatIcon = p.repeat === "one" ? Repeat1 : Repeat;
 
   // The row on screen is kept in view when it changes, so the list follows the file that plays.
   useEffect(() => {
@@ -111,18 +112,9 @@ export default function MediaQueue(p: Props) {
 
   return (
     <section className="media-queue" aria-labelledby="media-queue-title" data-testid="media-queue" style={{ borderColor: palette.line, color: palette.text }}>
-      <header className="media-queue-head">
-        <h3 id="media-queue-title" className="media-queue-title">
-          <ListMusic size={16} aria-hidden="true" /> {t("files.media.queue")}
-        </h3>
-        <div className="media-queue-actions">
-          <IconButton label={t("files.media.shuffle")} pressed={p.shuffle} onClick={p.onShuffle} icon={<Shuffle size={18} aria-hidden="true" focusable="false" />} />
-          <IconButton label={`${t("files.media.repeat")}: ${repeatLabel}`} pressed={p.repeat !== "off"} onClick={p.onRepeat} icon={<RepeatIcon size={18} aria-hidden="true" focusable="false" />} />
-          <IconButton label={t("files.media.addFiles")} aria-expanded={p.adding} onClick={p.onAddOpen} icon={<Plus size={18} aria-hidden="true" focusable="false" />} />
-        </div>
-      </header>
+      <QueueHead p={p} />
 
-      {p.capped && <Alert type="info" showIcon message={t("files.media.capped", { count: MAX_QUEUE })} style={{ marginBottom: 8 }} />}
+      <QueueCapped p={p} />
 
       {total === 0 ? (
         <EmptyState size="compact" className="media-queue-empty" text={t("files.media.queueEmpty")} />
@@ -222,44 +214,11 @@ export default function MediaQueue(p: Props) {
         </ol>
       )}
 
-      {p.busy && (
-        <p role="status" className="media-queue-more">
-          {t("files.media.loadingMore")}
-        </p>
-      )}
+      <QueueMore p={p} />
 
       {p.saved}
 
-      {p.adding && (
-        <div className="media-add" data-testid="media-add">
-          {p.candidates.length === 0 ? (
-            <EmptyState size="compact" text={t("files.media.addNone")} />
-          ) : (
-            <ul className="media-rows">
-              {p.candidates.map((n) => (
-                <li key={n.id} className="media-row">
-                  <span className="media-title">
-                    <bdi>{n.name}</bdi>
-                  </span>
-                  <span className="media-row-buttons">
-                    <Button size="small" onClick={() => p.onAdd(n, "next")} aria-label={`${t("files.media.addNext")}: ${n.name}`}>
-                      {t("files.media.addNext")}
-                    </Button>
-                    <Button size="small" onClick={() => p.onAdd(n, "end")} aria-label={`${t("files.media.addEnd")}: ${n.name}`}>
-                      {t("files.media.addEnd")}
-                    </Button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {p.moreLeft && (
-            <Button size="small" onClick={p.onLoadMore} disabled={p.busy}>
-              {t("files.media.loadMore")}
-            </Button>
-          )}
-        </div>
-      )}
+      <QueueAdd p={p} />
     </section>
   );
 }

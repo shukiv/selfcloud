@@ -1,6 +1,7 @@
 {
   "media.title": "Медиа",
   "media.tab.nowPlaying": "Сейчас играет",
+  "media.queue.length": "Длительность",
   "media.empty.title": "Ничего не воспроизводится",
   "media.empty.body": "Включите видео или песню из своих файлов, и они появятся здесь.",
   "media.empty.action": "Перейти в Мои файлы"

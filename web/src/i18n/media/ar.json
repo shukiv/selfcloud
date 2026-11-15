@@ -1,6 +1,7 @@
 {
   "media.title": "الوسائط",
   "media.tab.nowPlaying": "قيد التشغيل الآن",
+  "media.queue.length": "المدة",
   "media.empty.title": "لا يوجد شيء قيد التشغيل",
   "media.empty.body": "شغّل فيديو أو أغنية من ملفاتك وستظهر هنا.",
   "media.empty.action": "الذهاب إلى ملفاتي"

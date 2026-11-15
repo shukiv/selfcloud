@@ -342,6 +342,7 @@
   "files.media.lost": "This share is no longer available.",
   "files.media.drag": "Drag {name} to reorder",
   "files.media.more": "More actions for {name}",
+  "files.media.playThis": "Play {name}",
   "files.media.moveUp": "Move {name} up",
   "files.media.moveDown": "Move {name} down",
   "files.media.remove": "Remove {name} from the playlist",

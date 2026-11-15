@@ -342,6 +342,7 @@
   "files.media.lost": "Ce partage n'est plus disponible.",
   "files.media.drag": "Faites glisser {name} pour changer son ordre",
   "files.media.more": "Plus d’actions pour {name}",
+  "files.media.playThis": "Lire {name}",
   "files.media.moveUp": "Monter {name}",
   "files.media.moveDown": "Descendre {name}",
   "files.media.remove": "Retirer {name} de la liste de lecture",

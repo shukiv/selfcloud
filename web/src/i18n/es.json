@@ -342,6 +342,7 @@
   "files.media.lost": "Este recurso compartido ya no está disponible.",
   "files.media.drag": "Arrastra {name} para cambiar su orden",
   "files.media.more": "Más acciones para {name}",
+  "files.media.playThis": "Reproducir {name}",
   "files.media.moveUp": "Subir {name}",
   "files.media.moveDown": "Bajar {name}",
   "files.media.remove": "Quitar {name} de la lista de reproducción",

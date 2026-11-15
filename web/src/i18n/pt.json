@@ -342,6 +342,7 @@
   "files.media.lost": "Esta partilha já não está disponível.",
   "files.media.drag": "Arraste {name} para mudar a ordem",
   "files.media.more": "Mais ações para {name}",
+  "files.media.playThis": "Reproduzir {name}",
   "files.media.moveUp": "Subir {name}",
   "files.media.moveDown": "Descer {name}",
   "files.media.remove": "Remover {name} da lista de reprodução",

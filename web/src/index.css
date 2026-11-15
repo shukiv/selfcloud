@@ -959,6 +959,45 @@ a {
   opacity: 0.6;
   font-style: italic;
 }
+/* The Media page's queue table (mp1b): the name cell stacks the title line and the artist, both ellipsised; the title line
+   keeps its playing mark beside the name. The row on screen takes the list's selected band and a heavier name, and a row
+   that cannot play is dimmed, as the drawer's rows are. The band rules outrank the shared hover band so the current row
+   keeps its colour under the pointer. */
+.media-qname {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.media-qname-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.media-qname-line bdi {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-queue--table .media-state {
+  flex: none;
+}
+.media-queue--table .media-row-artist {
+  font-size: 12px;
+}
+.media-queue--table .media-qrow--on {
+  font-weight: 600;
+}
+.media-queue--table .media-qrow--off {
+  opacity: 0.6;
+}
+.media-queue--table .item-list .ant-table-tbody > tr.media-qrow--on > td,
+.media-queue--table .item-list .ant-table-tbody > tr.media-qrow--on:hover > td,
+.media-queue--table .item-list .ant-table-tbody > tr.media-qrow--on > td.ant-table-cell-row-hover {
+  background: var(--sc-row-selected);
+}
 @media (pointer: coarse) {
   .pl-touch.ant-btn,
   .pl-touch.ant-btn:hover,

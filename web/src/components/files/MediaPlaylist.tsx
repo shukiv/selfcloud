@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Alert, Button } from "antd";
 import IconButton from "../IconButton";
@@ -31,11 +31,15 @@ import type { Node } from "../../lib/files/types";
 import type { SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
 import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
-import MediaQueue from "./MediaQueue";
+import MediaQueue, { type MediaQueueProps } from "./MediaQueue";
 import MediaPlaylists from "./MediaPlaylists";
 import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
 import { usePaletteOrLight } from "../../theme/theme";
 import MediaArt from "./MediaArt";
+
+// The Media page's queue is a table (mp1b). It is lazy, so the viewer's drawer and the first load never load Listing for
+// it; the drawer keeps the panel (MediaQueue).
+const MediaQueueTable = lazy(() => import("./MediaQueueTable"));
 
 // DRAWER_ID names the playlist drawer for the toggle's aria-controls.
 const DRAWER_ID = "media-drawer";
@@ -506,49 +510,47 @@ export default function MediaPlaylist({
     />
   );
 
-  // The queue panel, drawn once: in the viewer's drawer, or — when the Media page gives a slot — into that slot below the
-  // player (decision 186). Its props are the same either way, so the panel keeps its state across the move.
-  const queue = (
-    <MediaQueue
-      entries={q.entries}
-      currentId={currentId}
-      repeat={q.repeat}
-      shuffle={q.shuffle}
-      capped={q.capped || (paged && folder.cut)}
-      moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
-      busy={busy}
-      candidates={candidates}
-      adding={adding}
-      playing={playing}
-      onAddOpen={() => setAdding((v) => !v)}
-      onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
-      onLoadMore={() => void loadMore()}
-      onPlay={(id) => {
-        const entry = qRef.current.entries.find((e) => e.node.id === id);
-        if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
-      }}
-      onRemove={removeEntry}
-      onMove={(id, delta) => commit(move(qRef.current, id, delta))}
-      onShuffle={() => void shuffleToggle()}
-      onRepeat={() => commit(cycleRepeat(qRef.current))}
-      saved={
-        saved ? (
-          <MediaPlaylists
-            queue={q.entries}
-            onOpen={(entries) => {
-              // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
-              // the list, so it would otherwise leave the player with no file to show.
-              setFromSaved(true);
-              const next = replaceQueueEntries(qRef.current, entries);
-              const first = next.entries.find((e) => e.mark === "ok");
-              if (first) pick(choose(next, first.node.id));
-              else commit(next);
-            }}
-          />
-        ) : undefined
-      }
-    />
-  );
+  // The queue's state and actions, built once and given to whichever view draws it: the viewer's drawer panel
+  // (MediaQueue), or — when the Media page gives a slot — the page's table (MediaQueueTable, mp1b) below the player
+  // (decision 186). The two share one props object, so the queue keeps its state across the move.
+  const queueProps: MediaQueueProps = {
+    entries: q.entries,
+    currentId,
+    repeat: q.repeat,
+    shuffle: q.shuffle,
+    capped: q.capped || (paged && folder.cut),
+    moreLeft: paged && folder.hasMore && !q.capped && !folder.cut,
+    busy,
+    candidates,
+    adding,
+    playing,
+    onAddOpen: () => setAdding((v) => !v),
+    onAdd: (n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n)),
+    onLoadMore: () => void loadMore(),
+    onPlay: (id) => {
+      const entry = qRef.current.entries.find((e) => e.node.id === id);
+      if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
+    },
+    onRemove: removeEntry,
+    onMove: (id, delta) => commit(move(qRef.current, id, delta)),
+    onShuffle: () => void shuffleToggle(),
+    onRepeat: () => commit(cycleRepeat(qRef.current)),
+    saved: saved ? (
+      <MediaPlaylists
+        queue={q.entries}
+        onOpen={(entries) => {
+          // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
+          // the list, so it would otherwise leave the player with no file to show.
+          setFromSaved(true);
+          const next = replaceQueueEntries(qRef.current, entries);
+          const first = next.entries.find((e) => e.mark === "ok");
+          if (first) pick(choose(next, first.node.id));
+          else commit(next);
+        }}
+      />
+    ) : undefined,
+  };
+  const queue = <MediaQueue {...queueProps} />;
 
   return (
     <div className="media-playlist" data-testid="media-playlist">
@@ -646,8 +648,9 @@ export default function MediaPlaylist({
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
           {stop !== null && kind === "audio" && currentNode !== undefined && <MediaArt node={currentNode} />}
-        {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 186).
-            A null slot draws no queue; the player keeps playing either way. */}
+        {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 186),
+            where the queue is a table (mp1b), lazy so the drawer never loads Listing. A null slot draws no queue; the
+            player keeps playing either way. */}
         {queueSlot === undefined ? (
           <div
             id={DRAWER_ID}
@@ -669,7 +672,12 @@ export default function MediaPlaylist({
             {queue}
           </div>
         ) : queueSlot !== null ? (
-          createPortal(queue, queueSlot)
+          createPortal(
+            <Suspense fallback={null}>
+              <MediaQueueTable {...queueProps} />
+            </Suspense>,
+            queueSlot,
+          )
         ) : null}
         </div>
 

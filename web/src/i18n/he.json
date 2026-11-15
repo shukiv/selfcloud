@@ -342,6 +342,7 @@
   "files.media.lost": "השיתוף הזה כבר אינו זמין.",
   "files.media.drag": "גררו את {name} כדי לשנות את הסדר",
   "files.media.more": "פעולות נוספות עבור {name}",
+  "files.media.playThis": "הפעלת {name}",
   "files.media.moveUp": "הזזת {name} למעלה",
   "files.media.moveDown": "הזזת {name} למטה",
   "files.media.remove": "הסרת {name} מרשימת ההשמעה",

@@ -1,6 +1,7 @@
 {
   "media.title": "Multimédia",
   "media.tab.nowPlaying": "A reproduzir agora",
+  "media.queue.length": "Duração",
   "media.empty.title": "Nada está a ser reproduzido",
   "media.empty.body": "Reproduza um vídeo ou uma música a partir dos seus ficheiros e aparecerá aqui.",
   "media.empty.action": "Ir para os meus ficheiros"

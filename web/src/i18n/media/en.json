@@ -1,6 +1,7 @@
 {
   "media.title": "Media",
   "media.tab.nowPlaying": "Now playing",
+  "media.queue.length": "Length",
   "media.empty.title": "Nothing is playing",
   "media.empty.body": "Play a video or a song from your files and it shows here.",
   "media.empty.action": "Go to My files"
