@@ -30,10 +30,14 @@ type Session struct {
 	// Frame is true for a session a frame sign-in link started (decision 197): its cookie is partitioned, and the
 	// pages it opens may be framed by the account's allowed origins. An ordinary session is not a frame.
 	Frame bool
+	// SessionRef is the application's own name for a session a sign-in link started (decision 211), and EndsAt is
+	// the moment that session must end, whatever its idle and max age say. Empty and zero mean none.
+	SessionRef string
+	EndsAt     time.Time
 }
 
 const sessionCols = `id_hash, user_id, account_id, csrf_token, created_at, last_seen_at, expires_at,
-	ip, user_agent, impersonator_user_id, impersonator_session_hash, short, frame`
+	ip, user_agent, impersonator_user_id, impersonator_session_hash, short, frame, session_ref, ends_at`
 
 // SessionByHash returns the session with the given cookie hash. Expired sessions are returned
 // too; the caller checks ExpiresAt. It returns ErrNotFound if there is none.
@@ -63,8 +67,9 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 	var acc, imp sql.NullString
 	var impHash []byte
 	var short, frame int
+	var ends sql.NullInt64
 	err := row.Scan(&sess.IDHash, &sess.UserID, &acc, &sess.CSRFToken, &created, &seen, &expires,
-		&sess.IP, &sess.UserAgent, &imp, &impHash, &short, &frame)
+		&sess.IP, &sess.UserAgent, &imp, &impHash, &short, &frame, &sess.SessionRef, &ends)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +81,9 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 	sess.ImpersonatorSessionHash = impHash
 	sess.Short = short == 1
 	sess.Frame = frame == 1
+	if ends.Valid {
+		sess.EndsAt = fromMillis(ends.Int64)
+	}
 	return &sess, nil
 }
 
@@ -83,10 +91,11 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 // (users.last_sign_in_at, decision 114), which outlives the session. Every way of signing in makes its session here, so
 // none can miss it. A sign-in-as (a session with an impersonator) is the admin's, and records nothing on the user.
 func (tx *Tx) InsertSession(ctx context.Context, sess *Session) error {
-	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		sess.IDHash, sess.UserID, nullString(sess.AccountID), sess.CSRFToken, millis(sess.CreatedAt),
 		millis(sess.LastSeenAt), millis(sess.ExpiresAt), sess.IP, sess.UserAgent,
-		nullString(sess.ImpersonatorID), nullBytes(sess.ImpersonatorSessionHash), boolInt(sess.Short), boolInt(sess.Frame))
+		nullString(sess.ImpersonatorID), nullBytes(sess.ImpersonatorSessionHash), boolInt(sess.Short), boolInt(sess.Frame),
+		sess.SessionRef, nullTimeMillis(sess.EndsAt))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -167,4 +176,21 @@ func (tx *Tx) DeleteSession(ctx context.Context, hash []byte) error {
 func (tx *Tx) DeleteUserSessions(ctx context.Context, userID string) error {
 	_, err := tx.q.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID)
 	return err
+}
+
+// EndUserSessions removes the user's own sessions that a sign-in link named ref started, or all of them when ref is
+// empty, and returns how many ended (decision 211). An impersonation is the admin's, not the user's, and stays; no
+// token is touched.
+func (tx *Tx) EndUserSessions(ctx context.Context, userID, ref string) (int64, error) {
+	q := "DELETE FROM sessions WHERE user_id = ? AND impersonator_user_id IS NULL"
+	args := []any{userID}
+	if ref != "" {
+		q += " AND session_ref = ?"
+		args = append(args, ref)
+	}
+	res, err := tx.q.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

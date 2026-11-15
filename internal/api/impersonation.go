@@ -298,7 +298,7 @@ func (s *Server) handleSignInAs(w http.ResponseWriter, r *http.Request) error {
 	s.pwFails.clear(sess.IDHash)
 	parked, _ := r.Cookie(s.sessionCookie)
 	s.setReturnCookie(w, parked.Value, sess.Short)
-	s.setSessionCookie(w, secret, next.Short, next.Frame)
+	s.setSessionCookie(w, secret, next)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(target), CSRFToken: next.CSRFToken})
 	return nil
 }
@@ -361,7 +361,7 @@ func (s *Server) handleEndImpersonation(w http.ResponseWriter, r *http.Request) 
 		s.clearSessionCookie(w, sess.Frame)
 		return err
 	}
-	s.setSessionCookie(w, rc.Value, admin.session.Short, admin.session.Frame)
+	s.setSessionCookie(w, rc.Value, admin.session)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(admin.user), CSRFToken: admin.session.CSRFToken})
 	return nil
 }

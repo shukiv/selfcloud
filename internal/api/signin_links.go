@@ -62,6 +62,25 @@ func cleanNext(raw string) (string, error) {
 	return raw, nil
 }
 
+// cleanSessionRef checks the application's own name for the session a sign-in link starts (decision 211). Empty
+// means none; otherwise it is 1 to 128 letters, digits, - or _, so it is safe to store and to match a session by.
+func cleanSessionRef(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	bad := apierr.New(apierr.InvalidRequest, "session_ref must be 1 to 128 letters, digits, - or _")
+	if len(raw) > 128 {
+		return "", bad
+	}
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return "", bad
+		}
+	}
+	return raw, nil
+}
+
 // handleCreateSignInLink makes a single-use, short-lived sign-in link for one user. Only the
 // account's own key may call it: an admin key, a session and a delegated token are refused.
 func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) error {
@@ -75,8 +94,10 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	}
 	// The body is optional: a request with no body means the default path.
 	var in struct {
-		Next *string `json:"next"`
-		Mode string  `json:"mode"`
+		Next             *string `json:"next"`
+		Mode             string  `json:"mode"`
+		SessionRef       string  `json:"session_ref"`
+		SessionExpiresAt *string `json:"session_expires_at"`
 	}
 	if r.ContentLength != 0 {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
@@ -109,6 +130,21 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	default:
 		return apierr.New(apierr.InvalidRequest, "mode must be tab or frame")
 	}
+	now := store.Now()
+	// The application may name the session the link starts, and say when it must end (decision 211). Both are
+	// optional; the redeemed session copies them.
+	ref, err := cleanSessionRef(in.SessionRef)
+	if err != nil {
+		return err
+	}
+	var sessionEndsAt time.Time
+	if in.SessionExpiresAt != nil {
+		t, err := time.Parse(time.RFC3339, *in.SessionExpiresAt)
+		if err != nil || !t.After(now) {
+			return apierr.New(apierr.InvalidRequest, "session_expires_at must be an RFC 3339 time after now")
+		}
+		sessionEndsAt = t
+	}
 	switch acc.Status {
 	case store.AccountSuspended:
 		return apierr.New(apierr.AccountSuspended, "the account is suspended")
@@ -121,7 +157,6 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	usrID := r.PathValue("usr")
 	secret, hash := auth.NewToken()
-	now := store.Now()
 	expires := now.Add(s.cfg.Users.SignInLinkTTL.D())
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		u, err := tx.User(ctx, acc.ID, usrID)
@@ -151,7 +186,8 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if err := tx.InsertSignInLink(ctx, &store.SignInLink{ID: id.New("sil"), AccountID: acc.ID,
-			UserID: u.ID, TokenHash: hash, Next: next, ExpiresAt: expires, CreatedAt: now, Frame: frame}); err != nil {
+			UserID: u.ID, TokenHash: hash, Next: next, ExpiresAt: expires, CreatedAt: now, Frame: frame,
+			SessionRef: ref, SessionEndsAt: sessionEndsAt}); err != nil {
 			return err
 		}
 		// The audit entry names the user. It never holds the token, the URL or the path.
@@ -336,6 +372,11 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		// A frame link starts a frame session: its cookie is partitioned (decision 197). An admin user is
 		// refused above, so an admin session never becomes a frame session.
 		sess.Frame = l.Frame
+		// The session copies the link's ref and end (decision 211), and its first expiry is the ordinary one
+		// capped at the end, so it never outlives the moment the application named.
+		sess.SessionRef = l.SessionRef
+		sess.EndsAt = l.SessionEndsAt
+		sess.ExpiresAt = s.sessionEnd(sess, at)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -349,7 +390,7 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 	if stateErr != nil {
 		return stateErr
 	}
-	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
+	s.setSessionCookie(w, secret, sess)
 	writeJSON(w, http.StatusOK, signedInLink{
 		signedIn: signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken},
 		Next:     next,

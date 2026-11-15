@@ -120,6 +120,14 @@ func nullMillis(t *time.Time) any {
 	return t.UnixMilli()
 }
 
+// nullTimeMillis is NULL for the zero time, so a session or link with no end stores none.
+func nullTimeMillis(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UnixMilli()
+}
+
 func fromNullMillis(n sql.NullInt64) *time.Time {
 	if !n.Valid {
 		return nil

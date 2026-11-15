@@ -441,6 +441,8 @@ func New(opts Options) (*Server, error) {
 			// Sign-in links: made by an account key, per account; redeemed per client address, as login is.
 			"signlink.create": newLimiter(60),
 			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			// Ending a user's web sessions (decision 211): made by the account's own key, per account, as a link is.
+			"sessions.end": newLimiter(60),
 			// Device sign-in (decision 125). A terminal may start ten sign-ins an hour from one address, so at
 			// most ten requests are pending for it. A poll is limited per device code, and per address at a fixed rate; the
 			// interval the poll returns (slow_down) is the client's own pace. Approval is limited per session and per address.
@@ -740,6 +742,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true, imp: impRefuse, noDevice: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sessions/end", handle: s.handleEndUserSessions, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/tokens/revoke", handle: s.handleRevokeUserTokens, auth: true, imp: impRefuse},
 		// An installation admin's typed password and sign-in-as (decision 41). Both need the admin's own session, not a key,
 		// and the admin's password again; both are off unless admin.tenant_access is on.

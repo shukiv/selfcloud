@@ -305,6 +305,10 @@ var remoteCommands = []remoteCommand{
 		help: `  user sign-in-link [--account ACC] USER [--next PATH]
                                  make a one-time link that signs the person in
 `, run: manage.UserSignInLink},
+	{name: "user sessions end", route: "POST /api/v1/accounts/{acc}/users/{usr}/sessions/end",
+		help: `  user sessions end [--account ACC] USER [--ref REF]
+                                 end the person's web sessions: a sign-in link's, or all of them
+`, run: manage.UserSessionsEnd},
 	{name: "user revoke-tokens", route: "POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke",
 		help: `  user revoke-tokens [--account ACC] USER [--yes]
                                  end every sign-in of the person on every device (asks first)

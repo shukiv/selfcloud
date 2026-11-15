@@ -48,6 +48,18 @@ func impersonationOf(t *testing.T, s *Server, accID, usr, adminID string, adminS
 	return testSession{cookie: &http.Cookie{Name: s.sessionCookie, Value: secret}, csrf: csrf}
 }
 
+// clearSessions removes the sessions a user already holds (the one verifying the user signed in with), so a test
+// starts from the sessions it makes itself. It is setup, not the route under test.
+func clearSessions(t *testing.T, s *Server, usr string) {
+	t.Helper()
+	err := s.store.Write(context.Background(), func(tx *store.Tx) error {
+		return tx.DeleteUserSessions(context.Background(), usr)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSessionsEndWhoMayCall(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -55,6 +67,7 @@ func TestSessionsEndWhoMayCall(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	fld := folderOf(t, s, key, acc.ID)
 	usr := newMemberUser(t, s, key, acc.ID, "end@example.com")
+	clearSessions(t, s, usr)
 	path := sessionsEndPath(acc.ID, usr)
 
 	rec := call(t, s, "POST", path, key, nil)
@@ -128,6 +141,7 @@ func TestSessionsEndAll(t *testing.T) {
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	usr := newMemberUser(t, s, key, acc.ID, "all@example.com")
+	clearSessions(t, s, usr)
 	newMemberUser(t, s, key, acc.ID, "other@example.com")
 	adminUser, adminSess := newAdminUser(t, s, admin, "root@example.com")
 	otherSess := sessionFrom(t, s, login(t, s, "other@example.com", testPassword, ""))
@@ -161,9 +175,10 @@ func TestSessionsEndKeepsTokens(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	fld := folderOf(t, s, key, acc.ID)
 	usr := newMemberUser(t, s, key, acc.ID, "tokens@example.com")
+	clearSessions(t, s, usr)
 	browser := sessionFrom(t, s, login(t, s, "tokens@example.com", testPassword, ""))
 	_, devTok := approvedToken(t, s, browser)
-	appTok := mintToken(t, s, key, acc.ID, fld, usr)
+	appTok := mintToken(t, s, key, acc.ID, fld, "")
 	ctx := context.Background()
 	before, err := s.store.UserTokensNotBefore(ctx, acc.ID, usr)
 	if err != nil {
@@ -246,6 +261,7 @@ func TestSessionsEndAudit(t *testing.T) {
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	usr := newMemberUser(t, s, key, acc.ID, "audit@example.com")
+	clearSessions(t, s, usr)
 	linkSession(t, s, key, acc.ID, usr, map[string]any{"session_ref": "app-secret-ref"})
 	linkSession(t, s, key, acc.ID, usr, nil)
 
@@ -319,6 +335,7 @@ func TestSessionsEndEmptyRefEndsAll(t *testing.T) {
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	usr := newMemberUser(t, s, key, acc.ID, "empty@example.com")
+	clearSessions(t, s, usr)
 	linkSession(t, s, key, acc.ID, usr, map[string]any{"session_ref": "app-one"})
 	browser := sessionFrom(t, s, login(t, s, "empty@example.com", testPassword, ""))
 	rec := call(t, s, "POST", sessionsEndPath(acc.ID, usr), key, map[string]any{"session_ref": ""})

@@ -43,13 +43,14 @@ func TestEndUserSessionsByRef(t *testing.T) {
 	a := newAccountRow(t, s, "A")
 	ann := newUserRow(t, s, a, "ann@example.com", "")
 	bob := newUserRow(t, s, a, "bob@example.com", "")
+	adm := newUserRow(t, s, a, "admin@example.com", "")
 	zero := time.Time{}
 	refSession(t, s, ann.ID, a, "app-one", zero, "")
 	refSession(t, s, ann.ID, a, "app-one", zero, "")
 	refSession(t, s, ann.ID, a, "app-two", zero, "")
 	refSession(t, s, ann.ID, a, "", zero, "")
 	// An impersonation of ann with the same ref is the admin's, and stays.
-	impHash := refSession(t, s, ann.ID, a, "app-one", zero, "usr_admin")
+	impHash := refSession(t, s, ann.ID, a, "app-one", zero, adm.ID)
 	// Bob's session with the same ref is his, and stays.
 	bobHash := refSession(t, s, bob.ID, a, "app-one", zero, "")
 
@@ -95,10 +96,11 @@ func TestEndUserSessionsAllSparesImpersonation(t *testing.T) {
 	a := newAccountRow(t, s, "A")
 	ann := newUserRow(t, s, a, "ann@example.com", "")
 	bob := newUserRow(t, s, a, "bob@example.com", "")
+	adm := newUserRow(t, s, a, "admin@example.com", "")
 	zero := time.Time{}
 	refSession(t, s, ann.ID, a, "app-one", zero, "")
 	refSession(t, s, ann.ID, a, "", zero, "")
-	impHash := refSession(t, s, ann.ID, a, "app-one", zero, "usr_admin")
+	impHash := refSession(t, s, ann.ID, a, "app-one", zero, adm.ID)
 	bobHash := refSession(t, s, bob.ID, a, "", zero, "")
 
 	var n int64

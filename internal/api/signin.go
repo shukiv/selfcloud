@@ -73,12 +73,23 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short
 // keeps it off cross-site requests; Path=/ and the __Host- name (https only) pin it to this site.
 // A kept session's cookie lasts sessions.max_age; a session the browser did not keep (short) is a
 // browser-session cookie, with neither Max-Age nor Expires, so the browser drops it when it closes.
+// A session a sign-in link gave an end (decision 211) has its Max-Age capped at the whole seconds
+// left until that end, at least 1, so the cookie never outlives the session it names.
 // A frame session's cookie (decision 197) is SameSite=None, Secure and Partitioned, so it works in the
 // host application's third-party frame; it is secure even on a localhost http address.
-func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short, frame bool) {
+func (s *Server) setSessionCookie(w http.ResponseWriter, value string, sess *store.Session) {
 	var maxAge int
-	if !short {
+	if !sess.Short {
 		maxAge = int(s.settings().Sessions.MaxAge.D().Seconds())
+		if !sess.EndsAt.IsZero() {
+			left := int(time.Until(sess.EndsAt).Seconds())
+			if left < 1 {
+				left = 1
+			}
+			if left < maxAge {
+				maxAge = left
+			}
+		}
 	}
 	c := &http.Cookie{
 		Name:     s.sessionCookie,
@@ -89,7 +100,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short, fr
 		Secure:   s.sessionCookie != "selfcloud_session",
 		SameSite: http.SameSiteLaxMode,
 	}
-	if frame {
+	if sess.Frame {
 		c.SameSite = http.SameSiteNoneMode
 		c.Secure = true
 		c.Partitioned = true
@@ -126,7 +137,7 @@ type signedIn struct {
 // writeSignedIn sets the cookie and answers with the user. The CSRF token is in the body, so
 // the page can make unsafe requests.
 func (s *Server) writeSignedIn(w http.ResponseWriter, secret string, u *store.User, sess *store.Session) {
-	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
+	s.setSessionCookie(w, secret, sess)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken})
 }
 
@@ -1150,7 +1161,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	s.setSessionCookie(w, secret, sess.Short, sess.Frame)
+	s.setSessionCookie(w, secret, sess)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

@@ -165,10 +165,10 @@ func (s *Server) checkCSRF(r *http.Request, sess *store.Session) error {
 }
 
 // touchSession records a use of the session, and pushes its expiry out to the idle limit (never
-// past its maximum age).
+// past its maximum age, or its end).
 func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time.Time) error {
 	return s.store.Write(ctx, func(tx *store.Tx) error {
-		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now, sess.Short, sess.AccountID == ""))
+		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionEnd(sess, now))
 	})
 }
 
@@ -181,8 +181,18 @@ func (s *Server) sessionLive(sess *store.Session, now time.Time) bool {
 	if !now.Before(sess.ExpiresAt) {
 		return false
 	}
-	return sess.ImpersonatorID != "" ||
-		now.Before(s.sessionExpiry(sess.CreatedAt, sess.LastSeenAt, sess.Short, sess.AccountID == ""))
+	return sess.ImpersonatorID != "" || now.Before(s.sessionEnd(sess, sess.LastSeenAt))
+}
+
+// sessionEnd returns when a session last used at now ends: its idle and max age, never past the EndsAt a sign-in
+// link gave it (decision 211). Every path that computes a session's expiry asks this one helper, so none forgets
+// the end: the touch, the live check, and the first expiry of a redeemed link's session.
+func (s *Server) sessionEnd(sess *store.Session, now time.Time) time.Time {
+	expires := s.sessionExpiry(sess.CreatedAt, now, sess.Short, sess.AccountID == "")
+	if !sess.EndsAt.IsZero() && sess.EndsAt.Before(expires) {
+		return sess.EndsAt
+	}
+	return expires
 }
 
 // sessionExpiry returns when a session that began at created, and was last used at now, ends. A session the browser

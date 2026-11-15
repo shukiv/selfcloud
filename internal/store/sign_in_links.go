@@ -23,14 +23,19 @@ type SignInLink struct {
 	// Frame is true for a link made for a host application's frame (decision 197): its URL names the account in a
 	// query before the fragment, and redeeming it starts a frame session with a partitioned cookie.
 	Frame bool
+	// SessionRef is the application's own name for the session the link starts (decision 211), and SessionEndsAt is
+	// the moment that session must end. The redeemed session copies both. Empty and zero mean none.
+	SessionRef    string
+	SessionEndsAt time.Time
 }
 
 // InsertSignInLink adds l.
 func (tx *Tx) InsertSignInLink(ctx context.Context, l *SignInLink) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO sign_in_links
-		(id, account_id, user_id, token_hash, next, expires_at, used_at, created_at, frame)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.AccountID, l.UserID, l.TokenHash, l.Next, millis(l.ExpiresAt), nullMillis(l.UsedAt), millis(l.CreatedAt), boolInt(l.Frame))
+		(id, account_id, user_id, token_hash, next, expires_at, used_at, created_at, frame, session_ref, session_ends_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.AccountID, l.UserID, l.TokenHash, l.Next, millis(l.ExpiresAt), nullMillis(l.UsedAt), millis(l.CreatedAt),
+		boolInt(l.Frame), l.SessionRef, nullTimeMillis(l.SessionEndsAt))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -41,11 +46,13 @@ func (tx *Tx) InsertSignInLink(ctx context.Context, l *SignInLink) error {
 func (tx *Tx) SignInLinkByHash(ctx context.Context, hash []byte) (*SignInLink, error) {
 	var l SignInLink
 	var expires, created int64
-	var used sql.NullInt64
+	var used, ends sql.NullInt64
 	var frame int
-	err := tx.q.QueryRowContext(ctx, `SELECT id, account_id, user_id, token_hash, next, expires_at, used_at, created_at, frame
+	err := tx.q.QueryRowContext(ctx, `SELECT id, account_id, user_id, token_hash, next, expires_at, used_at, created_at,
+		frame, session_ref, session_ends_at
 		FROM sign_in_links WHERE token_hash = ?`, hash).
-		Scan(&l.ID, &l.AccountID, &l.UserID, &l.TokenHash, &l.Next, &expires, &used, &created, &frame)
+		Scan(&l.ID, &l.AccountID, &l.UserID, &l.TokenHash, &l.Next, &expires, &used, &created, &frame,
+			&l.SessionRef, &ends)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -56,6 +63,9 @@ func (tx *Tx) SignInLinkByHash(ctx context.Context, hash []byte) (*SignInLink, e
 	l.UsedAt = fromNullMillis(used)
 	l.CreatedAt = fromMillis(created)
 	l.Frame = frame == 1
+	if ends.Valid {
+		l.SessionEndsAt = fromMillis(ends.Int64)
+	}
 	return &l, nil
 }
 

@@ -377,6 +377,7 @@ route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
 route	POST /api/v1/accounts/{acc}/users	user add	cli9b1	built in cli9b1
 route	POST /api/v1/accounts/{acc}/users/{usr}/password	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
 route	POST /api/v1/accounts/{acc}/users/{usr}/password-reset	user reset-password	cli9b2	built in cli9b2
+route	POST /api/v1/accounts/{acc}/users/{usr}/sessions/end	user sessions end	lo1	built in lo1
 route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in	-	-	sign in as a user: browser session only (decision 41)
 route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links	user sign-in-link	cli9b2	built in cli9b2
 route	POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke	user revoke-tokens	cli9b2	built in cli9b2

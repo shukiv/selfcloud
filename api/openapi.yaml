@@ -2620,6 +2620,63 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/users/{usr}/sessions/end:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: endUserSessions
+      summary: End a user's web sessions
+      description: |
+        For an application that holds the account's own key: end the web sessions its sign-in links started
+        (decision 211). With `session_ref`, only the sessions of that ref end; with no body, `{}`, or an empty
+        ref, all the user's own sessions end, a password sign-in included. An impersonation of the user is the
+        admin's, not the user's, and stays. No token is touched: the user's device and application tokens keep
+        working and `tokens_not_before` does not move. Only the account's own key may call this: an admin key, a
+        session and a delegated or device token are refused. The audit entry (`user.sessions_end`) names the user
+        and holds whether a ref was given and how many ended; it never holds the ref. Rate-limited per account,
+        60 a minute.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionsEndRequest" }
+      responses:
+        "200":
+          description: How many sessions ended.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionsEnd" }
+        "400":
+          description: |
+            `invalid_request`: `session_ref` is not 1 to 128 letters, digits, `-` or `_`, or the body holds an
+            unknown field.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: "`forbidden`: the caller is not the account's own key."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            `not_found`: no such user in this account. An installation admin is not in any account, so it is
+            not found here either.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: "`rate_limited`, with `Retry-After`."
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/accounts/{acc}/users/{usr}/password-reset:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -9397,6 +9454,40 @@ components:
             host application's iframe (decision 197): redeeming it starts a frame session whose cookie is
             partitioned. A frame link needs the account to have allowed embed origins and an `https`
             `public_url`; otherwise the request is refused.
+        session_ref:
+          type: string
+          maxLength: 128
+          description: |
+            The application's own name for the session the link starts (decision 211). Optional; empty or
+            absent means none. Otherwise 1 to 128 letters, digits, `-` or `_`. The redeemed session copies it,
+            so the account's key can later end just the sessions of this ref with `sessions/end`.
+        session_expires_at:
+          type: string
+          format: date-time
+          description: |
+            The moment the session the link starts must end (decision 211), whatever its idle and max age say.
+            Optional; absent means none. An RFC 3339 time after now; a past or unparsable time is refused. The
+            redeemed session's expiry and its cookie's Max-Age are capped at this end.
+
+    SessionsEndRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        session_ref:
+          type: string
+          maxLength: 128
+          description: |
+            End only the sessions a sign-in link named this (decision 211). Optional; empty or absent ends all
+            the user's own sessions. Otherwise 1 to 128 letters, digits, `-` or `_`.
+
+    SessionsEnd:
+      type: object
+      required: [ended]
+      properties:
+        ended:
+          type: integer
+          format: int64
+          description: How many of the user's own web sessions ended. An impersonation of the user is the admin's and is not counted.
 
     SignInLink:
       type: object
