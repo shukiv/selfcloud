@@ -276,14 +276,31 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
     check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
 
-    // 6. A window whose content straddles the tabs boundary settles once and does not oscillate: 635 px less the 28 px page
-    //    padding and a classic 15 px scrollbar leaves 592 px of content, under the 600 px boundary, so the cards settle on the
-    //    tabs; without the scrollbar the content is 607 px, still under the 624 px that would stack them again, so the layout
-    //    holds. The wait holds for that settled state first: the About card is drawn in either layout, so watching from its
-    //    presence alone would count the one settle as a flip. Then two seconds with no tablist change.
+    // 6. A window whose content straddles the tabs boundary settles once and does not oscillate. At 635 px less the 28 px page
+    //    padding the content is 607 px, over the 600 px boundary, so the cards stay stacked — unless they are taller than the
+    //    window: then a classic scrollbar appears and takes the content under the boundary (592 px with a 15 px scrollbar), and
+    //    the page settles on the tabs instead. Whether the stacked cards overflow depends on the machine's fonts and scrollbar,
+    //    so either layout is right and the check does not assert which one. It waits for the About card (drawn in either layout),
+    //    then for the tablist's presence to hold unchanged for a second (eight seconds to settle), then two seconds with no
+    //    tablist change: the layout settles once and never oscillates.
     await page.send('Emulation.setDeviceMetricsOverride', { width: 635, height: 2400, deviceScaleFactor: 1, mobile: false });
-    await page.waitFor(`!!document.querySelector('[role="tablist"]') && !!document.getElementById('settings-about')`, 10000);
-    check(await page.evaluate(`!!document.querySelector('[role="tablist"]') && !!document.getElementById('settings-about')`), 'at 635 px the page settles on the tabs');
+    await page.waitFor(`!!document.getElementById('settings-about')`, 10000);
+    const settled = await page.evaluate(`new Promise((resolve) => {
+      const root = document.querySelector('h1').parentElement;
+      let last = !!document.querySelector('[role="tablist"]');
+      let stableSince = Date.now();
+      const started = Date.now();
+      const mo = new MutationObserver(() => {
+        const now = !!document.querySelector('[role="tablist"]');
+        if (now !== last) { last = now; stableSince = Date.now(); }
+      });
+      mo.observe(root, { childList: true, subtree: true });
+      const timer = setInterval(() => {
+        if (Date.now() - stableSince >= 1000) { clearInterval(timer); mo.disconnect(); resolve({ ok: true, tabs: last }); }
+        else if (Date.now() - started >= 8000) { clearInterval(timer); mo.disconnect(); resolve({ ok: false, tabs: last }); }
+      }, 100);
+    })`);
+    check(settled.ok, 'at 635 px the layout settles within eight seconds');
     const changes = await page.evaluate(`new Promise((resolve) => {
       const root = document.querySelector('h1').parentElement;
       let last = !!document.querySelector('[role="tablist"]');
@@ -296,6 +313,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
       setTimeout(() => { mo.disconnect(); resolve(count); }, 2000);
     })`);
     check(changes === 0, `at 635 px the layout settles with no tablist change over two seconds (${changes})`);
+    console.log(`INFO at 635 px the page settled on ${settled.tabs ? 'tabs' : 'stacked cards'}`);
     await setWidth(page, 1280);
 
     // 7. The old address when signed out, with a trailing slash, and through the sign-in's ?next=.
