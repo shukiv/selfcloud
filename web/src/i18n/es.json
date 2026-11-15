@@ -189,6 +189,7 @@
   "files.selectAll.box": "Seleccionar todo",
   "files.act.open": "Abrir",
   "files.act.trash": "Mover a la papelera",
+  "menu.back": "Volver a {name}",
   "files.menu.organize": "Organizar",
   "files.menu.info": "Información",
   "files.act.clear": "Quitar selección",

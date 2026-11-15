@@ -6,6 +6,7 @@
 // own folder inside Team A, so the default name is the one the server gives on a first document there. The folder is removed
 // in a finally, and the language and the viewport are put back.
 import { setLanguage, setTheme, sleep } from './media.mjs';
+import { hoverMenuTitle } from './menu.mjs';
 import { openedTab, tabIds } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
@@ -27,26 +28,11 @@ async function pickMenuItem(page, text) {
   await page.send('Runtime.evaluate', { expression: `${visible}[0].click()`, userGesture: true, returnByValue: true, awaitPromise: true });
 }
 
-// pickBlank opens a kind's submenu (its title takes the keyboard's ArrowRight) and clicks its Blank entry (the New menu's submenus, nt2).
+// pickBlank opens a kind's submenu and clicks its Blank entry (the New menu's submenus, nt2). hoverMenuTitle opens it as a
+// person does: a hover (then a press) on a desktop submenu title, or a tap on a phone's slide row, which replaces the level
+// with the back row and the same children in the same popup (decision 185). Either way Blank is then among the open entries.
 async function pickBlank(page, kind) {
-  const title = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(kind)})`;
-  await page.waitFor(`!!${title}`, 10000);
-  // The keyboard opens it, as ArrowRight does in a menu (antd): the title is focused, then the key is sent to it.
-  // The menu animates in: its first frame is not ready for the keyboard, so the key is sent after the animation ends.
-  await page.waitFor(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)[class*="ant-slide-up-appear"]')`, 5000);
-  // A first ArrowRight can land before the title takes it (probe, 2026-11-09: the submenu was not open 10 s later, and was open
-  // after the next key). So the key is sent again, up to three times, until the title reports it is expanded.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    // The dropdown may have re-rendered or closed after a retry, so the title is waited for again before each key. A title that
-    // never returns leaves this attempt without a focus, and the Blank wait after the loop reports the real failure.
-    await page.waitFor(`!!${title}`, 5000).catch(() => undefined);
-    await page.evaluate(`${title}?.focus()`);
-    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
-    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
-    await new Promise((r) => setTimeout(r, 800));
-    // A missing title ends this attempt; the next one waits for it again.
-    if (await page.evaluate(`${title}?.getAttribute('aria-expanded') === 'true'`)) break;
-  }
+  await hoverMenuTitle(page, kind);
   await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
   await pickMenuItem(page, 'Blank');
 }

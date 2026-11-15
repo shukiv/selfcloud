@@ -189,6 +189,7 @@
   "files.selectAll.box": "تحديد الكل",
   "files.act.open": "فتح",
   "files.act.trash": "نقل إلى سلة المهملات",
+  "menu.back": "الرجوع إلى {name}",
   "files.menu.organize": "تنظيم",
   "files.menu.info": "المعلومات",
   "files.act.clear": "إلغاء التحديد",

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { Button, ConfigProvider, Dropdown, Tooltip, theme, type MenuProps } from "antd";
+import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent } from "react";
+import { Button, ConfigProvider, Dropdown, Grid, Tooltip, theme, type MenuProps } from "antd";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, Plus } from "lucide-react";
 import { useMenuHeaderInks } from "../menuHeader";
@@ -9,6 +9,7 @@ import { useT } from "../../lib/i18n";
 import { newEntries, type BlankKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
 import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewBlank, type NewMenuNode } from "../../lib/files/newMenu";
 import { newURL } from "../../lib/files/newRoute";
+import { useMenuLevel } from "../../lib/menuLevels";
 import { IDLE, chordBlocked, chordNeedsOverlayCheck, readChord, type ChordState, type NewChordAction } from "../../lib/files/newShortcut";
 import type { UploadWhere } from "../../lib/files/ops";
 import type { Sidebar } from "../../theme/tokens";
@@ -106,13 +107,16 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   // The dark menu is the one whose ground is dark: read from the antd token, which the palette sets (no provider needed here).
   const dark = menuIsDark(String(token.colorBgElevated));
   const writable = place !== null && !place.readOnly;
+  // Below md the menu slides one level at a time in the same popup (decision 185), the same phone test the file list reads.
+  const phone = !Grid.useBreakpoint().md;
   const tree = place ? newMenuTree({ entries: newEntries(place), blanks: documents, hints: writable }) : [];
-  const body: NonNullable<MenuProps["items"]> = newMenuItems(tree, { text, dark, coarse, onRun: (node) => run(node) });
+  const body: NonNullable<MenuProps["items"]> = newMenuItems(tree, { text, dark, coarse, phone, onRun: (node) => run(node) });
   // In a folder the person cannot add to, the reason is the title of the menu's group (decision 95), not a disabled item, and the menu
   // is named by it. Its ink is set from menuHeaderInks, since antd paints a group title in its description colour.
-  const items: MenuProps["items"] = place?.readOnly
+  const rawItems: NonNullable<MenuProps["items"]> = place?.readOnly
     ? [{ type: "group", key: "reason", label: <span id={reasonId} style={{ color: inks.email, fontSize: token.fontSizeSM }}>{t("files.new.readOnly")}</span>, children: body }]
     : body;
+  const { items, open, onOpenChange, setOpen } = useMenuLevel(rawItems, phone);
   // runChordAction is the chord's letter as an action in this place: the same calls the menu's rows make.
   function runChordAction(action: NewChordAction) {
     if (!place) return;
@@ -135,14 +139,14 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
     if (node.type === "blank") onDocument(node.kind);
     if (node.type === "template") navigate(newURL(place.where.folder, place.where.dirID, node.kind));
   }
-  const menu = { items, onClick: () => undefined, style: MENU_STYLE, "aria-labelledby": place?.readOnly ? reasonId : undefined };
+  // A finger opens a submenu on a tap, a mouse on a hover (decision 185); on a phone the submenus slide instead (useMenuLevel).
+  const menu: MenuProps = { items, onClick: () => undefined, style: MENU_STYLE, triggerSubMenuAction: coarse ? "click" : "hover", "aria-labelledby": place?.readOnly ? reasonId : undefined };
   // A place that is still being read shows the button, disabled.
   const disabled = place === null;
   const reason = disabled ? failure || t("files.loading") : null;
   // The menu is controlled so Escape can close it here. In the phone drawer the drawer's panel takes Escape from the menu and closes
   // the drawer, and the menu stayed open (decision 95). So while the menu is open, Escape is taken by the wrapper around the
   // dropdown, which sits between the menu and the drawer: it closes the menu and returns focus to the button.
-  const [open, setOpen] = useState(false);
   const newButton = useRef<HTMLButtonElement>(null);
   const takeEscape = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!open || e.key !== "Escape") return;
@@ -161,7 +165,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}
         <Tooltip title={reason ?? t("files.act.new")} placement="right">
           <span data-testid="new-tip" style={{ display: "inline-flex" }}>
-            <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+            <Dropdown trigger={["click"]} open={open} onOpenChange={onOpenChange} disabled={disabled} menu={menu}>
               <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
             </Dropdown>
           </span>
@@ -200,7 +204,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}
         <Tooltip title={reason ?? undefined}>
           <span data-testid="new-tip" style={{ display: "inline-flex", maxInlineSize: "100%", minInlineSize: 0 }}>
-            <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+            <Dropdown trigger={["click"]} open={open} onOpenChange={onOpenChange} disabled={disabled} menu={menu}>
               <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} disabled={disabled} style={face}>
                 <Plus {...ic} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>

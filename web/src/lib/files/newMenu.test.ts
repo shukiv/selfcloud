@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
+import type { ReactElement, ReactNode } from "react";
 import type { MenuProps } from "antd";
 import { ChevronRight } from "lucide-react";
 import { newMenuTree, newMenuItems, type NewMenuNode, type NewMenuOptions, KIND_INK } from "./newMenu";
@@ -129,13 +130,17 @@ describe("the New menu's phone rows and touch hints (decision 185)", () => {
   const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };
   const opts = (over: Partial<NewMenuOptions> = {}): NewMenuOptions => ({ text, dark: false, coarse: false, phone: false, onRun: () => undefined, ...over });
   type Item = NonNullable<MenuProps["items"]>[number];
-  const childrenOf = (i: Item): Item[] => (i && "children" in i && Array.isArray(i.children) ? i.children : []);
-  const rows = (list: Item[]): Item[] => list.flatMap((i) => (i && "type" in i && i.type === "divider" ? [] : [i]));
-  const allRows = (list: Item[]): Item[] => rows(list).flatMap((i) => [i, ...allRows(childrenOf(i))]);
-  const find = (list: Item[], key: string): Item => {
+  // Row is the shape these checks read off a menu item: antd's item union names no extra, label or aria-keyshortcuts on
+  // every member (a divider has none), so the helpers read the rows through this one structural type. The assertions are
+  // unchanged; only the type the helpers return is named.
+  type Row = { key?: string | number; type?: string; label?: ReactNode; extra?: ReactElement; children?: Row[]; "aria-keyshortcuts"?: string };
+  const childrenOf = (i: Item | Row): Row[] => (i && "children" in i && Array.isArray(i.children) ? (i.children as Row[]) : []);
+  const rows = (list: (Item | Row)[]): Row[] => list.flatMap((i) => (i && "type" in i && i.type === "divider" ? [] : [i as Row]));
+  const allRows = (list: (Item | Row)[]): Row[] => rows(list).flatMap((i) => [i, ...allRows(childrenOf(i))]);
+  const find = (list: (Item | Row)[], key: string): Row => {
     const item = list.find((i) => i && "key" in i && i.key === key);
     if (!item) throw new Error(`no item ${key}`);
-    return item;
+    return item as Row;
   };
 
   it("phone: false keeps the menu's keys and types, submenus included", () => {

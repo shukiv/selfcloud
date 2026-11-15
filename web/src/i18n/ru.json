@@ -189,6 +189,7 @@
   "files.selectAll.box": "Выбрать все",
   "files.act.open": "Открыть",
   "files.act.trash": "Переместить в корзину",
+  "menu.back": "Назад к {name}",
   "files.menu.organize": "Упорядочить",
   "files.menu.info": "Сведения",
   "files.act.clear": "Снять выбор",

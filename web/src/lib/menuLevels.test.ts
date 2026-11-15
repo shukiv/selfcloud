@@ -5,11 +5,24 @@
 // These tests drive the hook alone; the render tests (SidebarNew, FilesPage) drive it through a real dropdown.
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { MenuProps } from "antd";
 import { useMenuLevel } from "./menuLevels";
 
 type Items = NonNullable<MenuProps["items"]>;
 type Item = Items[number];
+// Row is the shape these checks read off a menu item: antd's item union names no label on every member (a divider has
+// none), so find and click read the rows through this one structural type. The assertions are unchanged.
+type Row = {
+  key?: string | number;
+  type?: string;
+  label?: ReactNode;
+  extra?: ReactNode;
+  children?: Row[];
+  onClick?: (info: { key: string; keyPath: string[]; domEvent: never; item: never }) => void;
+  "aria-label"?: string;
+  "data-menu-level"?: string;
+};
 
 const items: Items = [
   { key: "action:newFolder", label: "New folder" },
@@ -26,13 +39,13 @@ const items: Items = [
 ];
 
 const keysOf = (list: Items): (string | undefined)[] => list.map((i) => (i && "key" in i ? String(i.key) : undefined));
-const find = (list: Items, key: string): Item => {
+const find = (list: Items, key: string): Row => {
   const item = list.find((i) => i && "key" in i && i.key === key);
   if (!item) throw new Error(`no item ${key} in ${JSON.stringify(keysOf(list))}`);
-  return item;
+  return item as Row;
 };
 // click runs a row's onClick as antd's Menu does, with the least info it needs.
-const click = (item: Item) => {
+const click = (item: Row) => {
   if (!item || !("onClick" in item) || typeof item.onClick !== "function") throw new Error("the row has no onClick");
   item.onClick({ key: String(item.key), keyPath: [], domEvent: {} as never, item: null as never });
 };

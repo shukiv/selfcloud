@@ -189,6 +189,7 @@
   "files.selectAll.box": "בחירת הכול",
   "files.act.open": "פתיחה",
   "files.act.trash": "העברה לאשפה",
+  "menu.back": "חזרה אל {name}",
   "files.menu.organize": "ארגון",
   "files.menu.info": "מידע",
   "files.act.clear": "בטלו את הבחירה",

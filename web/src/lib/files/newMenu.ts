@@ -7,6 +7,7 @@
 import { createElement, type CSSProperties } from "react";
 import type { MenuProps } from "antd";
 import { AlignLeft, FilePlus, FileSpreadsheet, FileText, FolderPlus, FolderUp, LayoutTemplate, MoreHorizontal, Palette, Presentation, Upload } from "lucide-react";
+import { FORWARD } from "../menuLevels";
 import { CHORD_LETTER, type NewChordAction } from "./newShortcut";
 import { contrast } from "../brand";
 import { DOC_KINDS, type BlankKind, type DocKind, type NewEntry, type NewKey } from "./newPlace";
@@ -110,6 +111,9 @@ export interface NewMenuOptions {
   text: NewMenuText;
   dark: boolean;
   coarse: boolean;
+  // phone is true below antd's md breakpoint (768 px): each submenu row then ends in a chevron and keeps its children for the
+  // slide (useMenuLevel), instead of opening a side popup. Off a phone the submenus open to the side as before (decision 185).
+  phone: boolean;
   // onRun is called with the node chosen: an action, a blank kind, or a template kind.
   onRun: (node: NewMenuNode) => void;
 }
@@ -139,8 +143,10 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
   const rowPx = o.coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine;
   const rowStyle: CSSProperties = { height: rowPx, boxSizing: "border-box" };
   const ink = o.dark ? KIND_INK.dark : KIND_INK.light;
+  // A touch pointer shows no chord hint (decision 185): the keys stay named for a screen reader through aria-keyshortcuts,
+  // since a keyboard may be attached, but nothing is drawn at the row's end.
   const hint = (chord: NewChordAction | undefined) =>
-    chord === undefined ? undefined : createElement("span", { "aria-hidden": "true", className: "menu-hint", "data-hint": `Alt+C, ${CHORD_LETTER[chord]}`, title: o.text.shortcut });
+    chord === undefined || o.coarse ? undefined : createElement("span", { "aria-hidden": "true", className: "menu-hint", "data-hint": `Alt+C, ${CHORD_LETTER[chord]}`, title: o.text.shortcut });
   return tree.map((node, index): NonNullable<MenuProps["items"]>[number] => {
     const key = nodeKey(node, index);
     switch (node.type) {
@@ -179,6 +185,7 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
           key,
           label: o.text.fromTemplate,
           icon: createElement(LayoutTemplate, { ...ICON }),
+          extra: undefined,
           style: rowStyle,
           onClick: () => o.onRun(node),
         };
@@ -191,6 +198,9 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
           key,
           label,
           icon: createElement(icon, { ...ICON, ...(color ? { color } : {}) }),
+          // On a phone the row ends in the slide chevron (mirrored in RTL through icon-dir) and keeps its children for the
+          // slide; useMenuLevel draws them in the same popup. Off a phone antd opens them to the side (decision 185).
+          extra: o.phone ? FORWARD : undefined,
           style: rowStyle,
           children: newMenuItems(node.children, o),
         };

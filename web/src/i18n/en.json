@@ -189,6 +189,7 @@
   "files.selectAll.box": "Select all",
   "files.act.open": "Open",
   "files.act.trash": "Move to trash",
+  "menu.back": "Back to {name}",
   "files.menu.organize": "Organize",
   "files.menu.info": "Information",
   "files.act.clear": "Clear selection",

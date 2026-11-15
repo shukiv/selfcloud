@@ -3,12 +3,13 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as antdTheme } from "antd";
+import { App, Alert, Button, ConfigProvider, Dropdown, Grid, Modal, Skeleton, theme as antdTheme } from "antd";
 import IconButton from "../components/IconButton";
 import SelectionBar from "../components/files/SelectionBar";
 import { useNewChord } from "../components/files/SidebarNew";
 import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewMenuNode } from "../lib/files/newMenu";
 import { newURL } from "../lib/files/newRoute";
+import { useMenuLevel } from "../lib/menuLevels";
 import type { NewChordAction } from "../lib/files/newShortcut";
 import {
   ClipboardPaste,
@@ -340,6 +341,8 @@ export default function FilesPage() {
   const coarse = useCoarsePointer();
   // The list's row height choice, kept per person in this browser (decision 194).
   const [density, setDensity] = useDensity();
+  // Below md the page's menus slide one level at a time in the same popup (decision 185), the same phone test the list reads.
+  const phone = !Grid.useBreakpoint().md;
   const roomy = useRoomy();
   const spacious = useRoomy(480);
   // Where the sidebar is shown, its New button holds the New actions, so the toolbar has none. A drawer has no New of its own,
@@ -1652,28 +1655,10 @@ export default function FilesPage() {
 
   // ---- render ----
 
-
-  if (route === null || route.kind === "node" || place?.kind === "missing") {
-    // A directory address that is not there offers an access request for it, as the Svelte page did.
-    return <NotFoundPage nodeID={route?.kind === "dir" ? route.dir : undefined} />;
-  }
-  if (placeQ.isError) {
-    return <Alert type="error" showIcon role="alert" message={fileErrorText(placeQ.error, lang)} />;
-  }
-  if (!here) {
-    return (
-      <div role="status" aria-busy="true">
-        <span className="sr-only">{t("files.loading")}</span>
-        <Skeleton active paragraph={{ rows: 6 }} />
-      </div>
-    );
-  }
-
-  const titleName = here.dir?.name ?? here.folderName ?? t("nav.files");
-  // My files is the person's own folder, and its subfolders: the storage notice shows there only.
-  const ownFolder = personalID !== null && here.folder === personalID;
+  // The selection the toolbar and the menus act on. The three menu hooks below run on every render (a phone's New, More and
+  // right-click menus slide one level at a time, decision 185), so the place's guards sit after them, not before: a hook may
+  // not follow a return that some renders take and others do not.
   const selectedNodes = picked;
-  const rowLabel = titleName;
 
   // barActs is the one list of actions: the toolbar shows it, the right-click menu of a row or a selection is built from it,
   // and at phone width the one-row bar takes its main action and a More menu from it. Each action is hidden when the caller
@@ -1997,13 +1982,15 @@ export default function FilesPage() {
     if (docKinds.includes(action)) runNewNode({ type: "blank", kind: action });
   };
   newChordOn.current = () => !docked && canUploadHere;
-  const newMenuOptions = { text: newText, dark: menuIsDark(newGround), coarse, onRun: runNewNode };
+  const newMenuOptions = { text: newText, dark: menuIsDark(newGround), coarse, phone, onRun: runNewNode };
   const hasMedia = items.some(isPlayable);
   // spaceActs is the empty space's flat actions: Play media and Paste. The New entries sit between them (spaceMenuItems).
   const spaceActs: BarAct[] = [
     { key: "playMedia", label: t("files.act.playMedia"), icon: <Play {...ic} />, group: 0, section: "first", hidden: !hasMedia, fits: true, enabled: true, run: () => playHere() },
     { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, section: "first", hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
   ];
+  // A menu item is 44 pixels tall: its padding is taken out of the height, so the item is not taller than the target.
+  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   // menuItems turns actions into the items of a menu: a divider between the groups, the hidden and the non-fitting actions left
   // out, and a disabled one shown greyed. Choosing an item closes the menu before the action runs.
   const menuItems = (list: BarAct[]) => {
@@ -2040,8 +2027,8 @@ export default function FilesPage() {
     disabled: !a.enabled,
     // The shortcut is drawn at the entry's right from its data-hint (index.css), so the entry's text is its name alone.
     // The hint is hidden from a screen reader: the entry's name is its text alone, and the shortcut is named by
-    // aria-keyshortcuts.
-    extra: shortcutHint(a.key, MAC_KEYS) ? <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint(a.key, MAC_KEYS)} /> : undefined,
+    // aria-keyshortcuts. A touch pointer draws no hint (decision 185); the keys stay named, since a keyboard may be attached.
+    extra: !coarse && shortcutHint(a.key, MAC_KEYS) ? <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint(a.key, MAC_KEYS)} /> : undefined,
     "aria-keyshortcuts": shortcutKeys(a.key, MAC_KEYS),
     // A finger needs 44 pixels, as on each other item.
     style: touchItem,
@@ -2069,6 +2056,46 @@ export default function FilesPage() {
         children: piece.acts.map(actItem),
       };
     });
+  // The toolbar's New, the selection panel's More and the right-click menu each slide one level at a time on a phone
+  // (decision 185), through the one helper the sidebar's New reads too. The right-click menu owns its open state (the page
+  // sets menu to null to close it), so the hook reads that open and forwards the closes that reach it; a slide keeps it open.
+  const toolbarNewLevel = useMenuLevel(newMenuItems(newTree, newMenuOptions), phone);
+  const panelMoreLevel = useMenuLevel(groupedItems(panelMore), phone);
+  const ctxItems = menu === null ? [] : menu.scope === "space" ? spaceMenuItems() : groupedItems(barActs);
+  const ctxLevel = useMenuLevel(ctxItems, phone, {
+    open: menu !== null,
+    onOpenChange: (next) => {
+      if (next) return;
+      const origin = menuOrigin.current;
+      const chosen = menuChosen.current;
+      menuOrigin.current = null;
+      menuChosen.current = false;
+      setMenu(null);
+      // Closed without a choice (Escape, a click away), a menu opened from the keyboard gives the focus back to its row.
+      if (!chosen && origin?.isConnected) origin.focus();
+    },
+  });
+
+  if (route === null || route.kind === "node" || place?.kind === "missing") {
+    // A directory address that is not there offers an access request for it, as the Svelte page did.
+    return <NotFoundPage nodeID={route?.kind === "dir" ? route.dir : undefined} />;
+  }
+  if (placeQ.isError) {
+    return <Alert type="error" showIcon role="alert" message={fileErrorText(placeQ.error, lang)} />;
+  }
+  if (!here) {
+    return (
+      <div role="status" aria-busy="true">
+        <span className="sr-only">{t("files.loading")}</span>
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
+  const titleName = here.dir?.name ?? here.folderName ?? t("nav.files");
+  // My files is the person's own folder, and its subfolders: the storage notice shows there only.
+  const ownFolder = personalID !== null && here.folder === personalID;
+  const rowLabel = titleName;
   // rowActsFor gives the icons at a list row's end for one item: Share, Download (or Download as zip for a folder), Rename and
   // Star. Each is the same action the menu runs, built for that item alone, so the permissions are the menu's.
   const rowActsFor = (n: Node): RowAct[] => {
@@ -2083,8 +2110,6 @@ export default function FilesPage() {
   const menuTheme = coarse ? { components: { Menu: { itemHeight: MENU_ROW_HEIGHT.coarse } } } : {};
   // A toolbar button is a 44 pixel target on a finger, icon-only ones included (their width is set too).
   const touchSize = coarse ? { minHeight: 44, minWidth: 44 } : undefined;
-  // A menu item is 44 pixels tall: its padding is taken out of the height, so the item is not taller than the target.
-  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
   // Clear disables itself once the selection is empty, so the focus moves to the listing first: a disabled button drops it.
   const clearPicked = () => {
     // The focused row may be out of the drawn rows (decision 183): then the list takes the focus.
@@ -2129,7 +2154,7 @@ export default function FilesPage() {
       moreMenu={
         panelMore.length > 0 ? (
           <ConfigProvider theme={menuTheme}>
-            <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: groupedItems(panelMore), style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }}>
+            <Dropdown trigger={["click"]} open={panelMoreLevel.open} onOpenChange={panelMoreLevel.onOpenChange} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: panelMoreLevel.items, style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }}>
               <IconButton label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} aria-haspopup="menu" />
             </Dropdown>
           </ConfigProvider>
@@ -2290,13 +2315,13 @@ export default function FilesPage() {
               <ConfigProvider theme={menuTheme}>
                 {/* Under 480 px New is the plus icon, with its name as label and tooltip; a wider row keeps the word (decision 68). */}
                 {spacious ? (
-                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: newMenuItems(newTree, newMenuOptions), style: NEW_MENU_STYLE }}>
+                  <Dropdown trigger={["click"]} open={toolbarNewLevel.open} onOpenChange={toolbarNewLevel.onOpenChange} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: toolbarNewLevel.items, style: NEW_MENU_STYLE, triggerSubMenuAction: coarse ? "click" : "hover" }}>
                     <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
                       {t("files.act.new")}
                     </Button>
                   </Dropdown>
                 ) : (
-                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: newMenuItems(newTree, newMenuOptions), style: NEW_MENU_STYLE }}>
+                  <Dropdown trigger={["click"]} open={toolbarNewLevel.open} onOpenChange={toolbarNewLevel.onOpenChange} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: toolbarNewLevel.items, style: NEW_MENU_STYLE, triggerSubMenuAction: coarse ? "click" : "hover" }}>
                     <IconButton label={t("files.act.new")} icon={<Plus {...ic} />} aria-haspopup="menu" />
                   </Dropdown>
                 )}
@@ -2429,23 +2454,14 @@ export default function FilesPage() {
           {menu && (
             <ConfigProvider theme={menuTheme}>
               <Dropdown
-                open
+                open={ctxLevel.open}
                 trigger={["contextMenu"]}
                 autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP}
-                onOpenChange={(open) => {
-                  if (open) return;
-                  const origin = menuOrigin.current;
-                  const chosen = menuChosen.current;
-                  menuOrigin.current = null;
-                  menuChosen.current = false;
-                  setMenu(null);
-                  // Closed without a choice (Escape, a click away), a menu opened from the keyboard gives the focus back to its row.
-                  if (!chosen && origin?.isConnected) origin.focus();
-                }}
+                onOpenChange={ctxLevel.onOpenChange}
                 menu={
                   menu.scope === "space"
-                    ? { items: spaceMenuItems(), style: NEW_MENU_STYLE }
-                    : { items: groupedItems(barActs), style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }
+                    ? { items: ctxLevel.items, style: NEW_MENU_STYLE, triggerSubMenuAction: coarse ? "click" : "hover" }
+                    : { items: ctxLevel.items, style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }
                 }
               >
                 {/* pointer-events none: a touch's click lands on the row under the finger, not on the anchor, whose click closes the menu. */}
