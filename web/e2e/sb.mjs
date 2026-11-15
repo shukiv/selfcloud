@@ -77,13 +77,16 @@ const oneEdge = (page) =>
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top }; };
     const sider = document.querySelector('.shell-sider') ?? scope.querySelector('.ant-drawer-body') ?? scope;
     const menu = [...scope.querySelectorAll('.shell-menu li.ant-menu-item')];
+    const card = scope.querySelector('[data-testid="storage-card"]');
     return {
       sider: box(sider),
       brand: box(scope.querySelector('[data-testid="sidebar-brand"] img')),
       new: box(scope.querySelector('[data-testid="new-button"]')),
       first: box(scope.querySelector('[data-testid="folder-tree"] [role="tree"] > [role="treeitem"] > .tree-row')),
       starred: box(menu.find((li) => (li.getAttribute('data-menu-id') ?? '').includes('starred'))),
-      card: box(scope.querySelector('[data-testid="storage-card"]')),
+      card: box(card),
+      meter: box(card?.querySelector('[data-testid="sidebar-meter"]')),
+      cardPadEnd: card ? parseFloat(getComputedStyle(card).paddingInlineEnd) : null,
       rtl: document.documentElement.dir === 'rtl',
     };
   })()`);
@@ -100,6 +103,9 @@ function edgeChecks(m, check, label) {
   check(Object.values(starts).every((x) => same(x, starts.starred)), `${label}: every part of the sidebar starts at one edge (${JSON.stringify(starts)})`);
   const ends = { brand: end(m.brand), first: end(m.first), starred: end(m.starred), card: end(m.card) };
   check(Object.values(ends).every((x) => same(x, ends.starred)), `${label}: the brand, the rows and the storage block end at one edge (${JSON.stringify(ends)})`);
+  // Decision 185: the bar stops a menu row's inline padding (antd's token.padding) short of the block's end edge, so it does not run
+  // into the block's end edge and its hover/active fill. The gap between the two end edges is that padding, in either reading direction.
+  check(m.meter !== null && same(Math.abs(end(m.card) - end(m.meter)), m.cardPadEnd), `${label}: the bar ends the rows' inline padding short of the block's end edge (${JSON.stringify({ meter: m.meter, card: m.card, padEnd: m.cardPadEnd })})`);
   const topSpace = m.brand.t - m.sider.t;
   const sideSpace = Math.abs(start(m.brand) - start(m.sider));
   check(same(topSpace, sideSpace), `${label}: the space above the logo is the side space S (${topSpace} and ${sideSpace})`);

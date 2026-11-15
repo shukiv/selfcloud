@@ -17,6 +17,9 @@ import { formatBytes } from "../../lib/files/format";
 
 // The rows' inline margin (decision 185): the block takes it too, so its edges are the rows' edges.
 const ROW_INLINE = sidebarRow(antdTheme.getDesignToken(), false).inline;
+// The menu rows' inline padding (antd's Menu itemPaddingInline is token.padding, decision 185): the block's content ends this far
+// short of its end edge, so the bar, the title and the figures do not run into the block's end edge and its hover/active fill.
+const ROW_PAD_END = antdTheme.getDesignToken().padding;
 
 // The stylesheet's text, read from the web root that vitest runs in: the vitest run does not load CSS, and a ?raw import is empty.
 const indexCss = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
@@ -124,7 +127,7 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
 
   // Decision 185: no card frame. The block is a sidebar row: the rows' radius, the rows' hover tint and the same focus ring, with
   // no border and no background of its own. Its content starts in the rows' icon column, the title an 18 px icon and a 10 px gap
-  // in (the menu's own icon and gap), and the bar runs from the icon's start edge to the block's end edge.
+  // in (the menu's own icon and gap), and ends one menu-row inline padding (token.padding) short of the block's end edge.
   it("is a sidebar row, not a card: no border, no background, the rows' radius, hover and focus ring", () => {
     draw(<SidebarStorage my={s(610, 0, 1000)} sidebar={SIDEBAR} inline={ROW_INLINE} />);
     const card = screen.getByTestId("storage-card");
@@ -134,7 +137,8 @@ describe("the sidebar's storage block (decisions 181 and 185)", () => {
     expect(card.style.getPropertyValue("--sc-card-bg")).toBe("");
     expect(card.style.getPropertyValue("--sc-card-hover")).toBe("");
     expect(card.style.paddingInlineStart).toBe("var(--sc-icon-col, 24px)");
-    expect(card.style.paddingInlineEnd).toBe("");
+    // The end padding is the menu rows' own inline padding, read from the antd token (token.padding), not a literal.
+    expect(card.style.paddingInlineEnd).toBe(`${ROW_PAD_END}px`);
     const titleRow = card.querySelector<HTMLElement>(".shell-storage-title")?.parentElement;
     expect(titleRow?.style.display).toBe("flex");
     expect(titleRow?.style.gap).toBe("10px");

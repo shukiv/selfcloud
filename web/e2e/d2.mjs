@@ -77,6 +77,7 @@ const cardGeometry = (page) =>
       rowInline: first ? parseFloat(getComputedStyle(first).marginInlineStart) : null,
       titleFs: fs(title), lineFs: fs(line),
       borderWidth: ccs ? ccs.borderTopWidth : null, background: ccs ? ccs.backgroundColor : null,
+      padEnd: ccs ? parseFloat(ccs.paddingInlineEnd) : null,
       href: card?.getAttribute('href') ?? null,
       belowMenu: !!(card && last && scroll && card.getBoundingClientRect().top >= Math.min(last.getBoundingClientRect().bottom, scroll.getBoundingClientRect().bottom) - 1),
       outsideScroll: !!(card && scroll && !scroll.contains(card)),
@@ -392,11 +393,12 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
     const at61 = await storageLine(page);
     check(at61.title === 'Storage (61% full)' && at61.width === '61%', `the block's title is the storage title and the bar is at the share held (${at61.title}, ${at61.width})`);
-    // Decision 185: the bar runs from the Cloud icon's start edge to the block's end edge. Read here, where the limit gives a bar
-    // (the alignment section below restores the member's own limit, which may be none, so the block has no bar there).
+    // Decision 185: the bar runs from the Cloud icon's start edge to a menu row's inline padding (token.padding) short of the block's
+    // end edge, so it does not run into the fill. Read here, where the limit gives a bar (the alignment section below restores the
+    // member's own limit, which may be none, so the block has no bar there).
     const geo61 = await cardGeometry(page);
     const near61 = (a, b) => a !== null && b !== null && Math.abs(a - b) <= 1;
-    check(geo61.meter !== null && geo61.icon !== null && geo61.card !== null && near61(geo61.meter.l, geo61.icon.l) && near61(geo61.meter.r, geo61.card.r), `the bar runs from the icon's start edge to the block's end edge (${JSON.stringify({ meter: geo61.meter, icon: geo61.icon, card: geo61.card })})`);
+    check(geo61.meter !== null && geo61.icon !== null && geo61.card !== null && geo61.padEnd !== null && near61(geo61.meter.l, geo61.icon.l) && near61(geo61.meter.r, geo61.card.r - geo61.padEnd), `the bar runs from the icon's start edge to the rows' padding short of the block's end edge (${JSON.stringify({ meter: geo61.meter, icon: geo61.icon, card: geo61.card, padEnd: geo61.padEnd })})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
     // The block's title and figures colours, read here where the block is not the current place, to compare with the Storage page
     // below: there the block takes the selected row's fill and ink (decision 185).

@@ -24,9 +24,9 @@ function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", backg
   const { row, edge } = metrics(coarse);
   return render(<SidebarBrand collapsed={collapsed} coarse={coarse} text={text} background={background} inline={row.inline} edge={edge} width={width} />);
 }
-// reserved is the height the wordmark will have at the block's content width (211 x 38), rounded up, so the box keeps its
-// height when the brand loads (decision 185).
-const reserved = (width: number, edge: number) => Math.ceil(((width - 2 * edge) * 38) / 211);
+// reserved is the height the picture the background draws will have at the block's content width, rounded up, so the box keeps its
+// height when the brand loads (decision 185): the wordmark (38/211) on a dark sidebar, the taller tile logo (398/1731.65) on a light one.
+const reserved = (width: number, edge: number, light = false) => Math.ceil((width - 2 * edge) * (light ? 398 / 1731.65 : 38 / 211));
 
 describe("SidebarBrand (decisions 109 and 185)", () => {
   beforeEach(() => brandLoaded.set(true));
@@ -145,6 +145,26 @@ describe("SidebarBrand (decisions 109 and 185)", () => {
     const loaded = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
     expect(reservedBox).toEqual(["42px", "16px", "16px"]);
     expect(loaded).toEqual(reservedBox);
+  });
+
+  // Decision 185: on a light sidebar the picture is the tile logo (/brand/logo, internal/web/brand/selfcloud-logo.svg, viewBox
+  // 1731.65 x 398), taller than the wordmark at the same width. The reserved height is the tile's own, so the box does not grow when
+  // the brand loads (the must-never-happen). The dark case above keeps the wordmark's 42 px.
+  it("reserves the tile logo's height on a light sidebar, so the box does not grow when it loads", () => {
+    const box = (el: HTMLElement | null) => [el?.style.minHeight, el?.style.paddingBlockStart, el?.style.marginBlockEnd];
+    const { edge } = metrics(false);
+    const light = "#FFF9C4";
+    brandLoaded.set(false);
+    brand.set({ name: "", accent: light, logo_url: null, artwork: true });
+    const reservedBox = box(renderBrand(false, false, "#0D2142", light).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
+    brandLoaded.set(true);
+    brand.set({ name: "SelfCloud", accent: light, logo_url: null, artwork: true });
+    const loaded = renderBrand(false, false, "#0D2142", light).container;
+    expect(loaded.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");
+    expect(box(loaded.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'))).toEqual(reservedBox);
+    // The tile picture's height at the 232 px content width: ceil(232 x 398/1731.65) = 54 px, not the wordmark's 42.
+    expect(reservedBox[0]).toBe(`${reserved(SIDE_WIDTH, edge, true)}px`);
+    expect(reservedBox[0]).toBe("54px");
   });
 
   // Decision 185 replaces decision 109's 10 px (6 px on a finger) edge: the block's top and bottom space is S on a mouse and a
