@@ -58,3 +58,23 @@ export function phoneViewport(): () => void {
     window.matchMedia = before;
   };
 }
+
+// coarsePointer makes the pointer:coarse query match (a finger's screen) at a roomy width, so a list keeps its columns and
+// draws its checkbox column, and the menus size their rows for a finger. It returns the function that restores the window the
+// test had before it.
+export function coarsePointer(): () => void {
+  const before = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: query === "(pointer: coarse)" || /min-width/.test(query),
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = before;
+  };
+}

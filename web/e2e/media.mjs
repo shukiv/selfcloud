@@ -125,7 +125,7 @@ async function clearSelection(page) {
 }
 
 // The selection actions can be read by a check as one list of buttons, whatever the width.
-export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, shot, sleep, tap };
+export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, setWidth, shot, sleep, tap };
 
 // E2E_ACCENT is the brand accent the e2e server runs with (run.mjs BRAND). onActiveInk is the text colour the page draws on the
 // sidebar's active highlight, worked out from the sources the page itself uses, so a change there moves the expected colour too:
@@ -511,6 +511,72 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await sleep(300);
     check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`), 'a tap on a tile checkbox selects the tile on a phone');
     await clearSelection(page);
+    await setPhone(page, false);
+  });
+
+  // ---- 2a-bis. A finger's targets in the list (mob3): the sort header is tall enough, a tap in the select cell toggles the row
+  // without opening it, the Move dialog's close button is a finger's size, and its disabled primary reads in the dark theme. ----
+  await step("a finger's targets in the list", async () => {
+    const themeWas = await page.evaluate(`document.documentElement.dataset.theme ?? 'light'`);
+    await setPhone(page, true);
+    await open('List');
+    // The sortable column header's button is at least 44 px tall on a finger.
+    const headBtn = await page.evaluate(`(() => { const b = document.querySelector('.files-list .ant-table-thead th button'); if (!b) return null; const r = b.getBoundingClientRect(); return { h: r.height }; })()`);
+    check(headBtn !== null && headBtn.h >= 43.5, `on a finger the sort header's button is at least 44 px tall (${JSON.stringify(headBtn)})`);
+    // A tap in the select cell, away from the box, toggles the row and opens nothing. The point is taken fresh each time: the
+    // selection panel takes the toolbar's row, so the rows can shift between taps.
+    const cellPoint = () =>
+      page.evaluate(`(() => {
+        const row = document.querySelector(${q(itemSel('pic.png'))});
+        if (!row) return null;
+        row.scrollIntoView({ block: 'center' });
+        const cell = row.querySelector('.ant-table-selection-column');
+        const box = row.querySelector('input[type="checkbox"]');
+        if (!cell || !box) return null;
+        const c = cell.getBoundingClientRect(); const b = box.getBoundingClientRect();
+        return { x: (c.left + b.left) / 2, y: c.top + c.height / 2, url: location.pathname };
+      })()`);
+    const first = await cellPoint();
+    check(first !== null, 'a phone list row has a select cell and a box');
+    await tap(page, first);
+    await sleep(400);
+    const cellSel = await page.evaluate(`(() => { const p = document.querySelector('[data-testid="selection-panel"]'); return { sel: !!p && p.textContent.includes('1 selected'), opened: !!document.querySelector('[data-testid="preview"]'), url: location.pathname }; })()`);
+    check(cellSel.sel && !cellSel.opened && cellSel.url === first.url, `a tap in the select cell selects the row, opens nothing, and stays put (${JSON.stringify(cellSel)})`);
+    const second = await cellPoint();
+    await tap(page, second);
+    await sleep(400);
+    check(await page.evaluate(`!document.querySelector('[data-testid="selection-panel"]')`), 'a second tap in the select cell clears the selection');
+    // Select the row, switch to the dark theme, and open the Move dialog from the selection panel.
+    await tap(page, await cellPoint());
+    await sleep(400);
+    await setTheme(page, 'Dark');
+    const moveBtn = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    check(moveBtn !== null, 'the selection panel on a phone has a Move button');
+    await tap(page, moveBtn);
+    await page.waitFor(`!!document.querySelector('[data-testid="pick"]')`, 10000);
+    await sleep(500);
+    // The dialog's close button is a finger's target: at least 44 x 44 px. The pick test id is on the modal or inside it.
+    const modalClose = await page.evaluate(`(() => { const pick = document.querySelector('[data-testid="pick"]'); if (!pick) return null; const modal = pick.closest('.ant-modal') || pick; const b = modal.querySelector('.ant-modal-close'); if (!b) return null; const r = b.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+    check(modalClose !== null && modalClose.w >= 43.5 && modalClose.h >= 43.5, `on a finger the Move dialog's close button is at least 44 x 44 px (${JSON.stringify(modalClose)})`);
+    // The disabled primary ("Move here") reads at 4.5 to 1 in the dark theme.
+    const contrast = await page.evaluate(`(() => {
+      const pick = document.querySelector('[data-testid="pick"]'); if (!pick) return null;
+      const modal = pick.closest('.ant-modal') || pick;
+      const b = [...modal.querySelectorAll('.ant-modal-footer button')].find((x) => x.textContent.trim() === 'Move here');
+      if (!b || !b.disabled) return null;
+      const cs = getComputedStyle(b);
+      const lum = (c) => { const m = c.match(/rgba?\\(([^)]+)\\)/); if (!m) return null; const [r, g, bl] = m[1].split(',').slice(0, 3).map((v) => parseFloat(v) / 255); const f = (v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl); };
+      const fg = lum(cs.color); const bg = lum(cs.backgroundColor);
+      if (fg === null || bg === null) return null;
+      const hi = Math.max(fg, bg), lo = Math.min(fg, bg);
+      return (hi + 0.05) / (lo + 0.05);
+    })()`);
+    check(contrast !== null && contrast >= 4.5, `in the dark theme the Move dialog's disabled primary reads at 4.5 to 1 (${contrast === null ? 'not found' : contrast.toFixed(2)})`);
+    // Close the dialog with its close button (which also proves the bigger button works), then restore the theme and the width.
+    await page.evaluate(`(() => { const pick = document.querySelector('[data-testid="pick"]'); const modal = pick.closest('.ant-modal') || pick; modal.querySelector('.ant-modal-close').click(); })()`);
+    await page.waitFor(`!document.querySelector('[data-testid="pick"]')`, 10000);
+    await clearSelection(page);
+    await setTheme(page, themeWas === 'dark' ? 'Dark' : 'Light');
     await setPhone(page, false);
   });
 

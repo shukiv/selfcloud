@@ -11,7 +11,7 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setLanguage, setPhone, setTheme } from './media.mjs';
+import { setLanguage, setPhone, setTheme, setWidth } from './media.mjs';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -340,20 +340,47 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   const topInputs = await page.evaluate(`document.querySelectorAll('header input').length`);
   check(topInputs === 0, `at phone width the top bar has the button, not the box (${topInputs} inputs in it)`);
   await page.waitFor(`document.querySelectorAll('.search-filter').length > 0`, 10000);
-  const touch = JSON.parse(
-    await page.evaluate(`JSON.stringify((() => {
-      const heights = [...document.querySelectorAll('.search-filter')].map((el) =>
-        Math.round((el.classList.contains('ant-select') ? el.querySelector('.ant-select-selector') : el).getBoundingClientRect().height));
-      return { coarse: matchMedia('(pointer: coarse)').matches, heights };
-    })())`),
-  );
-  check(touch.coarse, 'the phone emulation reports a coarse pointer');
-  check(
-    touch.heights.length > 0 && touch.heights.every((h) => h >= 44),
-    `at phone width every search filter field is at least 44 px high (${JSON.stringify(touch.heights)})`,
-  );
+  const filterRects = () =>
+    page.evaluate(`JSON.stringify((() => {
+      const rects = [...document.querySelectorAll('.search-filter')].map((el) => {
+        const r = el.getBoundingClientRect();
+        const inner = el.classList.contains('ant-select') ? el.querySelector('.ant-select-selector') : el;
+        const ir = inner.getBoundingClientRect();
+        return { outer: Math.round(r.height), inner: Math.round(ir.height), left: r.left, right: r.right, top: Math.round(r.top) };
+      });
+      return { coarse: matchMedia('(pointer: coarse)').matches, rects };
+    })())`);
+  // auditFilters checks the filters are touch-sized outside and in, that no field is taller than its box, and that two filters
+  // on the same row do not overlap sideways (mob3).
+  const auditFilters = async (label) => {
+    const t = JSON.parse(await filterRects());
+    check(t.coarse, `the phone emulation reports a coarse pointer (${label})`);
+    check(t.rects.length > 0 && t.rects.every((f) => f.outer >= 44), `at ${label} every search filter's outer box is at least 44 px high (${JSON.stringify(t.rects.map((f) => f.outer))})`);
+    check(t.rects.length > 0 && t.rects.every((f) => f.inner >= 44), `at ${label} every search filter's field is at least 44 px high (${JSON.stringify(t.rects.map((f) => f.inner))})`);
+    check(t.rects.every((f) => f.inner <= f.outer + 1), `at ${label} no filter's field is taller than its outer box (${JSON.stringify(t.rects.map((f) => [f.outer, f.inner]))})`);
+    const rows = new Map();
+    for (const f of t.rects) {
+      if (!rows.has(f.top)) rows.set(f.top, []);
+      rows.get(f.top).push(f);
+    }
+    let overlap = 0;
+    for (const row of rows.values()) {
+      const sorted = [...row].sort((a, b) => a.left - b.left);
+      for (let i = 1; i < sorted.length; i++) if (sorted[i].left < sorted[i - 1].right - 1) overlap++;
+    }
+    check(overlap === 0, `at ${label} no two search filters on a row overlap sideways (${overlap} overlaps)`);
+  };
+  await auditFilters('390 px');
   const overflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
   check(overflow <= 0, `at phone width the search page fits and does not scroll sideways (overflow ${overflow}px)`);
+  // The filters keep their touch size and stay apart at the narrow and wide phone widths too (mob3).
+  for (const w of [360, 412]) {
+    await setWidth(page, w);
+    await page.waitFor(`document.querySelectorAll('.search-filter').length > 0`, 10000);
+    await auditFilters(`${w} px`);
+    const ov = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+    check(ov <= 0, `at ${w} px the search page does not scroll sideways (overflow ${ov}px)`);
+  }
   await setPhone(page, false);
   // Back at desktop width the top bar's box is there again, and stays put before the next keys go to it.
   await page.waitFor(`document.querySelectorAll(${q(`input[aria-label=${q(BOX)}]`)}).length === 1`, 10000);

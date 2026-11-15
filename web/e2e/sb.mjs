@@ -217,6 +217,9 @@ async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID })
   // The drawer slides in: its rows are measured once it has stopped.
   await sleep(700);
   const phone = await pair(page, check, 'phone drawer');
+  // The drawer's close button is a finger's target (mob3): at least 44 x 44 px on a coarse pointer.
+  const drawerClose = await page.evaluate(`(() => { const b = document.querySelector('.ant-drawer-open .ant-drawer-close'); if (!b) return null; const r = b.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+  check(drawerClose !== null && drawerClose.w >= 44 - TOL && drawerClose.h >= 44 - TOL, `on a finger the drawer's close button is at least 44 x 44 px (${JSON.stringify(drawerClose)})`);
   // The storage block on a finger: its bar and figures are inside the sidebar, the block is not clipped (no sideways scroll), and it
   // is a finger's target, at least 44 px tall (decision 181).
   const fit = await storageFit(page);

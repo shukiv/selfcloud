@@ -1415,4 +1415,28 @@ describe("the shell's global keys and shortcuts list (ks1)", () => {
       window.matchMedia = original;
     }
   });
+
+  // The account menu's rows are a finger's size (mob3): 44 px on a coarse pointer, the mouse's height otherwise.
+  it("the account menu's rows are 44 px on a coarse pointer", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = (query: string) => ({ ...original(query), matches: query.includes("pointer: coarse") || /min-width/.test(query) }) as MediaQueryList;
+    try {
+      signIn("member");
+      renderShell("/files");
+      fireEvent.click(await screen.findByTestId("account-menu"));
+      const item = await screen.findByRole("menuitem", { name: "Change password" });
+      expect(item.style.height).toBe("44px");
+      expect(screen.getByRole("menuitem", { name: "Sign out" }).style.height).toBe("44px");
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it("the account menu's rows keep their height on a mouse", async () => {
+    signIn("member");
+    renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const item = await screen.findByRole("menuitem", { name: "Change password" });
+    expect(item.style.height).toBe("");
+  });
 });
