@@ -633,3 +633,90 @@ describe("the sidebar's scroll follow (decision 88)", () => {
     unphone();
   });
 });
+
+// The middle's scrollbar takes its width from the rows inside it, while the brand above and the storage block below keep the sider's
+// full width. The region reaches into the sider's end padding by the scrollbar's width (the padding, 12 px, at most), so the rows keep
+// the brand's end edge. jsdom has no layout: the region's offsetWidth and clientWidth are given, and the resize observer fires on
+// observe, as the real one does once the box is measured.
+function fakeScrollbar(w: number) {
+  const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")!;
+  const client = Object.getOwnPropertyDescriptor(Element.prototype, "clientWidth")!;
+  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.classList.contains("shell-scroll") ? 240 + w : 0;
+    },
+  });
+  Object.defineProperty(Element.prototype, "clientWidth", {
+    configurable: true,
+    get(this: Element) {
+      return this.classList.contains("shell-scroll") ? 240 : 0;
+    },
+  });
+  const saved = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    private cb: ResizeObserverCallback;
+    constructor(cb: ResizeObserverCallback) {
+      this.cb = cb;
+    }
+    observe(el: Element) {
+      this.cb([{ target: el, contentRect: el.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  return () => {
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
+    Object.defineProperty(Element.prototype, "clientWidth", client);
+    globalThis.ResizeObserver = saved;
+  };
+}
+
+describe("the sidebar's scrollbar sits in the sider's end padding", () => {
+  let restore = () => {};
+  let unfake = () => {};
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    resetUserStores();
+    folders.set([]);
+    hiddenFolders.set([]);
+    treePlace.set(null);
+    mocks.childrenPage.mockReset().mockResolvedValue({ items: [], next_cursor: undefined });
+    mocks.loadHiddenFolders.mockReset().mockResolvedValue([]);
+    restore = wide(true);
+  });
+  afterEach(() => {
+    unfake();
+    unfake = () => {};
+    restore();
+    cleanup();
+  });
+
+  // The region is drawn with the scrollbar's width already in place: the mount measures it, and the margin reaches into the padding.
+  const regionWithScrollbar = async (w: number) => {
+    unfake = fakeScrollbar(w);
+    signIn("member");
+    renderShell("/starred");
+    return waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".shell-scroll");
+      if (!el) throw new Error("no sidebar area yet");
+      return el;
+    });
+  };
+
+  it("a 10 px scrollbar takes the region 10 px into the end padding", async () => {
+    const region = await regionWithScrollbar(10);
+    await waitFor(() => expect(region.style.marginInlineEnd).toBe("-10px"));
+  });
+
+  it("no scrollbar leaves the region's end edge where it was", async () => {
+    const region = await regionWithScrollbar(0);
+    await waitFor(() => expect(region.style.marginInlineEnd === "" || region.style.marginInlineEnd === "0px").toBe(true));
+  });
+
+  it("a scrollbar wider than the padding takes only the padding (20 px against 12 px)", async () => {
+    const region = await regionWithScrollbar(20);
+    await waitFor(() => expect(region.style.marginInlineEnd).toBe("-12px"));
+  });
+});
