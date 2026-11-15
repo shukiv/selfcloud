@@ -122,3 +122,37 @@ func TestEmbedPageHeadersPerAccount(t *testing.T) {
 		t.Error("account B's origin leaked onto account A's page")
 	}
 }
+
+// TestEmbedFrameAncestorsHasNoSeparators: an account's list, built from the accepted origin forms, can never
+// put a CSP directive separator (;), a policy separator (,) or a quote into frame-ancestors. The directive
+// is exactly 'self' followed by the space-joined, normalised, sorted origins (decision 185).
+func TestEmbedFrameAncestorsHasNoSeparators(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	in := []string{"https://xn--9ca.example", "https://b.example:8443", "http://localhost:3000/", "https://A.example"}
+	call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/embed", key, embedBody{Origins: in})
+	want := []string{"http://localhost:3000", "https://a.example", "https://b.example:8443", "https://xn--9ca.example"}
+
+	rec := serveRaw(t, s, http.MethodGet, "/sign-in?frame="+acc.ID)
+	csp := rec.Header().Get("Content-Security-Policy")
+	directive := ""
+	for _, part := range strings.Split(csp, ";") {
+		if part = strings.TrimSpace(part); strings.HasPrefix(part, "frame-ancestors ") {
+			directive = strings.TrimPrefix(part, "frame-ancestors ")
+		}
+	}
+	if exact := "'self' " + strings.Join(want, " "); directive != exact {
+		t.Fatalf("frame-ancestors = %q; want exactly %q", directive, exact)
+	}
+	origins := strings.TrimPrefix(directive, "'self' ")
+	for _, bad := range []string{";", ",", "\"", "'"} {
+		if strings.Contains(origins, bad) {
+			t.Errorf("frame-ancestors origins %q hold %q", origins, bad)
+		}
+	}
+	if xfo := rec.Header().Get("X-Frame-Options"); xfo != "" {
+		t.Errorf("X-Frame-Options = %q; want none when framable", xfo)
+	}
+}

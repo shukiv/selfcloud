@@ -25,6 +25,8 @@ func TestNormalizeOrigin(t *testing.T) {
 		"https://127.0.0.1":            "https://127.0.0.1",
 		"https://app.example.com:443":  "https://app.example.com",
 		"  https://app.example.com  ":  "https://app.example.com",
+		"https://xn--9ca.example":      "https://xn--9ca.example",
+		"https://a.example:8443":       "https://a.example:8443",
 	}
 	for in, want := range accept {
 		got, err := normalizeOrigin(in)
@@ -50,6 +52,17 @@ func TestNormalizeOrigin(t *testing.T) {
 		"http://foo.localhost",
 		"https://app.example.com x",
 		"https://" + strings.Repeat("a", 250) + ".example.com",
+		"https://a.example;sandbox",
+		"https://a,b.example",
+		"https://a'b.example",
+		"https://a\"b.example",
+		"https://a(b).example",
+		"https://a_b.example",
+		"https://-a.example",
+		"https://a..example",
+		"https://é.example",
+		"https://a.example:0",
+		"https://a.example:65536",
 	}
 	for _, in := range reject {
 		if got, err := normalizeOrigin(in); err == nil {

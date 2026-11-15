@@ -1243,8 +1243,10 @@ func NormalizeOrigin(s string) (string, error) { return normalizeOrigin(s) }
 
 // normalizeOrigin checks one embed origin and returns it in a canonical form: lower-cased scheme and
 // host, the default port and a trailing slash dropped. It accepts https on any host, or http on localhost
-// and 127.0.0.1 only; the origin alone, with no path, query, fragment, userinfo or wildcard, and no IP
-// literal other than 127.0.0.1. Every refusal names the origin (decision 185).
+// and 127.0.0.1 only; the origin alone, with no path, query, fragment, userinfo or wildcard. The host is
+// 127.0.0.1, localhost or an ASCII DNS name (punycode for anything else), and the port, when present, is
+// 1 to 65535, so the origin can never carry a CSP separator into frame-ancestors. Every refusal names the
+// origin (decision 185).
 func normalizeOrigin(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	bad := func(reason string) (string, error) {
@@ -1285,13 +1287,27 @@ func normalizeOrigin(s string) (string, error) {
 	if host == "" {
 		return bad("it has no host")
 	}
+	for i := 0; i < len(host); i++ {
+		if host[i] > 0x7f {
+			return bad("use the punycode form")
+		}
+	}
 	if ip, err := netip.ParseAddr(host); err == nil && ip != netip.MustParseAddr("127.0.0.1") {
 		return bad("an IP literal other than 127.0.0.1 is not allowed")
+	}
+	if host != "127.0.0.1" && !validEmbedHost(host) {
+		return bad("the host is not a valid DNS name")
 	}
 	if scheme == "http" && host != "localhost" && host != "127.0.0.1" {
 		return bad("http is allowed only on localhost and 127.0.0.1")
 	}
 	port := u.Port()
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || !digitsOnly(port) {
+			return bad("the port must be a number from 1 to 65535")
+		}
+	}
 	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
 		port = ""
 	}
@@ -1300,6 +1316,41 @@ func normalizeOrigin(s string) (string, error) {
 		out += ":" + port
 	}
 	return out, nil
+}
+
+// validEmbedHost reports whether host is an ASCII DNS name: labels of [a-z0-9-], 1 to 63 bytes, not
+// starting or ending with a hyphen, joined by single dots, at most 253 bytes in all. A punycode (xn--)
+// label is an ordinary label here. This is the check that keeps a host from carrying a CSP directive
+// separator (;) or policy separator (,) into frame-ancestors (decision 185).
+func validEmbedHost(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// digitsOnly reports whether s is one or more ASCII digits.
+func digitsOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ParsePrefixes parses addresses and CIDRs; a bare address becomes a single-host prefix.
