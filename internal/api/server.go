@@ -645,6 +645,9 @@ func New(opts Options) (*Server, error) {
 // handleUnmatched answers a request no API route matched: the web interface's file when it is
 // for the web interface, else the JSON 404.
 func (s *Server) handleUnmatched(w http.ResponseWriter, r *http.Request) error {
+	if s.externalSignInRedirect(w, r) {
+		return nil
+	}
 	if s.ui != nil && s.ui.Serves(r) {
 		s.ui.ServeHTTP(w, r)
 		return nil

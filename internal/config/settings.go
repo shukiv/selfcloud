@@ -62,6 +62,8 @@ type settingDef struct {
 // may write each as a \u escape pair of 12 bytes: 770 bytes in all, quotes included. No refusal of the name repeats it.
 const maxNameJSON = 1024
 
+const maxExternalURLJSON = maxExternalURL*6 + 2
+
 const (
 	minute = int64(time.Minute)
 	hour   = int64(time.Hour)
@@ -116,6 +118,9 @@ var settingDefs = []settingDef{
 	{key: "upload.max_chunk_size", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "upload.max_file_size", typ: TypeBytes, min: int64(MiB), max: int64(16 * TiB)},
 	{key: "upload.max_small_file_size", typ: TypeBytes, min: 64 * int64(KiB), max: int64(GiB)},
+	{key: "users.external_sign_in_url", typ: TypeString, maxJSON: maxExternalURLJSON},
+	{key: "users.external_signed_out_url", typ: TypeString, maxJSON: maxExternalURLJSON},
+	{key: "users.password_sign_in", typ: TypeBool},
 	{key: "users.reset_ttl", typ: TypeDuration, min: 5 * minute, max: day},
 	{key: "users.verification_ttl", typ: TypeDuration, min: 15 * minute, max: 30 * day},
 	{key: "versions.max_age", typ: TypeDuration, min: day, max: 3650 * day, zero: true},

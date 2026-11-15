@@ -148,13 +148,14 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	// link would tell the attacker the address is an admin's, and nothing else in the answer does. Its right password
 	// is audited as a failed sign-in, as a miss is, since no sign-in completes here.
 	var matches []*store.User
+	passwordSignIn := s.settings().Users.PasswordSignIn
 	for _, c := range candidates {
 		s.countVerify(false)
 		ok, err := s.matchPassword(ctx, c.PasswordHash, password)
 		if err != nil {
 			return err
 		}
-		if ok && c.AccountID != "" {
+		if ok && c.AccountID != "" && passwordSignIn {
 			matches = append(matches, c)
 		}
 	}

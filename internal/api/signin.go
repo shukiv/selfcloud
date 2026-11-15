@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -240,6 +241,28 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (s *Server) externalSignInRedirect(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet || (r.URL.Path != "/login" && r.URL.Path != "/login/") {
+		return false
+	}
+	set := s.settings().Users
+	if set.ExternalSignInURL == "" {
+		return false
+	}
+	q := r.URL.Query()
+	if q.Has("password") {
+		return false
+	}
+	next := "/"
+	if raw, err := cleanNext(q.Get("next")); err == nil {
+		next = raw
+	}
+	target := strings.ReplaceAll(set.ExternalSignInURL, "{next}", url.QueryEscape(next))
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, target, http.StatusFound)
+	return true
+}
+
 // handleLogin signs a user in with email and password. The password is checked against every
 // active, pending or disabled user with the email, so the answer takes about as long whether or
 // not the email is known. An email in several accounts gets a 409 that lists them, but only once
@@ -312,6 +335,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		if ok {
 			matches = append(matches, c)
 		}
+	}
+	if !s.settings().Users.PasswordSignIn {
+		kept := matches[:0]
+		for _, m := range matches {
+			if m.AccountID == "" {
+				kept = append(kept, m)
+			}
+		}
+		matches = kept
 	}
 	// Each hold is given back at the time it was taken (decision 89 (k); a later time restores nothing). The device hold
 	// covers D alone, so it goes back when D matched. The email's hold goes back only when every candidate tested under it
@@ -581,9 +613,13 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 	}
 	var out []delivery
 	now := store.Now()
+	passwordSignIn := s.settings().Users.PasswordSignIn
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		for _, u := range users {
 			if u.Status != store.UserActive {
+				continue
+			}
+			if !passwordSignIn && u.AccountID != "" {
 				continue
 			}
 			// Over the mail budget, this address gets no mail. The answer is the same 202, so the

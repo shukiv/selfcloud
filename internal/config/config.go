@@ -133,6 +133,9 @@ type UsersConfig struct {
 	// DeviceConfirmURLTemplate builds that confirmation link, with {public_url} and {token} replaced. The token goes in
 	// the fragment, as the other links' do.
 	DeviceConfirmURLTemplate string `yaml:"device_confirm_url_template"`
+	ExternalSignInURL        string `yaml:"external_sign_in_url"`
+	ExternalSignedOutURL     string `yaml:"external_signed_out_url"`
+	PasswordSignIn           bool   `yaml:"password_sign_in"`
 }
 
 // AdminConfig controls what an installation admin may do to tenant users (decision 41).
@@ -870,6 +873,7 @@ func Defaults() *Config {
 			SignInURLTemplate:        "{public_url}/sign-in#token={token}",
 			DeviceConfirmTTL:         Duration(15 * time.Minute),
 			DeviceConfirmURLTemplate: "{public_url}/confirm-device#token={token}",
+			PasswordSignIn:           true,
 		},
 		Download: DownloadConfig{Timeout: Duration(30 * time.Second), MinRate: ByteSize(64 << 10)},
 		Sessions: SessionsConfig{
@@ -1105,6 +1109,12 @@ func (c *Config) Validate() error {
 			bad("%s must carry {token} in the fragment, after #", name)
 		}
 	}
+	if err := checkExternalURL(c.Users.ExternalSignInURL, true); err != nil {
+		bad("users.external_sign_in_url: %v", err)
+	}
+	if err := checkExternalURL(c.Users.ExternalSignedOutURL, false); err != nil {
+		bad("users.external_signed_out_url: %v", err)
+	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")
 	}
@@ -1194,6 +1204,45 @@ func checkOffice(o OfficeConfig, bad func(string, ...any)) {
 
 // checkBaseURL accepts an absolute http or https URL with no path, query or fragment.
 // Serving under a sub-path is not supported.
+const maxExternalURL = 2048
+
+func checkExternalURL(s string, next bool) error {
+	if s == "" {
+		return nil
+	}
+	if len(s) > maxExternalURL {
+		return fmt.Errorf("must be at most %d bytes", maxExternalURL)
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] <= 0x20 || s[i] == 0x7f {
+			return errors.New("may not contain a space or a control character")
+		}
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")) {
+		return errors.New("must be an absolute https URL (http only for localhost or 127.0.0.1)")
+	}
+	if u.Host == "" {
+		return errors.New("has no host")
+	}
+	if u.User != nil {
+		return errors.New("may not carry user info")
+	}
+	if strings.Contains(s, "#") {
+		return errors.New("may not carry a fragment")
+	}
+	switch n := strings.Count(s, "{next}"); {
+	case n > 1:
+		return errors.New("may carry {next} at most once")
+	case n == 1 && !next:
+		return errors.New("may not carry {next}")
+	}
+	return nil
+}
+
 func checkBaseURL(s string) error {
 	u, err := url.Parse(s)
 	if err != nil {

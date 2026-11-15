@@ -85,8 +85,15 @@ type infoResponse struct {
 	PasswordMinLength int        `json:"password_min_length"`
 	Limits            infoLimits `json:"limits"`
 	// SharingMaxExpiryDays is the longest a share may run, in whole days, rounded up; 0 means no cap.
-	SharingMaxExpiryDays int      `json:"sharing_max_expiry_days"`
-	Features             []string `json:"features"`
+	SharingMaxExpiryDays int        `json:"sharing_max_expiry_days"`
+	Features             []string   `json:"features"`
+	SignIn               infoSignIn `json:"sign_in"`
+}
+
+type infoSignIn struct {
+	ExternalURL  string `json:"external_url"`
+	SignedOutURL string `json:"signed_out_url"`
+	Password     bool   `json:"password"`
 }
 
 type infoLimits struct {
@@ -146,6 +153,11 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 		},
 		SharingMaxExpiryDays: maxExpiryDays(set.Sharing.MaxExpiry.D()),
 		Features:             s.features(),
+		SignIn: infoSignIn{
+			ExternalURL:  set.Users.ExternalSignInURL,
+			SignedOutURL: set.Users.ExternalSignedOutURL,
+			Password:     set.Users.PasswordSignIn,
+		},
 	})
 	return nil
 }

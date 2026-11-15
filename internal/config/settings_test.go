@@ -473,6 +473,7 @@ func TestEverySettingNamesAField(t *testing.T) {
 		"trash.retention"}
 	want = append(want, brandKeys...)
 	want = append(want, "upload.max_chunk_size", "upload.max_file_size", "upload.max_small_file_size",
+		"users.external_sign_in_url", "users.external_signed_out_url", "users.password_sign_in",
 		"users.reset_ttl", "users.verification_ttl", "versions.max_age", "versions.max_count")
 	if !slices.Equal(keys, want) {
 		t.Errorf("keys = %v\nwant   %v", keys, want)
