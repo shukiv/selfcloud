@@ -7,7 +7,8 @@
 // cues kept above the bar, the phone's bar that hides while a video plays, and, when SELFCLOUD_X2_SHOTS is set to a folder,
 // the screenshots for the owner's review. Run it alone with SELFCLOUD_E2E_ONLY=x2. The checks end signed in as the member,
 // which the rest of the run expects; the interface's language and theme and the listing's view are put back afterwards.
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,8 +20,48 @@ const OWNER = { email: 'olivia@example.com', name: 'Olivia Owner', password: PAS
 const MEMBER = { email: 'mateo@example.com', name: 'Mateo Member', password: PASSWORD };
 const q = (v) => JSON.stringify(v);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// pickOption is the expression for a subtitle file's option in the open Subtitles menu.
-const pickOption = (name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
+// openSubs clicks the bar's Subtitles button (a programmatic click wakes the bar even while it is hidden on a phone).
+// pickOption is the expression for an item in the open Subtitles menu — a track's radio, or a Timing/Size submenu item —
+// found by its label; openSub clicks the named submenu's title to draw its items.
+const openSubs = `document.querySelector('[data-testid="media-subs"]').click()`;
+const pickOption = (name) => `[...document.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === ${q(name)})`;
+const openSub = (name) => `[...document.querySelectorAll('.ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(name)})?.click()`;
+// subPick opens the Subtitles menu, opens the named submenu (Timing or Size) and clicks the named item in it.
+async function subPick(page, sub, item) {
+  await page.evaluate(openSubs);
+  await until(page, `!!([...document.querySelectorAll('.ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(sub)}))`, 5000, `the ${sub} submenu`);
+  await page.evaluate(openSub(sub));
+  await until(page, `!!${pickOption(item)}`, 5000, `the ${item} item`);
+  await page.evaluate(`${pickOption(item)}.click()`);
+}
+// videoShot captures a PNG of just the video's box, so two captures of the same paused frame line up pixel for pixel.
+async function videoShot(page) {
+  const box = await page.evaluate(`(() => { const r = ${MEDIA}.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
+  const { data } = await page.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 1 } });
+  return data;
+}
+// cueTextHeight diffs two captures of one paused frame — the cue hidden, then showing — and returns the vertical span of the
+// pixels that differ: the rendered cue text's height. Chromium's getComputedStyle(video, '::cue') does not report the
+// author's percentage font size (it answers the video's own 14px for every size), so the rendered pixels are the measure.
+async function cueTextHeight(page, hiddenURL, showingURL) {
+  return page.evaluate(`(async () => {
+    const load = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('decode')); i.src = src; });
+    const [ia, ib] = await Promise.all([load(${q(hiddenURL)}), load(${q(showingURL)})]);
+    const w = ia.width, h = ia.height;
+    const draw = (img) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0); return x.getImageData(0, 0, w, h).data; };
+    const da = draw(ia), db = draw(ib);
+    let min = -1, max = -1;
+    for (let y = 0; y < h; y++) {
+      let n = 0;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]) > 30) n++;
+      }
+      if (n > 3) { if (min < 0) min = y; max = y; }
+    }
+    return max >= 0 ? max - min + 1 : 0;
+  })()`);
+}
 
 // parseRgb reads a computed colour, "rgb(...)" or "rgba(...)", over the colour it sits on (its alpha blended in).
 function blendOver(css, behind) {
@@ -191,7 +232,7 @@ const SRT = Buffer.from([
   ...Buffer.from('\n'),
 ]);
 
-export async function x2Checks(h, { page, base, accountKey, accountID, memberID }) {
+export async function x2Checks(h, { page, base, accountKey, accountID, memberID, dir }) {
   const { api, rawPut, check } = h;
   const signIn = (who) => h.signIn(page, who);
   const signOut = () => h.signOut(page);
@@ -415,18 +456,17 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       await openFolder(page, heURL, 'clip.webm');
       await dblClick(page, await rowPoint(page, 'clip.webm'));
       await playing(page);
-      // The subtitle choice is drawn once the file's subtitles are read, which is asynchronous (subtitlesOf): it is waited for.
-      await page.waitFor(`!!document.querySelector('.media-subs .ant-select-selector')`, 15000);
-      await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-      const pick = (name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
-      await until(page, `!!${pick('clip.srt')}`, 5000, 'the SRT in the menu');
-      await page.evaluate(`${pick('clip.srt')}.click()`);
+      // The Subtitles button is drawn once the file's subtitles are read, which is asynchronous (subtitlesOf): it is waited for.
+      await page.waitFor(`!!document.querySelector('[data-testid="media-subs"]')`, 15000);
+      await page.evaluate(openSubs);
+      await until(page, `!!${pickOption('clip.srt')}`, 5000, 'the SRT in the menu');
+      await page.evaluate(`${pickOption('clip.srt')}.click()`);
       await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);
       const hebrewCue = `(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); return !!t && [...t.activeCues].some((c) => c.text.includes('שלום')); })()`;
       try {
         await until(page, hebrewCue, 10000, 'the Hebrew cue');
       } catch (err) {
-        const info = await page.evaluate(`(() => { const v = ${MEDIA}; const tt = v ? [...v.textTracks].map((t) => ({ kind: t.kind, label: t.label, lang: t.language, mode: t.mode, cues: t.cues?.length ?? -1, active: t.activeCues?.length ?? -1, first: t.cues?.[0] ? String(t.cues[0].text).slice(0, 40) : null })) : null; return { tracks: tt, time: v?.currentTime, sel: document.querySelector('.media-subs .ant-select-selection-item')?.textContent ?? null, lang: localStorage.getItem('selfcloud.lang'), url: location.pathname }; })()`);
+        const info = await page.evaluate(`(() => { const v = ${MEDIA}; const tt = v ? [...v.textTracks].map((t) => ({ kind: t.kind, label: t.label, lang: t.language, mode: t.mode, cues: t.cues?.length ?? -1, active: t.activeCues?.length ?? -1, first: t.cues?.[0] ? String(t.cues[0].text).slice(0, 40) : null })) : null; return { tracks: tt, time: v?.currentTime, showing: tt?.find((x) => x.mode === 'showing')?.label ?? null, lang: localStorage.getItem('selfcloud.lang'), url: location.pathname }; })()`);
         throw new Error(`${err.message}; ${JSON.stringify(info)}`);
       }
       check(await page.evaluate(hebrewCue), 'the Windows-1255 SRT shows its Hebrew cue');
@@ -436,12 +476,88 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       const geo = await page.evaluate(`(() => { const v = ${MEDIA}.getBoundingClientRect(); const c = document.querySelector('[data-testid="media-controls"]').getBoundingClientRect(); return { top: v.top, height: v.height, bar: c.top }; })()`);
       check(geo.bar >= geo.top + 0.8 * geo.height, `the bar's top (${(((geo.bar - geo.top) / geo.height) * 100).toFixed(0)} % down the picture) is below the cue line (80 %)`);
       await shot(page, 'subtitles-desktop-he-light');
-      await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-      await until(page, `!!${pick('clip.vtt')}`, 5000, 'the WebVTT in the menu');
-      await page.evaluate(`${pick('clip.vtt')}.click()`);
+      await page.evaluate(openSubs);
+      await until(page, `!!${pickOption('clip.vtt')}`, 5000, 'the WebVTT in the menu');
+      await page.evaluate(`${pickOption('clip.vtt')}.click()`);
       const vttCue = `(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); return !!t && [...t.activeCues].some((c) => c.text.includes('Hello from the WebVTT file')); })()`;
       await until(page, vttCue, 10000, 'the WebVTT cue');
       check(await page.evaluate(vttCue), 'the WebVTT file shows its cue');
+      await closeViewer(page);
+    });
+
+    await step('a subtitle file from this device shows its cues and sends nothing; the timing and the size move the cues', async () => {
+      // The beside-file step left the owner signed in at the folder in Hebrew: back to English there (so sign-out reads
+      // "Sign out"), wait for the account menu, sign out and sign back in, so no stale media request races the sign-out.
+      await setPrefs(page, mediaURL, 'en', 'light');
+      await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]')`, 15000);
+      await signOut();
+      await signIn(OWNER);
+      await openFolder(page, mediaURL, 'clip.webm');
+      await dblClick(page, await rowPoint(page, 'clip.webm'));
+      await playing(page);
+      await page.waitFor(`!!document.querySelector('[data-testid="media-subs"]')`, 15000);
+      // A file with no cues shows the note, and the note sits above the bar (the bar overlays the picture's foot, so the
+      // note must not be covered by it). The file goes straight into the input; no request carries it.
+      const emptyFile = join(dir, 'empty.srt');
+      await writeFile(emptyFile, 'not a subtitle file');
+      await page.setFiles(`[data-testid="media-subs-file"]`, [emptyFile]);
+      await page.waitFor(`!!document.querySelector('[data-testid="media-subs-none"]')`, 10000);
+      const noteGeo = await page.evaluate(`(() => { const n = document.querySelector('[data-testid="media-subs-none"]').getBoundingClientRect(); const c = document.querySelector('[data-testid="media-controls"]').getBoundingClientRect(); return { noteBottom: n.bottom, barTop: c.top, text: document.querySelector('[data-testid="media-subs-none"]').textContent }; })()`);
+      check(noteGeo.text === 'No subtitles were found in that file', 'a file with no cues shows the note');
+      check(noteGeo.noteBottom <= noteGeo.barTop + 1, `the note sits above the bar, not covered by it (note bottom ${noteGeo.noteBottom.toFixed(0)}, bar top ${noteGeo.barTop.toFixed(0)})`);
+      // A WebVTT file on this device, read in the browser only: its text is never sent to the server.
+      const localName = 'device.vtt';
+      const localFile = join(dir, localName);
+      await writeFile(localFile, 'WEBVTT\n\n00:00:01.000 --> 00:00:25.000\nFrom this device\n');
+      // The Load item opens the page's picker once; a headless browser cannot show it, so the click is counted and the file
+      // goes in through DOM.setFileInputFiles afterwards, which fires the real change event (as fu3b does).
+      await page.evaluate(`(() => { window.__subsPicks = 0; const o = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { window.__subsPicks++; return; } return o.call(this); }; return true; })()`);
+      const mark = page.sent.length;
+      await page.evaluate(openSubs);
+      await until(page, `!!${pickOption('Load from this device…')}`, 5000, 'the Load item in the menu');
+      await page.evaluate(`${pickOption('Load from this device…')}.click()`);
+      check(await page.evaluate(`window.__subsPicks`) === 1, 'the Load item opens the picker once');
+      await page.setFiles(`[data-testid="media-subs-file"]`, [localFile]);
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);
+      const deviceCue = `(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); return !!t && [...t.activeCues].some((c) => c.text.includes('From this device')); })()`;
+      await until(page, deviceCue, 10000, 'the device cue');
+      check(await page.evaluate(deviceCue), 'the file from this device shows its cue');
+      check(await page.evaluate(`!document.querySelector('[data-testid="media-subs-none"]')`), 'a file with cues clears the note');
+      check(page.sent.slice(mark).every((r) => !r.url.includes(localName)), 'the device file is never sent: no request names it');
+      // Later 0.1 s moves the showing track's first cue by 0.1 s.
+      const firstStart = `(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); return t?.cues?.[0]?.startTime ?? null; })()`;
+      const before = await page.evaluate(firstStart);
+      await subPick(page, 'Timing', 'Later 0.1 s');
+      await until(page, `(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); return (t?.cues?.[0]?.startTime ?? 0) >= ${before} + 0.099; })()`, 5000, 'the cue moved later');
+      const after = await page.evaluate(firstStart);
+      check(Math.abs(after - before - 0.1) < 0.001, `Later 0.1 s moves the cue by 0.1 s (${before} -> ${after})`);
+      // The cue size: Small, Medium and Large each set the video's class and scale the browser's cue text. The rendered
+      // height is measured from the pixels (getComputedStyle does not report the ::cue percentage): the video is paused on
+      // one frame, a capture with the cue hidden is the baseline, and each size's capture is diffed against it — the rows
+      // that differ are the cue text. The three shots go to the owner's review folder.
+      const cueShots = join(homedir(), '.cache', 'selfcloud-shots', 'mp2a');
+      await mkdir(cueShots, { recursive: true });
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);
+      await sleep(300);
+      await page.evaluate(`(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); window.__cueTrack = t; if (t) t.mode = 'hidden'; return true; })()`);
+      await sleep(150);
+      const hiddenShot = await videoShot(page);
+      await page.evaluate(`(() => { if (window.__cueTrack) window.__cueTrack.mode = 'showing'; return true; })()`);
+      const measured = {};
+      for (const [label, key] of [['Small', 's'], ['Medium', 'm'], ['Large', 'l']]) {
+        await subPick(page, 'Size', label);
+        await until(page, `${MEDIA}.className.includes('media-cue-${key}')`, 5000, `the media-cue-${key} class`);
+        check(await page.evaluate(`${MEDIA}.className.includes('media-cue-${key}')`), `${label} sets the media-cue-${key} class on the video`);
+        await sleep(250);
+        const sizeShot = await videoShot(page);
+        measured[key] = await cueTextHeight(page, `data:image/png;base64,${hiddenShot}`, `data:image/png;base64,${sizeShot}`);
+        await writeFile(join(cueShots, `cue-size-${key}.png`), Buffer.from(sizeShot, 'base64'));
+        console.log(`shot ${join(cueShots, `cue-size-${key}.png`)} (rendered cue text ${measured[key]} px tall)`);
+      }
+      check(measured.l > measured.m && measured.m > measured.s, `the cue text grows with the size (s ${measured.s}, m ${measured.m}, l ${measured.l} px tall)`);
+      // Put the timing and the size back, so the shots that follow read the defaults.
+      await subPick(page, 'Timing', 'Reset');
+      await subPick(page, 'Size', 'Medium');
       await closeViewer(page);
     });
 
@@ -456,7 +572,7 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       check(await page.evaluate(`!!document.querySelector('[data-testid="media-controls"].media-controls--hidden')`), 'the bar hides on a phone while the video plays');
       check(await page.evaluate(`(document.querySelector('[data-testid="media-queue"] [aria-current="true"] .media-state')?.textContent ?? '').includes('Playing')`), 'the current row says Playing while the video plays');
       // Subtitles are off until the person picks one, so the phone's step picks the WebVTT file from the bar's menu first.
-      await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+      await page.evaluate(openSubs);
       await until(page, `!!${pickOption('clip.vtt')}`, 5000, 'the WebVTT in the phone menu');
       await page.evaluate(`${pickOption('clip.vtt')}.click()`);
       await sleep(700); // the bar fades over a short transition; the shot waits for it to finish
@@ -512,9 +628,9 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
     if (shots) {
       await step('the screenshot matrix: desktop and phone, light and dark, English and Hebrew', async () => {
         const pickSubs = async (name) => {
-          await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-          await until(page, `!!([...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)}))`, 5000, `the ${name} menu entry`);
-          await page.evaluate(`[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)}).click()`);
+          await page.evaluate(openSubs);
+          await until(page, `!!${pickOption(name)}`, 5000, `the ${name} menu entry`);
+          await page.evaluate(`${pickOption(name)}.click()`);
         };
         for (const [lang, theme] of [['en', 'light'], ['en', 'dark'], ['he', 'light'], ['he', 'dark']]) {
           const tag = `${lang}-${theme}`;

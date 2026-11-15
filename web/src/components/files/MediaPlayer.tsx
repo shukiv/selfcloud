@@ -2,9 +2,13 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Gate, NO_RENEWALS, PROGRESS_SECONDS, afterProgress, mediaVerdict, takeRenewal, type Renewals } from "../../lib/files/media";
-import { refusedPlay } from "../../lib/files/mediaKeys";
+import { clamp, refusedPlay } from "../../lib/files/mediaKeys";
 import { LATE_START_S, SaveClock, startAt as placeToStart, type Resume } from "../../lib/files/resume";
-import { placeCue, type SubtitleTrack } from "../../lib/files/subtitles";
+import { MAX_SUBTITLE_BYTES, decodeSubtitle, parseCues, placeCue, type Cue, type SubtitleTrack } from "../../lib/files/subtitles";
+import { currentLang, useT } from "../../lib/i18n";
+import { readPref, writePref } from "../../lib/prefs";
+import { session } from "../../lib/session";
+import { useStoreSelect } from "../../lib/store";
 import MediaControls, { type Nav } from "./MediaControls";
 
 // MediaPlayer plays one video or audio file from a signed link. The link ends at a fixed time, and the server refuses
@@ -22,7 +26,49 @@ export interface Link {
 export type MediaFailure = { kind: "unsupported" } | { kind: "error"; err: unknown };
 
 // A subtitle track (SubtitleTrack) is added to the element as a text track, so the browser draws its cues; no address is
-// given to the element.
+// given to the element. A file loaded from this device is read in the browser only and lasts for this viewing.
+
+// SubtitleSize is the cue text's size: small, medium (the browser's own) and large, a class on the video (index.css).
+export type SubtitleSize = "s" | "m" | "l";
+
+// OFFSET_LIMIT bounds the timing offset either way, in seconds; the offset steps and rests on tenths.
+const OFFSET_LIMIT = 60;
+
+// cueOriginals keeps each cue's own start and end, so an offset shifts from the file's times, never from the last shift.
+const cueOriginals = new WeakMap<TextTrackCue, { start: number; end: number }>();
+
+function clampOffset(v: number): number {
+  return Math.round(clamp(v, -OFFSET_LIMIT, OFFSET_LIMIT) * 10) / 10;
+}
+
+// readOffset reads the offset kept for a video file in this browser. Without a key, or with a value that does not read,
+// the offset is 0.
+function readOffset(nodeId?: string): number {
+  if (!nodeId) return 0;
+  const raw = readPref(`selfcloud.subtitleOffset.${nodeId}`);
+  const v = raw === null ? NaN : Number(raw);
+  return Number.isFinite(v) ? clampOffset(v) : 0;
+}
+
+// readSize reads the person's cue size; anyone else's key is never read. Medium is the default.
+function readSize(userId: string | null): SubtitleSize {
+  const v = readPref(`selfcloud.subtitleSize.${userId ?? "visitor"}`);
+  return v === "s" || v === "l" ? v : "m";
+}
+
+// shiftCue moves one cue to its own time plus the offset, never below 0, on the millisecond the formats keep.
+function shiftCue(cue: TextTrackCue, off: number): void {
+  const orig = cueOriginals.get(cue);
+  if (!orig) return;
+  cue.startTime = Math.max(0, Math.round((orig.start + off) * 1000) / 1000);
+  cue.endTime = Math.max(0, Math.round((orig.end + off) * 1000) / 1000);
+}
+
+function shiftTrack(tt: TextTrack, off: number): void {
+  const cues = tt.cues;
+  if (!cues) return;
+  for (let i = 0; i < cues.length; i++) shiftCue(cues[i], off);
+}
 
 interface Props {
   kind: "video" | "audio";
@@ -55,6 +101,9 @@ interface Props {
   onElement?: (el: HTMLMediaElement | null) => void;
   // tracks are the subtitle files of a video, read already. The bar offers them; none is shown until the person picks one.
   tracks?: SubtitleTrack[];
+  // subtitleKey is the video file's node id: the timing offset is kept under it in this browser, so the same file opens
+  // with the offset it was left at. Without it the offset lasts for this viewing only.
+  subtitleKey?: string;
   // active says the viewer shows the player, so its keys are read. A player kept on the page for audio alone is not active.
   active?: boolean;
   // keysInBox says the player sits in the session's box on the Media page, so a key aimed outside the box is the page's.
@@ -84,10 +133,12 @@ export default function MediaPlayer({
   onPlayState,
   onElement,
   tracks,
+  subtitleKey,
   active = true,
   keysInBox = false,
   art,
 }: Props) {
+  const { t } = useT();
   const el = useRef<HTMLMediaElement | null>(null);
   // mediaEl and stageEl are the same elements as state, so the bar renders once they exist.
   const [mediaEl, setMediaEl] = useState<HTMLMediaElement | null>(null);
@@ -140,6 +191,30 @@ export default function MediaPlayer({
   // subs are the subtitle tracks the element has, and which one is shown (-1 for none).
   const textTracks = useRef<TextTrack[]>([]);
   const [subs, setSubs] = useState<{ labels: string[]; active: number }>({ labels: [], active: -1 });
+  // loaded are the tracks read from this device for this viewing: they are never sent to the server, and they go when
+  // the player does.
+  const loaded = useRef<{ label: string; tt: TextTrack }[]>([]);
+  // offset is the timing shift of every cue of this video, and size the person's cue size. subsNote says a device file
+  // held no cues.
+  const [offset, setOffset] = useState(0);
+  const offsetRef = useRef(0);
+  const userId = useStoreSelect(session, (s) => s?.user.id ?? null);
+  const [size, setSize] = useState<SubtitleSize>("m");
+  const [subsNote, setSubsNote] = useState(false);
+
+  // The offset is the file's own, read once for it; a player handed another file's key reads that one's.
+  useEffect(() => {
+    const off = readOffset(subtitleKey);
+    offsetRef.current = off;
+    setOffset(off);
+    for (const tt of textTracks.current) shiftTrack(tt, off);
+  }, [subtitleKey]);
+
+  // The size is the signed-in person's own; a visitor has a key of their own, and one person's choice never reads for
+  // another.
+  useEffect(() => {
+    setSize(readSize(userId));
+  }, [userId]);
 
   const clearStall = () => {
     if (stall.current !== null) clearTimeout(stall.current);
@@ -343,27 +418,38 @@ export default function MediaPlayer({
     return () => elementRef.current?.(null);
   }, [mediaEl]);
 
+  // addCues turns parsed cues into the element's own, placed above the bar and shifted by the offset in force. A cue the
+  // browser will not take is left out; the others show.
+  const addCues = (tt: TextTrack, cues: Cue[]) => {
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    for (const c of cues) {
+      try {
+        const cue = new window.VTTCue(c.start, c.end, c.text);
+        placeCue(cue, coarse);
+        cueOriginals.set(cue, { start: c.start, end: c.end });
+        shiftCue(cue, offsetRef.current);
+        tt.addCue(cue);
+      } catch {
+        // A cue the browser will not take is left out; the others show.
+      }
+    }
+  };
+
   // The subtitle tracks are added to the element once it exists. The browser draws their cues; none is shown until picked.
+  // Beside files come first, then the files loaded from the device for this viewing.
   useEffect(() => {
     const media = mediaEl;
     if (!media || kind !== "video" || !tracks || tracks.length === 0 || typeof window.VTTCue === "undefined") return;
     const made: TextTrack[] = [];
-    for (const t of tracks) {
-      const tt = media.addTextTrack("subtitles", t.label);
-      for (const c of t.cues) {
-        try {
-          const cue = new window.VTTCue(c.start, c.end, c.text);
-          placeCue(cue, window.matchMedia?.("(pointer: coarse)").matches ?? false);
-          tt.addCue(cue);
-        } catch {
-          // A cue the browser will not take is left out; the others show.
-        }
-      }
+    for (const track of tracks) {
+      const tt = media.addTextTrack("subtitles", track.label);
+      addCues(tt, track.cues);
       tt.mode = "disabled";
       made.push(tt);
     }
-    textTracks.current = made;
-    setSubs({ labels: tracks.map((t) => t.label), active: -1 });
+    textTracks.current = [...made, ...loaded.current.map((l) => l.tt)];
+    for (const tt of textTracks.current) tt.mode = "disabled";
+    setSubs({ labels: [...tracks.map((track) => track.label), ...loaded.current.map((l) => l.label)], active: -1 });
     return () => {
       for (const tt of made) tt.mode = "disabled";
       textTracks.current = [];
@@ -376,6 +462,50 @@ export default function MediaPlayer({
       tt.mode = j === i ? "showing" : "disabled";
     });
     setSubs((s) => ({ ...s, active: i }));
+  };
+
+  // setOffsetTo shifts every cue of every track of this video to the offset, clamped and on tenths, and keeps it for the
+  // file when its key is known. A storage that refuses keeps the choice for this page.
+  const setOffsetTo = (v: number) => {
+    const off = clampOffset(v);
+    offsetRef.current = off;
+    setOffset(off);
+    for (const tt of textTracks.current) shiftTrack(tt, off);
+    if (subtitleKey) writePref(`selfcloud.subtitleOffset.${subtitleKey}`, String(off));
+  };
+
+  // pickSize applies the person's cue size and keeps it under their own key.
+  const pickSize = (s: SubtitleSize) => {
+    setSize(s);
+    writePref(`selfcloud.subtitleSize.${userId ?? "visitor"}`, s);
+  };
+
+  // loadFile reads a subtitle file from this device, in the browser only: no request of any kind carries the file or its
+  // text. Only its first MAX_SUBTITLE_BYTES are read. With cues it becomes a track named after the file and shown at
+  // once; with none, the note under the bar says so and nothing is added. It lasts while this video is open.
+  const loadFile = async (file: File) => {
+    const media = el.current;
+    if (!media || kind !== "video" || typeof window.VTTCue === "undefined") return;
+    setSubsNote(false);
+    let cues: Cue[] = [];
+    try {
+      const bytes = new Uint8Array(await file.slice(0, MAX_SUBTITLE_BYTES).arrayBuffer());
+      cues = parseCues(decodeSubtitle(bytes, currentLang(), file.size > MAX_SUBTITLE_BYTES));
+    } catch {
+      // A file that cannot be read gives no track; the note says none were found.
+    }
+    if (cues.length === 0) {
+      setSubsNote(true);
+      return;
+    }
+    const tt = media.addTextTrack("subtitles", file.name);
+    addCues(tt, cues);
+    tt.mode = "disabled";
+    loaded.current.push({ label: file.name, tt });
+    textTracks.current.push(tt);
+    const i = textTracks.current.length - 1;
+    setSubs((s) => ({ labels: [...s.labels, file.name], active: i }));
+    pickTrack(i);
   };
 
   const handlers = {
@@ -397,7 +527,7 @@ export default function MediaPlayer({
     <div ref={setStageEl} className="media-stage" data-kind={kind} dir="ltr" data-testid="media-stage">
       {kind === "video" ? (
         // playsInline keeps the picture in its place on iPhone, where a video would otherwise open the system player.
-        <video ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} playsInline className="media-picture" {...handlers} />
+        <video ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} playsInline className={`media-picture media-cue-${size}`} {...handlers} />
       ) : (
         <audio ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} className="media-sound" {...handlers} />
       )}
@@ -409,10 +539,19 @@ export default function MediaPlayer({
         nav={nav}
         needPress={needPress}
         onNeedPress={setNeedPress}
-        subtitles={kind === "video" && subs.labels.length > 0 ? { ...subs, onPick: pickTrack } : undefined}
+        subtitles={
+          kind === "video"
+            ? { ...subs, onPick: pickTrack, onLoad: (f: File) => void loadFile(f), offset, onOffset: setOffsetTo, size, onSize: pickSize }
+            : undefined
+        }
         active={active}
         keysInBox={keysInBox}
       />
+      {kind === "video" && subsNote && (
+        <p role="status" className="media-subs-note" data-testid="media-subs-none">
+          {t("files.media.subtitlesNone")}
+        </p>
+      )}
     </div>
   );
 }

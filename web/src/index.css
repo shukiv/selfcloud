@@ -1080,9 +1080,42 @@ a {
   }
 }
 
-/* The subtitle menu takes the speed list's place in the bar. */
-.media-subs.ant-select {
-  flex: none;
+/* The Subtitles button takes the speed list's place in the bar. Its menu's radio items carry a check mark, hidden when
+   unchecked so every label starts at one edge; a long file name cuts with an ellipsis instead of widening the menu. */
+.media-subs-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+}
+.media-subs-check--off {
+  visibility: hidden;
+}
+.media-subs-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The note when a file from the device held no subtitles: a banner just above the bar (whose height MediaControls publishes
+   as --media-bar-h), in the bar's own dark scrim and light text, so the bar never covers it. */
+.media-subs-note {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: var(--media-bar-h, 0px);
+  margin: 0;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+}
+/* The person's cue size, a class on the video: small and large scale the browser's own cue text; medium is the browser's
+   own size, with no rule of its own. */
+video.media-cue-s::cue {
+  font-size: 80%;
+}
+video.media-cue-l::cue {
+  font-size: 130%;
 }
 /* The mini player: one bar docked at the bottom of the shell while audio plays after the viewer closed. Its colours come from
    the sidebar (inline), and its controls read left to right in every language (dir on the bar). */
@@ -1226,10 +1259,6 @@ a {
   }
   .media-mini .ant-btn.media-mini-play {
     width: 44px;
-  }
-  .media-subs.ant-select .ant-select-selector {
-    min-height: 44px;
-    height: 44px;
   }
   /* The mini player's seek handle is a touch target: a 44 px box, its ring 14 px, kept inside the bar as in the viewer. */
   .media-mini-seek .ant-slider {

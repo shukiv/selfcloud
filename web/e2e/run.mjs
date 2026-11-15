@@ -1076,7 +1076,7 @@ async function main() {
     if (!only || onlySet.has('w1')) await section('w1', async () => w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary: await findBrowser() }), { as: 'member' });
     if (!only || onlySet.has('w2')) await section('w2', () => w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir }), { as: 'member' });
     if (!only || onlySet.has('sd1')) await section('sd1', () => sd1Checks(h, { page, base, accountKey, teamA, teamB }), { as: 'member' });
-    if (!only || onlySet.has('x2')) await section('x2', () => x2Checks(h, { page, base, accountKey, accountID, memberID }), { as: 'member' });
+    if (!only || onlySet.has('x2')) await section('x2', () => x2Checks(h, { page, base, accountKey, accountID, memberID, dir }), { as: 'member' });
     // Slice mp1 (decision 186): the Media page hosts the running session, the same element moving to its stage. It runs
     // on the shared page after x2, and ends signed in as the member, as x2 does.
     if (!only || onlySet.has('mp1')) await section('mp1', () => mp1Checks(h, { page, base, accountKey, accountID }), { as: 'member' });

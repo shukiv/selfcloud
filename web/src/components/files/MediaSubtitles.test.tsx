@@ -5,6 +5,8 @@
 // holds them (real cue objects), so an offset's shift of every cue can be read.
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { ConfigProvider } from "antd";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_SUBTITLE_BYTES, type SubtitleTrack } from "../../lib/files/subtitles";
 import { session, type Session } from "../../lib/session";
@@ -70,6 +72,11 @@ function fileInput(): HTMLInputElement {
 function loadFile(file: File): void {
   fireEvent.change(fileInput(), { target: { files: [file] } });
 }
+// renderPlayer draws the player with antd's motion off. jsdom never fires transitionend, so a popup's leave motion would
+// never finish and destroyOnHidden would never run; with motion off the popup is destroyed on close, as in a browser.
+function renderPlayer(ui: ReactElement) {
+  return render(<ConfigProvider theme={{ token: { motion: false } }}>{ui}</ConfigProvider>);
+}
 
 beforeEach(() => {
   made = [];
@@ -99,15 +106,15 @@ afterEach(() => {
 
 describe("the Subtitles button", () => {
   it("shows for a video with no subtitle files beside it, and never for audio", () => {
-    const { unmount } = render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    const { unmount } = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     expect(subsButton().getAttribute("aria-haspopup")).toBe("menu");
     unmount();
-    render(<MediaPlayer kind="audio" name="song.mp3" link={LINK} mint={mint} onFail={() => {}} />);
+    renderPlayer(<MediaPlayer kind="audio" name="song.mp3" link={LINK} mint={mint} onFail={() => {}} />);
     expect(screen.queryByRole("button", { name: "Subtitles" })).toBeNull();
   });
 
   it("opens its popup on the stage in full screen, so the menu shows there", async () => {
-    const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    const { container } = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     const stage = container.querySelector('[data-testid="media-stage"]') as HTMLElement;
     Object.defineProperty(document, "fullscreenElement", { configurable: true, value: stage });
     const menu = await openMenu();
@@ -117,7 +124,7 @@ describe("the Subtitles button", () => {
 
 describe("the tracks in the menu", () => {
   it("lists Off and each track, and picking one shows it and disables the others", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
     expect(made.map((t) => t.mode)).toEqual(["disabled", "disabled"]);
     const menu = await openMenu();
     const off = itemOf(menu, "Off");
@@ -143,7 +150,7 @@ describe("a file from this device", () => {
   it("adds a track named after the file, shows it at once, and makes no request", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
     loadFile(new File([SRT], "local.srt", { type: "application/x-subrip" }));
     await waitFor(() => expect(made).toHaveLength(3));
     expect(made[2].label).toBe("local.srt");
@@ -159,7 +166,7 @@ describe("a file from this device", () => {
   });
 
   it("shows the note and adds nothing for a file with no cues", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     loadFile(new File(["not a subtitle file"], "empty.srt"));
     expect(await screen.findByText("No subtitles were found in that file")).toBeTruthy();
     expect(made).toHaveLength(0);
@@ -170,8 +177,8 @@ describe("a file from this device", () => {
   });
 
   it("reads a file over the limit only up to the limit", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
-    const big = new File([SRT + "x".repeat(MAX_SUBTITLE_BYTES)], "big.srt");
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    const big = new File([SRT + "\n" + "x".repeat(MAX_SUBTITLE_BYTES)], "big.srt");
     expect(big.size).toBeGreaterThan(MAX_SUBTITLE_BYTES);
     const slice = vi.spyOn(big, "slice");
     loadFile(big);
@@ -183,7 +190,7 @@ describe("a file from this device", () => {
 
 describe("the timing offset", () => {
   it("Later 0.1 s twice moves every cue of every track by +0.2 and writes it under the node's key", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     await timingClick("Later 0.1 s");
     await timingClick("Later 0.1 s");
     expect(made[0].cues[0].startTime).toBeCloseTo(1.2, 5);
@@ -195,19 +202,19 @@ describe("the timing offset", () => {
 
   it("applies the saved offset when the same node opens again, and not to another node", async () => {
     localStorage.setItem("selfcloud.subtitleOffset.node-1", "0.2");
-    const first = render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    const first = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     expect(made[0].cues[0].startTime).toBeCloseTo(1.2, 5);
     expect(made[0].cues[0].endTime).toBeCloseTo(25.2, 5);
     first.unmount();
     made = [];
-    render(<MediaPlayer kind="video" name="other.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-2" />);
+    renderPlayer(<MediaPlayer kind="video" name="other.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-2" />);
     expect(made[0].cues[0].startTime).toBe(1);
     expect(made[0].cues[0].endTime).toBe(25);
   });
 
   it("clamps at +60 and -60, and a cue never starts below 0", async () => {
     localStorage.setItem("selfcloud.subtitleOffset.node-1", "59.9");
-    const first = render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    const first = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     await timingClick("Later 0.1 s");
     expect(localStorage.getItem("selfcloud.subtitleOffset.node-1")).toBe("60");
     await timingClick("Later 0.1 s");
@@ -215,7 +222,7 @@ describe("the timing offset", () => {
     first.unmount();
     made = [];
     localStorage.setItem("selfcloud.subtitleOffset.node-1", "-60");
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     expect(made[0].cues[0].startTime).toBe(0);
     expect(made[0].cues[0].endTime).toBe(0);
     await timingClick("Earlier 0.1 s");
@@ -223,7 +230,7 @@ describe("the timing offset", () => {
   });
 
   it("Reset writes 0 and puts every cue back at its own time", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     await timingClick("Later 0.1 s");
     await timingClick("Reset");
     expect(localStorage.getItem("selfcloud.subtitleOffset.node-1")).toBe("0");
@@ -232,7 +239,7 @@ describe("the timing offset", () => {
   });
 
   it("shows the offset in the Timing submenu's first item, disabled", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     await timingClick("Later 0.1 s");
     const menu = await openMenu();
     fireEvent.click(within(menu).getByText("Timing").closest(".ant-dropdown-menu-submenu-title") as Element);
@@ -241,7 +248,7 @@ describe("the timing offset", () => {
   });
 
   it("without a node key the offset lasts for this viewing only", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} />);
     await timingClick("Later 0.1 s");
     expect(made[0].cues[0].startTime).toBeCloseTo(1.1, 5);
     expect(localStorage.getItem("selfcloud.subtitleOffset.node-1")).toBeNull();
@@ -251,14 +258,14 @@ describe("the timing offset", () => {
 describe("the size", () => {
   it("Large sets media-cue-l and saves under the person's key; a second person keeps their own", async () => {
     session.set(who("a"));
-    const first = render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    const first = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     expect(video().className).toContain("media-cue-m");
     await sizeClick("Large");
     expect(video().className).toContain("media-cue-l");
     expect(localStorage.getItem("selfcloud.subtitleSize.a")).toBe("l");
     first.unmount();
     session.set(who("b"));
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     expect(video().className).toContain("media-cue-m");
     expect(video().className).not.toContain("media-cue-l");
     await sizeClick("Small");
@@ -268,13 +275,13 @@ describe("the size", () => {
   });
 
   it("a visitor's size is kept under the visitor key", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     await sizeClick("Large");
     expect(localStorage.getItem("selfcloud.subtitleSize.visitor")).toBe("l");
   });
 
   it("the chosen size is the checked one in the Size submenu", async () => {
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
     const menu = await openMenu();
     fireEvent.click(within(menu).getByText("Size").closest(".ant-dropdown-menu-submenu-title") as Element);
     const medium = (await screen.findByText("Medium")).closest("li") as HTMLElement;
@@ -292,7 +299,7 @@ describe("a storage that throws", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");
     });
-    render(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} tracks={TRACKS} subtitleKey="node-1" />);
     await sizeClick("Large");
     expect(video().className).toContain("media-cue-l");
     await timingClick("Later 0.1 s");

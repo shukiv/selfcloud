@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from "react";
-import { ConfigProvider, Select, Slider, theme as antdTheme } from "antd";
-import { Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { ConfigProvider, Dropdown, Select, Slider, theme as antdTheme, type MenuProps } from "antd";
+import type { MenuItemType } from "antd/es/menu/interface";
+import { Captions, Check, Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { readNonce } from "../../csp/nonce";
 import { usePaletteOrLight } from "../../theme/theme";
 import { playerBox } from "../../lib/files/playerBox";
+import type { SubtitleSize } from "./MediaPlayer";
 import {
   HIDE_MS,
   SPEEDS,
@@ -55,6 +57,13 @@ interface Snap {
 const REPEATS = new Set<Command>(["back10", "forward10", "back5", "forward5", "volumeUp", "volumeDown"]);
 const isSpace = (key: string) => key === " " || key === "Spacebar";
 
+// SubRadioItem is a menu item of the radio kind (Off, a track, a size): it carries its role and its checked state, which
+// the menu's own types do not name.
+type SubRadioItem = MenuItemType & { role: "menuitemradio"; "aria-checked": boolean };
+
+// formatOffset writes the timing offset with its sign and one decimal: +0.3, -0.2, 0.0.
+const formatOffset = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+
 const EMPTY: Snap = { playing: false, time: 0, duration: 0, buffered: 0, volume: 1, muted: false, rate: 1, full: false, pip: false };
 
 // The events that change what the bar shows.
@@ -84,8 +93,18 @@ interface Props {
   // needPress says the browser refused to play for want of a press: the bar says so. onNeedPress sets or clears it.
   needPress?: boolean;
   onNeedPress?: (v: boolean) => void;
-  // subtitles, when the video has subtitle files, is the menu of them: the labels, which one shows (-1 for none), and the pick.
-  subtitles?: { labels: string[]; active: number; onPick: (i: number) => void };
+  // subtitles is the video's Subtitles menu: the tracks' labels, which one shows (-1 for none) and the pick; a file from
+  // this device; the timing offset of every cue; and the person's cue size. Every video has the menu, audio none.
+  subtitles?: {
+    labels: string[];
+    active: number;
+    onPick: (i: number) => void;
+    onLoad: (file: File) => void;
+    offset: number;
+    onOffset: (next: number) => void;
+    size: SubtitleSize;
+    onSize: (s: SubtitleSize) => void;
+  };
   // active says whether the keys are read here. A player kept for audio alone, with its viewer closed, reads none.
   active?: boolean;
   // keysInBox says the player sits in the session's box on the Media page (decision 186): a key aimed outside the box is
@@ -113,6 +132,10 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
   needRef.current = onNeedPress;
   // swallowSpaceUp is set by a Space the player took on its keydown, until that Space's keyup comes.
   const swallowSpaceUp = useRef(false);
+  // fileInput is the hidden picker of the Subtitles menu's "Load from this device"; subsOpen says its menu is open, which
+  // keeps the bar shown while the person reads it, as focus in the bar does.
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const subsOpen = useRef(false);
 
   // read copies the element's state into the bar, and the volume, mute and speed into the player's preferences. Only a
   // change of volume or mute is written to the browser's storage: the time and the other events are read without a write.
@@ -162,11 +185,12 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
   };
-  // wake shows the bar, and on a playing video starts the count to hide it again.
+  // wake shows the bar, and on a playing video starts the count to hide it again. An open Subtitles menu keeps it shown:
+  // the menu's focus is in its popup, outside the bar, and the bar must not fade under it.
   const wake = () => {
     setShown(true);
     clearTimer();
-    if (kind === "video" && playingRef.current && !within.current) {
+    if (kind === "video" && playingRef.current && !within.current && !subsOpen.current) {
       timer.current = setTimeout(() => {
         // Keyboard focus that came into the bar while the count ran keeps it shown.
         if (playingRef.current && !within.current) setShown(false);
@@ -194,6 +218,21 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
   }, [stage, kind]);
 
   useEffect(() => () => clearTimer(), []);
+
+  // The bar's height, published on the stage so the no-subtitles note can sit just above the bar (the bar overlays the
+  // picture's foot, so a note in the flow there would be covered by it). A ResizeObserver keeps it right on a finger.
+  useEffect(() => {
+    const bar = root.current;
+    if (kind !== "video" || !stage || !bar) return;
+    const publish = () => stage.style.setProperty("--media-bar-h", `${bar.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(bar);
+    return () => {
+      ro.disconnect();
+      stage.style.removeProperty("--media-bar-h");
+    };
+  }, [stage, kind]);
 
   const seek = (m: HTMLMediaElement, to: number) => {
     const end = Number.isFinite(m.duration) ? m.duration : Infinity;
@@ -355,6 +394,65 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     <IconButton className="media-btn" label={label} pressed={extra.pressed} disabled={extra.disabled} onClick={onClick} icon={icon} popupHost={popupHost} />
   );
 
+  // The Subtitles menu: Off, then the tracks (beside files first, then the device's), the shown one checked; a file from
+  // this device; the timing offset; and the cue size. The check mark keeps every label on one edge, checked or not.
+  const sub = subtitles;
+  const subLabel = (text: string, checked: boolean) => (
+    <span className="media-subs-label">
+      <Check size={16} aria-hidden="true" className={checked ? "media-subs-check" : "media-subs-check media-subs-check--off"} />
+      <span className="media-subs-text">{text}</span>
+    </span>
+  );
+  const subRadio = (key: string, text: string, checked: boolean): SubRadioItem => ({
+    key,
+    label: subLabel(text, checked),
+    role: "menuitemradio",
+    "aria-checked": checked,
+  });
+  const subItems: MenuProps["items"] = [];
+  const subSelected: string[] = [];
+  if (sub) {
+    subItems.push(subRadio("off", t("files.media.subtitlesOff"), sub.active === -1));
+    sub.labels.forEach((label, i) => subItems.push(subRadio(`track-${i}`, label, sub.active === i)));
+    subItems.push({ type: "divider" });
+    subItems.push({ key: "load", label: t("files.media.subtitlesLoad") });
+    subItems.push({ type: "divider" });
+    subItems.push({
+      key: "timing",
+      label: t("files.media.subtitlesTiming"),
+      children: [
+        { key: "offset-now", label: t("files.media.subtitlesOffset", { offset: formatOffset(sub.offset) }), disabled: true },
+        { key: "earlier", label: t("files.media.subtitlesEarlier") },
+        { key: "later", label: t("files.media.subtitlesLater") },
+        { key: "reset", label: t("files.media.subtitlesReset") },
+      ],
+    });
+    subItems.push({
+      key: "size",
+      label: t("files.media.subtitlesSize"),
+      children: [
+        subRadio("size-s", t("files.media.subtitlesSmall"), sub.size === "s"),
+        subRadio("size-m", t("files.media.subtitlesMedium"), sub.size === "m"),
+        subRadio("size-l", t("files.media.subtitlesLarge"), sub.size === "l"),
+      ],
+    });
+    subSelected.push(sub.active === -1 ? "off" : `track-${sub.active}`, `size-${sub.size}`);
+  }
+  const onSubClick = ({ key }: { key: string }) => {
+    if (!sub) return;
+    if (key === "off") sub.onPick(-1);
+    else if (key.startsWith("track-")) sub.onPick(Number(key.slice(6)));
+    else if (key === "load") fileInput.current?.click();
+    else if (key === "earlier") sub.onOffset(sub.offset - 0.1);
+    else if (key === "later") sub.onOffset(sub.offset + 0.1);
+    else if (key === "reset") sub.onOffset(0);
+    else if (key === "size-s" || key === "size-m" || key === "size-l") sub.onSize(key.slice(5) as SubtitleSize);
+  };
+  const onSubsOpen = (open: boolean) => {
+    subsOpen.current = open;
+    wake();
+  };
+
   return (
     <ConfigProvider direction="ltr" theme={barTheme} csp={{ nonce: readNonce() }}>
     <div
@@ -439,17 +537,46 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
         <span className="media-spacer" />
 
         {kind === "video" && subtitles && (
-          <Select
-            size="small"
-            className="media-subs"
-            aria-label={t("files.media.subtitles")}
-            value={subtitles.active}
-            disabled={!m}
-            popupMatchSelectWidth={false}
-            getPopupContainer={popupHost}
-            options={[{ value: -1, label: t("files.media.subtitlesOff") }, ...subtitles.labels.map((label, i) => ({ value: i, label }))]}
-            onChange={(v: number) => subtitles.onPick(v)}
-          />
+          <>
+            <Dropdown
+              trigger={["click"]}
+              placement="topRight"
+              destroyOnHidden
+              getPopupContainer={popupHost}
+              onOpenChange={onSubsOpen}
+              menu={{
+                items: subItems,
+                selectedKeys: subSelected,
+                onClick: onSubClick,
+                triggerSubMenuAction: "click",
+                // The submenus' popups open on the same host as the menu, so they show in full screen too.
+                getPopupContainer: popupHost,
+              }}
+            >
+              <IconButton
+                className="media-btn media-subs"
+                data-testid="media-subs"
+                label={t("files.media.subtitles")}
+                icon={<Captions size={18} aria-hidden="true" />}
+                popupHost={popupHost}
+                aria-haspopup="menu"
+                disabled={!m}
+              />
+            </Dropdown>
+            {/* The device's file is read in the browser only; nothing is sent to the server. */}
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".srt,.vtt,text/vtt,application/x-subrip"
+              hidden
+              data-testid="media-subs-file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) subtitles.onLoad(f);
+              }}
+            />
+          </>
         )}
 
         <Select

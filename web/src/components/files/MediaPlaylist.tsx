@@ -637,6 +637,7 @@ export default function MediaPlaylist({
               autoPlay
               resume={current.resume}
               tracks={current.tracks}
+              subtitleKey={currentNode.id}
               onPress={onPress}
               onSave={saveRef.current ? (pos, dur) => saveRef.current?.(currentNode, pos, dur) : undefined}
               onElement={onElement}

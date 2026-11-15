@@ -76,9 +76,9 @@ export function keyCommand(e: { key: string; altKey?: boolean; ctrlKey?: boolean
 
 // Keys a control takes for itself: a slider moves on arrows, and a menu moves on arrows. The player leaves them to the
 // control. Space is not among them: a slider does not use it.
-const TAKES_ARROWS = new Set(["slider", "listbox", "menu", "menuitem", "option", "spinbutton"]);
+const TAKES_ARROWS = new Set(["slider", "listbox", "menu", "menuitem", "menuitemradio", "option", "spinbutton"]);
 // The controls Space presses (a button, a link, a box, a tab, a menu item, a list that opens on Space).
-const TAKES_SPACE = new Set(["button", "link", "checkbox", "radio", "switch", "tab", "option", "menuitem", "combobox"]);
+const TAKES_SPACE = new Set(["button", "link", "checkbox", "radio", "switch", "tab", "option", "menuitem", "menuitemradio", "combobox"]);
 
 // keyboardFocus says whether the element has the focus the keyboard gave it (the browser's :focus-visible): Tab brings
 // it, a pointer press does not. A browser that cannot answer says no, so Space stays with the player.
