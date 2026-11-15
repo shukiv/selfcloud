@@ -117,6 +117,11 @@ type Server struct {
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string
+	// signInPagePath is the path of users.sign_in_url_template with public_url substituted, and
+	// signInPageLocal says whether that template's host is this installation's public URL. The frame
+	// hook allows the sign-in page a frame link names only on that path, and only when local (decision 185).
+	signInPagePath  string
+	signInPageLocal bool
 	// contentHost is the host of content_url, or "" when it is not set. Requests on that host
 	// get signed links and nothing else; see contentGate.
 	contentHost   string
@@ -321,6 +326,7 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("api: public_url: %w", err)
 	}
 	cfg := opts.Config
+	signInPath, signInLocal := signInPageLocation(cfg.Users.SignInURLTemplate, cfg.PublicURL)
 	if err := refuseFreshLinkKey(context.Background(), opts.Store, cfg.DataDir, cfg.Links); err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
@@ -372,38 +378,40 @@ func New(opts Options) (*Server, error) {
 		contentHost = canonicalHost(cu.Host, cu.Scheme)
 	}
 	s := &Server{
-		limitClock:    time.Now,
-		deviceSlots:   make(chan struct{}, deviceConfirmSlots),
-		confirmBusy:   map[string]bool{},
-		sessionClock:  time.Now,
-		cfg:           cfg,
-		snap:          snap,
-		log:           log,
-		store:         opts.Store,
-		blobs:         blobs,
-		derivedPool:   dpool,
-		zipFiles:      zipFiles,
-		trusted:       trusted,
-		metrics:       newMetrics(),
-		jobs:          jobs.New(opts.Store, log),
-		mailer:        opts.Mailer,
-		templates:     templates,
-		origin:        pub.Scheme + "://" + pub.Host,
-		contentHost:   contentHost,
-		contentScheme: contentScheme,
-		links:         links,
-		tokens:        tokens,
-		wopiTokens:    wopiTokens,
-		deviceTokens:  deviceTokens,
-		cliKeys:       cliKeys,
-		webhookSeal:   webhookSeal,
-		webhookClient: webhookClient,
-		webhookClock:  time.Now,
-		webhookJitter: webhook.Jitter,
-		shares:        shares,
-		guard:         newShareGuard(),
-		corsAllowed:   corsAllowed,
-		sessionCookie: "selfcloud_session",
+		limitClock:      time.Now,
+		deviceSlots:     make(chan struct{}, deviceConfirmSlots),
+		confirmBusy:     map[string]bool{},
+		sessionClock:    time.Now,
+		cfg:             cfg,
+		snap:            snap,
+		log:             log,
+		store:           opts.Store,
+		blobs:           blobs,
+		derivedPool:     dpool,
+		zipFiles:        zipFiles,
+		trusted:         trusted,
+		metrics:         newMetrics(),
+		jobs:            jobs.New(opts.Store, log),
+		mailer:          opts.Mailer,
+		templates:       templates,
+		origin:          pub.Scheme + "://" + pub.Host,
+		signInPagePath:  signInPath,
+		signInPageLocal: signInLocal,
+		contentHost:     contentHost,
+		contentScheme:   contentScheme,
+		links:           links,
+		tokens:          tokens,
+		wopiTokens:      wopiTokens,
+		deviceTokens:    deviceTokens,
+		cliKeys:         cliKeys,
+		webhookSeal:     webhookSeal,
+		webhookClient:   webhookClient,
+		webhookClock:    time.Now,
+		webhookJitter:   webhook.Jitter,
+		shares:          shares,
+		guard:           newShareGuard(),
+		corsAllowed:     corsAllowed,
+		sessionCookie:   "selfcloud_session",
 		limits: map[string]*limiter{
 			"login.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"login.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),

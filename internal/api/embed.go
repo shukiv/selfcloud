@@ -162,13 +162,36 @@ func frameLinkURL(link, accID string) string {
 	return base + sep + "frame=" + url.QueryEscape(accID) + frag
 }
 
+// signInPageLocation works out, once, the path of the sign-in page from users.sign_in_url_template with
+// public_url substituted, and whether the template's host is this installation's public URL. A template
+// that points at another host never frames its sign-in page here, so local is false and the hook's first
+// case does not apply (decision 185).
+func signInPageLocation(tmpl, publicURL string) (path string, local bool) {
+	link := strings.NewReplacer("{public_url}", publicURL, "{token}", "").Replace(tmpl)
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", false
+	}
+	pub, err := url.Parse(publicURL)
+	if err != nil {
+		return "", false
+	}
+	if !strings.EqualFold(u.Scheme, pub.Scheme) || !strings.EqualFold(u.Host, pub.Host) {
+		return "", false
+	}
+	if u.Path == "" {
+		return "/", true
+	}
+	return u.Path, true
+}
+
 // frameAncestors names the host origins that may frame the page r opens, or nil (decision 185). It is the
-// web handler's hook, consulted only for the app page. The sign-in page a frame link names allows that
-// account's origins; otherwise a live frame session's account does. It reads by hash, as the auth middleware
-// does, and writes nothing.
+// web handler's hook, consulted only for the app page. The sign-in page a frame link names — the path of
+// users.sign_in_url_template, on this installation's host — allows that account's origins; otherwise a live
+// frame session's account does. It reads by hash, as the auth middleware does, and writes nothing.
 func (s *Server) frameAncestors(r *http.Request) []string {
 	ctx := r.Context()
-	if r.URL.Path == "/sign-in" {
+	if s.signInPageLocal && r.URL.Path == s.signInPagePath {
 		if accID := r.URL.Query().Get("frame"); id.Valid("acc", accID) {
 			if acc, err := s.store.Account(ctx, accID); err == nil && acc.Status == store.AccountActive {
 				if origins, err := s.allowedEmbedOrigins(ctx, accID); err == nil && len(origins) > 0 {

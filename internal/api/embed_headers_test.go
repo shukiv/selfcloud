@@ -156,3 +156,44 @@ func TestEmbedFrameAncestorsHasNoSeparators(t *testing.T) {
 		t.Errorf("X-Frame-Options = %q; want none when framable", xfo)
 	}
 }
+
+// TestEmbedSignInPageFollowsTemplate: the sign-in page a frame link names is the path of
+// users.sign_in_url_template, not a literal /sign-in. A custom template path frames; the old path does not
+// (decision 185).
+func TestEmbedSignInPageFollowsTemplate(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
+		c.PublicURL = "https://drive.example.com"
+		c.Users.SignInURLTemplate = "{public_url}/welcome#token={token}"
+	})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/embed", key, embedBody{Origins: []string{"https://host.example"}})
+
+	wantFramable(t, serveRaw(t, s, http.MethodGet, "/welcome?frame="+acc.ID), "https://host.example")
+	wantNotFramable(t, serveRaw(t, s, http.MethodGet, "/sign-in?frame="+acc.ID))
+}
+
+// TestEmbedSignInPageForeignTemplateHost: when the template's host is not this installation's public URL,
+// the sign-in page case never applies here; a frame session's own pages still frame (decision 185).
+func TestEmbedSignInPageForeignTemplateHost(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
+		c.PublicURL = "https://drive.example.com"
+		c.Users.SignInURLTemplate = "https://other.example.com/sign-in#token={token}"
+	})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	usr, _ := verifiedUser(t, s, key, acc.ID, "member@example.com")
+	call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/embed", key, embedBody{Origins: []string{"https://host.example"}})
+
+	wantNotFramable(t, serveRaw(t, s, http.MethodGet, "/sign-in?frame="+acc.ID))
+	rec := call(t, s, "POST", "/api/v1/accounts/"+acc.ID+"/users/"+usr.ID+"/sign-in-links", key, map[string]any{"mode": "frame"})
+	wantStatus(t, rec, 201)
+	_, tok, ok := strings.Cut(decode[signInLinkJSON](t, rec).URL, "#token=")
+	if !ok {
+		t.Fatal("the frame link has no #token= fragment")
+	}
+	sess := sessionFrom(t, s, redeem(t, s, tok))
+	wantFramable(t, serveCookie(t, s, "/files", sess.cookie), "https://host.example")
+}
