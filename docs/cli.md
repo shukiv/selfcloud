@@ -1175,7 +1175,8 @@ selfcloud sharing policy set --external-sharing true
 An account's embed sites are the host origins that may show the account's pages in a frame: a host application names
 its origin, and Selfcloud then lets a frame session of the account be framed by it. The installation's own list
 (`embed.origins` in the config) and the account's list are unioned. Reading and replacing the account's list are the
-account owner's or its account key's work; a signed-in device cannot do either.
+account owner's or its account key's work, or an installation admin's (its admin key or a signed-in admin's session);
+a signed-in device's token cannot do either.
 
 | Command | What it does |
 |---|---|

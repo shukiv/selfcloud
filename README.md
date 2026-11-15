@@ -230,7 +230,8 @@ A host application can show an account's drive inside its own page, in an `<ifra
 SelfCloud keeps its own users and sign-in: the host vouches for its user with a one-time sign-in link, and the
 browser gets a session of its own.
 
-1. **Name the host's origin.** Per account, with the account's key or the owner's session:
+1. **Name the host's origin.** Per account, with the account's key, the owner's session or an installation admin's
+   key or session; a signed-in device's token cannot:
    `selfcloud embed set --account acc_… https://app.example.com`, or
    `PUT /api/v1/accounts/{acc}/embed` with `{"origins": ["https://app.example.com"]}`. For the whole installation,
    `embed.origins` in the config. The two lists are unioned; each holds at most ten origins. An origin is a scheme
