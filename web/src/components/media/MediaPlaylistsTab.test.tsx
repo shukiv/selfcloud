@@ -141,6 +141,7 @@ afterEach(() => {
   setQueueControl(null);
   session.set(null);
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   undoView();
 });
 
@@ -248,6 +249,8 @@ describe("the Playlists tab's detail", () => {
   it("Shuffle and play starts the same session with shuffle on", async () => {
     const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0), entry(clip("nod_a2", "b.webm"), 1)]);
     stubFetch(answers({ lists: [summary("pls_a", "Evening", 2)], details: { pls_a: d } }));
+    // The random pick lands on the first row, so the start is the first available one.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     const onPlay = vi.fn();
     renderTab(onPlay, "/media?tab=playlists&list=pls_a");
     await screen.findByRole("region", { name: "Evening" });
@@ -256,6 +259,22 @@ describe("the Playlists tab's detail", () => {
     expect(seed?.start.id).toBe("nod_a1");
     expect(seed?.shuffle).toBe(true);
     expect(seed?.selection?.map((n) => n.id)).toEqual(["nod_a1", "nod_a2"]);
+    expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("Shuffle and play starts at a random available row, not always the first", async () => {
+    const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0), entry(clip("nod_a2", "b.webm"), 1), entry(clip("nod_a3", "c.webm"), 2)]);
+    stubFetch(answers({ lists: [summary("pls_a", "Evening", 3)], details: { pls_a: d } }));
+    // A pick near the top of the range lands on the last available row.
+    vi.spyOn(Math, "random").mockReturnValue(0.99);
+    const onPlay = vi.fn();
+    renderTab(onPlay, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Shuffle and play" }));
+    const seed = getPlayback().seed;
+    expect(seed?.start.id).toBe("nod_a3");
+    expect(seed?.shuffle).toBe(true);
+    expect(seed?.selection?.map((n) => n.id)).toEqual(["nod_a1", "nod_a2", "nod_a3"]);
     expect(onPlay).toHaveBeenCalledTimes(1);
   });
 

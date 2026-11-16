@@ -249,7 +249,9 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   };
   const shuffleAll = () => {
     if (availableNodes.length === 0) return;
-    startPlayback({ start: availableNodes[0]!, folder: emptyPager(), selection: availableNodes, shuffle: true });
+    // A shuffled round starts at a random available row, not always the first, dealt as the queue's own shuffle deals it.
+    const start = availableNodes[Math.floor(Math.random() * availableNodes.length)]!;
+    startPlayback({ start, folder: emptyPager(), selection: availableNodes, shuffle: true });
     onPlay();
   };
 
