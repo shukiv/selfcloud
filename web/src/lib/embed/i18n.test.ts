@@ -40,8 +40,13 @@ describe("the embed catalogue", () => {
 
   it("every literal embed key the views use has a text", () => {
     const used = new Set<string>();
-    for (const name of ["FrameEnded.tsx", "FrameBlocked.tsx"]) {
-      const text = readFileSync(join(root, "components", name), "utf8");
+    const files = [
+      join(root, "components", "FrameEnded.tsx"),
+      join(root, "components", "FrameBlocked.tsx"),
+      join(root, "pages", "manage", "EmbeddingPage.tsx"),
+    ];
+    for (const path of files) {
+      const text = readFileSync(path, "utf8");
       for (const m of text.matchAll(/["'`](embed\.[A-Za-z.]+)["'`]/g)) used.add(m[1]!);
     }
     expect(used.size).toBeGreaterThan(3);

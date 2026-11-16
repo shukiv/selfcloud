@@ -222,6 +222,27 @@ describe("Shell", () => {
     expect(names).toContain("People");
   });
 
+  it("gives an owner the Embedding entry right after Links, and a member or admin none", async () => {
+    signIn("owner");
+    const { unmount } = renderShell("/files");
+    const nav = await openNav();
+    const items = within(nav).getAllByRole("menuitem");
+    const names = items.map((m) => m.textContent);
+    expect(names).toContain("Embedding");
+    expect(names.indexOf("Embedding")).toBe(names.indexOf("Links") + 1);
+    expect(items[names.indexOf("Embedding")]?.getAttribute("data-menu-id")).toContain("/manage/embedding");
+    unmount();
+    signIn("member");
+    const { unmount: unmountMember } = renderShell("/files");
+    const memberNav = await openNav();
+    expect(within(memberNav).getAllByRole("menuitem").map((m) => m.textContent)).not.toContain("Embedding");
+    unmountMember();
+    signIn("admin");
+    renderShell("/admin/tenants");
+    const adminNav = await openNav();
+    expect(within(adminNav).getAllByRole("menuitem").map((m) => m.textContent)).not.toContain("Embedding");
+  });
+
   it("gives an installation admin the administration pages only", async () => {
     signIn("admin");
     renderShell("/admin/tenants");

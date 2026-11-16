@@ -67,6 +67,7 @@ import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
 import { eb4Checks } from './eb4.mjs';
 import { eb2aChecks } from './eb2a.mjs';
+import { eb2bChecks } from './eb2b.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
@@ -1058,7 +1059,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1349,6 +1350,13 @@ async function main() {
       await signIn(page, OWNER);
       await section('tl5', () => tl5Checks(h, { page }), { as: 'owner' });
     }
+    // Slice eb2b: the owner's embedding page, on its own as the owner (SELFCLOUD_E2E_ONLY=eb2b). The full run
+    // reaches it among the owner's management pages.
+    if (only && onlySet.has('eb2b')) {
+      await signOut(page);
+      await signIn(page, OWNER);
+      await section('eb2b', () => eb2bChecks(h, { page, base, accountID, accountKey }), { as: 'owner' });
+    }
     // Slice pb1 (decision 184): the share page's visitor listing and share layout, on their own (SELFCLOUD_E2E_ONLY=pb1).
     // linkChecks signs in itself; the full run reaches the same checks in the sharing part below.
     if (only && onlySet.has('pb1')) await section('pb1', () => linkChecks(page, { base, accountID, accountKey }, h), { as: 'member' });
@@ -1376,6 +1384,7 @@ async function main() {
     await section('p4-owner', () => p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID }), { as: 'owner' });
     await section('tl3', () => tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null }), { as: 'owner' });
     await section('tl5', () => tl5Checks(h, { page }), { as: 'owner' });
+    await section('eb2b', () => eb2bChecks(h, { page, base, accountID, accountKey }), { as: 'owner' });
     await signOut(page);
     await signIn(page, ADMIN);
     await section('admin', () => owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT }), { as: 'admin' });

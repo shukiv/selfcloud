@@ -13,6 +13,7 @@ import SpacesPage from "./SpacesPage";
 import StoragePage from "./StoragePage";
 import LinksPage from "./LinksPage";
 import AuditPage from "./AuditPage";
+import EmbeddingPage from "./EmbeddingPage";
 
 // The owner pages are for an account owner. Each page is rendered for each other kind of person, and for nobody: the
 // not-found view shows, and no request leaves the page (App.tsx makes the same check for the address).
@@ -24,6 +25,7 @@ const PAGES: Array<[string, () => JSX.Element]> = [
   ["storage", StoragePage],
   ["links", LinksPage],
   ["audit", AuditPage],
+  ["embedding", EmbeddingPage],
 ];
 
 function as(role: string, account: { id: string; name: string } | null): Session {
