@@ -163,6 +163,7 @@ export default function MediaDock() {
       start={snap.seed.start}
       folder={snap.seed.folder}
       selection={snap.seed.selection}
+      shuffle={snap.seed.shuffle}
       saved
       fetchLink={fetchSessionLink}
       onCurrent={(n: Node | null) => setCurrent(n ? { node: n, kind: kindOf(n) === "video" ? "video" : "audio" } : null)}

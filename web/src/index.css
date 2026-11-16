@@ -998,6 +998,68 @@ a {
 .media-queue--table .item-list .ant-table-tbody > tr.media-qrow--on > td.ant-table-cell-row-hover {
   background: var(--sc-row-selected);
 }
+/* The Media page's Playlists tab: the list of playlists beside the detail on a desktop, stacked on a phone. The chosen
+   list's row takes the list's selected band; an unavailable entry is dimmed. The detail's head carries the name, its kind
+   and the play actions; the place and the time left sit under a Continue watching name. */
+.media-pl-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.media-pl-layout--phone {
+  grid-template-columns: minmax(0, 1fr);
+}
+.media-pl-list,
+.media-pl-detail {
+  min-width: 0;
+}
+.media-pl-layout .item-list .ant-table-tbody > tr.media-pl-row--on > td,
+.media-pl-layout .item-list .ant-table-tbody > tr.media-pl-row--on:hover > td,
+.media-pl-layout .item-list .ant-table-tbody > tr.media-pl-row--on > td.ant-table-cell-row-hover {
+  background: var(--sc-row-selected);
+}
+.media-pl-layout .media-pl-row--on {
+  font-weight: 600;
+}
+.media-pl-layout .media-pl-row--off {
+  opacity: 0.6;
+}
+.media-pl-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-block-end: 12px;
+}
+.media-pl-head-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.media-pl-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.media-pl-summary {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.media-pl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.media-pl-place {
+  display: block;
+  font-size: 12px;
+  opacity: 0.65;
+}
 @media (pointer: coarse) {
   .pl-touch.ant-btn,
   .pl-touch.ant-btn:hover,

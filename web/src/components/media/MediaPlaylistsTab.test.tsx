@@ -12,11 +12,9 @@ import { App } from "antd";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
-import { getPlayback, startPlayback, stopPlayback } from "../../lib/files/playback";
-import { Pager } from "../../lib/files/pager";
+import { getPlayback, stopPlayback } from "../../lib/files/playback";
 import { setQueueControl } from "../../lib/files/queueControl";
 import { resetTags } from "../../lib/files/tags";
-import type { Node } from "../../lib/files/types";
 import { session, type Session } from "../../lib/session";
 import { expectEmptyTable } from "../../test/emptyTable";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
@@ -58,7 +56,7 @@ function file(id: string, name: string, mime: string, extra: Record<string, unkn
 const clip = (id: string, name: string, extra: Record<string, unknown> = {}) => file(id, name, "video/webm", extra);
 const song = (id: string, name: string, extra: Record<string, unknown> = {}) => file(id, name, "audio/mpeg", extra);
 
-const played = (n: Node, position: number, duration: number, at = "2026-11-12T10:00:00Z") => ({
+const played = (n: ReturnType<typeof file>, position: number, duration: number, at = "2026-11-12T10:00:00Z") => ({
   ...n,
   position_seconds: position,
   duration_seconds: duration,
@@ -69,11 +67,11 @@ function summary(id: string, name: string, count: number, updated = "2026-11-10T
   return { id, name, entry_count: count, created_at: "2026-11-01T00:00:00Z", updated_at: updated };
 }
 
-function detailOf(id: string, name: string, entries: { entry_id: string; node_id: string; unavailable: boolean; node?: Node }[]) {
+function detailOf(id: string, name: string, entries: { entry_id: string; node_id: string; unavailable: boolean; node?: ReturnType<typeof file> }[]) {
   return { id, name, entry_count: entries.length, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-10T09:00:00Z", entries };
 }
 
-const entry = (node: Node, i: number) => ({ entry_id: `ple_${node.id}`, position: i, node_id: node.id, unavailable: false, node });
+const entry = (node: ReturnType<typeof file>, i: number) => ({ entry_id: `ple_${node.id}`, position: i, node_id: node.id, unavailable: false, node });
 const goneEntry = (nodeID: string, i: number) => ({ entry_id: `ple_${nodeID}`, position: i, node_id: nodeID, unavailable: true });
 
 function LocationProbe() {
@@ -156,8 +154,8 @@ describe("the Playlists tab's list", () => {
     );
     renderTab();
     const region = await screen.findByRole("region", { name: "Your playlists" });
-    await waitFor(() => expect(within(region).getAllByRole("row").length).toBe(3));
-    const rows = within(region).getAllByRole("row");
+    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(3));
+    const rows = Array.from(region.querySelectorAll('tbody tr[role="row"][aria-label]'));
     expect(rows[0]!.textContent).toContain("Continue watching");
     expect(rows[0]!.textContent).toContain("Automatic");
     expect(rows[0]!.textContent).toContain("3");
@@ -214,10 +212,10 @@ describe("the Playlists tab's detail", () => {
     const detail = await screen.findByRole("region", { name: "Continue watching" });
     await waitFor(() => {
       const t = detail.querySelector("table") as HTMLElement;
-      expect(within(t).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Title", "#", "Folder", "Length"]);
+      expect(within(t).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Title", "#", "Folder", "Length", "Actions"]);
     });
     const r = within(detail).getByRole("row", { name: "song.mp3" });
-    expect(r.textContent).toContain("At 12:41");
+    expect(r.textContent).toContain("At 12:21");
     expect(r.textContent).toContain("35:22 left");
     expect(r.textContent).toContain("47:43");
   });
@@ -390,7 +388,7 @@ describe("the Playlists tab's empty states", () => {
     stubFetch(answers({ lists: [], playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)] }));
     renderTab();
     const region = await screen.findByRole("region", { name: "Your playlists" });
-    await waitFor(() => expect(within(region).getAllByRole("row").length).toBe(1));
+    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(1));
     expect(within(region).getByRole("row", { name: /Continue watching/ })).toBeTruthy();
     expect(within(region).queryByText("No saved playlists yet. Save the queue to keep it.")).toBeNull();
   });
@@ -451,7 +449,7 @@ describe("the Playlists tab's failures and layout", () => {
       await waitFor(() => expect(layout.className).toContain("media-pl-layout--phone"));
       const list = screen.getByRole("region", { name: "Your playlists" });
       const detail = screen.getByRole("region", { name: "Continue watching" });
-      expect(list.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(list.compareDocumentPosition(detail) & globalThis.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     } finally {
       undo();
     }

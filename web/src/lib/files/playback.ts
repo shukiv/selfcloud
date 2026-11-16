@@ -22,6 +22,9 @@ export interface PlaybackSeed {
   start: Node;
   folder: Pager;
   selection?: Node[];
+  // shuffle starts the queue with shuffle on, dealt the way the queue's own Shuffle button deals it (queue.ts toggleShuffle).
+  // Left out, the queue starts in order.
+  shuffle?: boolean;
 }
 
 // NowPlaying is the file on screen of the playlist.

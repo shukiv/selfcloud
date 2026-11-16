@@ -51,6 +51,8 @@ describe("empty table titles", () => {
       ...(JSON.parse(readFileSync(join(src, "i18n", "external", `${lang}.json`), "utf8")) as Record<string, string>),
       // The audit log's empty title is in the audit catalogue, the activity log's sentences (lib/audit/i18n.ts).
       ...(JSON.parse(readFileSync(join(src, "i18n", "audit", `${lang}.json`), "utf8")) as Record<string, string>),
+      // The Media page's Playlists list names its empty title in the media catalogue (lib/media/i18n.ts).
+      ...(JSON.parse(readFileSync(join(src, "i18n", "media", `${lang}.json`), "utf8")) as Record<string, string>),
     };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];

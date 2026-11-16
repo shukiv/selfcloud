@@ -20,13 +20,15 @@ import { useStore } from "../lib/store";
 
 // The library is a separate chunk: its shared list is not part of the page's first load.
 const MediaLibrary = lazy(() => import("../components/media/MediaLibrary"));
+// The Playlists tab is its own chunk too: the saved playlists and Continue watching load only when the tab opens.
+const MediaPlaylistsTab = lazy(() => import("../components/media/MediaPlaylistsTab"));
 
-type TabKey = "now-playing" | "videos" | "music" | "recent";
+type TabKey = "now-playing" | "playlists" | "videos" | "music" | "recent";
 
 // tabOf reads the tab from the address: an absent or unknown value is Now playing.
 function tabOf(params: URLSearchParams): TabKey {
   const v = params.get("tab");
-  return v === "videos" || v === "music" || v === "recent" ? v : "now-playing";
+  return v === "playlists" || v === "videos" || v === "music" || v === "recent" ? v : "now-playing";
 }
 
 export default function MediaPage() {
@@ -120,6 +122,15 @@ export default function MediaPage() {
           },
           ...(ready
             ? [
+                {
+                  key: "playlists",
+                  label: t("media.tab.playlists"),
+                  children: (
+                    <Suspense fallback={<Skeleton active />}>
+                      <MediaPlaylistsTab onPlay={() => choose("now-playing")} />
+                    </Suspense>
+                  ),
+                },
                 library("videos", t("media.tab.videos")),
                 library("music", t("media.tab.music")),
                 library("recent", t("media.tab.recent")),

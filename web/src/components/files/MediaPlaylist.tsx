@@ -28,6 +28,7 @@ import {
   toggleShuffle,
   type Queue,
 } from "../../lib/files/queue";
+import { getQueueControl, setQueueControl } from "../../lib/files/queueControl";
 import type { Node } from "../../lib/files/types";
 import type { SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
@@ -75,6 +76,9 @@ export interface MediaPlaylistProps {
   // selection, when given, is the list to play instead of the folder's files. The folder is then used only by the add
   // panel.
   selection?: Node[];
+  // shuffle starts the queue with shuffle on, dealt as the queue's own Shuffle button deals it. Left out, the queue starts in
+  // order. The Playlists tab's Shuffle and play sets it.
+  shuffle?: boolean;
   // saved shows the saved playlists under the queue (decision 58). The signed-in player sets it; a share page does not,
   // since a share has no saved state.
   saved?: boolean;
@@ -117,6 +121,7 @@ export default function MediaPlaylist({
   start,
   folder,
   selection,
+  shuffle = false,
   saved = false,
   fetchLink,
   onPosition,
@@ -192,7 +197,8 @@ export default function MediaPlaylist({
     // At mount no saved playlist has replaced the queue, so the list is the folder's when no selection was given.
     const base = selection === undefined ? folder.loaded : selection;
     const list = base.some((n) => n.id === start.id) ? base : [start, ...base];
-    return newQueue(list, start.id, { shuffle: false, repeat: "off" });
+    // shuffle deals the round through toggleShuffle, the same call the queue's own Shuffle button makes.
+    return newQueue(list, start.id, { shuffle, repeat: "off" });
   });
   // qRef is the queue as it is now. Steps that wait for a page read it, not the value the render had.
   const qRef = useRef(q);
@@ -237,6 +243,18 @@ export default function MediaPlaylist({
     skip.current = null;
   };
   useEffect(() => cancelSkip, []);
+
+  // The running queue's control for the page outside the player (the Playlists tab's Play next). It reads the queue as it is
+  // at the call, so an add lands after whatever plays now. It is registered while the playlist is mounted and taken back on
+  // unmount, only while it is still the one registered, so a newer session's control is never dropped by an older leave.
+  useEffect(() => {
+    const control = { addNext: (n: Node) => commit(addNext(qRef.current, n)) };
+    setQueueControl(control);
+    return () => {
+      if (getQueueControl() === control) setQueueControl(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the control reads the queue's own ref at each call
+  }, []);
 
   const currentId = q.current;
   const currentNode = currentId === null ? undefined : q.entries.find((e) => e.node.id === currentId)?.node;
