@@ -280,8 +280,20 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(links.includes('drag'), `the breadcrumbs link the folder above (${links.join(' / ')})`);
     const from = await nameAt(page, 'g06.txt');
     const to = await centre(page, `header nav a[data-drop-name="drag"]`);
-    const mid = await dragTo(page, from, to, { during: () => dropState(page, `header nav a[data-drop-name="drag"]`) });
-    check(mid === 'ok', `the crumb is marked as taking the drop (${mid})`);
+    const mid = await dragTo(page, from, to, {
+      during: () => page.evaluate(`(() => {
+        const crumb = document.querySelector(${q(`header nav a[data-drop-name="drag"]`)});
+        const cr = crumb.getBoundingClientRect();
+        const tips = [...document.querySelectorAll('.ant-tooltip')]
+          .filter((t) => getComputedStyle(t).display !== 'none')
+          .map((t) => ({ text: t.textContent.trim(), r: t.getBoundingClientRect() }))
+          .filter(({ r }) => r.width > 0 && r.height > 0 && r.left < cr.right && r.right > cr.left && r.top < cr.bottom && r.bottom > cr.top)
+          .map(({ text }) => text);
+        return { state: crumb.dataset.dropState ?? null, tips };
+      })()`),
+    });
+    check(mid.tips.length === 0, `no tooltip covers the crumb (${mid.tips.join(', ')})`);
+    check(mid.state === 'ok', `the crumb is marked as taking the drop (${mid.state})`);
     await waitIn(api, base, teamA, '/w2/drag', accountKey, 'g06.txt');
     await waitIn(api, base, teamA, '/w2/drag/Alpha', accountKey, 'g06.txt', false);
   });
