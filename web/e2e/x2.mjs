@@ -4,16 +4,17 @@
 // shared page, server and accounts: a double click that plays with no press, the mini player across a real route change
 // and after a sign-out, the mini bar's position slider in contrast with its bar in both themes, a saved place across a
 // reload and not for another person, the subtitles beside a video (a WebVTT file and a Windows-1255 SRT file) with their
-// cues kept above the bar, the phone's bar that hides while a video plays, and, when SELFCLOUD_X2_SHOTS is set to a folder,
-// the screenshots for the owner's review. Run it alone with SELFCLOUD_E2E_ONLY=x2. The checks end signed in as the member,
-// which the rest of the run expects; the interface's language and theme and the listing's view are put back afterwards.
+// cues kept above the bar, the phone's bar that hides while a video plays, and, when SELFCLOUD_X2_SHOTS asks for them,
+// the screenshots (1 writes them into e2e-out/shots-x2, any other value is the folder). Run it alone with SELFCLOUD_E2E_ONLY=x2.
+// The checks end signed in as the member, which the rest of the run expects; the interface's language and theme and the
+// listing's view are put back afterwards.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
-const shots = process.env.SELFCLOUD_X2_SHOTS;
+const repo = fileURLToPath(new URL('../../', import.meta.url));
+const shots = await shotsDir();
 const PASSWORD = 'correct horse battery staple';
 // The same people as the shared run's owner and member (run.mjs), who sign in with these.
 const OWNER = { email: 'olivia@example.com', name: 'Olivia Owner', password: PASSWORD };
@@ -215,6 +216,15 @@ async function setPrefs(page, url, lang, theme) {
   await page.goto(url);
   await page.evaluate(`localStorage.setItem('selfcloud.lang', ${q(lang)}); localStorage.setItem('selfcloud.theme', ${q(theme)}); true`);
   await page.goto(url);
+}
+
+// shotsDir is the folder for the pictures, or null when the run does not ask for them: 1 is the run's own e2e-out/shots-x2.
+async function shotsDir() {
+  const v = process.env.SELFCLOUD_X2_SHOTS;
+  if (!v) return null;
+  const dir = v === '1' ? join(repo, 'e2e-out', 'shots-x2') : v;
+  await mkdir(dir, { recursive: true });
+  return dir;
 }
 
 async function shot(page, name) {
@@ -534,9 +544,8 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID,
       // The cue size: Small, Medium and Large each set the video's class and scale the browser's cue text. The rendered
       // height is measured from the pixels (getComputedStyle does not report the ::cue percentage): the video is paused on
       // one frame, a capture with the cue hidden is the baseline, and each size's capture is diffed against it — the rows
-      // that differ are the cue text. The three shots go to the owner's review folder.
-      const cueShots = join(homedir(), '.cache', 'selfcloud-shots', 'mp2a');
-      await mkdir(cueShots, { recursive: true });
+      // that differ are the cue text. The captures stay in memory for the measurement and are written only when
+      // SELFCLOUD_X2_SHOTS asks for them, into the folder it names.
       await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);
       await sleep(300);
       await page.evaluate(`(() => { const t = [...${MEDIA}.textTracks].find((x) => x.mode === 'showing'); window.__cueTrack = t; if (t) t.mode = 'hidden'; return true; })()`);
@@ -551,8 +560,10 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID,
         await sleep(250);
         const sizeShot = await videoShot(page);
         measured[key] = await cueTextHeight(page, `data:image/png;base64,${hiddenShot}`, `data:image/png;base64,${sizeShot}`);
-        await writeFile(join(cueShots, `cue-size-${key}.png`), Buffer.from(sizeShot, 'base64'));
-        console.log(`shot ${join(cueShots, `cue-size-${key}.png`)} (rendered cue text ${measured[key]} px tall)`);
+        if (shots) {
+          await writeFile(join(shots, `cue-size-${key}.png`), Buffer.from(sizeShot, 'base64'));
+          console.log(`shot ${join(shots, `cue-size-${key}.png`)} (rendered cue text ${measured[key]} px tall)`);
+        }
       }
       check(measured.l > measured.m && measured.m > measured.s, `the cue text grows with the size (s ${measured.s}, m ${measured.m}, l ${measured.l} px tall)`);
       // Put the timing and the size back, so the shots that follow read the defaults.
