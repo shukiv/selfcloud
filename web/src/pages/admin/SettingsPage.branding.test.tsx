@@ -45,9 +45,9 @@ function server(o: Options = {}) {
       };
       return { status: 200, body: state };
     }
-    const m = /^\/api\/v1\/settings\/brand\/(logo|icon)$/.exec(c.url);
+    const m = /^\/api\/v1\/settings\/brand\/(logo|icon|app-icon)$/.exec(c.url);
     if (m) {
-      const key = `ui.brand.${m[1]}` as Picture["key"];
+      const key = (m[1] === "app-icon" ? "ui.brand.app_icon" : `ui.brand.${m[1]}`) as Picture["key"];
       if (c.method === "PUT") {
         const own = o.put?.(c);
         if (own) return own;
@@ -79,7 +79,7 @@ function renderPage(themed = false) {
 
 const region = (name: string) => screen.getByRole("region", { name });
 const row = (key: string) => document.querySelector(`[data-setting="${key}"]`) as HTMLElement;
-const pictureRow = (kind: "logo" | "icon") => document.querySelector(`[data-picture="ui.brand.${kind}"]`) as HTMLElement;
+const pictureRow = (kind: "logo" | "icon" | "app_icon") => document.querySelector(`[data-picture="ui.brand.${kind}"]`) as HTMLElement;
 const save = () => within(region("Branding")).getByRole("button", { name: "Save" }) as HTMLButtonElement;
 const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET");
 const preview = (which: "sidebar" | "signin" | "icons") => document.querySelector(`[data-preview="${which}"]`) as HTMLElement;
@@ -121,7 +121,7 @@ describe("the Branding card", () => {
     expect(cards).toEqual(["settings-branding", "settings-uploads", "settings-sharing", "settings-signin", "settings-about"]);
     const names = within(screen.getByRole("navigation", { name: "Sections" })).getAllByRole("button").map((b) => b.textContent);
     expect(names[0]).toBe("Branding");
-    expect(within(region("Branding")).getByText("How the installation looks to everyone: its name, colour, logo and app icon.")).toBeTruthy();
+    expect(within(region("Branding")).getByText("How the installation looks to everyone: its name, colour, logo, icon and app icon.")).toBeTruthy();
   });
 
   it("shows the name and the accent colour with their sources and defaults", async () => {
@@ -344,7 +344,8 @@ describe("the preview", () => {
 
 describe("the pictures", () => {
   const png = () => new File([new Uint8Array([137, 80, 78, 71])], "logo.png", { type: "image/png" });
-  const fileBox = (kind: "logo" | "icon") => within(pictureRow(kind)).getByLabelText(kind === "logo" ? "Logo file" : "Icon file") as HTMLInputElement;
+  const fileBox = (kind: "logo" | "icon" | "app_icon") =>
+    within(pictureRow(kind)).getByLabelText(kind === "logo" ? "Logo file" : kind === "icon" ? "Icon file" : "App icon file") as HTMLInputElement;
 
   it("shows no picture as an upload button and the default's words, with no Remove", async () => {
     server();
@@ -440,7 +441,7 @@ describe("the pictures", () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  const refused = async (answer: Answer, kind: "logo" | "icon" = "logo") => {
+  const refused = async (answer: Answer, kind: "logo" | "icon" | "app_icon" = "logo") => {
     server({ put: () => answer });
     renderPage();
     await ready();
@@ -588,5 +589,95 @@ describe("the pictures", () => {
     fireEvent.change(fileBox("logo"), { target: { files: [png()] } });
     await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/settings" && c.method === "GET").length).toBe(before + 1));
     expect(await within(pictureRow("logo")).findByRole("alert")).toBeTruthy();
+  });
+});
+
+describe("the app icon picture", () => {
+  const appPng = () => new File([new Uint8Array([137, 80, 78, 71])], "app.png", { type: "image/png" });
+  const appBox = () => within(pictureRow("app_icon")).getByLabelText("App icon file") as HTMLInputElement;
+  const withApp = (app: Picture): Picture[] => [app, { key: "ui.brand.icon", state: "none", locked: false }, { key: "ui.brand.logo", state: "none", locked: false }];
+
+  it("is the third row, titled App icon, while the icon row is titled Icon", async () => {
+    server();
+    renderPage();
+    await ready();
+    const rows = [...document.querySelectorAll("[data-picture]")].map((el) => el.getAttribute("data-picture"));
+    expect(rows).toEqual(["ui.brand.logo", "ui.brand.icon", "ui.brand.app_icon"]);
+    expect(within(pictureRow("app_icon")).getByText("App icon", { selector: "span" })).toBeTruthy();
+    expect(within(pictureRow("icon")).getByText("Icon", { selector: "span" })).toBeTruthy();
+    expect(within(pictureRow("app_icon")).getByRole("button", { name: "Upload app icon" })).toBeTruthy();
+    expect(within(pictureRow("app_icon")).getByText("Shown when the drive is installed as an app or added to a home screen. A square PNG of 512 pixels or more.")).toBeTruthy();
+  });
+
+  it("uploads the PNG to the app-icon route and shows Replace and Remove, not as a change of the section", async () => {
+    const { calls } = server();
+    renderPage();
+    await ready();
+    fireEvent.change(appBox(), { target: { files: [appPng()] } });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: "PUT", url: "/api/v1/settings/brand/app-icon", contentType: "image/png" });
+    await waitFor(() => expect(within(pictureRow("app_icon")).getByRole("button", { name: "Replace app icon" })).toBeTruthy());
+    expect(within(pictureRow("app_icon")).getByRole("button", { name: "Remove app icon" })).toBeTruthy();
+    expect(within(pictureRow("app_icon")).getByText("Set here")).toBeTruthy();
+    expect(save().disabled).toBe(true);
+  });
+
+  it("removes the app icon with DELETE and goes back to the default", async () => {
+    const { calls } = server({ pictures: withApp(uploaded("ui.brand.app_icon")) });
+    renderPage();
+    await ready();
+    fireEvent.click(within(pictureRow("app_icon")).getByRole("button", { name: "Remove app icon" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: "DELETE", url: "/api/v1/settings/brand/app-icon" });
+    await waitFor(() => expect(within(pictureRow("app_icon")).getByRole("button", { name: "Upload app icon" })).toBeTruthy());
+    expect(within(pictureRow("app_icon")).queryByRole("button", { name: "Remove app icon" })).toBeNull();
+  });
+
+  it("refuses an SVG before sending, in the app icon's own words", async () => {
+    const { calls } = server();
+    renderPage();
+    await ready();
+    fireEvent.change(appBox(), { target: { files: [new File(["<svg/>"], "a.svg", { type: "image/svg+xml" })] } });
+    expect((await within(pictureRow("app_icon")).findByRole("alert")).textContent).toBe("The app icon is a PNG file.");
+    expect(writes(calls)).toHaveLength(0);
+  });
+
+  it("says the server's 400 in the app icon's own words", async () => {
+    server({ put: () => ({ status: 400, body: { error: { code: "invalid_request", message: "the app icon must be a square PNG of 512 to 2048 pixels", details: { reason: "invalid_picture" } } } }) });
+    renderPage();
+    await ready();
+    fireEvent.change(appBox(), { target: { files: [appPng()] } });
+    expect((await within(pictureRow("app_icon")).findByRole("alert")).textContent).toBe("The app icon must be a square PNG of 512 to 2048 pixels.");
+    expect(within(pictureRow("app_icon")).getByRole("button", { name: "Upload app icon" })).toBeTruthy();
+  });
+
+  it("reads a locked app icon as read-only and marked, with no upload and no Remove", async () => {
+    server({ pictures: withApp({ key: "ui.brand.app_icon", state: "file", type: "image/png", sha256: SHA, locked: true }) });
+    renderPage();
+    await ready();
+    const r = pictureRow("app_icon");
+    expect(within(r).getByText("Set in the server's config file")).toBeTruthy();
+    expect(within(r).queryByRole("button", { name: /app icon/ })).toBeNull();
+    expect((r.querySelector("img") as HTMLImageElement).getAttribute("src")).toBe(`/brand/icon-512.png?v=${SHA}`);
+  });
+
+  it("draws the app tiles from the app icon's hash while the tab keeps the icon's", async () => {
+    server({ pictures: [uploaded("ui.brand.app_icon"), { key: "ui.brand.icon", state: "uploaded", type: "image/svg+xml", sha256: "b".repeat(64), locked: false }, uploaded("ui.brand.logo")] });
+    renderPage();
+    await ready();
+    const srcs = [...preview("icons").querySelectorAll("img")].map((i) => i.getAttribute("src"));
+    expect(srcs).toEqual([`/favicon.svg?v=${"b".repeat(64)}`, `/brand/icon-512.png?v=${SHA}`, `/brand/icon-512.png?v=${SHA}`]);
+  });
+
+  it("shows an unusable app icon with its reason and offers Remove", async () => {
+    const { calls } = server({ pictures: withApp({ key: "ui.brand.app_icon", state: "unusable", reason: "file_missing", locked: false }) });
+    renderPage();
+    await ready();
+    const r = pictureRow("app_icon");
+    expect(within(r).getByText("The stored picture is not used: its file is missing.")).toBeTruthy();
+    fireEvent.click(within(r).getByRole("button", { name: "Remove app icon" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: "DELETE", url: "/api/v1/settings/brand/app-icon" });
+    await waitFor(() => expect(within(pictureRow("app_icon")).queryByText(/is not used/)).toBeNull());
   });
 });

@@ -92,14 +92,15 @@ export function pngPixel(png, x, y) {
 }
 
 // brandIconPng is the icon file: an 8-bit RGB PNG, size pixels square, with the inner colour in the middle half of each side.
-export function brandIconPng(size = ICON_SIZE) {
+// The colours are the e2e brand's own by default; a check that needs a different picture passes its own.
+export function brandIconPng(size = ICON_SIZE, inner = ICON_INNER, outer = ICON_OUTER) {
   const rows = [];
   for (let y = 0; y < size; y++) {
     // Each row starts with its filter type, 0 for none.
     const row = Buffer.alloc(1 + size * 3);
     for (let x = 0; x < size; x++) {
-      const inner = x >= size / 4 && x < (3 * size) / 4 && y >= size / 4 && y < (3 * size) / 4;
-      const colour = inner ? ICON_INNER : ICON_OUTER;
+      const middle = x >= size / 4 && x < (3 * size) / 4 && y >= size / 4 && y < (3 * size) / 4;
+      const colour = middle ? inner : outer;
       row[1 + x * 3] = colour[0];
       row[2 + x * 3] = colour[1];
       row[3 + x * 3] = colour[2];

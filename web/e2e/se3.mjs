@@ -15,12 +15,14 @@
 //  8. Branding (decision 152): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
 //     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is
 //     uploaded, drawn in the preview and the sidebar, and removed; a file that is not a picture is refused in the page's own
-//     words for a logo; no page error or policy violation.
+//     words for a logo; an app icon is uploaded, draws the app icons while the favicon keeps the icon file's, refuses an SVG
+//     in the page's own words, and is removed, the icons byte for byte as before; no page error or policy violation.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setLanguage, setTheme, sleep } from './media.mjs';
+import { brandIconPng, pngPixel, ICON_INNER } from './icon.mjs';
 
 const q = (v) => JSON.stringify(v);
 const sideways = (page) => page.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
@@ -133,6 +135,50 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
     check(refused.logo === 0, 'the one expected 400 of the refused upload was logged, and no other');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+
+  // The app icon: the picture of the installed app's icons alone. Upload a square PNG, see the icons take its colours while
+  // the favicon keeps the icon file's, refuse an SVG in the page's own words, and remove it.
+  const appDir = mkdtempSync(join(tmpdir(), 'se3-appicon-'));
+  try {
+    const iconUrl = new URL('/brand/icon-512.png', base);
+    const beforeBytes = Buffer.from(await (await fetch(iconUrl)).arrayBuffer());
+    const faviconBefore = await (await fetch(new URL('/favicon.svg', base))).text();
+    check(pngPixel(beforeBytes, 256, 256).slice(0, 3).join(',') === ICON_INNER.join(','), 'the icons start from the config icon file');
+    const appFile = join(appDir, 'app.png');
+    writeFileSync(appFile, brandIconPng(512, [0, 0, 220], [220, 170, 0]));
+    await page.setFiles('[data-picture="ui.brand.app_icon"] input[type="file"]', [appFile]);
+    await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.app_icon"] button[aria-label="Remove app icon"]')`, 15000);
+    const held = await pictureState(h, base, adminKey, 'app_icon');
+    check(held.state === 'uploaded' && held.type === 'image/png', `the server holds the uploaded app icon (${held.state}, ${held.type})`);
+    const afterBytes = Buffer.from(await (await fetch(iconUrl)).arrayBuffer());
+    const middle = pngPixel(afterBytes, 256, 256);
+    const corner = pngPixel(afterBytes, 0, 0);
+    check(
+      middle[0] === 0 && middle[1] === 0 && middle[2] === 220 && corner[0] === 220 && corner[1] === 170 && corner[2] === 0,
+      `the app icons are drawn from the app icon (${middle} / ${corner})`,
+    );
+    const faviconAfter = await (await fetch(new URL('/favicon.svg', base))).text();
+    check(faviconAfter === faviconBefore, 'the favicon keeps the icon file while the app icon is set');
+    await page.waitFor(`[...document.querySelectorAll('[data-preview="icons"] img')].some((i) => i.src.includes('/brand/icon-512.png?v=${held.sha256}'))`, 10000);
+    check(true, 'the preview draws the app tiles from the app icon');
+    // An SVG is refused in the page's own words before any request: the app icon is a PNG only.
+    const svgFile = join(appDir, 'app.svg');
+    writeFileSync(svgFile, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
+    await page.setFiles('[data-picture="ui.brand.app_icon"] input[type="file"]', [svgFile]);
+    await page.waitFor(`!!document.querySelector('[data-picture="ui.brand.app_icon"] [role="alert"]')`, 15000);
+    const said = await page.evaluate(`document.querySelector('[data-picture="ui.brand.app_icon"] [role="alert"]').textContent`);
+    check(
+      said === 'The app icon is a PNG file.' && (await pictureState(h, base, adminKey, 'app_icon')).state === 'uploaded',
+      `an SVG is refused for the app icon in the page's own words (${said})`,
+    );
+    await h.clickOn(page, '[data-picture="ui.brand.app_icon"] button[aria-label="Remove app icon"]');
+    await page.waitFor(`!document.querySelector('[data-picture="ui.brand.app_icon"] button[aria-label="Remove app icon"]')`, 15000);
+    check((await pictureState(h, base, adminKey, 'app_icon')).state === 'none', 'Remove puts the app icon back to none');
+    const backBytes = Buffer.from(await (await fetch(iconUrl)).arrayBuffer());
+    check(backBytes.equals(beforeBytes), 'the icons are byte for byte what they were before the app icon');
+  } finally {
+    rmSync(appDir, { recursive: true, force: true });
   }
   const unexpected = page.errors.slice(errorsBefore);
   check(unexpected.length === 0, `the Branding checks log no page error or policy violation (${unexpected.join(' | ') || 'none'})`);

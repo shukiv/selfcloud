@@ -622,8 +622,9 @@ func TestLogoRefusedBeforeItsPixelsAreRead(t *testing.T) {
 	}
 }
 
-// TestIconNotes: the start lines. An SVG with no PNG for the icons gets one line that names ui.brand.icon_file; no file and a
-// PNG icon get none; a logo PNG smaller than the 512 icon gets one that suggests an icon file of 512 pixels or more.
+// TestIconNotes: the start lines. An SVG with no PNG for the icons gets one line that names ui.brand.app_icon_file, the
+// setting that gives the icons a picture; no file and a PNG icon get none; a logo PNG smaller than the 512 icon gets one
+// that suggests an icon file of 512 pixels or more.
 func TestIconNotes(t *testing.T) {
 	svgIcon := svgFile(iconSVG)
 	cases := []struct {
@@ -635,8 +636,8 @@ func TestIconNotes(t *testing.T) {
 	}{
 		{"no file", nil, nil, 0, ""},
 		{"icon PNG", pngFile(quadrantPNG(t, 512)), nil, 0, ""},
-		{"icon SVG", svgIcon, nil, 1, "ui.brand.icon_file"},
-		{"logo SVG", nil, svgFile(logoSVG), 1, "ui.brand.icon_file"},
+		{"icon SVG", svgIcon, nil, 1, "ui.brand.app_icon_file"},
+		{"logo SVG", nil, svgFile(logoSVG), 1, "ui.brand.app_icon_file"},
 		// A refused logo PNG gives its own line, and the SVG-only line is not added to it.
 		{"icon SVG and a refused logo PNG", svgIcon, pngFile(encodePNG(t, image.NewNRGBA(image.Rect(0, 0, 3000, 3000)))), 1, "ui.brand.logo_file"},
 		{"logo PNG of 800 pixels", nil, pngFile(logoPNG(t)), 0, ""},

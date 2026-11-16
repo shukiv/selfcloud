@@ -69,6 +69,7 @@ export const FACTS: Fact[] = [
 // settingsAnswer is the answer with every setting at its default. over changes a setting by key: a stored value is
 // { value, source: "settings" }, and a key the file writes is { value, source: "file", locked: true }.
 export const PICTURES: Picture[] = [
+  { key: "ui.brand.app_icon", state: "none", locked: false },
   { key: "ui.brand.icon", state: "none", locked: false },
   { key: "ui.brand.logo", state: "none", locked: false },
 ];

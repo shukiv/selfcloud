@@ -271,6 +271,10 @@ var settingsProbes = map[string]func(p *fileProbe) []string{
 		return []string{p.picture("icon.png", 512, 512)}
 	},
 	"settings icon remove": func(p *fileProbe) []string { return nil },
+	"settings app-icon set": func(p *fileProbe) []string {
+		return []string{p.picture("app-icon.png", 512, 512)}
+	},
+	"settings app-icon remove": func(p *fileProbe) []string { return nil },
 }
 
 // useAdminKey makes the probe's admin key the credential of the commands that follow. It returns the function that puts
