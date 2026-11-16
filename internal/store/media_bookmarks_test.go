@@ -40,7 +40,7 @@ func TestMediaBookmarksAddAndOrder(t *testing.T) {
 	s := openTest(t)
 	seedNotify(t, s)
 	if err := exec(s, `INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key, kind, created_at, modified_at)
-		VALUES ('nod_m', 'acc_n', 'fld_n', NULL, 'Other', 'other', 'file', 0, 0)`); err != nil {
+		VALUES ('nod_m', 'acc_n', 'fld_n', 'nod_n', 'Other', 'other', 'file', 0, 0)`); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
@@ -89,7 +89,7 @@ func TestMediaBookmarksRelabel(t *testing.T) {
 	s := openTest(t)
 	seedNotify(t, s)
 	if err := exec(s, `INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key, kind, created_at, modified_at)
-		VALUES ('nod_m', 'acc_n', 'fld_n', NULL, 'Other', 'other', 'file', 0, 0)`); err != nil {
+		VALUES ('nod_m', 'acc_n', 'fld_n', 'nod_n', 'Other', 'other', 'file', 0, 0)`); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
@@ -136,7 +136,7 @@ func TestMediaBookmarksDelete(t *testing.T) {
 	s := openTest(t)
 	seedNotify(t, s)
 	if err := exec(s, `INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key, kind, created_at, modified_at)
-		VALUES ('nod_m', 'acc_n', 'fld_n', NULL, 'Other', 'other', 'file', 0, 0)`); err != nil {
+		VALUES ('nod_m', 'acc_n', 'fld_n', 'nod_n', 'Other', 'other', 'file', 0, 0)`); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()

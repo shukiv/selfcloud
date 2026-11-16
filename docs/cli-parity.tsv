@@ -237,6 +237,7 @@ route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's 
 route	DELETE /api/v1/comments/{cmt}	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
+route	DELETE /api/v1/nodes/{nod}/bookmarks/{bmk}	-	-	media bookmarks: a player feature
 route	DELETE /api/v1/nodes/{nod}/external-permissions/{email}	share revoke	xs4	built in xs4 (decision 187)
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	label clear	cli11f	built in cli11f
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	share revoke	cli7	built in cli7
@@ -299,6 +300,7 @@ route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/access-requests	access ls	cli7	built in cli7
 route	GET /api/v1/nodes/{nod}/activity	activity	cli11c	built in cli11c
 route	GET /api/v1/nodes/{nod}/ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132); the CLI reads a folder by its path or ID
+route	GET /api/v1/nodes/{nod}/bookmarks	-	-	media bookmarks: a player feature
 route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	comment ls	cli11c	built in cli11c
 route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
@@ -360,6 +362,7 @@ route	PATCH /api/v1/comments/{cmt}	-	-	browser session only: the server refuses 
 route	PATCH /api/v1/folders/{fld}/settings	folder settings set	cli8	built in cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
 route	PATCH /api/v1/nodes/{nod}	mv,share no-download,share editors-can-share	cli5	built in cli5 and cli7b
+route	PATCH /api/v1/nodes/{nod}/bookmarks/{bmk}	-	-	media bookmarks: a player feature
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	version label	cli11b	built in cli11b
 route	PATCH /api/v1/notifications/settings	-	-	browser session only: the server refuses every token on this route
 route	PATCH /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
@@ -414,6 +417,7 @@ route	POST /api/v1/imports/{imp}/resume	-	cli10	no CLI credential reaches it (de
 route	POST /api/v1/me/email-proof	-	-	browser session only: the user asks for a proof mail (decision 187)
 route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
+route	POST /api/v1/nodes/{nod}/bookmarks	-	-	media bookmarks: a player feature
 route	POST /api/v1/nodes/{nod}/comments	comment add	cli11c	built in cli11c
 route	POST /api/v1/nodes/{nod}/copy	cp	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/documents	doc new	cli11g	built in cli11g

@@ -7,28 +7,15 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// bookmarkJSON is one bookmark as the routes answer it.
-type bookmarkJSON struct {
-	ID              string    `json:"id"`
-	PositionSeconds float64   `json:"position_seconds"`
-	Label           string    `json:"label"`
-	CreatedAt       time.Time `json:"created_at"`
-}
-
-type bookmarkListJSON struct {
-	Bookmarks []bookmarkJSON `json:"bookmarks"`
-}
-
 // bmPath is the bookmarks route of a node; bmOne is one bookmark's route.
-func bmPath(node string) string         { return "/api/v1/nodes/" + node + "/bookmarks" }
-func bmOne(node, bmk string) string     { return bmPath(node) + "/" + bmk }
+func bmPath(node string) string     { return "/api/v1/nodes/" + node + "/bookmarks" }
+func bmOne(node, bmk string) string { return bmPath(node) + "/" + bmk }
 func bmCreate(t *testing.T, fx *sharingFixture, sess testSession, node string, pos float64, label string) bookmarkJSON {
 	t.Helper()
 	rec := callSession(t, fx.s, sess, "POST", bmPath(node), map[string]any{"position_seconds": pos, "label": label})

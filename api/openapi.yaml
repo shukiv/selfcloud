@@ -5306,6 +5306,105 @@ paths:
       responses:
         "204": { description: Stored. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/bookmarks:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Media]
+      operationId: listMediaBookmarks
+      summary: The places the caller marked in a video or audio file
+      description: |
+        The signed-in user's own bookmarks in a file the caller reaches, ordered by position, then
+        creation time, then ID. The list is `[]` when there are none, never null. A delegated token, an
+        account key and an installation admin get `forbidden`, and an admin signed in as a user gets
+        `forbidden` too. Nobody else can read a bookmark: none is listed or shown to another user.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The bookmarks.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bookmarks]
+                properties:
+                  bookmarks:
+                    type: array
+                    items: { $ref: "#/components/schemas/MediaBookmark" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Media]
+      operationId: createMediaBookmark
+      summary: Mark a place in a video or audio file
+      description: |
+        Marks a place in a file the signed-in user reaches. The position is seconds of media time:
+        finite, from 0 to 10,000,000. The label is trimmed and holds from 0 to 100 characters, with no
+        control characters, else `invalid_request` naming `label`; an empty label is allowed. Only a
+        file has bookmarks: any other node is `not_found`. A user past 200 bookmarks in the file gets
+        `conflict` with `details.reason` `limit` and `details.limit` 200. The reach and the cap are
+        checked inside the write. Writes are charged per user (`bookmarks.write`, 60 a minute) before
+        the body is read. The bookmark is not audited.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [position_seconds]
+              properties:
+                position_seconds: { type: number, minimum: 0, maximum: 10000000 }
+                label: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: The bookmark.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaBookmark" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/bookmarks/{bmk}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/bmk"
+    patch:
+      tags: [Media]
+      operationId: relabelMediaBookmark
+      summary: Set the label of one of the caller's bookmarks
+      description: |
+        The same label rules as create. A bookmark of another user, of another file, or one that does
+        not exist is `not_found`, as is a malformed node or bookmark ID. The reach is checked inside the
+        write. Charged per user (`bookmarks.write`) before the body is read. Not audited.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [label]
+              properties:
+                label: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: The bookmark.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaBookmark" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Media]
+      operationId: deleteMediaBookmark
+      summary: Remove one of the caller's bookmarks
+      description: |
+        A bookmark of another user, of another file, or one that does not exist is `not_found`, as is a
+        malformed node or bookmark ID. The reach is checked inside the write. Charged per user
+        (`bookmarks.write`). Not audited.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/playlists:
     get:
       tags: [Playlists]
@@ -6868,6 +6967,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    bmk:
+      name: bmk
+      in: path
+      required: true
+      schema: { type: string, pattern: "^bmk_" }
     lbf:
       name: lbf
       in: path
@@ -7379,6 +7483,15 @@ components:
         name: { type: string, minLength: 1, maxLength: 255 }
         on_conflict: { type: string, enum: [fail, rename, replace] }
 
+    MediaBookmark:
+      type: object
+      description: A place a user marked in a media file (decision 216). Private to its user.
+      required: [id, position_seconds, label, created_at]
+      properties:
+        id: { type: string, pattern: "^bmk_" }
+        position_seconds: { type: number, minimum: 0, maximum: 10000000 }
+        label: { type: string, maxLength: 100 }
+        created_at: { type: string, format: date-time }
     Playlist:
       type: object
       description: A user's saved playlist (decision 58). Private to its user.
