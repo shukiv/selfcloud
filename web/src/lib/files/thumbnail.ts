@@ -5,6 +5,8 @@
 // bounded number of waits. The loader is written without the DOM, so its waits and its stop can be tested directly.
 
 import { Limiter } from './limiter';
+import { session, sessionKey } from '../session';
+import { get } from '../store';
 
 // The size a tile asks for: the server's default thumbnail size (derived.thumb_sizes).
 export const THUMB_SIZE = 256;
@@ -56,7 +58,8 @@ export interface ThumbSink {
   none(): void;
 }
 
-// ThumbDeps are the parts a test replaces: the request, the timers, the object addresses and the limit on requests.
+// ThumbDeps are the parts a test replaces: the request, the timers, the object addresses, the limit on requests, and the
+// reading of the session's key.
 export interface ThumbDeps {
   fetch: typeof fetch;
   schedule: (fn: () => void, ms: number) => unknown;
@@ -64,6 +67,7 @@ export interface ThumbDeps {
   createURL: (blob: Blob) => string;
   revokeURL: (url: string) => void;
   limiter: Limiter;
+  sessionKey: () => string;
 }
 
 // liveDeps is the browser's own parts. The limiter is shared, so the page's tiles together stay within THUMB_CONCURRENCY.
@@ -77,12 +81,14 @@ export function liveDeps(): ThumbDeps {
     createURL: (blob) => URL.createObjectURL(blob),
     revokeURL: (url) => URL.revokeObjectURL(url),
     limiter: shared,
+    sessionKey: () => sessionKey(get(session)),
   };
 }
 
 // watchThumbnail asks for the thumbnail at path until the answer is final, and reports it to sink. It returns a function
 // that stops it: a stopped watch never asks again, cancels its wait and its request, and revokes its image address.
-// Exactly one of image and none is reported, unless the watch is stopped first.
+// Exactly one of image and none is reported, unless the watch is stopped first. A watch whose session ends before its
+// request goes out reports none and asks no more, so a sign-out is never followed by a request under the session it ended.
 export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = liveDeps()): () => void {
   let stopped = false;
   let waits = 0;
@@ -91,11 +97,26 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
   // release ends the slot a redirected image holds, if one is held.
   let release: (() => void) | null = null;
   const abort = typeof AbortController === 'undefined' ? null : new AbortController();
+  // The session the watch starts under. A share page has none, and its empty key stays the same for the whole watch.
+  const startedKey = deps.sessionKey();
+  const sessionGone = () => deps.sessionKey() !== startedKey;
 
   const finish = (src: string | null) => {
     if (stopped) return;
     if (src === null) sink.none();
     else sink.image(src);
+  };
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    abort?.abort();
+    if (handle !== null) deps.cancel(handle);
+    handle = null;
+    if (blobURL !== null) deps.revokeURL(blobURL);
+    blobURL = null;
+    release?.();
+    release = null;
   };
 
   const again = (ms: number) => {
@@ -109,8 +130,21 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
   const ask = () => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      finish(null);
+      stop();
+      return;
+    }
     deps
-      .limiter.run(() => deps.fetch(path, { credentials: 'same-origin', redirect: 'manual', signal: abort?.signal }))
+      .limiter.run(() => {
+        // The slot may have been waited for across a sign-out: the key is read again just before the request goes out.
+        if (sessionGone()) {
+          finish(null);
+          stop();
+          return Promise.reject(new Error('the session ended'));
+        }
+        return deps.fetch(path, { credentials: 'same-origin', redirect: 'manual', signal: abort?.signal });
+      })
       .then(
         async (res) => {
           if (stopped) return;
@@ -154,15 +188,5 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
   };
 
   handle = deps.schedule(ask, 0);
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    abort?.abort();
-    if (handle !== null) deps.cancel(handle);
-    handle = null;
-    if (blobURL !== null) deps.revokeURL(blobURL);
-    blobURL = null;
-    release?.();
-    release = null;
-  };
+  return stop;
 }
