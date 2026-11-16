@@ -115,17 +115,44 @@ async function clickRow(page, region, name) {
   await page.evaluate(`document.querySelector(${q(rowSel(region, name))})?.click()`);
 }
 
+// revealRow pages the library tab until the row named is drawn, the way a person does: the tab's Load more button while
+// one shows, else the region's last row scrolled into view, which brings the sentinel that asks the next page. The
+// search lists oldest first, so a new file sits past the first page of a big library; the row is sought inside its
+// tab's region, for a tab already opened keeps its rows mounted (hidden).
+async function revealRow(page, region, name, ms = 30000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    if (await page.evaluate(`!!document.querySelector(${q(rowSel(region, name))})`)) return;
+    if (Date.now() > deadline) throw new Error(`the ${region} tab did not reveal the row ${name} in ${ms} ms`);
+    await page.evaluate(`(() => {
+      const r = document.querySelector(${q(`[role="region"][aria-label=${JSON.stringify(region)}]`)});
+      if (!r) return;
+      const pane = r.closest('.ant-tabs-tabpane') ?? r.parentElement;
+      const more = [...pane.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Load more' && !b.disabled && b.offsetParent !== null);
+      if (more) more.click();
+      else {
+        const rows = r.querySelectorAll('[role="row"]');
+        if (rows.length > 0) rows[rows.length - 1].scrollIntoView({ block: 'end' });
+      }
+    })()`);
+    await sleep(500);
+  }
+}
+
 // waitListed waits until the search lists the file under its type: the search indexes a file by a job after the upload.
-// It asks every 2 s, well under the search's sixty a minute per caller, so a slow index on a loaded machine cannot spend
-// the account key's minute and refuse the later sections' searches. A 429 is not a failure: it waits 10 s and asks again,
-// within the deadline.
+// It asks by the file's name as well (q, the name without its extension), for the search lists hits oldest first and a
+// big library's first page cannot hold a new file; the name narrows the hits to a page the file is on, and the exact
+// name is still matched. It asks every 2 s, well under the search's sixty a minute per caller, so a slow index on a
+// loaded machine cannot spend the account key's minute and refuse the later sections' searches. A 429 is not a failure:
+// it waits 10 s and asks again, within the deadline.
 async function waitListed(api, base, accountKey, type, name) {
   const deadline = Date.now() + 45000;
+  const stem = name.replace(/\.[^.]+$/, '');
   for (;;) {
     if (Date.now() > deadline) throw new Error(`${name} was not listed in the ${type} search in 45 seconds`);
     let found;
     try {
-      found = await api(base, 'GET', `/api/v1/search?type=${type}&kind=file&limit=50`, accountKey);
+      found = await api(base, 'GET', `/api/v1/search?type=${type}&kind=file&limit=50&q=${encodeURIComponent(stem)}`, accountKey);
     } catch (e) {
       if (!/: 429\b/.test(e.message)) throw e;
       await sleep(10000);
@@ -292,19 +319,24 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `location.pathname === '/media'`, 10000, 'the Media page');
       await clickTab(page, 'Music');
       await until(page, `location.search.includes('tab=music')`, 10000, 'the Music tab');
-      await until(page, `!!document.querySelector(${q(rowSel('Music', 'tag24.mp3'))})`, 15000, 'the tagged song row');
+      await revealRow(page, 'Music', 'tag24.mp3');
       const taggedText = await page.evaluate(`document.querySelector(${q(rowSel('Music', 'tag24.mp3'))}).textContent`);
       check(taggedText.includes('Artist One'), `the Music tab shows the artist (${taggedText})`);
       check(taggedText.includes('שלום עולם'), 'the Music tab shows the tag title');
       check(taggedText.includes('Album X'), 'the Music tab shows the album');
+      await revealRow(page, 'Music', 'track-one.ogg');
       check(await page.evaluate(`!!document.querySelector(${q(rowSel('Music', 'track-one.ogg'))})`), 'the untagged song is listed by its name');
     });
 
     await step('clicking a song plays it in the page’s one player, on Now playing', async () => {
+      await revealRow(page, 'Music', 'track-one.ogg');
       await clickRow(page, 'Music', 'track-one.ogg');
       await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page stage');
       await until(page, `!location.search.includes('tab=')`, 10000, 'back to Now playing');
-      check(await page.evaluate(`[...document.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === 'Now playing')?.getAttribute('aria-selected') === 'true'`), 'Now playing is the active tab');
+      // The address turns first and the tab's own mark follows in the next draw, so wait for the mark before judging it.
+      const nowTab = `[...document.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === 'Now playing')?.getAttribute('aria-selected') === 'true'`;
+      await until(page, nowTab, 10000, 'Now playing is the active tab');
+      check(await page.evaluate(nowTab), 'Now playing is the active tab');
       await page.evaluate(`(() => { const el = document.querySelector('[data-testid="media-page-stage"] audio'); el.__mp4 = 1; window.__mp4el = el; return true; })()`);
       await playing(page);
       check(await page.evaluate(`document.querySelectorAll('audio').length === 1`), 'one audio element on the page');
@@ -318,7 +350,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await waitResumeSaved(page, before);
       await clickTab(page, 'Recently played');
       await until(page, `location.search.includes('tab=recent')`, 10000, 'the Recently played tab');
-      await until(page, `!!document.querySelector(${q(rowSel('Recently played', 'track-one.ogg'))})`, 15000, 'the played row');
+      await revealRow(page, 'Recently played', 'track-one.ogg');
       const prog = await page.evaluate(`document.querySelector(${q(rowSel('Recently played', 'track-one.ogg'))}).textContent`);
       check(/0:0[5-9] of 0:08/.test(prog), `Recently played shows the place stopped at (${prog})`);
       check(await page.evaluate(`document.querySelector('[data-testid="media-page-stage"] audio') === window.__mp4el && window.__mp4el.paused`), 'the same paused element stays on the hidden stage');
@@ -330,6 +362,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `location.search.includes('tab=videos')`, 10000, 'the Videos tab');
       // Wait for the tab's read to settle: a row, or the empty state inside the table's frame.
       await until(page, `(() => { const r = document.querySelector('[role="region"][aria-label="Videos"]'); return !!r && (!!r.querySelector('[role="row"]') || !!r.querySelector('.empty-title')); })()`, 15000, 'the Videos tab settles');
+      await revealRow(page, 'Videos', 'clip.webm');
       const hasVideo = await page.evaluate(`!!document.querySelector(${q(rowSel('Videos', 'clip.webm'))})`);
       // waitListed already proved the search lists the video, so a missing row here is a bug, not a reason to skip.
       check(hasVideo, 'the Videos tab lists the uploaded video');
