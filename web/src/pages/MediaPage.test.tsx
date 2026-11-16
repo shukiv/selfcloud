@@ -175,3 +175,46 @@ describe("the Media page", () => {
     expect(screen.getByTestId("media-loc").textContent).toBe("");
   });
 });
+
+// stubPlaylists answers the Playlists tab's reads: the saved playlists, the played list, the tags and the folders.
+function stubPlaylists() {
+  return stubFetch((c) => {
+    if (c.url.startsWith("/api/v1/playlists")) return { status: 200, body: { items: [] } };
+    if (c.url.startsWith("/api/v1/media/played")) return { status: 200, body: { items: [] } };
+    if (c.url.startsWith("/api/v1/media/tags")) return { status: 200, body: { items: {} } };
+    if (c.url.startsWith("/api/v1/folders")) return { status: 200, body: { items: [] } };
+    if (c.url.startsWith("/api/v1/search")) return { status: 200, body: { items: [] } };
+    return fail(404, "not_found");
+  });
+}
+
+describe("the Media page's Playlists tab", () => {
+  it("sits right after Now playing, before the library tabs", async () => {
+    stubPlaylists();
+    renderPage();
+    await screen.findByRole("tab", { name: "Playlists" });
+    const labels = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(labels).toEqual(["Now playing", "Playlists", "Videos", "Music", "Recently played"]);
+  });
+
+  it("?tab=playlists opens it, and its list is drawn", async () => {
+    stubPlaylists();
+    renderPage(false, "/media?tab=playlists");
+    const tab = await screen.findByRole("tab", { name: "Playlists" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("media-loc").textContent).toBe("?tab=playlists");
+    expect(await screen.findByRole("region", { name: "Your playlists" })).toBeTruthy();
+  });
+
+  it("keeps the stage and queue hosts mounted while the Playlists tab is open", async () => {
+    stubPlaylists();
+    startPlayback(seed);
+    renderPage(false, "/media?tab=playlists");
+    await screen.findByRole("region", { name: "Your playlists" });
+    const page = getPlayback().page;
+    expect(page).not.toBeNull();
+    expect(page!.stage).toBe(screen.getByTestId("media-page-stage"));
+    expect(page!.queue).toBe(screen.getByTestId("media-page-queue"));
+    expect(getPlayback().seed).not.toBeNull();
+  });
+});
