@@ -252,6 +252,13 @@ export class Page {
     });
     this.on('Network.loadingFinished', (p) => this.inflight.delete(p.requestId));
     this.on('Network.loadingFailed', (p) => this.inflight.delete(p.requestId));
+    // A main-frame navigation ends the old document's requests, and the browser can lose their end events on the way
+    // out; the flight record drops what started before it, so a stale entry cannot hold a later section's wait.
+    this.on('Page.frameNavigated', (p) => {
+      if (p.frame?.parentId) return;
+      const now = Date.now();
+      for (const [id, r] of this.inflight) if (r.at < now) this.inflight.delete(id);
+    });
     // A JavaScript dialog (alert, confirm, or a beforeunload "Leave site?") holds the page until it is answered, and every evaluate
     // waits behind it, so a wait on that page fails with no sign of why. The run records the dialog by type and message, and
     // dismisses it: the page stays where it is, and the wait that met the dialog fails with the dialog on record.

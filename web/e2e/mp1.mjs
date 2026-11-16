@@ -164,14 +164,16 @@ async function waitListed(api, base, accountKey, type, name) {
 }
 
 // waitResumeSaved waits until a resume place written after the pause has left for the server and the answer came back.
-export async function waitResumeSaved(page, before) {
+// The mark is sampled with the before count, just before the pause: only a request still in flight that started at or
+// after it can be this save, for an earlier section's request can outlive its end event in the flight record.
+export async function waitResumeSaved(page, before, mark, ms = 15000) {
   const isResume = (r) => r.method === 'PUT' && r.url.includes('/resume');
-  const deadline = Date.now() + 15000;
+  const deadline = Date.now() + ms;
   for (;;) {
     const sent = page.sent.filter(isResume).length;
-    const pending = [...(page.inflight?.values() ?? [])].some((r) => r.url.includes('/resume'));
+    const pending = [...(page.inflight?.values() ?? [])].some((r) => r.url.includes('/resume') && r.at >= mark);
     if (sent > before && !pending) return;
-    if (Date.now() > deadline) throw new Error('the resume place was not saved in 15 seconds');
+    if (Date.now() > deadline) throw new Error(`the resume place was not saved in ${ms} ms`);
     await sleep(100);
   }
 }
@@ -209,14 +211,14 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
   // The fixtures: a folder of the owner's own with two audio files, one of them played and marked.
   const folder = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'MP1 media' })).id;
   const tone = await readFile(join(media, 'tone.ogg'));
-  for (const name of ['track-one.ogg', 'track-two.ogg']) {
+  for (const name of ['mp1-one.ogg', 'mp1-two.ogg']) {
     await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent(`/${name}`)}`, accountKey, tone, 'audio/ogg');
   }
   // A tagged song and a video, for the library tabs (mp4): the Music tab reads the tags, the Videos tab lists the video.
   const tagged = await readFile(join(media, 'tag24.mp3'));
   await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent('/tag24.mp3')}`, accountKey, tagged, 'audio/mpeg');
   const clip = await readFile(join(media, 'clip.webm'));
-  await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent('/clip.webm')}`, accountKey, clip, 'video/webm');
+  await rawPut(base, `/api/v1/folders/${folder}/files?path=${encodeURIComponent('/mp1-clip.webm')}`, accountKey, clip, 'video/webm');
   const folderURL = `${base}/files/${folder}`;
 
   await signOut();
@@ -245,8 +247,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     });
 
     await step('a file played from the folder goes on in the mini player, marked', async () => {
-      await openFolder(page, folderURL, 'track-one.ogg');
-      await dblClick(page, await rowPoint(page, 'track-one.ogg'));
+      await openFolder(page, folderURL, 'mp1-one.ogg');
+      await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
       await until(page, viewerShown, 15000, 'the viewer opens');
       await playing(page);
       await closeViewer(page);
@@ -276,20 +278,20 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       const qrow = (name) => `[data-testid="media-page-queue"] [data-testid="media-qrow"][aria-label=${JSON.stringify(name)}]`;
       await until(page, `document.querySelectorAll('[data-testid="media-page-queue"] [data-testid="media-qrow"]').length === 4`, 15000, 'the four queue rows');
       check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]') && !document.querySelector('[data-testid="media-page-queue"] [data-testid="media-row"]')`), 'the queue is the table, with no drawer rows');
-      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('track-one.ogg'))}); const off = document.querySelector(${q(qrow('track-two.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the playing row is marked');
-      // A click on track-two's name plays it through the session's one player, on the page's stage.
+      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('mp1-one.ogg'))}); const off = document.querySelector(${q(qrow('mp1-two.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the playing row is marked');
+      // A click on mp1-two's name plays it through the session's one player, on the page's stage.
       const p = await page.evaluate(`(() => {
-        const row = document.querySelector(${q(qrow('track-two.ogg'))});
+        const row = document.querySelector(${q(qrow('mp1-two.ogg'))});
         row.scrollIntoView({ block: 'center' });
         const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       })()`);
       await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 });
       await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', buttons: 0, clickCount: 1 });
-      await until(page, `(() => { const v = ${MEDIA}; return !!v && v.getAttribute('aria-label') === 'track-two.ogg' && v.readyState >= 2; })()`, 20000, 'row 2 has data');
+      await until(page, `(() => { const v = ${MEDIA}; return !!v && v.getAttribute('aria-label') === 'mp1-two.ogg' && v.readyState >= 2; })()`, 20000, 'row 2 has data');
       await playing(page);
       check(await page.evaluate(`document.querySelectorAll('audio').length === 1 && document.querySelector('[data-testid="media-page-stage"] audio') === document.querySelector('audio')`), 'one player, in the page stage, plays row 2');
-      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('track-two.ogg'))}); const off = document.querySelector(${q(qrow('track-one.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the mark moves to row 2');
+      check(await page.evaluate(`(() => { const on = document.querySelector(${q(qrow('mp1-two.ogg'))}); const off = document.querySelector(${q(qrow('mp1-one.ogg'))}); return !!on && !!off && on.classList.contains('media-qrow--on') && !off.classList.contains('media-qrow--on'); })()`), 'the mark moves to row 2');
       // The element is made once for the file that plays (decision 186): carry the identity mark to the session's current
       // element, so the checks that follow judge the same one.
       await page.evaluate(`(() => { const el = document.querySelector('audio'); el.__mp1 = 1; window.__mp1el = el; return true; })()`);
@@ -312,7 +314,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
 
     // The library tabs (mp4): the search indexes the uploads by a job, so wait for them to be listed before opening a tab.
     await waitListed(api, base, accountKey, 'audio', 'tag24.mp3');
-    await waitListed(api, base, accountKey, 'video', 'clip.webm');
+    await waitListed(api, base, accountKey, 'video', 'mp1-clip.webm');
 
     await step('the Music tab lists the songs with their tags', async () => {
       await h.clickNav(page, 'Media');
@@ -324,13 +326,13 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       check(taggedText.includes('Artist One'), `the Music tab shows the artist (${taggedText})`);
       check(taggedText.includes('שלום עולם'), 'the Music tab shows the tag title');
       check(taggedText.includes('Album X'), 'the Music tab shows the album');
-      await revealRow(page, 'Music', 'track-one.ogg');
-      check(await page.evaluate(`!!document.querySelector(${q(rowSel('Music', 'track-one.ogg'))})`), 'the untagged song is listed by its name');
+      await revealRow(page, 'Music', 'mp1-one.ogg');
+      check(await page.evaluate(`!!document.querySelector(${q(rowSel('Music', 'mp1-one.ogg'))})`), 'the untagged song is listed by its name');
     });
 
     await step('clicking a song plays it in the page’s one player, on Now playing', async () => {
-      await revealRow(page, 'Music', 'track-one.ogg');
-      await clickRow(page, 'Music', 'track-one.ogg');
+      await revealRow(page, 'Music', 'mp1-one.ogg');
+      await clickRow(page, 'Music', 'mp1-one.ogg');
       await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page stage');
       await until(page, `!location.search.includes('tab=')`, 10000, 'back to Now playing');
       // The address turns first and the tab's own mark follows in the next draw, so wait for the mark before judging it.
@@ -346,12 +348,13 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     await step('after a few seconds and a pause, Recently played lists the place stopped at', async () => {
       await until(page, `window.__mp4el.currentTime > 5`, 15000, 'a few seconds played');
       const before = page.sent.filter((r) => r.method === 'PUT' && r.url.includes('/resume')).length;
+      const mark = Date.now();
       await page.evaluate(`window.__mp4el.pause()`);
-      await waitResumeSaved(page, before);
+      await waitResumeSaved(page, before, mark);
       await clickTab(page, 'Recently played');
       await until(page, `location.search.includes('tab=recent')`, 10000, 'the Recently played tab');
-      await revealRow(page, 'Recently played', 'track-one.ogg');
-      const prog = await page.evaluate(`document.querySelector(${q(rowSel('Recently played', 'track-one.ogg'))}).textContent`);
+      await revealRow(page, 'Recently played', 'mp1-one.ogg');
+      const prog = await page.evaluate(`document.querySelector(${q(rowSel('Recently played', 'mp1-one.ogg'))}).textContent`);
       check(/0:0[5-9] of 0:08/.test(prog), `Recently played shows the place stopped at (${prog})`);
       check(await page.evaluate(`document.querySelector('[data-testid="media-page-stage"] audio') === window.__mp4el && window.__mp4el.paused`), 'the same paused element stays on the hidden stage');
       check(await page.evaluate(`!!document.querySelector('[data-testid="media-page-queue"] [data-testid="media-queue-table"]')`), 'the queue table stays in its host across the tab change');
@@ -362,11 +365,11 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `location.search.includes('tab=videos')`, 10000, 'the Videos tab');
       // Wait for the tab's read to settle: a row, or the empty state inside the table's frame.
       await until(page, `(() => { const r = document.querySelector('[role="region"][aria-label="Videos"]'); return !!r && (!!r.querySelector('[role="row"]') || !!r.querySelector('.empty-title')); })()`, 15000, 'the Videos tab settles');
-      await revealRow(page, 'Videos', 'clip.webm');
-      const hasVideo = await page.evaluate(`!!document.querySelector(${q(rowSel('Videos', 'clip.webm'))})`);
+      await revealRow(page, 'Videos', 'mp1-clip.webm');
+      const hasVideo = await page.evaluate(`!!document.querySelector(${q(rowSel('Videos', 'mp1-clip.webm'))})`);
       // waitListed already proved the search lists the video, so a missing row here is a bug, not a reason to skip.
       check(hasVideo, 'the Videos tab lists the uploaded video');
-      const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'clip.webm'))}).textContent`);
+      const vidText = await page.evaluate(`document.querySelector(${q(rowSel('Videos', 'mp1-clip.webm'))}).textContent`);
       check(vidText.includes('MP1 media'), `the Videos tab shows the folder (${vidText})`);
       // End the session so the phone check below starts from the empty state, as it expects.
       await stopOnPage(page);
@@ -377,8 +380,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     // Once B is set the place must return below B after it reaches B, with a second's slack for the element's own
     // timeupdate pace, and play on from A.
     await step("the More menu's A-B loop returns the place to A at B", async () => {
-      await openFolder(page, folderURL, 'track-one.ogg');
-      await dblClick(page, await rowPoint(page, 'track-one.ogg'));
+      await openFolder(page, folderURL, 'mp1-one.ogg');
+      await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
       await until(page, viewerShown, 15000, 'the viewer opens');
       await playing(page);
       await closeViewer(page);
@@ -412,7 +415,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await sleep(1500);
       const st = await page.evaluate(`(() => { const v = ${MEDIA}; return { same: !!v && v.__mp5 === 1, ended: !!v && v.ended, name: v ? v.getAttribute('aria-label') : null, row: (document.querySelector('[data-testid="media-page-queue"] .media-qrow--on') || {}).textContent || '' }; })()`);
       check(st.same && st.ended, 'the same element stays ended');
-      check(st.name === 'track-one.ogg' && st.row.includes('track-one.ogg'), `the playing name is unchanged (${st.name}; row ${st.row.slice(0, 40)})`);
+      check(st.name === 'mp1-one.ogg' && st.row.includes('mp1-one.ogg'), `the playing name is unchanged (${st.name}; row ${st.row.slice(0, 40)})`);
       await openMore(page);
       await openMoreSub(page, 'Sleep timer');
       await moreItem(page, 'Off');
@@ -423,8 +426,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     });
 
     await step('the Media page fits a phone with no sideways scroll', async () => {
-      await openFolder(page, folderURL, 'track-one.ogg');
-      await dblClick(page, await rowPoint(page, 'track-one.ogg'));
+      await openFolder(page, folderURL, 'mp1-one.ogg');
+      await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
       await until(page, viewerShown, 15000, 'the viewer opens');
       await playing(page);
       await closeViewer(page);
