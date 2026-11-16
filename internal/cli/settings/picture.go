@@ -24,10 +24,16 @@ const maxPictureFile = 4 << 20
 
 var pngSignature = []byte("\x89PNG\r\n\x1a\n")
 
-// pictureKey is the settings key of the logo or the icon, as the answer's pictures name it.
-func pictureKey(which string) string { return "ui.brand." + which }
+// pictureKey is the settings key of the logo, the icon or the app icon, as the answer's pictures name it. The app icon's
+// route stem is app-icon, but its row is ui.brand.app_icon.
+func pictureKey(which string) string {
+	if which == "app-icon" {
+		return "ui.brand.app_icon"
+	}
+	return "ui.brand." + which
+}
 
-// pictureRoute is the route of the logo or the icon.
+// pictureRoute is the route of the logo, the icon or the app icon.
 func pictureRoute(which string) string { return settingsPath + "/brand/" + which }
 
 // LogoSet is `selfcloud settings logo set FILE [flags]`.
@@ -35,6 +41,11 @@ func LogoSet(args []string, stdout, stderr io.Writer) int { return set("logo", a
 
 // IconSet is `selfcloud settings icon set FILE [flags]`.
 func IconSet(args []string, stdout, stderr io.Writer) int { return set("icon", args, stdout, stderr) }
+
+// AppIconSet is `selfcloud settings app-icon set FILE [flags]`.
+func AppIconSet(args []string, stdout, stderr io.Writer) int {
+	return set("app-icon", args, stdout, stderr)
+}
 
 // LogoRemove is `selfcloud settings logo remove [flags]`.
 func LogoRemove(args []string, stdout, stderr io.Writer) int {
@@ -44,6 +55,11 @@ func LogoRemove(args []string, stdout, stderr io.Writer) int {
 // IconRemove is `selfcloud settings icon remove [flags]`.
 func IconRemove(args []string, stdout, stderr io.Writer) int {
 	return remove("icon", args, stdout, stderr)
+}
+
+// AppIconRemove is `selfcloud settings app-icon remove [flags]`.
+func AppIconRemove(args []string, stdout, stderr io.Writer) int {
+	return remove("app-icon", args, stdout, stderr)
 }
 
 // set sends a file as the logo or the icon. The file is judged whole before any request.

@@ -173,6 +173,14 @@ var remoteCommands = []remoteCommand{
 	{name: "settings icon remove", route: "DELETE /api/v1/settings/brand/icon",
 		help: `  settings icon remove [--json]  remove the uploaded icon
 `, run: settings.IconRemove},
+	{name: "settings app-icon set", route: "PUT /api/v1/settings/brand/app-icon",
+		help: `  settings app-icon set FILE [--json]
+                                 upload a square PNG (512 to 2048 pixels) as the installed app's icons, never the favicon
+`, run: settings.AppIconSet},
+	{name: "settings app-icon remove", route: "DELETE /api/v1/settings/brand/app-icon",
+		help: `  settings app-icon remove [--json]
+                                 remove the uploaded app icon
+`, run: settings.AppIconRemove},
 	{name: "admin ls", route: "GET /api/v1/admins",
 		help: `  admin ls [--all] [flags]       the installation admins: their email, name, status and sign-in times
 `, run: manage.AdminLs},

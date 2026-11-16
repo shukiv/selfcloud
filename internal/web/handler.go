@@ -69,10 +69,12 @@ type Options struct {
 	BrandAccent string
 	// BrandArtwork says the installation shows the SelfCloud artwork: it has no logo file, whatever its name (decision 126).
 	BrandArtwork bool
-	// IconFile is the icon, LogoFile the logo, or nil: the config file's (read with LoadIconFile and LoadLogo) or an
-	// upload's. The icons and the favicon are drawn from them (decision 119).
-	IconFile *Logo
-	LogoFile *Logo
+	// IconFile is the icon, LogoFile the logo, AppIconFile the app icon, or nil: the config file's (read with LoadIconFile,
+	// LoadLogo and LoadAppIconFile) or an upload's. The icons and the favicon are drawn from them (decisions 119 and 220);
+	// the app icon supplies the app icons alone, never the favicon.
+	IconFile    *Logo
+	LogoFile    *Logo
+	AppIconFile *Logo
 	// FrameAncestors, when set, names the host origins that may frame the page this request opens (decision 197). It
 	// is consulted only for the app page (index.html), never for an asset. A nil result, or a nil hook, keeps the page
 	// at frame-ancestors 'none' with X-Frame-Options DENY. The hook reads only; it writes nothing.
@@ -124,11 +126,12 @@ type Brand struct {
 }
 
 // BrandOptions are what a brand is built from (decision 141): the name, the accent, whether the SelfCloud artwork shows (no
-// logo at all, decision 126), and the icon and the logo, from the config file or an upload, or nil.
+// logo at all, decision 126), and the app icon, the icon and the logo, from the config file or an upload, or nil.
 type BrandOptions struct {
 	Name    string
 	Accent  string
 	Artwork bool
+	AppIcon *Logo
 	Icon    *Logo
 	Logo    *Logo
 }
@@ -137,7 +140,7 @@ type BrandOptions struct {
 // serves until UseBrand swaps it in, so a brand that cannot be built leaves the one in use.
 func (h *Handler) BuildBrand(o BrandOptions) (*Brand, error) {
 	info := newBrandInfo(o.Name, o.Accent, o.Artwork)
-	pick, err := pickIcons(o.Icon, o.Logo, info)
+	pick, err := pickIcons(o.AppIcon, o.Icon, o.Logo, info)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +244,7 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		h.page = parts
 	}
 	b, err := h.BuildBrand(BrandOptions{Name: opts.BrandName, Accent: opts.BrandAccent, Artwork: opts.BrandArtwork,
-		Icon: opts.IconFile, Logo: opts.LogoFile})
+		AppIcon: opts.AppIconFile, Icon: opts.IconFile, Logo: opts.LogoFile})
 	if err != nil {
 		return nil, err
 	}

@@ -21,10 +21,10 @@ import (
 )
 
 // The brand while the server runs (decision 141). The brand keys are settings, changed through PATCH /api/v1/settings. An
-// installation admin uploads or removes the logo and the icon through PUT and DELETE /api/v1/settings/brand/logo and
-// /brand/icon. A picture is checked as the config file's pictures are, stored under <data_dir>/brand with a name the server
-// makes from its hash, and recorded in the settings table with its type and hash, in the transaction of its audit entry.
-// After each change the web interface's brand is built whole, before anything is stored, and swapped in once it is.
+// installation admin uploads or removes the logo, the icon and the app icon through PUT and DELETE /api/v1/settings/brand/logo,
+// /brand/icon and /brand/app-icon. A picture is checked as the config file's pictures are, stored under <data_dir>/brand with a
+// name the server makes from its hash, and recorded in the settings table with its type and hash, in the transaction of its
+// audit entry. After each change the web interface's brand is built whole, before anything is stored, and swapped in once it is.
 
 // The states of a picture in the settings answer.
 const (
@@ -84,13 +84,13 @@ func storedReason(err error) string {
 	return reasonUnreadable
 }
 
-// brandPictures are the installation's logo and icon as the server serves them now. It is never changed: a change swaps in
-// a new one.
+// brandPictures are the installation's logo, icon and app icon as the server serves them now. It is never changed: a change
+// swaps in a new one.
 type brandPictures struct {
-	logo, icon picture
+	logo, icon, appIcon picture
 }
 
-// pictureKind is one of the two pictures: the settings table's row, the stem of its file's name, and its check.
+// pictureKind is one of the three pictures: the settings table's row, the stem of its file's name, and its check.
 type pictureKind struct {
 	key   string
 	stem  string
@@ -98,24 +98,32 @@ type pictureKind struct {
 }
 
 var (
-	logoKind = pictureKind{key: config.LogoPicture, stem: "logo", check: web.NewLogo}
-	iconKind = pictureKind{key: config.IconPicture, stem: "icon", check: web.NewIcon}
+	logoKind    = pictureKind{key: config.LogoPicture, stem: "logo", check: web.NewLogo}
+	iconKind    = pictureKind{key: config.IconPicture, stem: "icon", check: web.NewIcon}
+	appIconKind = pictureKind{key: config.AppIconPicture, stem: "app-icon", check: web.NewAppIcon}
 )
 
 // of returns the kind's picture in p.
 func (k pictureKind) of(p *brandPictures) picture {
-	if k.stem == logoKind.stem {
+	switch k.stem {
+	case logoKind.stem:
 		return p.logo
+	case appIconKind.stem:
+		return p.appIcon
+	default:
+		return p.icon
 	}
-	return p.icon
 }
 
 // with returns p with the kind's picture replaced by pic.
 func (k pictureKind) with(p *brandPictures, pic picture) *brandPictures {
 	next := *p
-	if k.stem == logoKind.stem {
+	switch k.stem {
+	case logoKind.stem:
 		next.logo = pic
-	} else {
+	case appIconKind.stem:
+		next.appIcon = pic
+	default:
 		next.icon = pic
 	}
 	return &next
@@ -177,11 +185,14 @@ func (s *Server) brandDir() string {
 // that no longer passes is logged and not used, and never stops the start. An upload under a picture the file locks is kept,
 // unused, and comes back when the file stops setting it.
 func (s *Server) startPictures(cfg *config.Config, rows map[string]string) (*brandPictures, error) {
-	p := &brandPictures{logo: picture{from: pictureNone}, icon: picture{from: pictureNone}}
-	for _, k := range []pictureKind{logoKind, iconKind} {
+	p := &brandPictures{logo: picture{from: pictureNone}, icon: picture{from: pictureNone}, appIcon: picture{from: pictureNone}}
+	for _, k := range []pictureKind{logoKind, iconKind, appIconKind} {
 		file, load := cfg.UI.Brand.LogoFile, web.LoadLogo
-		if k.stem == iconKind.stem {
+		switch k.stem {
+		case iconKind.stem:
 			file, load = cfg.UI.Brand.IconFile, web.LoadIconFile
+		case appIconKind.stem:
+			file, load = cfg.UI.Brand.AppIconFile, web.LoadAppIconFile
 		}
 		row, stored := rows[k.key]
 		if cfg.PictureLocked(k.key) {
@@ -249,7 +260,7 @@ func (s *Server) readStoredPicture(k pictureKind, row string) (*web.Logo, error)
 // is no logo at all, from the file or an upload (decision 126).
 func brandOptions(c *config.Config, p *brandPictures) web.BrandOptions {
 	return web.BrandOptions{Name: c.UI.Brand.Name, Accent: c.UI.Brand.Accent, Artwork: p.logo.img == nil,
-		Icon: p.icon.img, Logo: p.logo.img}
+		AppIcon: p.appIcon.img, Icon: p.icon.img, Logo: p.logo.img}
 }
 
 // prepareBrand builds the web interface's brand for the settings c and the pictures p, without serving it. With the
@@ -294,8 +305,8 @@ type pictureJSON struct {
 
 // picturesOf lists the pictures, sorted by key.
 func picturesOf(c *config.Config, p *brandPictures) []pictureJSON {
-	out := make([]pictureJSON, 0, 2)
-	for _, k := range []pictureKind{iconKind, logoKind} {
+	out := make([]pictureJSON, 0, 3)
+	for _, k := range []pictureKind{appIconKind, iconKind, logoKind} {
 		pic := k.of(p)
 		j := pictureJSON{Key: k.key, State: pic.from, Locked: c.PictureLocked(k.key)}
 		if pic.img != nil {
@@ -322,6 +333,14 @@ func (s *Server) handleDeleteLogo(w http.ResponseWriter, r *http.Request) error 
 
 func (s *Server) handleDeleteIcon(w http.ResponseWriter, r *http.Request) error {
 	return s.deletePicture(w, r, iconKind)
+}
+
+func (s *Server) handlePutAppIcon(w http.ResponseWriter, r *http.Request) error {
+	return s.putPicture(w, r, appIconKind)
+}
+
+func (s *Server) handleDeleteAppIcon(w http.ResponseWriter, r *http.Request) error {
+	return s.deletePicture(w, r, appIconKind)
 }
 
 // pictureLocked refuses a change to a picture the config file or the environment sets.

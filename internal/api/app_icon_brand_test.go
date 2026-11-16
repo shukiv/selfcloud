@@ -267,8 +267,9 @@ func TestAppIconRefusesWhoIsNotAnInstallationAdmin(t *testing.T) {
 	wantStatus(t, rawSession(t, s, fx.adminSess, http.MethodDelete, appIconRoute, "", nil), 200)
 }
 
-// TestAppIconFileRefusesStartNamingTheSetting: an app icon file that is the wrong shape, too small, too big, an SVG or
-// missing stops the start, and the error names ui.brand.app_icon_file.
+// TestAppIconFileRefusesStartNamingTheSetting: an app icon file that is the wrong shape, too small, too big or missing stops
+// the start, and the error names ui.brand.app_icon_file. A wrong extension is refused by the config's own check (see
+// TestAppIconFileExtension), before the start reads the file.
 func TestAppIconFileRefusesStartNamingTheSetting(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -279,7 +280,6 @@ func TestAppIconFileRefusesStartNamingTheSetting(t *testing.T) {
 		{"2049 pixels", iconTestFile(t, "big.png", squarePNG(t, 2049, 2049))},
 		{"a non-square PNG", iconTestFile(t, "wide.png", squarePNG(t, 600, 512))},
 		{"SVG content in a .png", iconTestFile(t, "fake.png", []byte("<svg></svg>"))},
-		{"an .svg file", iconTestFile(t, "app.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>`))},
 		{"a missing file", filepath.Join(t.TempDir(), "missing.png")},
 	} {
 		var buf bytes.Buffer

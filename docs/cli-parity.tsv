@@ -168,9 +168,9 @@ fn	lib/notifications/api.ts:setEmailSwitch	-	-	browser session only: the server 
 fn	lib/notifications/api.ts:unreadCount	-	-	browser session only: the server refuses every token on this route
 fn	lib/search/api.ts:searchNodes	search	cli11e	built in cli11e
 fn	lib/settings/api.ts:changeSettings	settings set	se4	built in se4; settings reset calls it too
-fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove calls it too
+fn	lib/settings/api.ts:deletePicture	settings logo remove	se4	built in se4; settings icon remove and settings app-icon remove call it too
 fn	lib/settings/api.ts:getSettings	settings get	se4	built in se4
-fn	lib/settings/api.ts:putPicture	settings logo set	se4	built in se4; settings icon set calls it too
+fn	lib/settings/api.ts:putPicture	settings logo set	se4	built in se4; settings icon set and settings app-icon set call it too
 fn	lib/sharing/api.ts:addExternalPermission	share grant	xs4	built in xs4 (decision 187)
 fn	lib/sharing/api.ts:approveAccessRequest	access approve	cli7	built in cli7
 fn	lib/sharing/api.ts:confirmEmailProof	-	-	email proof link from the prove mail, opened by a mail client (decision 187)
@@ -247,6 +247,7 @@ route	DELETE /api/v1/playlists/{pls}	-	cli12	browser session only: a playlist re
 route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	DELETE /api/v1/recent	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/recent/{nod}	-	-	browser session only: the server refuses every token on this route
+route	DELETE /api/v1/settings/brand/app-icon	settings app-icon remove	se4	built in se4
 route	DELETE /api/v1/settings/brand/icon	settings icon remove	se4	built in se4
 route	DELETE /api/v1/settings/brand/logo	settings logo remove	se4	built in se4
 route	DELETE /api/v1/share-links/{shl}	link rm	cli7	built in cli7
@@ -460,5 +461,6 @@ route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player featu
 route	PUT /api/v1/nodes/{nod}/star	star	cli11a	built in cli11a
 route	PUT /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	PUT /api/v1/playlists/{pls}/order	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	PUT /api/v1/settings/brand/app-icon	settings app-icon set	se4	built in se4
 route	PUT /api/v1/settings/brand/icon	settings icon set	se4	built in se4
 route	PUT /api/v1/settings/brand/logo	settings logo set	se4	built in se4

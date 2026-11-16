@@ -41,9 +41,9 @@ export function pictureSrc(kind: PictureKind, p: Picture): string | null {
   return kind === "logo" ? `/brand/logo?v=${v}` : `/brand/icon-512.png?v=${v}`;
 }
 
-// PictureRow is the logo or the icon: what is in use, Upload (or Replace) and Remove as icon buttons with a tooltip. A change is made
-// at once, as the API does, and is not part of the section's Save. A picture the config file sets is read-only. One that was stored
-// and not used says why and offers Remove.
+// PictureRow is the logo, the icon or the app icon: what is in use, Upload (or Replace) and Remove as icon buttons with a tooltip.
+// A change is made at once, as the API does, and is not part of the section's Save. A picture the config file sets is read-only. One
+// that was stored and not used says why and offers Remove. The app icon is a PNG only; the logo and the icon also take an SVG.
 export default function PictureRow({ kind, picture, wide, fill, onAnswer, onLocked }: Props) {
   const { t } = useT();
   const lang = useLang();
@@ -54,13 +54,16 @@ export default function PictureRow({ kind, picture, wide, fill, onAnswer, onLock
   const src = pictureSrc(kind, picture);
   const upload = t(used ? `settings.picture.replace.${kind}` : `settings.picture.upload.${kind}`);
   const remove = t(`settings.picture.remove.${kind}`);
+  // The app icon is a PNG only; the logo and the icon also take an SVG.
+  const types = kind === "app_icon" ? ["image/png"] : TYPES;
+  const typeText = t(kind === "app_icon" ? "settings.picture.type.png" : "settings.picture.type");
 
   // A refusal is told in the page's own words: the rule the picture broke for a 400, the cap for a 413, and the failure text for the rest.
   const refusalText = (e: unknown): string => {
     if (e instanceof ApiError) {
       if (e.status === 409 && e.details.reason === "setting_locked") return t("settings.picture.locked");
       if (e.status === 413) return t("settings.picture.tooLarge", { max: typeof e.details.limit_bytes === "number" ? Math.floor(e.details.limit_bytes / 1024) : MAX_BYTES / 1024 });
-      if (e.status === 415) return t("settings.picture.type");
+      if (e.status === 415) return typeText;
       if (e.status === 400 && e.details.reason === "invalid_picture") return t(`settings.picture.invalid.${kind}`);
     }
     return failureText(e, lang);
@@ -83,7 +86,7 @@ export default function PictureRow({ kind, picture, wide, fill, onAnswer, onLock
     if (input.current) input.current.value = "";
     if (file === undefined) return;
     const type = typeOf(file);
-    if (!TYPES.includes(type)) return setProblem(t("settings.picture.type"));
+    if (!types.includes(type)) return setProblem(typeText);
     if (file.size > MAX_BYTES) return setProblem(t("settings.picture.size", { size: Math.ceil(file.size / 1024), max: MAX_BYTES / 1024 }));
     void run(() => putPicture(kind, file, type));
   };
@@ -126,7 +129,7 @@ export default function PictureRow({ kind, picture, wide, fill, onAnswer, onLock
                 ref={input}
                 type="file"
                 hidden
-                accept=".png,.svg,image/png,image/svg+xml"
+                accept={kind === "app_icon" ? ".png,image/png" : ".png,.svg,image/png,image/svg+xml"}
                 aria-label={t(`settings.picture.file.${kind}`)}
                 onChange={(e) => choose(e.target.files?.[0])}
               />

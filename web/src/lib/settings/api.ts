@@ -27,11 +27,11 @@ export interface Fact {
   source: Source;
 }
 
-// The logo and the icon are uploaded pictures, which are not settings. state is none (the installation's artwork or the server's own
-// choice), file (the config file sets it), uploaded (an upload in use) or unusable (an upload is stored and the server did not use it:
-// reason says why, and Remove clears it). type and sha256 are there for file and uploaded only.
-export type PictureKey = "ui.brand.logo" | "ui.brand.icon";
-export type PictureKind = "logo" | "icon";
+// The logo, the icon and the app icon are uploaded pictures, which are not settings. state is none (the installation's artwork or
+// the server's own choice), file (the config file sets it), uploaded (an upload in use) or unusable (an upload is stored and the
+// server did not use it: reason says why, and Remove clears it). type and sha256 are there for file and uploaded only.
+export type PictureKey = "ui.brand.logo" | "ui.brand.icon" | "ui.brand.app_icon";
+export type PictureKind = "logo" | "icon" | "app_icon";
 export interface Picture {
   key: PictureKey;
   state: "none" | "file" | "uploaded" | "unusable";
@@ -59,8 +59,8 @@ export interface SettingsChange {
   reset?: string[];
 }
 
-// The two picture routes are written out, so the route table and the command-line parity check find them by their text.
-const PICTURE_PATH = { logo: "/api/v1/settings/brand/logo", icon: "/api/v1/settings/brand/icon" } as const;
+// The three picture routes are written out, so the route table and the command-line parity check find them by their text.
+const PICTURE_PATH = { logo: "/api/v1/settings/brand/logo", icon: "/api/v1/settings/brand/icon", app_icon: "/api/v1/settings/brand/app-icon" } as const;
 
 export function getSettings(): Promise<SettingsAnswer> {
   return api<SettingsAnswer>("GET", "/api/v1/settings");

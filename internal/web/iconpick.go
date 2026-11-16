@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The installation's picture for the app icons and the favicon (decision 119). The server makes this choice each time it builds
-// the brand, at start and after an admin changes it (decision 141), from the icon and the logo it was given as data, each from
-// the config file or an upload. The first that applies is used:
+// The installation's picture for the app icons and the favicon (decisions 119 and 220). The server makes this choice each
+// time it builds the brand, at start and after an admin changes it (decision 141), from the app icon, the icon and the logo it
+// was given as data, each from the config file or an upload. The app icons use the first that applies:
 //
-//  1. ui.brand.icon_file, a PNG (the icons) or an SVG (the favicon);
-//  2. ui.brand.logo_file, a PNG for the icons when no icon file is a PNG, and an SVG for the favicon when no icon file is set;
-//  3. otherwise the SelfCloud mark on the accent.
+//  1. ui.brand.app_icon_file, a square PNG, for the app icons alone (decision 220);
+//  2. ui.brand.icon_file, a PNG (the icons) or an SVG (the favicon);
+//  3. ui.brand.logo_file, a PNG for the icons when no icon file is a PNG, and an SVG for the favicon when no icon file is set;
+//  4. otherwise the SelfCloud mark on the accent.
 //
-// A logo PNG the icons cannot use (larger than maxIconPixels on a side, or not decodable) is refused for the icons and the favicon,
-// and one line says why. The logo itself is still served at /brand/logo.
+// The favicon keeps decision 119's rule and never uses the app icon: the icon file, else the logo, else the mark. A logo PNG
+// the favicon cannot use (larger than maxIconPixels on a side, or not decodable) is refused for the favicon, and one line says
+// why unless the app icon supplies the icons' art. The logo itself is still served at /brand/logo.
 
 package web
 
@@ -70,10 +72,18 @@ func decodeLogo(l *Logo) (image.Image, string) {
 	return img, ""
 }
 
-// pickIcons applies the rule to the two pictures. The icon is a PNG or an SVG that passed checkPicture; the logo's pixels are
-// checked here, and only when the icons or the favicon would use it.
-func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
+// pickIcons applies the rule to the three pictures. The app icon and the icon are PNGs or SVGs that passed checkPicture; the
+// logo's pixels are checked here, and only when the favicon would use it.
+func pickIcons(appIcon, icon, logo *Logo, b brandInfo) (iconPick, error) {
 	var p iconPick
+	var appPic image.Image
+	if appIcon != nil {
+		img, err := png.Decode(bytes.NewReader(appIcon.data))
+		if err != nil {
+			return p, fmt.Errorf("web: ui.brand.app_icon_file cannot be decoded: %w", err)
+		}
+		appPic = img
+	}
 	var iconPic image.Image
 	if icon != nil && icon.contentType == "image/png" {
 		img, err := png.Decode(bytes.NewReader(icon.data))
@@ -85,20 +95,27 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 	}
 	var logoPic image.Image
 	refused := false
-	if iconPic == nil && logo != nil && logo.contentType == "image/png" {
+	// The logo's pixels are read only when the favicon would use it: no icon PNG, and either no app icon (the icons would
+	// fall to the logo) or no icon file at all (the favicon falls to the logo). With the app icon set the icons never use the
+	// logo, so its refusal and enlargement lines are not logged.
+	if iconPic == nil && logo != nil && logo.contentType == "image/png" && (appPic == nil || icon == nil) {
 		img, note := decodeLogo(logo)
 		if note != "" {
-			p.notes = append(p.notes, note)
 			refused = true
+			if appPic == nil {
+				p.notes = append(p.notes, note)
+			}
 		} else {
 			logoPic = img
-			if w, h := img.Bounds().Dx(), img.Bounds().Dy(); max(w, h) < plainLogoSide(fullIconPixels) {
+			if w, h := img.Bounds().Dx(), img.Bounds().Dy(); appPic == nil && max(w, h) < plainLogoSide(fullIconPixels) {
 				p.notes = append(p.notes, fmt.Sprintf("%s is %dx%d pixels, smaller than the %d pixel icon, so the app icons enlarge it; a square PNG of %d pixels or more in ui.brand.icon_file gives sharper icons", logo.setting(), w, h, fullIconPixels, fullIconPixels))
 			}
 		}
 	}
 
 	switch {
+	case appPic != nil:
+		p.art = iconArt{src: appPic, bleed: true, label: "app-icon", sum: digest(appIcon.data)}
 	case iconPic != nil:
 		p.art = iconArt{src: iconPic, bleed: true, label: "icon", sum: digest(icon.data)}
 	case logoPic != nil:
@@ -106,7 +123,7 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 	default:
 		p.art = iconArt{label: "mark", sum: digest(brandFile("selfcloud-mark.svg"))}
 		if (icon != nil || logo != nil) && !refused {
-			p.notes = append(p.notes, "the app icons show the SelfCloud mark, because no PNG icon or logo is set; a square PNG in ui.brand.icon_file gives them a picture")
+			p.notes = append(p.notes, "the app icons show the SelfCloud mark, because no app icon, PNG icon or logo is set; a square PNG in ui.brand.app_icon_file gives them a picture")
 		}
 	}
 

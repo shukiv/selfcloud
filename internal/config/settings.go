@@ -332,12 +332,13 @@ func SettingText(key string, raw []byte) (string, error) {
 // the SHA-256 of its bytes. The config file locks a picture by writing the key that names its file, which the API cannot
 // name either.
 const (
-	LogoPicture = "ui.brand.logo"
-	IconPicture = "ui.brand.icon"
+	LogoPicture    = "ui.brand.logo"
+	IconPicture    = "ui.brand.icon"
+	AppIconPicture = "ui.brand.app_icon"
 )
 
 // pictureFiles names, for each picture's row, the config key of its file.
-var pictureFiles = map[string]string{LogoPicture: "ui.brand.logo_file", IconPicture: "ui.brand.icon_file"}
+var pictureFiles = map[string]string{LogoPicture: "ui.brand.logo_file", IconPicture: "ui.brand.icon_file", AppIconPicture: "ui.brand.app_icon_file"}
 
 // IsPicture reports whether key is the settings table's row of an uploaded picture.
 func IsPicture(key string) bool {
@@ -357,6 +358,9 @@ func (c *Config) PictureLocked(key string) bool {
 	path := c.UI.Brand.LogoFile
 	if key == IconPicture {
 		path = c.UI.Brand.IconFile
+	}
+	if key == AppIconPicture {
+		path = c.UI.Brand.AppIconFile
 	}
 	return written || path != ""
 }

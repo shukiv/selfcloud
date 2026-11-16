@@ -130,7 +130,7 @@ func TestLogoPNGStillStartsWhenTooBig(t *testing.T) {
 	}
 }
 
-// TestIconLogLines: an SVG with no PNG gets one Info line at start that names ui.brand.icon_file; no file gets none.
+// TestIconLogLines: an SVG with no PNG gets one Info line at start that names ui.brand.app_icon_file; no file gets none.
 func TestIconLogLines(t *testing.T) {
 	t.Parallel()
 	var svg bytes.Buffer
@@ -140,7 +140,7 @@ func TestIconLogLines(t *testing.T) {
 	}
 	lines := 0
 	for _, l := range strings.Split(svg.String(), "\n") {
-		if strings.Contains(l, "ui.brand.icon_file") {
+		if strings.Contains(l, "ui.brand.app_icon_file") {
 			lines++
 			if !strings.Contains(l, "level=INFO") || !strings.Contains(l, "SelfCloud mark") {
 				t.Errorf("the line is %q, want an Info line that names the mark", l)
@@ -148,7 +148,7 @@ func TestIconLogLines(t *testing.T) {
 		}
 	}
 	if lines != 1 {
-		t.Errorf("the SVG icon logged %d lines naming ui.brand.icon_file, want one:\n%s", lines, svg.String())
+		t.Errorf("the SVG icon logged %d lines naming ui.brand.app_icon_file, want one:\n%s", lines, svg.String())
 	}
 
 	var none bytes.Buffer

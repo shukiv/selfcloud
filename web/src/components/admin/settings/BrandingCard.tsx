@@ -43,14 +43,14 @@ const TOKENS: [string, keyof ResolvedBrand["light"]][] = [
 const SIDEBAR_KEYS = ["bg", "text", "caption", "active", "on_active"] as const;
 const SIDEBAR_COLOUR = { bg: "bg", text: "text", caption: "caption", active: "active", on_active: "onActive" } as const;
 
-const KINDS: PictureKind[] = ["logo", "icon"];
+const KINDS: PictureKind[] = ["logo", "icon", "app_icon"];
 
 // hashOf is the hash of a picture in use, or undefined.
 const hashOf = (p: Picture): string | undefined => (p.state === "uploaded" || p.state === "file" ? p.sha256 : undefined);
 
-// BrandingCard is the Branding section: the name and the accent, the logo and the icon, the sidebar colours and theme tokens folded
-// under Advanced, a preview of the brand with the unsaved values, and the section's Save. The preview reads the values being edited
-// and the pictures in use, and changes nothing else on the page.
+// BrandingCard is the Branding section: the name and the accent, the logo, the icon and the app icon, the sidebar colours and theme
+// tokens folded under Advanced, a preview of the brand with the unsaved values, and the section's Save. The preview reads the values
+// being edited and the pictures in use, and changes nothing else on the page.
 export default function BrandingCard({ section, settings, pictures, edits, errors, notice, dirty, busy, wide, onChange, onReset, onSave, onDiscard, onPictures, onLocked }: Props) {
   const { t } = useT();
   const byKey = useMemo(() => new Map(settings.map((s) => [s.key, s])), [settings]);
@@ -63,10 +63,12 @@ export default function BrandingCard({ section, settings, pictures, edits, error
   };
   const picture = (kind: PictureKind): Picture => pictures.find((p) => p.key === `ui.brand.${kind}`) ?? { key: `ui.brand.${kind}`, state: "none", locked: false };
   const logo = pictureSrc("logo", picture("logo"));
-  // The server draws the tab's icon from /favicon.svg and the app icons from /brand/icon-512.png, from the icon, or else the logo.
-  const stamp = hashOf(picture("icon")) ?? hashOf(picture("logo"));
-  const tab = stamp !== undefined ? `/favicon.svg?v=${stamp}` : null;
-  const app = stamp !== undefined ? `/brand/icon-512.png?v=${stamp}` : null;
+  // The server draws the tab's icon from /favicon.svg (the icon, or else the logo) and the app icons from /brand/icon-512.png
+  // (the app icon first, then the icon, then the logo). The app icon never reaches the tab (decision 220).
+  const tabStamp = hashOf(picture("icon")) ?? hashOf(picture("logo"));
+  const appStamp = hashOf(picture("app_icon")) ?? tabStamp;
+  const tab = tabStamp !== undefined ? `/favicon.svg?v=${tabStamp}` : null;
+  const app = appStamp !== undefined ? `/brand/icon-512.png?v=${appStamp}` : null;
 
   const resolved = useMemo<ResolvedBrand>(() => {
     const given = (key: string) => {

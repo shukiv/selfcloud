@@ -2242,6 +2242,48 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Settings" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/settings/brand/app-icon:
+    put:
+      tags: [Settings]
+      operationId: putBrandAppIcon
+      summary: Upload the installation's app icon
+      description: |
+        As `PUT /api/v1/settings/brand/logo`, for the picture the app icons alone are drawn from (decision 220),
+        checked as `ui.brand.app_icon_file` is: a square PNG of 512 to 2048 pixels on a side that decodes, never an
+        SVG. The PNG's size is read from its header before it is decoded, so a picture that claims to be larger is
+        refused without being decoded. The app icon never reaches the favicon, which keeps decision 119's rule. The
+        lock is `ui.brand.app_icon_file`, and the audit key `ui.brand.app_icon`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: { type: string, format: binary, maxLength: 262144 }
+      responses:
+        "200":
+          description: The settings after the change, with the app icon's state in `pictures`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Settings]
+      operationId: deleteBrandAppIcon
+      summary: Remove the uploaded app icon
+      description: |
+        As `DELETE /api/v1/settings/brand/logo`. The app icons go back to what decision 220 picks without an app
+        icon: the icon file, when it is a PNG, else the logo, else the SelfCloud mark on the accent. The favicon
+        never used the app icon and does not change.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/users:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -8896,7 +8938,7 @@ components:
           items: { $ref: "#/components/schemas/SettingFact" }
         pictures:
           type: array
-          description: The logo and the icon, sorted by key (decision 141).
+          description: The logo, the icon and the app icon, sorted by key (decision 141).
           items: { $ref: "#/components/schemas/SettingPicture" }
 
     SettingPicture:
@@ -8908,14 +8950,14 @@ components:
         is logged and not used, and shows as `unusable` with its reason until a `DELETE` or a new upload clears it.
       required: [key, state, locked]
       properties:
-        key: { type: string, enum: [ui.brand.icon, ui.brand.logo] }
+        key: { type: string, enum: [ui.brand.app_icon, ui.brand.icon, ui.brand.logo] }
         state:
           type: string
           enum: [none, file, uploaded, unusable]
           description: |
-            `none`: the SelfCloud artwork for the logo, decision 119's choice for the icon. `unusable`: an upload is stored
-            but the server did not use it, so the picture shown is what `none` shows; `DELETE` removes the stored upload
-            (and the picture is then `none`), and a new upload replaces it.
+            `none`: the SelfCloud artwork for the logo, decision 119's choice for the icon, decision 220's choice for the
+            app icon. `unusable`: an upload is stored but the server did not use it, so the picture shown is what `none`
+            shows; `DELETE` removes the stored upload (and the picture is then `none`), and a new upload replaces it.
         type: { type: string, enum: [image/png, image/svg+xml], description: Present for `file` and `uploaded` only. }
         sha256: { type: string, description: The hex SHA-256 of the picture's bytes, the logo's ETag. Present for `file` and `uploaded` only. }
         reason:
@@ -8928,7 +8970,7 @@ components:
             stored bytes no longer pass the check an upload gets.
         locked:
           type: boolean
-          description: True when the config file or the environment sets the picture's file (`ui.brand.logo_file` or `ui.brand.icon_file`).
+          description: True when the config file or the environment sets the picture's file (`ui.brand.logo_file`, `ui.brand.icon_file` or `ui.brand.app_icon_file`).
 
     Setting:
       type: object

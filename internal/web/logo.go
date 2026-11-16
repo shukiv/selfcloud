@@ -166,6 +166,16 @@ func NewIcon(data []byte, contentType string) (*Logo, error) {
 	return newUpload("the icon", data, contentType, ruleIcon)
 }
 
+// NewAppIcon checks the bytes of an uploaded app icon, declared as contentType: a PNG only, square, 512 to 2048 pixels on a
+// side (decision 220). An SVG is refused whatever its bytes, for the app icons are drawn from a PNG alone. The picture keeps
+// data, which the caller must not change.
+func NewAppIcon(data []byte, contentType string) (*Logo, error) {
+	if contentType == TypeSVG {
+		return nil, errors.New("the app icon is a PNG file, not an SVG")
+	}
+	return newUpload("the app icon", data, contentType, ruleIcon)
+}
+
 func newUpload(what string, data []byte, ct string, rule pictureRule) (*Logo, error) {
 	if err := checkPicture(data, ct, rule); err != nil {
 		return nil, fmt.Errorf("%s %w", what, err)
@@ -194,6 +204,16 @@ func LoadLogo(path string) (*Logo, error) {
 // before its pixels are, so an oversized one is refused without being decoded.
 func LoadIconFile(path string) (*Logo, error) {
 	return loadBrandImage("ui.brand.icon_file", path, ruleIcon)
+}
+
+// LoadAppIconFile reads the app icon file at path: a square PNG of 512 to 2048 pixels on a side, never an SVG (decision 220).
+// The extension is judged first, so an SVG is refused by its name alone; the PNG's size is read before its pixels are, so an
+// oversized one is refused without being decoded.
+func LoadAppIconFile(path string) (*Logo, error) {
+	if strings.ToLower(filepath.Ext(path)) != ".png" {
+		return nil, fmt.Errorf("web: ui.brand.app_icon_file %s is not a .png file", path)
+	}
+	return loadBrandImage("ui.brand.app_icon_file", path, ruleIcon)
 }
 
 // loadBrandImage reads a PNG or SVG file for the setting named setting, checks it, and names that setting in every error.

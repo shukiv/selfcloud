@@ -66,21 +66,22 @@ func TestAppIconPictureRow(t *testing.T) {
 func TestAppIconPictureIsLockedByItsFileKey(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		yaml string
-		env  map[string]string
-		want bool
+		yaml       string
+		env        map[string]string
+		want       bool
+		iconLocked bool
 	}{
-		{"", nil, false},
-		{"ui:\n  brand:\n    app_icon_file: /srv/brand/app.png\n", nil, true},
-		{"ui:\n  brand:\n    app_icon_file: \"\"\n", nil, true},
-		{"", map[string]string{"SELFCLOUD_UI_BRAND_APP_ICON_FILE": "/srv/brand/app.png"}, true},
-		{"ui:\n  brand:\n    name: Acme\n    icon_file: /srv/brand/icon.png\n", nil, false},
+		{"", nil, false, false},
+		{"ui:\n  brand:\n    app_icon_file: /srv/brand/app.png\n", nil, true, false},
+		{"ui:\n  brand:\n    app_icon_file: \"\"\n", nil, true, false},
+		{"", map[string]string{"SELFCLOUD_UI_BRAND_APP_ICON_FILE": "/srv/brand/app.png"}, true, false},
+		{"ui:\n  brand:\n    name: Acme\n    icon_file: /srv/brand/icon.png\n", nil, false, true},
 	} {
 		c := loadYAML(t, tc.yaml, tc.env)
 		if got := c.PictureLocked(AppIconPicture); got != tc.want {
 			t.Errorf("%q %v: app icon locked = %v", tc.yaml, tc.env, got)
 		}
-		if c.PictureLocked(LogoPicture) || c.PictureLocked(IconPicture) != (tc.yaml != "" && strings.Contains(tc.yaml, "icon_file")) {
+		if c.PictureLocked(LogoPicture) || c.PictureLocked(IconPicture) != tc.iconLocked {
 			t.Errorf("%q %v: the app icon's file locks another picture", tc.yaml, tc.env)
 		}
 	}

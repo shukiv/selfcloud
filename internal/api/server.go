@@ -623,7 +623,7 @@ func New(opts Options) (*Server, error) {
 		brand := brandOptions(s.settings(), pics)
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
 			PublicURL: cfg.PublicURL, BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
-			IconFile: brand.Icon, LogoFile: brand.Logo, FrameAncestors: s.frameAncestors,
+			IconFile: brand.Icon, LogoFile: brand.Logo, AppIconFile: brand.AppIcon, FrameAncestors: s.frameAncestors,
 			Scripts: s.settings().UI.Scripts}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
@@ -737,6 +737,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/settings/brand/logo", handle: s.handleDeleteLogo, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/settings/brand/icon", handle: s.handlePutIcon, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/settings/brand/icon", handle: s.handleDeleteIcon, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/settings/brand/app-icon", handle: s.handlePutAppIcon, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/settings/brand/app-icon", handle: s.handleDeleteAppIcon, auth: true, imp: impRefuse},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true, imp: impAllow},

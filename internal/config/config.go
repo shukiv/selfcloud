@@ -789,6 +789,9 @@ type BrandConfig struct {
 	// It is used for the app icons and the browser's tab icon, and for nothing else (decision 119). Its path is never sent to
 	// clients.
 	IconFile string `yaml:"icon_file"`
+	// AppIconFile optionally names a square PNG of 512 to 2048 pixels on a side, read at start (at most 256 KiB). It is
+	// used for the app icons alone, never the favicon (decision 220). Its path is never sent to clients.
+	AppIconFile string `yaml:"app_icon_file"`
 	// Palette overrides colour tokens of the default look, one set per theme. An unset token keeps
 	// the default; the interface derives the rest of the accent family from Accent.
 	Palette BrandPalette `yaml:"palette"`
@@ -1722,6 +1725,9 @@ func (b BrandConfig) validate() error {
 		default:
 			bad("icon_file %q must be a .png or .svg file", b.IconFile)
 		}
+	}
+	if b.AppIconFile != "" && strings.ToLower(filepath.Ext(b.AppIconFile)) != ".png" {
+		bad("app_icon_file %q must be a .png file", b.AppIconFile)
 	}
 	return errors.Join(errs...)
 }
