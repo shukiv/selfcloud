@@ -44,6 +44,7 @@ const ROWS: Row[] = [
   ["ui.brand.sidebar.caption", "string", ""],
   ["ui.brand.sidebar.on_active", "string", ""],
   ["ui.brand.sidebar.text", "string", ""],
+  ["ui.scripts", "list", []],
   ["upload.max_chunk_size", "bytes", "64MiB"],
   ["upload.max_file_size", "bytes", "100GiB"],
   ["upload.max_small_file_size", "bytes", "16MiB"],

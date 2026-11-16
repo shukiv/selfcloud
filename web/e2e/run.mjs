@@ -68,6 +68,7 @@ import { sec2Checks } from './sec2.mjs';
 import { eb4Checks } from './eb4.mjs';
 import { eb2aChecks } from './eb2a.mjs';
 import { eb2bChecks } from './eb2b.mjs';
+import { ps1Checks } from './ps1.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
@@ -830,6 +831,8 @@ async function main() {
   let eb4Browser = null;
   // eb2aBrowser is the host application frame's own browser, while its checks run (see the eb2a call).
   let eb2aBrowser = null;
+  // ps1Browser is the page scripts' own browser, while its checks run (see the ps1 call).
+  let ps1Browser = null;
   let page = null;
   // runner records the failed sections and names them at the end (decision 190); it is made once the page is up.
   let runner = null;
@@ -1059,7 +1062,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, ps1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1315,6 +1318,23 @@ async function main() {
         eb2aBrowser = null;
       }
     }, { as: 'member' });
+    // Slice ps1 (decision 216): the installation's page scripts. Its own browser, so the shared page's requests stay
+    // same-origin; a local server on 127.0.0.1 serves the one script the admin lists through the settings API.
+    if (!only || onlySet.has('ps1')) await section('ps1', async () => {
+      const ps1Launch = await launchBrowser(await findBrowser(), join(dir, 'ps1-profile'));
+      ps1Browser = ps1Launch.proc;
+      const ps1Page = new Page(ps1Launch.wsUrl);
+      ps1Page.base = base;
+      try {
+        await ps1Page.start(EXPECTED);
+        await ps1Checks(h, { page: ps1Page, base, adminKey, MEMBER });
+        check(ps1Page.errors.length === 0, `the page scripts browser has no console errors or policy violations (${ps1Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        ps1Page.close();
+        ps1Browser.kill();
+        ps1Browser = null;
+      }
+    }, { as: 'member' });
     // Slice myfiles: the member's star, open and recent checks, run alone (SELFCLOUD_E2E_ONLY=myfiles), signed in as the
     // member the run leaves the shared page as. The full run reaches the same checks below.
     if (only && onlySet.has('myfiles')) await section('myfiles', () => owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }), { as: 'member' });
@@ -1457,6 +1477,7 @@ async function main() {
     sec2Browser?.kill();
     eb4Browser?.kill();
     eb2aBrowser?.kill();
+    ps1Browser?.kill();
     server.kill();
     await fake.close();
     crashWatch?.close();

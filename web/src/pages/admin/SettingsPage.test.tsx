@@ -118,6 +118,14 @@ describe("what a row shows", () => {
     expect(within(r).queryByRole("button", { name: /Back to the default/ })).toBeNull();
   });
 
+  it("skips a list setting: the sections draw, and no row for it (its card comes later)", async () => {
+    server({ "ui.scripts": { value: ["https://cdn.example.com/menu.js"], source: "settings" } });
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    expect(row("ui.scripts")).toBeNull();
+    expect(screen.queryByText("https://cdn.example.com/menu.js")).toBeNull();
+  });
+
   it("shows a stored row as set here, with Reset naming the default", async () => {
     server({ "trash.retention": { value: "360h0m0s", source: "settings" } });
     renderPage();
