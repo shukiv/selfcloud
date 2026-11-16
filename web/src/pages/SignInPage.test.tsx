@@ -16,6 +16,7 @@ import SignInPage from "./SignInPage";
 vi.mock("../lib/auth", () => ({
   signInWithLink: vi.fn(),
   establish: vi.fn(async () => undefined),
+  loadMe: vi.fn(),
 }));
 
 import { signInWithLink } from "../lib/auth";

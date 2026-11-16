@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -185,5 +186,86 @@ func TestFrameLocalhostHTTP(t *testing.T) {
 	c := sessionCookieOf(t, s, rec)
 	if c.SameSite != http.SameSiteNoneMode || !c.Secure || !c.Partitioned {
 		t.Fatalf("localhost frame cookie = %+v; want SameSite=None, Secure, Partitioned", c)
+	}
+}
+
+// TestRedeemFrameOrigins: a frame redeem answers frame true with the origins that may frame the account's
+// pages — the installation's list and the account's together, sorted, each once; a tab redeem answers
+// frame false and no frame_origins key (decision 214).
+func TestRedeemFrameOrigins(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
+		c.PublicURL = "https://drive.example.com"
+		c.Embed.Origins = []string{"https://install.example", "https://shared.example"}
+	})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	usr, _ := verifiedUser(t, s, key, acc.ID, "member@example.com")
+	call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/embed", key,
+		embedBody{Origins: []string{"https://account.example", "https://shared.example"}})
+
+	_, frameTok := frameLinkOf(t, s, key, acc.ID, usr.ID)
+	rec := redeem(t, s, frameTok)
+	wantStatus(t, rec, 200)
+	out := decode[signedInLink](t, rec)
+	if !out.Frame {
+		t.Error("a frame redeem answers frame false")
+	}
+	want := []string{"https://account.example", "https://install.example", "https://shared.example"}
+	if !slices.Equal(out.FrameOrigins, want) {
+		t.Errorf("frame_origins = %v; want the union %v", out.FrameOrigins, want)
+	}
+
+	_, tabTok := signInLinkOf(t, s, key, acc.ID, usr.ID, nil)
+	rec = redeem(t, s, tabTok)
+	wantStatus(t, rec, 200)
+	out = decode[signedInLink](t, rec)
+	if out.Frame {
+		t.Error("a tab redeem answers frame true")
+	}
+	if out.FrameOrigins != nil {
+		t.Errorf("a tab redeem answers frame_origins %v", out.FrameOrigins)
+	}
+	if strings.Contains(rec.Body.String(), "frame_origins") {
+		t.Error("a tab redeem's answer carries a frame_origins key")
+	}
+}
+
+// TestMeFrameOrigins: the session read of a frame session carries the allowed origins; a tab session's
+// read answers frame false and no frame_origins key (decision 214).
+func TestMeFrameOrigins(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
+		c.PublicURL = "https://drive.example.com"
+		c.Embed.Origins = []string{"https://install.example"}
+	})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	usr, _ := verifiedUser(t, s, key, acc.ID, "member@example.com")
+	call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/embed", key, embedBody{Origins: []string{"https://host.example"}})
+
+	_, frameTok := frameLinkOf(t, s, key, acc.ID, usr.ID)
+	frameSess := sessionFrom(t, s, redeem(t, s, frameTok))
+	rec := callSession(t, s, frameSess, "GET", "/api/v1/me", nil)
+	wantStatus(t, rec, 200)
+	me := decode[meResponse](t, rec)
+	if !me.Frame {
+		t.Fatal("me.frame is false for a frame session")
+	}
+	want := []string{"https://host.example", "https://install.example"}
+	if !slices.Equal(me.FrameOrigins, want) {
+		t.Errorf("me.frame_origins = %v; want the union %v", me.FrameOrigins, want)
+	}
+
+	_, tabTok := signInLinkOf(t, s, key, acc.ID, usr.ID, nil)
+	tabSess := sessionFrom(t, s, redeem(t, s, tabTok))
+	rec = callSession(t, s, tabSess, "GET", "/api/v1/me", nil)
+	wantStatus(t, rec, 200)
+	me = decode[meResponse](t, rec)
+	if me.Frame || me.FrameOrigins != nil {
+		t.Errorf("tab me frame = %v, origins = %v; want false and none", me.Frame, me.FrameOrigins)
+	}
+	if strings.Contains(rec.Body.String(), "frame_origins") {
+		t.Error("a tab session's me carries a frame_origins key")
 	}
 }
