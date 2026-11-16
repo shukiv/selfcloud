@@ -15,6 +15,7 @@ import { EDIT_FEATURE, officeEdit } from "./lib/files/editor";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
 import { outsideSignIn } from "./lib/outsideSignIn";
+import { frameSession } from "./lib/frame";
 import { session } from "./lib/session";
 import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./lib/routes";
 import type { User } from "./lib/types";
@@ -93,6 +94,9 @@ const ProvePage = lazy(() => import("./pages/ProvePage"));
 const ExternalItemPage = lazy(() => import("./pages/ExternalItemPage"));
 // The signed-out page (decision 204) is reached only with an outside sign-in page set, so it stays out of the first load.
 const SignedOutPage = lazy(() => import("./pages/SignedOutPage"));
+// The frame's session-ended view (decision 214) is drawn only in a frame session whose session ended, so it stays out of
+// the first load.
+const FrameEnded = lazy(() => import("./components/FrameEnded"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
@@ -337,6 +341,11 @@ export function Gate() {
   }
   if (view === "login" && signedIn) {
     return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"), me.user)} replace />;
+  }
+  // A frame session whose session ended (decision 214): the frame draws the session-ended view at every address but the
+  // link page, which may redeem a new link. No move leaves the frame: no sign-in page, no outside page, no share hold.
+  if (!signedIn && frameSession() && view !== "sign-in") {
+    return <Suspense fallback={<Loading />}><FrameEnded /></Suspense>;
   }
   if (view === "notfound" ? !signedIn : PUBLIC_VIEWS.includes(view)) {
     return <Public view={view} />;

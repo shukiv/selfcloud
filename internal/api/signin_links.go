@@ -249,6 +249,12 @@ type signInLinkJSON struct {
 type signedInLink struct {
 	signedIn
 	Next string `json:"next"`
+	// Frame is true when the link started a frame session: the page is embedded in a host application
+	// (decision 197).
+	Frame bool `json:"frame"`
+	// FrameOrigins are the origins that may frame the account's pages, the installation's list and the
+	// account's together (decision 214). Present only for a frame session.
+	FrameOrigins []string `json:"frame_origins,omitempty"`
 }
 
 // handleRedeemSignInLink completes a sign-in link: it consumes the link, ends any session this
@@ -391,9 +397,21 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		return stateErr
 	}
 	s.setSessionCookie(w, secret, sess)
+	// A frame session's answer carries the origins that may frame the account's pages, so the page can
+	// address its host (decision 214). A tab session's answer carries frame false and no origins.
+	var frameOrigins []string
+	if sess.Frame {
+		origins, err := s.allowedEmbedOrigins(ctx, sess.AccountID)
+		if err != nil {
+			return err
+		}
+		frameOrigins = origins
+	}
 	writeJSON(w, http.StatusOK, signedInLink{
-		signedIn: signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken},
-		Next:     next,
+		signedIn:     signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken},
+		Next:         next,
+		Frame:        sess.Frame,
+		FrameOrigins: frameOrigins,
 	})
 	return nil
 }

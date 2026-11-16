@@ -9518,11 +9518,23 @@ components:
       allOf:
         - $ref: "#/components/schemas/SignedIn"
         - type: object
-          required: [next]
+          required: [next, frame]
           properties:
             next:
               type: string
               description: The path to open, from the link. Validated again by the page.
+            frame:
+              type: boolean
+              description: |
+                True when the link started a frame session: the page is embedded in a host application and
+                its cookie is partitioned (decision 197). False for an ordinary tab link.
+            frame_origins:
+              type: array
+              items: { type: string }
+              description: |
+                The origins that may frame the account's pages: the installation's `embed.origins` and the
+                account's list together, sorted, each once (decision 214). Present only when `frame` is true;
+                the page addresses its host with these origins and no other.
 
     PasswordChange:
       type: object
@@ -9572,6 +9584,13 @@ components:
           description: |
             True when this session was started by a frame sign-in link: the page is embedded in a host
             application and its cookie is partitioned (decision 197). False for an ordinary tab session.
+        frame_origins:
+          type: array
+          items: { type: string }
+          description: |
+            The origins that may frame the account's pages: the installation's `embed.origins` and the
+            account's list together, sorted, each once (decision 214). Present only when `frame` is true;
+            the page addresses its host with these origins and no other.
         storage:
           description: The caller's own My files against its limit. Absent for an installation admin.
           type: object

@@ -6,6 +6,7 @@ import { useT } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
 import { go, signInURL } from "../lib/router";
 import { goSignedOut, sendToSignIn, signInInfo } from "../lib/outsideSignIn";
+import { frameSession } from "../lib/frame";
 import { validID } from "../lib/files/route";
 import { signOut } from "../lib/auth";
 import { session, sessionChanged, sessionKey } from "../lib/session";
@@ -184,6 +185,8 @@ export default function OpenLinkPage() {
       // The session is cleared either way; the sign-in move below still happens.
     }
     stripAddress();
+    // A frame session stays in the frame after the sign-out (decision 214); the gate draws the session-ended view.
+    if (frameSession()) return;
     const { externalUrl, signedOutUrl } = signInInfo();
     if (externalUrl === "" && signedOutUrl === "") {
       go(signInURL("/s"), { replace: true });

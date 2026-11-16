@@ -15,20 +15,20 @@ const frGate = vi.hoisted(() => {
   });
   return { promise, release: () => release() };
 });
-vi.mock("../../i18n/embed/fr.json", async () => {
+vi.mock("../i18n/embed/fr.json", async () => {
   await frGate.promise;
-  return await vi.importActual<{ default: Record<string, string> }>("../../i18n/embed/fr.json");
+  return await vi.importActual<{ default: Record<string, string> }>("../i18n/embed/fr.json");
 });
 const heFail = vi.hoisted(() => ({ on: true }));
-vi.mock("../../i18n/embed/he.json", async () => {
+vi.mock("../i18n/embed/he.json", async () => {
   if (heFail.on) throw new Error("chunk failed");
-  return await vi.importActual<{ default: Record<string, string> }>("../../i18n/embed/he.json");
+  return await vi.importActual<{ default: Record<string, string> }>("../i18n/embed/he.json");
 });
 
-import heMain from "../../i18n/he.json";
-import { setLang } from "../../lib/i18n";
-import { rememberFrame } from "../../lib/frame";
-import { ThemeProvider } from "../../theme/theme";
+import heMain from "../i18n/he.json";
+import { setLang } from "../lib/i18n";
+import { rememberFrame } from "../lib/frame";
+import { ThemeProvider } from "../theme/theme";
 import FrameEnded from "./FrameEnded";
 
 const SELF = Object.getOwnPropertyDescriptor(window, "self")!;
@@ -52,8 +52,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   Object.defineProperty(window, "self", SELF);
-  delete (window.location as Location & { ancestorOrigins?: unknown }).ancestorOrigins;
-  delete (document as Document & { referrer?: string }).referrer;
+  delete (window.location as unknown as { ancestorOrigins?: unknown }).ancestorOrigins;
+  delete (document as unknown as { referrer?: string }).referrer;
   vi.restoreAllMocks();
   window.sessionStorage.clear();
   await setLang("en");

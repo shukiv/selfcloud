@@ -125,8 +125,10 @@ export async function eb2aChecks(h, { page, base, accountID, accountKey, memberI
     }
     check(true, 'the frame link signs the member in inside the host page');
     await bridge.waitFor(`location.pathname === ${q('/files/' + teamB)}`, 15000);
+    // The listing loads after the address moves; wait for the file, and say what the frame shows if it never comes.
+    await bridge.waitFor(`document.body.innerText.includes('readme.txt')`, 15000).catch(() => undefined);
     const listing = await bridge.evaluate(`document.body.innerText`);
-    check(listing.includes('readme.txt'), "the frame shows the member's files");
+    check(listing.includes('readme.txt'), `the frame shows the member's files (${listing.slice(0, 160).replace(/\s+/g, ' ')})`);
 
     const registrations = await bridge.evaluate(`navigator.serviceWorker.getRegistrations().then((r) => r.length)`);
     check(registrations === 0, `the frame registers no service worker (${registrations} registrations)`);

@@ -9,6 +9,7 @@ import { go, location, signInURL } from './router';
 import { get } from './store';
 import { safeNext } from './next';
 import { signingOut } from './session';
+import { frameSession } from './frame';
 
 // SignInInfo is what the installation says of sign-in: the outside sign-in page (empty for none), the page a sign-out
 // goes to (empty for none), and whether account users may sign in with a password. Installation admins always may.
@@ -65,6 +66,8 @@ function hopAllowed(): boolean {
 
 // goOutside assigns the outside page, or shows the signed-out page when the loop guard refuses a third hop in a minute.
 export function goOutside(url: string): void {
+  // A frame session never leaves the frame (decision 214); the gate draws the session-ended view instead.
+  if (frameSession()) return;
   // An explicit sign-out picks its own destination (goSignedOut) once it ends, so no redirect leaves while one is under
   // way; nothing is counted in the loop guard.
   if (signingOut()) return;
@@ -78,6 +81,8 @@ export function goOutside(url: string): void {
 // sendToSignIn moves a person with no session to sign-in: the outside page when the installation names one, else the
 // app's own sign-in page, remembering the path the person was on as today.
 export function sendToSignIn(from: string = get(location).path + get(location).search): void {
+  // A frame session never moves to a sign-in page (decision 214); the gate draws the session-ended view instead.
+  if (frameSession()) return;
   const url = outsideSignIn(from);
   if (url !== null) {
     goOutside(url);
@@ -89,6 +94,8 @@ export function sendToSignIn(from: string = get(location).path + get(location).s
 // goSignedOut is where the browser goes after an explicit sign-out: the signed-out URL when one is set, else the
 // signed-out page when an outside sign-in page is set, else today's sign-in page.
 export function goSignedOut(): void {
+  // A frame session stays in the frame after a sign-out (decision 214); the gate draws the session-ended view.
+  if (frameSession()) return;
   if (info.signedOutUrl !== '') {
     window.location.assign(info.signedOutUrl);
     return;

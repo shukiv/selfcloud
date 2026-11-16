@@ -25,7 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Object.defineProperty(window, "self", SELF);
-  delete (navigator as Navigator & { serviceWorker?: unknown }).serviceWorker;
+  delete (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
   vi.restoreAllMocks();
 });
 

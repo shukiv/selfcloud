@@ -843,6 +843,9 @@ type meResponse struct {
 	// Frame is true when this session was started by a frame sign-in link: the page is embedded in a host
 	// application, and its cookie is partitioned (decision 197).
 	Frame bool `json:"frame"`
+	// FrameOrigins are the origins that may frame the account's pages, the installation's list and the
+	// account's together (decision 214). Present only for a frame session.
+	FrameOrigins []string `json:"frame_origins,omitempty"`
 	// TenantAccess and MailConfigured are set for an installation admin only. The admin pages read them to show the
 	// ways in to a tenant user; nobody else learns them (decision 41).
 	TenantAccess   *bool `json:"tenant_access,omitempty"`
@@ -892,6 +895,13 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 	sess := sessionOf(r)
 	out := meResponse{User: toUserJSON(u), CSRFToken: sess.CSRFToken, MustChangePassword: u.MustChangePassword,
 		EmailProved: u.EmailProved(), Frame: sess.Frame}
+	if sess.Frame {
+		origins, err := s.allowedEmbedOrigins(r.Context(), sess.AccountID)
+		if err != nil {
+			return meResponse{}, err
+		}
+		out.FrameOrigins = origins
+	}
 	if sess.ImpersonatorID != "" {
 		out.Impersonation = &impersonationJSON{EndsAt: sess.CreatedAt.Add(impersonationTTL)}
 	}

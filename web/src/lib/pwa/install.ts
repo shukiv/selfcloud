@@ -5,6 +5,7 @@
 // same install on its own, and keeps the person's choice under one browser key.
 
 import { writable } from "../store";
+import { inFrame } from "../frame";
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -15,8 +16,10 @@ let deferred: InstallPromptEvent | null = null;
 // canInstall is true while the browser has offered an install that has not been used or refused yet.
 export const canInstall = writable(false);
 
-// listenForInstall keeps the offer. It must run before the page is drawn, or an early offer is missed.
+// listenForInstall keeps the offer. It must run before the page is drawn, or an early offer is missed. A frame keeps
+// no offer (decision 214): the drive is installed from its own tab, not from inside a host application.
 export function listenForInstall(): void {
+  if (inFrame()) return;
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferred = event as InstallPromptEvent;
@@ -104,6 +107,8 @@ export interface InstallOfferInput {
 // sign-in or the forced-password page), not viewing as another person, not in the installed app, on a finger, with either
 // the browser's offer or iPhone/iPad Safari, and not dismissed.
 export function shouldOfferInstall(input: InstallOfferInput): boolean {
+  // A frame is never offered the install (decision 214), whatever the other conditions say.
+  if (inFrame()) return false;
   if (!input.signedIn || !input.inShell || input.impersonating || !input.coarsePointer) return false;
   if (isStandalone()) return false;
   if (!input.canInstall && !input.ios) return false;

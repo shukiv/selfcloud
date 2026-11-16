@@ -33,6 +33,11 @@ export interface Me {
   // switch for sharing with people in other accounts. Absent in an answer from an older server.
   email_proved?: boolean;
   account_external_sharing?: boolean;
+  // frame: this session was started by a frame sign-in link, so the page is embedded in a host application
+  // (decision 197). frame_origins are the origins that may frame the account's pages, present only for a frame
+  // session (decision 214). Absent in an answer from an older server.
+  frame?: boolean;
+  frame_origins?: string[];
 }
 
 export interface SignedIn {
@@ -40,9 +45,12 @@ export interface SignedIn {
   csrf_token: string;
 }
 
-// SignedInLink is a sign-in by link: the session, and the path the page opens next.
+// SignedInLink is a sign-in by link: the session, and the path the page opens next. frame and frame_origins are
+// present only when the link started a frame session (decisions 197, 214).
 export interface SignedInLink extends SignedIn {
   next: string;
+  frame?: boolean;
+  frame_origins?: string[];
 }
 
 export interface AccountChoice {

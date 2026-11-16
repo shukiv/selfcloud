@@ -29,8 +29,8 @@ beforeEach(() => {
 
 afterEach(() => {
   leaveFrame();
-  delete (window.location as Location & { ancestorOrigins?: unknown }).ancestorOrigins;
-  delete (document as Document & { referrer?: string }).referrer;
+  delete (window.location as unknown as { ancestorOrigins?: unknown }).ancestorOrigins;
+  delete (document as unknown as { referrer?: string }).referrer;
   vi.restoreAllMocks();
   window.sessionStorage.clear();
 });

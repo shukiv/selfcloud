@@ -8,6 +8,7 @@ import { sharingMaxExpiryDays } from './sharing/api';
 import { markSignedOut } from "./pwa/cacheState";
 import { announceSignOut, purgeAllUnsaved } from "./code/unsaved";
 import { setSignInInfo, type SignInInfo } from './outsideSignIn';
+import { rememberFrame } from './frame';
 
 export interface Info {
   brand: Brand | null;
@@ -77,6 +78,9 @@ export async function loadMe(): Promise<Me | null> {
   try {
     const me = await api<Me>('GET', '/api/v1/me', { noRedirect: true });
     setMe(me);
+    // A frame session names the origins that may frame the account's pages; the page keeps them for the moves
+    // and the messages of the frame's rules (decision 214).
+    if (me.frame === true) rememberFrame(me.frame_origins ?? []);
     return me;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {

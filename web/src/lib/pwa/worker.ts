@@ -7,6 +7,7 @@
 import { writable, get } from "../store";
 import { isBusy } from "./busy";
 import { askOtherTabsBusy, newTabId, startTab } from "./tabs";
+import { inFrame } from "../frame";
 
 // WORKER_URL is the worker's address. It sits at the root, so its scope is the whole app.
 export const WORKER_URL = "/sw.js";
@@ -36,7 +37,9 @@ export function busy(): boolean {
 // the other tabs' questions about updates. Where workers are not available (a plain http address, or an old browser) the app
 // works without it.
 export function registerWorker(reload: () => void = () => window.location.reload()): void {
-  if (registered || !("serviceWorker" in navigator) || !window.isSecureContext) return;
+  // A frame registers no worker (decision 214): its cache would be the host's partition, and the frame's pages are
+  // opened by the host's links, not by this app's own address.
+  if (inFrame() || registered || !("serviceWorker" in navigator) || !window.isSecureContext) return;
   registered = true;
   startTab(tabId, isBusy);
   // One listener for the page: when a new worker takes over, this tab reloads, now or when it is idle. The first worker claims
