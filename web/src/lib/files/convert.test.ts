@@ -130,7 +130,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(202, { retryAfter: "1" }), fakeRes(202), fakeRes(200)]);
-    const deps: PreviewDeps = { fetch: s.fn as unknown as typeof fetch, ...t };
+    const deps: PreviewDeps = { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" };
     watchPreview(nod, asHandlers(h), deps);
     await run(t);
     expect(h.making).toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(0, { type: "opaqueredirect" })]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.ready).toHaveBeenCalledTimes(1);
     expect(s.fn).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }));
@@ -156,7 +156,7 @@ describe("watchPreview", () => {
     const h = handlers();
     const answer = fakeRes(200);
     const s = scripted([answer]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.ready).toHaveBeenCalledTimes(1);
     expect(answer.body.cancel).toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(415, { reason: "failed" })]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledWith("failed");
     expect(h.ready).not.toHaveBeenCalled();
@@ -177,7 +177,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(415, { reason: "not_convertible" })]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledWith("notConvertible");
   });
@@ -186,7 +186,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(503, { retryAfter: "60" })]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledWith("unavailable");
     expect(s.calls).toHaveLength(1);
@@ -196,7 +196,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(403)]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledWith("restricted");
   });
@@ -205,7 +205,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(202), fakeRes(415)]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledWith("failed");
     expect(h.ready).not.toHaveBeenCalled();
@@ -215,7 +215,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([new TypeError("offline")]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t);
     expect(h.failed).toHaveBeenCalledTimes(1);
     expect(h.failed).toHaveBeenCalledWith("failed");
@@ -225,7 +225,7 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(202)]);
-    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     await run(t, 5000);
     expect(h.slow).toHaveBeenCalledTimes(1);
     expect(s.calls.length).toBe(MAX_CONVERT_WAITS + 1);
@@ -235,11 +235,77 @@ describe("watchPreview", () => {
     const t = immediate();
     const h = handlers();
     const s = scripted([fakeRes(202), fakeRes(200)]);
-    const stop = watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t });
+    const stop = watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "person-1\ncsrf-1" });
     stop();
     await run(t);
     expect(s.fn).toHaveBeenCalledTimes(0);
     expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+  });
+
+  it("sends no first GET after the session ended, and reports nothing", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const s = scripted([fakeRes(200)]);
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => key });
+    // The sign-out lands while the first GET is still scheduled.
+    key = "";
+    await run(t);
+    expect(s.fn).not.toHaveBeenCalled();
+    expect(h.making).not.toHaveBeenCalled();
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("sends no HEAD whose wait was scheduled before the session ended, and reports nothing", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const s = scripted([fakeRes(202, { retryAfter: "1" }), fakeRes(200)]);
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => key });
+    // The first GET runs, and its 202 schedules the HEAD's wait.
+    t.step();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(s.calls.map((c) => c.method)).toEqual(["GET"]);
+    // The sign-out lands while the HEAD's wait is scheduled.
+    key = "";
+    await run(t);
+    expect(s.calls.map((c) => c.method)).toEqual(["GET"]);
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("does not point the frame at the file when the session ended before the HEAD's 200 was read", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const fn = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        // The sign-out lands while the HEAD is on its way: its 200 arrives under a session that ended.
+        key = "";
+        return fakeRes(200);
+      }
+      return fakeRes(202, { retryAfter: "1" });
+    });
+    watchPreview(nod, asHandlers(h), { fetch: fn as unknown as typeof fetch, ...t, sessionKey: () => key });
+    await run(t);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("a watch with no session keeps its empty key and is ready as usual", async () => {
+    const t = immediate();
+    const h = handlers();
+    const s = scripted([fakeRes(202, { retryAfter: "1" }), fakeRes(200)]);
+    watchPreview(nod, asHandlers(h), { fetch: s.fn as unknown as typeof fetch, ...t, sessionKey: () => "" });
+    await run(t);
+    expect(h.ready).toHaveBeenCalledTimes(1);
+    expect(s.calls.map((c) => c.method)).toEqual(["GET", "HEAD"]);
     expect(h.failed).not.toHaveBeenCalled();
   });
 });
@@ -251,8 +317,9 @@ describe("startExport", () => {
     post: ExportDeps["post"],
     head: ExportDeps["head"],
     t: ReturnType<typeof immediate>,
+    keyOf: () => string = () => "person-1\ncsrf-1",
   ): ExportDeps {
-    return { post, head, ...t };
+    return { post, head, ...t, sessionKey: keyOf };
   }
 
   it("queues, polls, and is ready with the export's address", async () => {
@@ -314,5 +381,72 @@ describe("startExport", () => {
     await run(t);
     expect(head).not.toHaveBeenCalled();
     expect(h.ready).not.toHaveBeenCalled();
+  });
+
+  it("queues nothing after the session ended, and reports nothing", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const post = vi.fn(async () => ({ id: "drv_1" }));
+    const head = vi.fn<ExportDeps["head"]>().mockResolvedValue({ status: 200 });
+    startExport(nod, "odt", asHandlers(h), exportDeps(post, head, t, () => key));
+    // The sign-out lands while the queueing is still scheduled.
+    key = "";
+    await run(t);
+    expect(post).not.toHaveBeenCalled();
+    expect(head).not.toHaveBeenCalled();
+    expect(h.making).not.toHaveBeenCalled();
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("sends no further poll after the session ended between two polls, and reports nothing", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const head = vi.fn<ExportDeps["head"]>().mockResolvedValue({ status: 202, retryAfter: 1 });
+    startExport(nod, "odt", asHandlers(h), exportDeps(async () => ({ id: "drv_1" }), head, t, () => key));
+    // The queueing runs, its answer starts the first poll, and the first poll's 202 schedules the next wait.
+    t.step();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(head).toHaveBeenCalledTimes(1);
+    // The sign-out lands while the next poll's wait is scheduled.
+    key = "";
+    await run(t);
+    expect(head).toHaveBeenCalledTimes(1);
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("does not start the download when the session ended before the poll's 200 was read", async () => {
+    let key = "person-1\ncsrf-1";
+    const t = immediate();
+    const h = handlers();
+    const head = vi.fn<ExportDeps["head"]>(async () => {
+      // The sign-out lands while the poll is on its way: its 200 arrives under a session that ended.
+      key = "";
+      return { status: 200 };
+    });
+    startExport(nod, "odt", asHandlers(h), exportDeps(async () => ({ id: "drv_1" }), head, t, () => key));
+    await run(t);
+    expect(head).toHaveBeenCalledTimes(1);
+    expect(h.ready).not.toHaveBeenCalled();
+    expect(h.failed).not.toHaveBeenCalled();
+    expect(h.slow).not.toHaveBeenCalled();
+  });
+
+  it("an export with no session keeps its empty key and is ready as usual", async () => {
+    const t = immediate();
+    const h = handlers();
+    const head = vi
+      .fn<ExportDeps["head"]>()
+      .mockResolvedValueOnce({ status: 202, retryAfter: 1 })
+      .mockResolvedValueOnce({ status: 200 });
+    startExport(nod, "odt", asHandlers(h), exportDeps(async () => ({ id: "drv_1" }), head, t, () => ""));
+    await run(t);
+    expect(h.ready).toHaveBeenCalledWith(`/api/v1/nodes/${nod}/exports/drv_1`);
+    expect(h.failed).not.toHaveBeenCalled();
   });
 });
