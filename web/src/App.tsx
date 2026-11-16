@@ -340,7 +340,8 @@ export function Gate() {
     return <ForcedPassword path={path} />;
   }
   if (view === "login" && signedIn) {
-    return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"), me.user)} replace />;
+    // Keyed by the location: a move that lands back on this address remounts the redirect, so its once-per-mount effect runs again instead of leaving the page blank.
+    return <Navigate key={loc.key} to={afterSignIn(new URLSearchParams(search).get("next"), me.user)} replace />;
   }
   // A frame session whose session ended (decision 214): the frame draws the session-ended view at every address but the
   // link page, which may redeem a new link. No move leaves the frame: no sign-in page, no outside page, no share hold.
@@ -360,11 +361,11 @@ export function Gate() {
     // no outside page set, the sign-in page is opened as today.
     const outside = outsideSignIn(path + search);
     if (outside !== null) return <OutsideRedirect url={outside} />;
-    return <Navigate to={signInURL(path + search)} replace />;
+    return <Navigate key={loc.key} to={signInURL(path + search)} replace />;
   }
   // The root is a person's home, not a page: My files, or the tenants list for an admin. A replace, so Back leaves the root.
   if (path === "/") {
-    return <Navigate to={homeFor(me.user)} replace />;
+    return <Navigate key={loc.key} to={homeFor(me.user)} replace />;
   }
   // The Installation page is Settings now (decision 143): its old address goes there, with a replace so Back leaves it.
   if (/^\/admin\/installation\/?$/.test(path)) {
