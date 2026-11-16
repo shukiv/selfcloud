@@ -120,6 +120,25 @@ test('a crashed target is recorded with the browser\'s reason, its exit code and
   });
 });
 
+test('a main-frame navigation drops the requests the old page left in flight', async () => {
+  await withFakeSocket(async () => {
+    const page = new Page('ws://127.0.0.1:1/devtools/page/five');
+    await page.start();
+    page.ws.emit('Network.requestWillBeSent', { requestId: 'old', request: { url: 'http://127.0.0.1:9/api/v1/nodes/nod_a/resume', method: 'PUT' } });
+    await tick();
+    assert.ok(page.inflight.has('old'), 'the request is in flight while its page lives');
+    page.ws.emit('Page.frameNavigated', { frame: { id: 'F1', url: 'http://127.0.0.1:9/' } });
+    await tick();
+    assert.ok(!page.inflight.has('old'), 'the old page\'s request is dropped, for its end event can be lost');
+    page.ws.emit('Network.requestWillBeSent', { requestId: 'new', request: { url: 'http://127.0.0.1:9/api/v1/me', method: 'GET' } });
+    await tick();
+    page.ws.emit('Page.frameNavigated', { frame: { id: 'F2', parentId: 'F1', url: 'http://127.0.0.1:9/sub' } });
+    await tick();
+    assert.ok(page.inflight.has('new'), 'a child frame\'s navigation keeps the main page\'s requests');
+    page.close();
+  });
+});
+
 test('a renderer crash is recorded on the page', async () => {
   await withFakeSocket(async () => {
     const page = new Page('ws://127.0.0.1:1/devtools/page/four');

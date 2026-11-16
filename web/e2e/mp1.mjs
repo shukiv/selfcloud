@@ -164,7 +164,7 @@ async function waitListed(api, base, accountKey, type, name) {
 }
 
 // waitResumeSaved waits until a resume place written after the pause has left for the server and the answer came back.
-async function waitResumeSaved(page, before) {
+export async function waitResumeSaved(page, before) {
   const isResume = (r) => r.method === 'PUT' && r.url.includes('/resume');
   const deadline = Date.now() + 15000;
   for (;;) {
