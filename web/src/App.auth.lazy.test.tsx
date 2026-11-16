@@ -81,7 +81,7 @@ describe("the auth pages load lazily", () => {
     window.history.replaceState(null, "", "/confirm-device#token=abc");
     renderAt("/confirm-device");
     expect(await screen.findByRole("heading", { name: "Confirm this browser" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Confirm and sign in" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Confirm and sign in" })).toBeTruthy();
     window.history.replaceState(null, "", "/");
   });
 
