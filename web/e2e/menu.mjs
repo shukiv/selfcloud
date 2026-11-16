@@ -52,14 +52,30 @@ export async function hoverMenuTitle(page, title) {
   // for the back row of the level it opens, then let the children settle, as the desktop branch lets its popup settle.
   const slideAt = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"] .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); if (!t) return null; const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   if (slideAt) {
-    // The popup opens with an appear animation that starts scaled to nothing: wait for it to end and the row to be drawn at its
-    // full height before reading its place, or the tap lands on the page behind the still-growing menu, which closes it (the
-    // desktop steps wait for the animation the same way, decision 200).
-    await page.waitFor(`(() => { const d = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((x) => x.querySelector('[data-menu-level="slide"]')); const t = d && [...d.querySelectorAll('[data-menu-level="slide"]')].find((x) => x.textContent.trim() === ${q(title)}); return !!t && !d.className.includes('ant-slide-up-appear') && t.getBoundingClientRect().height > 0; })()`, 5000);
-    const at = await page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"] .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
-    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
-    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]').length > 0`, 5000);
+    // The popup opens with an appear animation that starts scaled to nothing: wait for the popup to carry no motion class and the
+    // row, drawn at its full height, to stand still (the same rect in two reads 100 ms apart) before reading its place, or the tap
+    // lands on the page behind the still-moving menu, which closes it (the desktop steps wait for the animation the same way,
+    // decision 200).
+    await page.waitFor(`(() => { const d = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((x) => x.querySelector('[data-menu-level="slide"]')); const t = d && [...d.querySelectorAll('[data-menu-level="slide"]')].find((x) => x.textContent.trim() === ${q(title)}); if (!t) return false; if ([...d.classList].some((c) => c.includes('-enter') || c.includes('-appear') || c.includes('-leave'))) return false; const r = t.getBoundingClientRect(); if (!(r.height > 0)) return false; const was = t.__stillRect; if (was && was.left === r.left && was.top === r.top && was.width === r.width && was.height === r.height) return Date.now() - was.at >= 100; t.__stillRect = { left: r.left, top: r.top, width: r.width, height: r.height, at: Date.now() }; return false; })()`, 5000);
+    const readAt = () => page.evaluate(`(() => { const t = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="slide"] .ant-dropdown-menu-title-content')].find((x) => x.textContent.trim() === ${q(title)}); if (!t) return null; const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const tapAt = async (at) => {
+      await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
+    };
+    const back = `document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [data-menu-level="back"]').length > 0`;
+    const at = await readAt();
+    if (!at) throw new Error(`no slide row ${title} in the open menu`);
+    await tapAt(at);
+    // A tap the menu did not take is tried once more, from a fresh read of the row's place; a level that never opens fails as before.
+    const opened = await page.waitFor(back, 5000).then(() => true, () => false);
+    if (!opened) {
+      const again = await readAt();
+      if (again) {
+        await tapAt(again);
+        console.log(`INFO a second tap opened the slide level (${title})`);
+      }
+      await page.waitFor(back, 5000);
+    }
     await new Promise((r) => setTimeout(r, 350));
     return;
   }
