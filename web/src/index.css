@@ -1477,6 +1477,11 @@ video.media-cue-l::cue {
   cursor: grabbing !important;
 }
 
+/* A tooltip opened on the way would cover the place under the pointer and take the drop's hit test. */
+.sc-gesture .ant-tooltip {
+  display: none !important;
+}
+
 /* The place under a dragged item. data-drop-state is set by the page's drag gesture: ok takes the drop, refused does not. */
 [data-drop-state="ok"] {
   outline: 2px solid var(--ant-color-primary);
