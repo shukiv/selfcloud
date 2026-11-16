@@ -22,7 +22,7 @@ function opaque(): Response {
   return { status: 0, type: 'opaqueredirect', headers: new Headers() } as unknown as Response;
 }
 
-function deps(fetchImpl: ThumbDeps['fetch']) {
+function deps(fetchImpl: ThumbDeps['fetch'], keyOf: () => string = () => 'person-1\ncsrf-1') {
   const createURL = vi.fn(() => 'blob:thumb-1');
   const revokeURL = vi.fn();
   const d: ThumbDeps = {
@@ -32,6 +32,7 @@ function deps(fetchImpl: ThumbDeps['fetch']) {
     createURL,
     revokeURL,
     limiter: new Limiter(4),
+    sessionKey: keyOf,
   };
   return { d, createURL, revokeURL };
 }
@@ -227,6 +228,49 @@ describe('watchThumbnail', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(s.image).not.toHaveBeenCalled();
     expect(s.none).not.toHaveBeenCalled();
+  });
+
+  it('sends no ask that was scheduled before the session ended, and keeps the icon', async () => {
+    let key = 'person-1\ncsrf-1';
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(async () => answer(200));
+    const { d } = deps(fetchImpl, () => key);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    // The sign-out lands while the ask is still scheduled: it must not go out under the session that ended.
+    key = '';
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no fetch whose limiter slot freed only after the session ended', async () => {
+    let key = 'person-1\ncsrf-1';
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(async () => answer(200));
+    const { d } = deps(fetchImpl, () => key);
+    const s = sink();
+    // Four requests hold every slot, so the watch's fetch waits in the limiter for one to free.
+    const releases: Array<() => void> = [];
+    for (let i = 0; i < 4; i++) void d.limiter.run(() => new Promise<void>((resolve) => releases.push(resolve)));
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // The sign-out lands while the fetch is still waiting; the slot frees only afterwards.
+    key = '';
+    for (const release of releases) release();
+    await settle();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(d.limiter.running).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
   });
 
   it('drops an answer that arrives after the stop, and makes no image address for it', async () => {
