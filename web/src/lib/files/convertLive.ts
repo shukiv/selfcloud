@@ -3,6 +3,8 @@
 // The browser's own parts of a preview or export watch (convert.ts holds the logic, and its tests replace these).
 
 import { api } from "../api";
+import { session, sessionKey } from "../session";
+import { get } from "../store";
 import { exportPath, type ExportDeps, type PreviewDeps } from "./convert";
 import { startDownloadURL } from "./ops";
 
@@ -11,6 +13,7 @@ export function livePreviewDeps(): PreviewDeps {
     fetch: (input, init) => fetch(input, init),
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    sessionKey: () => sessionKey(get(session)),
   };
 }
 
@@ -24,6 +27,7 @@ export function liveExportDeps(): ExportDeps {
     },
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    sessionKey: () => sessionKey(get(session)),
   };
 }
 

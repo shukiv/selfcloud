@@ -32,7 +32,8 @@ export function failureKey(why: Failure): string {
   }
 }
 
-// ConvertHandlers receive what the page shows. Exactly one of ready, failed and slow is called, unless the watch is stopped.
+// ConvertHandlers receive what the page shows. Exactly one of ready, failed and slow is called, unless the watch is stopped
+// (by its stop function, or by the session ending).
 export interface ConvertHandlers {
   making: () => void;
   // ready gives the address that shows the file: a preview's address for a frame, or an export's address for a download.
@@ -79,11 +80,12 @@ export function previewStep(a: Answer): PreviewStep {
   return { kind: "failed", failure: failureOf(a.status, a.reason) };
 }
 
-// PreviewDeps are the parts a test replaces: the request, and the timers.
+// PreviewDeps are the parts a test replaces: the request, the timers, and the reading of the session's key.
 export interface PreviewDeps {
   fetch: typeof fetch;
   schedule: (fn: () => void, ms: number) => unknown;
   cancel: (handle: unknown) => void;
+  sessionKey: () => string;
 }
 
 // previewPath is the same-origin address of a preview as PDF.
@@ -104,20 +106,41 @@ async function reasonOf(res: Response): Promise<string | undefined> {
 
 // watchPreview asks for the PDF preview of a node until the answer is final. The first request starts the conversion; later
 // requests are HEAD requests, which start no work. It returns a function that stops the watch: a stopped watch asks no more
-// and reports nothing.
+// and reports nothing. A watch whose session ends stops the same way, quietly: it asks no more and calls no handler, so a
+// sign-out is never followed by a request, an error, or a frame pointed at the file.
 export function watchPreview(nod: string, h: ConvertHandlers, deps: PreviewDeps): () => void {
   let stopped = false;
   let handle: unknown = null;
   let waits = 0;
   const path = previewPath(nod);
+  // The session the watch starts under. A share page has none, and its empty key stays the same for the whole watch.
+  const startedKey = deps.sessionKey();
+  const sessionGone = () => deps.sessionKey() !== startedKey;
 
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (handle !== null) deps.cancel(handle);
+    handle = null;
+  };
+
+  // A report is made only under the session the watch started under: ready points the page's frame at the file, which is a
+  // read of its own, and a failure after a sign-out would be an error the going-away page must not show.
   const finish = (step: PreviewStep) => {
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     if (step.kind === "ready") h.ready(path);
     else if (step.kind === "failed") h.failed(step.failure);
   };
 
   const again = (ms: number) => {
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     if (++waits > MAX_CONVERT_WAITS) {
       if (!stopped) h.slow();
       return;
@@ -134,6 +157,10 @@ export function watchPreview(nod: string, h: ConvertHandlers, deps: PreviewDeps)
   const first = async () => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     h.making();
     let res: Response;
     try {
@@ -153,6 +180,10 @@ export function watchPreview(nod: string, h: ConvertHandlers, deps: PreviewDeps)
   const poll = async () => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     let res: Response;
     try {
       res = await deps.fetch(path, { method: "HEAD", credentials: "same-origin", cache: "no-store", redirect: "manual" });
@@ -165,12 +196,7 @@ export function watchPreview(nod: string, h: ConvertHandlers, deps: PreviewDeps)
   };
 
   handle = deps.schedule(first, 0);
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    if (handle !== null) deps.cancel(handle);
-    handle = null;
-  };
+  return stop;
 }
 
 // exportFormatsFor lists the formats a document can be exported to: PDF, and the formats of its own family. A legacy binary
@@ -197,12 +223,14 @@ export function exportFormatsFor(name: string): string[] {
   }
 }
 
-// ExportDeps are the parts a test replaces: the request that queues an export, the poll, and the timers.
+// ExportDeps are the parts a test replaces: the request that queues an export, the poll, the timers, and the reading of the
+// session's key.
 export interface ExportDeps {
   post: (nod: string, format: string) => Promise<{ id: string }>;
   head: (nod: string, id: string) => Promise<{ status: number; retryAfter?: number }>;
   schedule: (fn: () => void, ms: number) => unknown;
   cancel: (handle: unknown) => void;
+  sessionKey: () => string;
 }
 
 // exportPath is the same-origin address of an export made for this node.
@@ -220,13 +248,28 @@ export function failureOfError(err: unknown): Failure {
 }
 
 // startExport queues an export of a node in format, then polls its ID until the file is ready. It returns a function that stops
-// the watch: the server finishes the export, and nothing is downloaded by a stopped watch.
+// the watch: the server finishes the export, and nothing is downloaded by a stopped watch. A watch whose session ends stops the
+// same way, quietly: it asks no more and calls no handler, so a sign-out is never followed by a request, an error, or a download.
 export function startExport(nod: string, format: string, h: ConvertHandlers, deps: ExportDeps): () => void {
   let stopped = false;
   let handle: unknown = null;
   let waits = 0;
+  // The session the watch starts under. A share page has none, and its empty key stays the same for the whole watch.
+  const startedKey = deps.sessionKey();
+  const sessionGone = () => deps.sessionKey() !== startedKey;
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (handle !== null) deps.cancel(handle);
+    handle = null;
+  };
 
   const again = (ms: number) => {
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     if (++waits > MAX_CONVERT_WAITS) {
       if (!stopped) h.slow();
       return;
@@ -238,14 +281,29 @@ export function startExport(nod: string, format: string, h: ConvertHandlers, dep
   const poll = async (drv: string) => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     let res: { status: number; retryAfter?: number };
     try {
       res = await deps.head(nod, drv);
     } catch {
-      if (!stopped) h.failed("failed");
+      if (stopped) return;
+      if (sessionGone()) {
+        stop();
+        return;
+      }
+      h.failed("failed");
       return;
     }
     if (stopped) return;
+    // The answer may have arrived across a sign-out: ready starts the page's download, and a failure would be an error the
+    // going-away page must not show, so neither is reported under a session that ended.
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     if (res.status === 202) {
       again(waitMs(res.retryAfter === undefined ? null : String(res.retryAfter)));
       return;
@@ -261,26 +319,34 @@ export function startExport(nod: string, format: string, h: ConvertHandlers, dep
   const queue = async () => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     h.making();
     let got: { id: string };
     try {
       got = await deps.post(nod, format);
     } catch (err) {
-      if (!stopped) h.failed(failureOfError(err));
+      if (stopped) return;
+      if (sessionGone()) {
+        stop();
+        return;
+      }
+      h.failed(failureOfError(err));
       return;
     }
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     id = got.id;
     void poll(id);
   };
 
   handle = deps.schedule(() => void queue(), 0);
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    if (handle !== null) deps.cancel(handle);
-    handle = null;
-  };
+  return stop;
 }
 
 // featureOn reads a named feature from the server's /api/v1/info list. Anything that is not a list of names reads as off.

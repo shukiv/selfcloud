@@ -15,6 +15,7 @@ vi.mock("../../lib/files/convertLive", () => ({
     head: (...args: unknown[]) => head(...args),
     schedule: (fn: () => void) => setTimeout(fn, 0),
     cancel: () => undefined,
+    sessionKey: () => "",
   }),
   downloadExport: (...args: unknown[]) => download(...args),
 }));
