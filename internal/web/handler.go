@@ -440,8 +440,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Content-Security-Policy", h.policy("", ancestors, scriptSrc))
 	}
 	if name == "index.html" && ps.tags != "" {
-		// The installation's page scripts sit right before </body>, in list order (decision 216).
-		data = bytes.Replace(data, []byte("</body>"), []byte(ps.tags+"</body>"), 1)
+		// The installation's page scripts sit right before the last </body>, in list order (decision 216): an earlier
+		// one — in a comment, say — must not pull them up into a comment or the head.
+		if i := bytes.LastIndex(data, []byte("</body>")); i >= 0 {
+			out := make([]byte, 0, len(data)+len(ps.tags))
+			out = append(out, data[:i]...)
+			out = append(out, ps.tags...)
+			out = append(out, data[i:]...)
+			data = out
+		}
 	}
 	hd.Set("Content-Type", contentType(name))
 	if name == "offline.html" && err == nil {

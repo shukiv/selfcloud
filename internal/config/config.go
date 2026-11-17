@@ -1394,7 +1394,8 @@ func normalizeOrigin(s string) (string, error) {
 // path and a query are allowed); an http URL whose host is 127.0.0.1, [::1] or localhost; or a same-origin absolute
 // path: one leading slash, no backslash, no .. segment, no space or control character. The entry is served as it is
 // written, so nothing is normalised. The host is held to the same form as an embed origin's, so it can never carry a
-// CSP separator into script-src. Every refusal names the entry.
+// CSP separator into script-src, and a host with an IPv6 zone is refused, for the zone can carry one. Every refusal
+// names the entry.
 func checkUIScript(s string) error {
 	bad := func(reason string) error {
 		return fmt.Errorf("%q is not an allowed script: %s", s, reason)
@@ -1442,7 +1443,16 @@ func checkUIScript(s string) error {
 	if host == "" {
 		return bad("it has no host")
 	}
-	if _, err := netip.ParseAddr(host); err != nil && !validEmbedHost(host) {
+	// A zone follows a '%' in the host (percent-decoded from %25), and can hold a ';', a space or a quote that would
+	// end the script-src directive or open a new source. No zone is allowed.
+	if strings.Contains(host, "%") {
+		return bad("the host carries an IPv6 zone")
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.Zone() != "" {
+			return bad("the host carries an IPv6 zone")
+		}
+	} else if !validEmbedHost(host) {
 		return bad("the host is not a valid DNS name or IP address")
 	}
 	if scheme == "http" && host != "127.0.0.1" && host != "::1" && host != "localhost" {
