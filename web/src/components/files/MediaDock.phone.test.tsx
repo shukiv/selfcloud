@@ -107,6 +107,18 @@ async function open(n: Node, list: Node[] = [n]) {
   return el;
 }
 
+// openVideo opens the player on a video file and waits for its element, as open does for an audio file.
+async function openVideo(n: Node, list: Node[] = [n]) {
+  act(() => startPlayback({ start: n, folder: folderOf(list) }));
+  const el = await waitFor(() => {
+    const v = document.querySelector("video");
+    if (!v) throw new Error("no video yet");
+    return v as HTMLVideoElement;
+  });
+  fireEvent.loadedMetadata(el);
+  return el;
+}
+
 const draw = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -364,5 +376,113 @@ describe("the phone action row in the session", () => {
     expect(screen.queryByTestId("media-phone-line")).toBeNull();
     expect(screen.getByTestId("media-count")).toBeTruthy();
     expect(screen.getByTestId("media-queue")).toBeTruthy();
+  });
+});
+
+// The album page is for audio only. A video at phone width keeps the player it had before the album page: the old header
+// with the count and the Playlist toggle, the whole bar that hides while the video plays and shows on a tap, and the
+// drawer's queue panel. The album class is set only for an audio file, and a switch between an audio and a video file in
+// the same queue toggles it without making the element again or moving the stage and queue hosts.
+describe("the album page is for audio only", () => {
+  const video = (name: string) => file(name, { mime_type: "video/webm" });
+
+  it("a video at phone width draws no album part: the old header, the whole bar and the drawer's panel", async () => {
+    draw();
+    await openVideo(video("clip.webm"));
+    // No album header and none of the album page's own parts.
+    expect(screen.queryByTestId("media-phone-head")).toBeNull();
+    expect(screen.queryByTestId("media-phone-line")).toBeNull();
+    expect(screen.queryByTestId("media-phone-transport")).toBeNull();
+    expect(screen.queryByTestId("media-phone-actions")).toBeNull();
+    // The old header: the count, the Playlist toggle and Download.
+    expect(screen.getByTestId("media-count")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Playlist" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+    // The whole bar with its own transport, as on a wide window.
+    const bar = screen.getByTestId("media-controls");
+    expect(within(bar).getByRole("button", { name: "Play" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Previous file" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Next file" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Mute" })).toBeTruthy();
+    // The queue is the drawer's panel, not the album page's table in the flow.
+    expect(screen.getByTestId("media-queue")).toBeTruthy();
+    expect(screen.queryByTestId("media-queue-table")).toBeNull();
+    // The album class is not on the screen, and the video keeps its own picture place.
+    expect(screen.getByTestId("media-screen").classList.contains("media-screen--phone")).toBe(false);
+    expect(document.querySelector("video")?.classList.contains("media-picture")).toBe(true);
+  });
+
+  it("a video's bar hides while it plays at phone width, and a tap on the picture shows it", async () => {
+    draw();
+    const el = await openVideo(video("clip.webm"));
+    fireEvent.play(el);
+    const bar = screen.getByTestId("media-controls");
+    await waitFor(() => expect(bar.classList.contains("media-controls--hidden")).toBe(true), { timeout: 4000 });
+    fireEvent.pointerDown(screen.getByTestId("media-stage"));
+    expect(bar.classList.contains("media-controls--hidden")).toBe(false);
+  });
+
+  it("an audio at phone width is the album page", async () => {
+    draw();
+    await open(file("song.mp3"));
+    expect(await screen.findByTestId("media-phone-head")).toBeTruthy();
+    expect(screen.getByTestId("media-phone-line")).toBeTruthy();
+    expect(screen.getByTestId("media-phone-transport")).toBeTruthy();
+    expect(screen.getByTestId("media-phone-actions")).toBeTruthy();
+    expect(screen.getByTestId("media-screen").classList.contains("media-screen--phone")).toBe(true);
+    expect(screen.queryByTestId("media-count")).toBeNull();
+  });
+
+  it("switching audio -> video -> audio toggles the album class, keeping the element and the hosts", async () => {
+    const a = file("a.mp3");
+    const v = video("v.webm");
+    const b = file("b.mp3");
+    draw();
+    await open(a, [a, v, b]);
+    await screen.findByTestId("media-phone-head");
+    // The stage and queue hosts, and the player box that carries the album class, are marked once.
+    const screenHost = screen.getByTestId("media-screen");
+    const queueHost = document.getElementById("media-drawer") as HTMLElement;
+    const box = screen.getByTestId("media-playlist").parentElement?.parentElement as HTMLElement;
+    expect(box.classList.contains("media-box--album")).toBe(true);
+    const audioEl = document.querySelector("audio") as HTMLAudioElement;
+    (audioEl as HTMLAudioElement & { __mark?: number }).__mark = 1;
+
+    // On to the video: the album class goes, the old player returns, and the hosts do not move.
+    fireEvent.click(screen.getByTestId("media-phone-next"));
+    const videoEl = await waitFor(() => {
+      const el = document.querySelector("video");
+      if (!el || el.getAttribute("aria-label") !== "v.webm") throw new Error("no video yet");
+      return el as HTMLVideoElement;
+    });
+    fireEvent.loadedMetadata(videoEl);
+    await waitFor(() => expect(screen.queryByTestId("media-phone-head")).toBeNull());
+    expect(box.classList.contains("media-box--album")).toBe(false);
+    expect(screen.getByTestId("media-screen")).toBe(screenHost);
+    expect(document.getElementById("media-drawer")).toBe(queueHost);
+    expect(screen.getByTestId("media-playlist").parentElement?.parentElement).toBe(box);
+    expect(screen.getByTestId("media-queue")).toBeTruthy();
+    expect(document.querySelectorAll("audio, video").length).toBe(1);
+    // The element the switch made is the one that plays: the layout change did not make it again.
+    expect(document.querySelector("video")).toBe(videoEl);
+    expect(videoEl.isConnected).toBe(true);
+    (videoEl as HTMLVideoElement & { __mark?: number }).__mark = 1;
+
+    // Back to an audio: the album class returns, the same hosts, and the element the switch made is not made again.
+    fireEvent.click(within(screen.getByTestId("media-controls")).getByRole("button", { name: "Next file" }));
+    const audioBack = await waitFor(() => {
+      const el = document.querySelector("audio");
+      if (!el || el.getAttribute("aria-label") !== "b.mp3") throw new Error("no audio yet");
+      return el as HTMLAudioElement;
+    });
+    fireEvent.loadedMetadata(audioBack);
+    await screen.findByTestId("media-phone-head");
+    expect(box.classList.contains("media-box--album")).toBe(true);
+    expect(screen.getByTestId("media-screen")).toBe(screenHost);
+    expect(document.getElementById("media-drawer")).toBe(queueHost);
+    expect(screen.getByTestId("media-playlist").parentElement?.parentElement).toBe(box);
+    expect(document.querySelectorAll("audio, video").length).toBe(1);
+    expect(document.querySelector("audio")).toBe(audioBack);
+    expect(screen.getByTestId("media-screen").classList.contains("media-screen--phone")).toBe(true);
   });
 });
