@@ -196,8 +196,8 @@ These commands read and change the server's live settings (`GET` and `PATCH /api
 installation admin key (`sc_admin_...`, from `selfcloud admin create-key` on the server): an account key or a device
 token is refused with a 403, and a line after the error names the admin key to use. That line, and the lines that list the
 keys or the problems of a refused change, are not printed with `--json`, where stderr stays one JSON line. `settings get` prints a table of `KEY`, `VALUE`,
-`SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the two pictures. With a key it prints
-that setting or picture as `key=value` lines (a picture shows `key`, `state`, `type`, `sha256` and `locked`, and `reason` when it has one). A picture the server stored but did not use has the state `unusable`, and its `reason` is one of `row_not_written`, `not_regular_file`, `hash_changed`, `file_missing`, `unreadable` and `invalid_picture`; the table shows it in `NOTE`. `settings logo remove` or `settings icon remove` clears it. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
+`SOURCE`, `DEFAULT` and `NOTE` (`locked`, `restart` or both), then a table of the three pictures. With a key it prints
+that setting or picture as `key=value` lines (a picture shows `key`, `state`, `type`, `sha256` and `locked`, and `reason` when it has one). A picture the server stored but did not use has the state `unusable`, and its `reason` is one of `row_not_written`, `not_regular_file`, `hash_changed`, `file_missing`, `unreadable` and `invalid_picture`; the table shows it in `NOTE`. `settings logo remove`, `settings icon remove` or `settings app-icon remove` clears it. Durations and sizes are printed as the server writes them, such as `48h0m0s`, so
 do not expect a value to come back as it was typed. `--json` prints the server's document.
 
 `settings set KEY=VALUE...` reads the settings first, to learn each key's type, and sends the value in that type's shape:
@@ -211,22 +211,25 @@ defaults apply, and prints the same table. A list setting (`ui.scripts`, decisio
 `settings get` prints it as its array and `settings reset` clears it, but `settings set` sends the value as text, which
 the server refuses for a list; change the list with `PATCH /api/v1/settings`.
 
-### `settings logo` and `settings icon`
+### `settings logo`, `settings icon` and `settings app-icon`
 
 ```sh
 selfcloud settings logo set logo.svg
 selfcloud settings icon set icon.png
+selfcloud settings app-icon set app.png
 selfcloud settings logo remove
 ```
 
-`settings logo set FILE` and `settings icon set FILE` upload a picture as the web interface's logo or icon
-(`PUT /api/v1/settings/brand/logo` and `/icon`); `remove` deletes the upload (`DELETE`). They need an installation admin
-key. The type comes from the content: a file that starts with the PNG signature is sent as `image/png`, and otherwise a
-name ending in `.svg` is sent as `image/svg+xml`. Any other file exits 2 before a request, so a text file named `x.png`
-is refused. A missing file exits 4; a directory, no file, two files, or a file over 4 MiB exits 2. The server's own limit
-is smaller (256 KiB), and its answer for a file between the two is printed (exit 2), as are its answers for a picture it
-finds invalid. A logo or icon that the config file sets is locked (exit 3, `keys: ui.brand.logo`). On success the command
-prints the picture as `key=value` lines (`key`, `state`, `type`, `sha256`, `locked`, and `reason` for an unusable one); after `remove` the state is `none`, also for an unusable picture.
+`settings logo set FILE`, `settings icon set FILE` and `settings app-icon set FILE` upload a picture as the web interface's
+logo, icon or app icon (`PUT /api/v1/settings/brand/logo`, `/icon` and `/app-icon`); `remove` deletes the upload (`DELETE`).
+They need an installation admin key. The type comes from the content: a file that starts with the PNG signature is sent as
+`image/png`, and otherwise a name ending in `.svg` is sent as `image/svg+xml`. Any other file exits 2 before a request, so a
+text file named `x.png` is refused. The app icon is a PNG only: the server refuses an SVG (exit 2). A missing file exits 4; a
+directory, no file, two files, or a file over 4 MiB exits 2. The server's own limit is smaller (256 KiB), and its answer for a
+file between the two is printed (exit 2), as are its answers for a picture it finds invalid. A picture that the config file
+sets is locked (exit 3, `keys: ui.brand.logo`, `ui.brand.icon` or `ui.brand.app_icon`). The app icon draws the installed app's
+icons alone, never the favicon. On success the command prints the picture as `key=value` lines (`key`, `state`, `type`,
+`sha256`, `locked`, and `reason` for an unusable one); after `remove` the state is `none`, also for an unusable picture.
 
 ### `profile add|use|ls|rm`
 
