@@ -82,6 +82,37 @@ func TestUIScriptShapes(t *testing.T) {
 	}
 }
 
+// TestUIScriptsRefuseIPv6Zone: a host with an IPv6 zone is refused, for the zone's '%' (percent-decoded from %25) can
+// carry a CSP separator — a ';', a space, a quote — into script-src. The refusal names the key, the entry and the zone.
+func TestUIScriptsRefuseIPv6Zone(t *testing.T) {
+	t.Parallel()
+	for _, entry := range []string{
+		"https://[fe80::1%25;x]/a.js",
+		"https://[fe80::1%25eth0]/a.js",
+		"https://[fe80::1%25%20'unsafe-inline']/a.js",
+	} {
+		cfg := Defaults()
+		cfg.UI.Scripts = []string{entry}
+		err := cfg.Validate()
+		if err == nil {
+			t.Errorf("ui.scripts [%q] was accepted; want a refusal", entry)
+			continue
+		}
+		if !strings.Contains(err.Error(), "ui.scripts") || !strings.Contains(err.Error(), fmt.Sprintf("%q", entry)) ||
+			!strings.Contains(err.Error(), "zone") {
+			t.Errorf("ui.scripts [%q] error %q does not name the key, the entry and the zone", entry, err)
+		}
+	}
+	// An IPv6 host with no zone is still allowed.
+	for _, entry := range []string{"https://[2001:db8::1]/menu.js", "http://[::1]:8080/ps.js"} {
+		cfg := Defaults()
+		cfg.UI.Scripts = []string{entry}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("ui.scripts [%q] was refused: %v", entry, err)
+		}
+	}
+}
+
 // TestUIScriptsLimits: the list holds at most ten entries, each 1 to 2048 bytes, and no exact duplicate; the cap and the
 // duplicate are refused naming the key, and the duplicate names the entry.
 func TestUIScriptsLimits(t *testing.T) {

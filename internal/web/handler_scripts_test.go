@@ -143,6 +143,41 @@ func TestScriptsPolicyOrigins(t *testing.T) {
 	}
 }
 
+// TestScriptsOriginGuard: an entry whose host smuggles a CSP separator — an IPv6 zone carrying a ';', a space or a
+// quote — adds no origin to script-src, even when the builder is given it directly; a clean entry beside it still adds
+// its own, and no origin holds a ';', a space or a quote.
+func TestScriptsOriginGuard(t *testing.T) {
+	t.Parallel()
+	for _, entry := range []string{
+		"https://[fe80::1%25;x]/a.js",
+		"https://[fe80::1%25eth0]/a.js",
+		"https://[fe80::1%25%20'unsafe-inline']/a.js",
+	} {
+		h := newTestHandler(t, scriptFiles(), Options{Scripts: []string{entry, "https://cdn.example.com/ok.js"}})
+		csp := get(t, h, http.MethodGet, "/").Header().Get("Content-Security-Policy")
+		if !strings.Contains(csp, "script-src 'self' https://cdn.example.com;") {
+			t.Errorf("entry %q: script-src is not the clean origin alone: %q", entry, csp)
+		}
+	}
+}
+
+// TestScriptsBeforeLastBody: the tags sit right before the last </body>, so an earlier one — in a comment, say — cannot
+// pull them up into a comment or the head.
+func TestScriptsBeforeLastBody(t *testing.T) {
+	t.Parallel()
+	files := scriptFiles()
+	files["index.html"] = &fstest.MapFile{Data: []byte(`<!doctype html><html><head><meta property="csp-nonce" nonce="` +
+		cspNoncePlaceholder + `"><title>app</title></head><body><p>app</p><!-- </body> --></body></html>`)}
+	h := newTestHandler(t, files, Options{Scripts: []string{"/a.js"}})
+	body := get(t, h, http.MethodGet, "/").Body.String()
+	if !strings.HasSuffix(body, scriptTag("/a.js")+"</body></html>") {
+		t.Errorf("the tags are not right before the last </body>: %s", body)
+	}
+	if !strings.Contains(body, "<!-- </body> -->") {
+		t.Errorf("the earlier </body> was not left alone: %s", body)
+	}
+}
+
 // TestScriptsLiveSwap: a change of the list applies from the next page served, without a restart, and an empty list
 // serves the page and the policy as before.
 func TestScriptsLiveSwap(t *testing.T) {

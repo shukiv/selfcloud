@@ -138,6 +138,25 @@ func TestSettingsScriptsBadEntry(t *testing.T) {
 	}
 }
 
+// TestSettingsScriptsRefuseIPv6Zone: a host with an IPv6 zone is refused with a 400 naming the key and the entry, for
+// the zone can carry a CSP separator into script-src.
+func TestSettingsScriptsRefuseIPv6Zone(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	entry := "https://[fe80::1%25;x]/a.js"
+	e := wantError(t, patchSettings(t, s, admin, map[string]any{"ui.scripts": []any{entry}}), 400, apierr.InvalidRequest)
+	if e.Details["reason"] != "invalid_setting" {
+		t.Errorf("reason = %v", e.Details["reason"])
+	}
+	if keys, _ := e.Details["keys"].([]any); !slices.Contains(keys, any("ui.scripts")) {
+		t.Errorf("keys = %v", e.Details["keys"])
+	}
+	if !strings.Contains(e.Message, entry) {
+		t.Errorf("the message does not name the entry: %q", e.Message)
+	}
+}
+
 // TestSettingsScriptsWhoMayChangeThem: a non-admin is refused as for the other settings.
 func TestSettingsScriptsWhoMayChangeThem(t *testing.T) {
 	t.Parallel()
