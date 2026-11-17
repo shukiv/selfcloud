@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { ApiError } from '../api';
 import { loadLang, translate } from '../i18n';
 import { MAX_POLLS, poll } from '../jobs/backoff';
+import { session, type Session } from '../session';
 import type { Job } from './types';
 import { downloadAgain, makeZip, zipErrorText, zipFailureText, type ZipDeps, type ZipStatus } from './zips';
 
@@ -134,6 +135,7 @@ describe('makeZip', () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    session.set(null);
   });
 
   it('waits for the job, then starts the download and reports the items left out', async () => {
@@ -200,6 +202,24 @@ describe('makeZip', () => {
     expect(d.job).toHaveBeenCalledTimes(MAX_POLLS);
     expect(onGiveUp).toHaveBeenCalledTimes(1);
     expect(d.download).not.toHaveBeenCalled();
+  });
+
+  it('asks no more and reports nothing when the session ends mid-poll', async () => {
+    session.set({ user: { id: 'usr_1' }, account: null, csrf: 'csrf-1', publicLinks: false } as unknown as Session);
+    const d = deps({ job: jobs(['queued', 'running', 'succeeded']) });
+    const onReady = vi.fn();
+    const onFailed = vi.fn();
+    const onGiveUp = vi.fn();
+    makeZip(['nod_a'], { lang: 'en', onReady, onFailed, onGiveUp }, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(d.job).toHaveBeenCalledTimes(1);
+    session.set(null);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(d.job).toHaveBeenCalledTimes(1);
+    expect(d.download).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
   });
 });
 

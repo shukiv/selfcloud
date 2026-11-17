@@ -93,4 +93,96 @@ describe('poll', () => {
     expect(onError).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('sends nothing and reports nothing when the session ends before the first check', async () => {
+    vi.useFakeTimers();
+    let key = 'person-1\ncsrf-1';
+    const check = vi.fn(async () => 'running');
+    const done = vi.fn();
+    const onError = vi.fn();
+    const onGiveUp = vi.fn();
+    poll(check, () => false, done, onError, onGiveUp, undefined, undefined, () => key);
+    key = '';
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('asks no more and reports nothing when the session ends between checks', async () => {
+    vi.useFakeTimers();
+    let key = 'person-1\ncsrf-1';
+    const check = vi.fn(async () => 'running');
+    const done = vi.fn();
+    const onError = vi.fn();
+    const onGiveUp = vi.fn();
+    poll(check, () => false, done, onError, onGiveUp, undefined, undefined, () => key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(check).toHaveBeenCalledTimes(1);
+    key = '';
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('drops an answer that arrives after the session ended, and reports nothing', async () => {
+    vi.useFakeTimers();
+    let key = 'person-1\ncsrf-1';
+    let answer: (value: string) => void = () => undefined;
+    const check = vi.fn(() => new Promise<string>((resolve) => { answer = resolve; }));
+    const done = vi.fn();
+    const onError = vi.fn();
+    const onGiveUp = vi.fn();
+    poll(check, (s) => s === 'succeeded', done, onError, onGiveUp, undefined, undefined, () => key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(check).toHaveBeenCalledTimes(1);
+    key = '';
+    answer('succeeded');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('drops a refusal that arrives after the session ended, and shows no error', async () => {
+    vi.useFakeTimers();
+    let key = 'person-1\ncsrf-1';
+    let refuse: (err: unknown) => void = () => undefined;
+    const check = vi.fn(() => new Promise<string>((_resolve, reject) => { refuse = reject; }));
+    const done = vi.fn();
+    const onError = vi.fn();
+    const onGiveUp = vi.fn();
+    poll(check, () => false, done, onError, onGiveUp, undefined, undefined, () => key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(check).toHaveBeenCalledTimes(1);
+    key = '';
+    refuse(new Error('gone'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('keeps the normal path when the empty key stays empty', async () => {
+    vi.useFakeTimers();
+    const answers = ['queued', 'succeeded'];
+    const check = vi.fn(async () => answers.shift() as string);
+    const done = vi.fn();
+    const onError = vi.fn();
+    poll(check, (s) => s === 'succeeded', done, onError, undefined, undefined, undefined, () => '');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(done).toHaveBeenCalledWith('succeeded');
+    expect(onError).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });
