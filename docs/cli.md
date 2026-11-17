@@ -207,7 +207,9 @@ value of the wrong shape, an unknown key or a picture key (use `settings logo se
 may hold `=`, since only the first one splits. The change is all or nothing. A key that the config file or an
 environment variable sets is locked: the server refuses it (exit 3) and the command prints `keys: ...`. A value the
 server finds invalid exits 2 and each problem is printed. `settings reset KEY...` removes the stored values so the
-defaults apply, and prints the same table.
+defaults apply, and prints the same table. A list setting (`ui.scripts`, decision 216) holds a JSON array of strings:
+`settings get` prints it as its array and `settings reset` clears it, but `settings set` sends the value as text, which
+the server refuses for a list; change the list with `PATCH /api/v1/settings`.
 
 ### `settings logo` and `settings icon`
 
