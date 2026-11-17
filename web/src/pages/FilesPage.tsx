@@ -525,6 +525,8 @@ export default function FilesPage() {
   }, [treeKeyText]);
   const folderID = here?.folder ?? null;
   const dirID = here?.dir?.id ?? null;
+  // placeName is the folder on screen as the person sees it: the queue's folder for the player's header (mp7).
+  const placeName = here?.dir?.name ?? here?.folderName ?? t("nav.files");
   // A press on Play media is answered only while the person is still at the address it was pressed at, with the sort it was
   // pressed under, and until the person opens something else. The address moves at once, ahead of the place being read.
   const playAsk = useRef(0);
@@ -948,7 +950,7 @@ export default function FilesPage() {
     setPreviewItems(list.map(gated));
     setPreviewIndex(Math.max(0, list.findIndex((x) => x.id === n.id)));
     // A video or audio file opens the folder's playlist, from that file; other files keep the steps through the list.
-    setPreviewMedia(isPlayable(n) ? { start: gated(n), folder: folderPager() } : null);
+    setPreviewMedia(isPlayable(n) ? { start: gated(n), folder: folderPager(), folderName: placeName } : null);
     setDialog("preview");
   }
 
@@ -980,16 +982,16 @@ export default function FilesPage() {
     if (list.length === 0) return;
     setPreviewItems(list);
     setPreviewIndex(0);
-    setPreviewMedia({ start: list[0], folder: folderPager(), selection: list });
+    setPreviewMedia({ start: list[0], folder: folderPager(), selection: list, folderName: placeName });
     setDialog("preview");
   }
 
   // startMedia opens the player on a playlist that pages through a folder, from its first file.
-  function startMedia(pager: Pager) {
+  function startMedia(pager: Pager, folderName: string) {
     const list = pager.loaded;
     setPreviewItems(list);
     setPreviewIndex(0);
-    setPreviewMedia({ start: list[0], folder: pager });
+    setPreviewMedia({ start: list[0], folder: pager, folderName });
     setDialog("preview");
   }
 
@@ -997,7 +999,7 @@ export default function FilesPage() {
   function playHere() {
     playAsk.current++;
     const pager = folderPager();
-    if (pager.loaded.length > 0) startMedia(pager);
+    if (pager.loaded.length > 0) startMedia(pager, placeName);
   }
 
   // playFolder plays the audio and video files directly inside a folder, in the listing's sort. Its pages are read until one
@@ -1025,7 +1027,7 @@ export default function FilesPage() {
         void message.info(t("files.playMedia.none"));
         return;
       }
-      startMedia(pager);
+      startMedia(pager, dir.name);
     } catch (err) {
       fail(fileErrorText(err, lang));
     }

@@ -183,17 +183,19 @@ describe("the phone action row", () => {
   it("More holds Speed, Shuffle, Repeat, Details and Open folder", async () => {
     draw(file("song.mp3"), { media: document.createElement("audio") });
     fireEvent.click(screen.getByTestId("media-phone-more"));
-    for (const name of ["Speed", "Shuffle", "Repeat off", "Details"]) {
+    // The Speed submenu's arrow carries its own label, so its name starts with "Speed"; Shuffle is a checked menu item.
+    expect(await screen.findByRole("menuitem", { name: /^Speed/ })).toBeTruthy();
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Shuffle" })).toBeTruthy();
+    for (const name of ["Repeat off", "Details", "Open folder"]) {
       expect(await screen.findByRole("menuitem", { name })).toBeTruthy();
     }
-    expect(await screen.findByRole("menuitem", { name: "Open folder" })).toBeTruthy();
   });
 
   it("Speed offers the bar's rates and sets the element's", async () => {
     const el = document.createElement("audio");
     draw(file("song.mp3"), { media: el });
     fireEvent.click(screen.getByTestId("media-phone-more"));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Speed" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Speed/ }));
     const rate = await screen.findByRole("menuitemradio", { name: "1.5×" });
     fireEvent.click(rate);
     expect(el.playbackRate).toBe(1.5);

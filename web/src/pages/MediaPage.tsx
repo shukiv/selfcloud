@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import { brand } from "../lib/brand";
 import { attachPage, getPlayback, subscribePlayback } from "../lib/files/playback";
+import { usePhoneWidth } from "../lib/files/phone";
 import { useT } from "../lib/i18n";
 import { useMT } from "../lib/media/i18n";
 import { useStore } from "../lib/store";
@@ -41,6 +42,9 @@ export default function MediaPage() {
   const queueRef = useRef<HTMLDivElement>(null);
   const [params, setParams] = useSearchParams();
   const tab = tabOf(params);
+  // At phone width the queue host takes the album-page divider and lets its table run the full width (mp7). The host itself
+  // is never re-created for the width change, so the queue keeps its place and the player keeps playing.
+  const phone = usePhoneWidth();
 
   // choose writes the tab in the address with replace (the back button leaves the page, it does not walk the tabs).
   const choose = (key: string) => {
@@ -116,7 +120,7 @@ export default function MediaPage() {
                     Empty hosts take no room while no session runs. The stage's test id is the page's own; the player
                     inside keeps media-stage. */}
                 <div ref={stageRef} className="media-page-stage" data-testid="media-page-stage" />
-                <div ref={queueRef} className="media-page-queue" data-testid="media-page-queue" />
+                <div ref={queueRef} className={`media-page-queue${phone ? " media-page-queue--phone" : ""}`} data-testid="media-page-queue" />
               </>
             ),
           },

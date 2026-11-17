@@ -20,6 +20,20 @@ const BROKEN = Buffer.concat([
 
 const MEDIA = '[data-testid="media-screen"] video, [data-testid="media-screen"] audio';
 
+// MEDIA_NAME reads the playing file's name from the preview, or null when no preview is open. At phone width the album-page
+// header names the album or the folder, not the file, so the file's name is read from the media element's aria-label (the
+// file's name by contract, mp7). Everywhere else the header's name shows it; the phone head's own bdi is excluded so it never
+// shadows the file's name.
+export const MEDIA_NAME = `(() => {
+  const d = document.querySelector('[data-testid="preview"]');
+  if (!d) return null;
+  if (matchMedia('(max-width: 599px)').matches) {
+    const el = d.querySelector('[data-testid="media-stage"] audio, [data-testid="media-stage"] video');
+    if (el) return el.getAttribute('aria-label') ?? '';
+  }
+  return d.querySelector('header bdi:not([data-testid="media-phone-head"] bdi), .media-art-name bdi')?.textContent ?? '';
+})()`;
+
 // dblClick sends a mouse double click the way Chrome does: two presses with the click count at two.
 async function dblClick(page, { x, y }) {
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
@@ -96,7 +110,7 @@ const state = (page) =>
     const v = document.querySelector(${q(MEDIA)});
     const titles = [...document.querySelectorAll('[data-testid="media-queue"] .media-title bdi')].map((b) => b.textContent);
     return {
-      name: document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null,
+      name: ${MEDIA_NAME},
       paused: v ? v.paused : null,
       t: v ? v.currentTime : null,
       dur: v ? v.duration : null,
@@ -114,7 +128,7 @@ const state = (page) =>
 
 // waitName waits until the viewer shows this file.
 const waitName = (page, name, ms = 15000) =>
-  page.waitFor(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent === ${q(name)}`, ms);
+  page.waitFor(`${MEDIA_NAME} === ${q(name)}`, ms);
 
 // waitMedia waits until the file on screen can play (its element has its data).
 const waitMedia = (page, ms = 20000) => page.waitFor(`(() => { const v = document.querySelector(${q(MEDIA)}); return !!v && v.readyState >= 2; })()`, ms);
@@ -371,7 +385,7 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
     const seen = [(await state(page)).name];
     for (let i = 0; i < 3; i++) {
       await finish(page);
-      await page.waitFor(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent !== ${q(seen[seen.length - 1])}`, 15000);
+      await page.waitFor(`${MEDIA_NAME} !== ${q(seen[seen.length - 1])}`, 15000);
       await waitMedia(page);
       seen.push((await state(page)).name);
     }
@@ -597,33 +611,60 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
   await step('on a phone in Hebrew the bar reads left to right and nothing scrolls sideways', async () => {
     await setPhone(page, true);
     await setLanguage(page, 'עברית');
-    await openFolderView(page, urlOf(x1List), 'track-04.ogg');
-    await playItem(page, 'track-04.ogg');
-    const m = await page.evaluate(`(() => {
-      const times = [...document.querySelectorAll('[data-testid="media-controls"] .media-time')];
-      const buttons = [...document.querySelectorAll('[data-testid="media-controls"] .media-btn')];
-      const controls = document.querySelector('[data-testid="media-controls"]');
-      return {
-        ltr: getComputedStyle(controls).direction === 'ltr',
-        timesInOrder: times.length === 2 && times[0].getBoundingClientRect().left < times[1].getBoundingClientRect().left,
-        smallest: Math.min(...buttons.map((b) => b.getBoundingClientRect().height)),
-        // The speed list and each slider handle are touch targets: their boxes are read, not their drawn ring.
-        speed: document.querySelector('[data-testid="media-controls"] .media-speed')?.getBoundingClientRect().height ?? 0,
-        handles: [...document.querySelectorAll('[data-testid="media-controls"] .ant-slider-handle')].map((h) => {
-          const r = h.getBoundingClientRect();
-          return { w: r.width, h: r.height };
-        }),
-        overflow: document.documentElement.scrollWidth - window.innerWidth,
-      };
-    })()`);
-    check(m.ltr && m.timesInOrder, 'the bar reads left to right in Hebrew: its times keep their order');
-    check(m.smallest >= 44, `the bar's buttons are at least 44 px tall on a phone (${m.smallest})`);
-    check(m.speed >= 44, `the speed list is at least 44 px tall on a phone (${m.speed})`);
-    check(m.handles.length >= 2 && m.handles.every((h) => h.w >= 44 && h.h >= 44), `every slider handle is at least 44 by 44 px on a phone (${JSON.stringify(m.handles)})`);
-    check(m.overflow <= 0, `no sideways scroll on a phone (${m.overflow} px over)`);
-    await closeViewer(page);
-    await setLanguage(page, 'English');
-    await setPhone(page, false);
+    // The width comes back whatever happens here, so a failure cannot leave the next step on a phone (mp7).
+    try {
+      await openFolderView(page, urlOf(x1List), 'track-04.ogg');
+      await playItem(page, 'track-04.ogg');
+      const m = await page.evaluate(`(() => {
+        const phone = matchMedia('(max-width: 599px)').matches;
+        const controls = document.querySelector('[data-testid="media-controls"]');
+        const times = [...document.querySelectorAll('[data-testid="media-controls"] .media-time')];
+        // At phone width the album page draws the transport and the action row, and the bar keeps only its seek row (mp7);
+        // every button the album page draws is a finger's target. On a desktop the bar's own buttons are read, as before.
+        const buttons = phone
+          ? [...document.querySelectorAll('[data-testid="media-phone-transport"] button, [data-testid="media-phone-actions"] button')]
+          : [...document.querySelectorAll('[data-testid="media-controls"] .media-btn')];
+        const boxes = buttons.map((b) => { const r = b.getBoundingClientRect(); return { w: r.width, h: r.height }; });
+        const transport = document.querySelector('[data-testid="media-phone-transport"]');
+        return {
+          phone,
+          count: boxes.length,
+          ltr: getComputedStyle(controls).direction === 'ltr' && (!phone || getComputedStyle(transport).direction === 'ltr'),
+          timesInOrder: times.length === 2 && times[0].getBoundingClientRect().left < times[1].getBoundingClientRect().left,
+          smallest: boxes.length ? Math.min(...boxes.map((b) => b.h)) : null,
+          narrowest: boxes.length ? Math.min(...boxes.map((b) => b.w)) : null,
+          // Each slider handle is a touch target: its box is read, not its drawn ring. A phone draws the seek handle alone.
+          handles: [...document.querySelectorAll('[data-testid="media-controls"] .ant-slider-handle')].map((h) => {
+            const r = h.getBoundingClientRect();
+            return { w: r.width, h: r.height };
+          }),
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      })()`);
+      check(m.ltr && m.timesInOrder, 'the bar reads left to right in Hebrew: its times keep their order');
+      if (m.phone) {
+        check(m.count >= 6 && m.smallest >= 44 && m.narrowest >= 44, `the album page's transport and action buttons are at least 44 by 44 px on a phone (${m.count} buttons, ${m.smallest} px tall, ${m.narrowest} px wide)`);
+      } else {
+        check(m.smallest >= 44, `the bar's buttons are at least 44 px tall (${m.smallest})`);
+      }
+      check(m.handles.length >= (m.phone ? 1 : 2) && m.handles.every((h) => h.w >= 44 && h.h >= 44), `every slider handle is at least 44 by 44 px on a phone (${m.handles.length} handles: ${JSON.stringify(m.handles)})`);
+      check(m.overflow <= 0, `no sideways scroll on a phone (${m.overflow} px over)`);
+      if (m.phone) {
+        // The Speed item of the More menu is a finger's target too: open More and read its row (mp7).
+        await page.evaluate(`document.querySelector('[data-testid="media-phone-more"]').click()`);
+        await page.waitFor(`!!document.querySelector('.media-phone-menu .ant-dropdown-menu-submenu-title')`, 5000);
+        const sp = await page.evaluate(`(() => { const r = document.querySelector('.media-phone-menu .ant-dropdown-menu-submenu-title').getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+        check(sp.w >= 44 && sp.h >= 44, `the More menu's Speed item is at least 44 by 44 px on a phone (${sp.w} by ${sp.h} px)`);
+        await page.evaluate(`document.querySelector('[data-testid="media-phone-more"]').click()`);
+      } else {
+        const speed = await page.evaluate(`document.querySelector('[data-testid="media-controls"] .media-speed')?.getBoundingClientRect().height ?? 0`);
+        check(speed >= 44, `the speed list is at least 44 px tall (${speed})`);
+      }
+    } finally {
+      await closeViewer(page).catch(() => undefined);
+      await setLanguage(page, 'English').catch(() => undefined);
+      await setPhone(page, false);
+    }
   });
 
   // ---- 9b. the speed list: a key with it focused still plays (its input is not a field), and in full screen its list opens on
@@ -748,6 +789,14 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
       await openFolderView(page, lookURL, 'bright.webm');
       await playItem(page, 'bright.webm');
       const r = await page.evaluate(`(() => {
+        // At phone width the queue is the table in the flow (mp7): its rows are the listing's rows, the name in .media-qname-line.
+        // On a desktop it is the drawer's row, as before.
+        if (matchMedia('(max-width: 599px)').matches) {
+          const row = [...document.querySelectorAll('[data-testid="media-queue-table"] [role="row"]')].find((x) => (x.querySelector('.media-qname-line bdi')?.textContent ?? '').startsWith('a-very-long'));
+          if (!row) return null;
+          row.scrollIntoView({ block: 'center' });
+          return { row: row.getBoundingClientRect().height, name: row.querySelector('.media-qname-line bdi').getBoundingClientRect().height };
+        }
         const row = [...document.querySelectorAll('[data-testid="media-row"]')].find((x) => (x.querySelector('.media-title bdi')?.textContent ?? '').startsWith('a-very-long'));
         if (!row) return null;
         return { row: row.getBoundingClientRect().height, name: row.querySelector('.media-title bdi').getBoundingClientRect().height };
@@ -774,12 +823,27 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
         .map((b) => b.getAttribute('aria-label') ?? b.textContent.trim());
       const scrolls = (el) => { const s = getComputedStyle(el); return (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1; };
       const scrollers = [...root.querySelectorAll('*')].filter(scrolls).length;
+      const phone = matchMedia('(max-width: 599px)').matches;
+      const ancestors = (el) => { const out = []; for (let p = el.parentElement; p; p = p.parentElement) out.push(p); return out; };
+      const isContainer = (el) => { const s = getComputedStyle(el); return s.overflowY === 'auto' || s.overflowY === 'scroll'; };
       let around = 0;
-      for (let el = document.querySelector('[data-testid="media-controls"]').parentElement; el; el = el.parentElement) if (scrolls(el)) around++;
+      let album = 0;
+      if (phone) {
+        // The album box is the player's one scroll container by its style (overflowY auto or scroll), even when its content
+        // fits (mp7); no other ancestor of the seek row or the transport actually scrolls.
+        const all = [...ancestors(document.querySelector('[data-testid="media-controls"] .media-seek-row')), ...ancestors(document.querySelector('[data-testid="media-phone-transport"]'))];
+        const containers = new Set(all.filter(isContainer));
+        album = containers.size;
+        around = new Set(all.filter((p) => scrolls(p) && !containers.has(p))).size;
+      } else {
+        for (let el = document.querySelector('[data-testid="media-controls"]').parentElement; el; el = el.parentElement) if (scrolls(el)) around++;
+      }
       return {
+        phone,
         clipped,
         scrollers,
         around,
+        album,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         steps: document.querySelectorAll('[data-testid="preview"] .media-steps').length,
         headerButtons: document.querySelectorAll('[data-testid="preview"] header button').length,
@@ -787,7 +851,12 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
     })()`);
     soft(e.clipped.length === 0, `390 px, Hebrew: no control clipped by the viewer's edge (${e.clipped.join(', ') || 'none'})`);
     soft(e.scrollers <= 1, `390 px, Hebrew: one vertical scroller at most (${e.scrollers})`);
-    soft(e.around === 0, `390 px, Hebrew: the bar is not inside a scroller (${e.around} above it)`);
+    if (e.phone) {
+      soft(e.album === 1, `390 px, Hebrew: exactly one scroll container holds the player, the album box, even when its content fits (${e.album})`);
+      soft(e.around === 0, `390 px, Hebrew: no other ancestor of the seek row or the transport actually scrolls (${e.around})`);
+    } else {
+      soft(e.around === 0, `390 px, Hebrew: the bar is not inside a scroller (${e.around} above it)`);
+    }
     soft(e.overflow <= 0, `390 px, Hebrew: no sideways scroll (${e.overflow} px over)`);
     soft(e.steps === 0, `a video has no second Previous and Next below the player (${e.steps} steps rows)`);
     soft(e.headerButtons >= 2, `the viewer header holds Download beside the count (${e.headerButtons} buttons)`);

@@ -33,8 +33,8 @@ const NAME_MAX = 120;
 interface Props {
   // queue is the queue on screen, saved when the person saves it.
   queue: Entry[];
-  // onOpen puts a playlist's entries in place of the queue.
-  onOpen: (entries: Entry[]) => void;
+  // onOpen puts a playlist's entries in place of the queue, and says its name so the owner's header can name it.
+  onOpen: (entries: Entry[], name: string) => void;
 }
 
 export default function MediaPlaylists({ queue, onOpen }: Props) {
@@ -76,7 +76,7 @@ export default function MediaPlaylists({ queue, onOpen }: Props) {
     try {
       const detail = await getPlaylist(pl.id);
       if (mine !== openSeq.current) return;
-      onOpen(entriesOf(detail));
+      onOpen(entriesOf(detail), pl.name);
       message.success(t("files.playlists.opened"));
     } catch {
       if (mine === openSeq.current) failed();

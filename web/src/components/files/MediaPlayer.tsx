@@ -110,6 +110,8 @@ interface Props {
   keysInBox?: boolean;
   // art is the audio file's stage above its bar: the cover, the name and the tags (MediaArt). Nothing for a video.
   art?: ReactNode;
+  // phone says the album-page layout is on (mp7): the bar keeps only its seek row, the rest is drawn by MediaPhone.
+  phone?: boolean;
 }
 
 // STALL_MS is how long a player may wait for data while playing before it asks for a new link. Some browsers report a
@@ -137,6 +139,7 @@ export default function MediaPlayer({
   active = true,
   keysInBox = false,
   art,
+  phone = false,
 }: Props) {
   const { t } = useT();
   const el = useRef<HTMLMediaElement | null>(null);
@@ -546,6 +549,7 @@ export default function MediaPlayer({
         }
         active={active}
         keysInBox={keysInBox}
+        phone={phone}
       />
       {kind === "video" && subsNote && (
         <p role="status" className="media-subs-note" data-testid="media-subs-none">

@@ -111,9 +111,13 @@ interface Props {
   // keysInBox says the player sits in the session's box on the Media page (decision 186): a key aimed outside the box is
   // the page's, not the player's. The body is the exception, where a page shortcut lands with no target of its own.
   keysInBox?: boolean;
+  // phone says the album-page layout is on (mp7): the bar keeps only its seek row, and the large transport and the actions
+  // are drawn by MediaPhone instead. The bar never fades at phone width, since its seek row is always in view. A share page
+  // and every wider window leave this false and keep the whole bar.
+  phone?: boolean;
 }
 
-export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false }: Props) {
+export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false, phone = false }: Props) {
   const { t } = useT();
   const p = usePaletteOrLight();
   const [snap, setSnap] = useState<Snap>(EMPTY);
@@ -373,7 +377,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
   // A video's bar is a dark control set whatever the page's theme: the dark algorithm, with the bar's own colours. The bar
   // always reads left to right (direction ltr), so its sliders do too, in every language.
   const barTheme =
-    kind === "video"
+    kind === "video" && !phone
       ? {
           algorithm: antdTheme.darkAlgorithm,
           token: {
@@ -388,7 +392,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
       : undefined;
   const shownTime = drag ?? snap.time;
   const pct = (v: number) => (duration > 0 ? `${Math.min(100, (v / duration) * 100)}%` : "0%");
-  const hidden = kind === "video" && !shown;
+  const hidden = kind === "video" && !shown && !phone;
 
   // Each control is an icon with its name as its tooltip (decision 68); the tooltip is drawn in the full-screen element.
   const button = (label: string, icon: ReactNode, onClick: () => void, extra: { pressed?: boolean; disabled?: boolean } = {}) => (
@@ -500,6 +504,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
         </span>
       </div>
 
+      {!phone && (
       <div className="media-buttons">
         {nav && button(t("files.media.previous"), <SkipBack size={18} aria-hidden="true" />, () => nav.previous())}
         {button(
@@ -611,6 +616,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
             { pressed: snap.full },
           )}
       </div>
+      )}
     </div>
     </ConfigProvider>
   );

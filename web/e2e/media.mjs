@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pngOf } from './s4a.mjs';
-import { playerChecks, stopMini } from './player.mjs';
+import { playerChecks, stopMini, MEDIA_NAME } from './player.mjs';
 import { hoverMenuTitle, pickMenuEntry, TITLE_SEL } from './menu.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
@@ -73,10 +73,7 @@ async function answerInstallCard(page) {
 // openedName waits for the preview to open and returns the name it shows, or null when none opens.
 async function openedName(page) {
   await sleep(900);
-  return page.evaluate(`(() => {
-    const d = document.querySelector('[data-testid="preview"]');
-    return d ? (d.querySelector('header bdi, .media-art-name bdi')?.textContent ?? '') : null;
-  })()`);
+  return page.evaluate(MEDIA_NAME);
 }
 
 // browserTitle is the name of the folder the browser shows.
@@ -88,7 +85,7 @@ async function closePreview(page) {
   try {
     await page.waitFor(`!document.querySelector('[data-testid="preview"]')`, 10000);
   } catch (err) {
-    const state = await page.evaluate(`(() => ({ previews: document.querySelectorAll('[data-testid="preview"]').length, width: innerWidth, title: document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null, buttons: [...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim()) }))()`);
+    const state = await page.evaluate(`(() => ({ previews: document.querySelectorAll('[data-testid="preview"]').length, width: innerWidth, title: ${MEDIA_NAME}, buttons: [...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim()) }))()`);
     throw new Error(`${err.message}; ${clicked}; ${JSON.stringify(state)}`);
   }
 }
@@ -851,7 +848,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const playing = () => page.evaluate(`(() => {
       const d = document.querySelector('[data-testid="preview"]');
       // A video's name is in the head; an audio file's is under its cover on the stage (decision 63).
-      return d ? { name: d.querySelector('header bdi, .media-art-name bdi')?.textContent ?? '', text: d.querySelector('[data-testid="media-playlist"]')?.textContent ?? '' } : null;
+      return d ? { name: ${MEDIA_NAME}, text: d.querySelector('[data-testid="media-playlist"]')?.textContent ?? '' } : null;
     })()`);
     const menuPlay = async (name) => {
       const at = await point(page, name);

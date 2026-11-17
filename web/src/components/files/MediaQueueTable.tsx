@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Pause, Play, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { useMT } from "../../lib/media/i18n";
 import { kindOf } from "../../lib/files/kind";
+import { usePhoneWidth } from "../../lib/files/phone";
 import { formatTime } from "../../lib/files/mediaKeys";
 import { displayArtist, displayTitle, getTags, hasCover, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
 import type { Entry } from "../../lib/files/queue";
@@ -54,70 +55,76 @@ export default function MediaQueueTable(p: MediaQueueProps) {
   const rows: Row[] = p.entries.map((entry, index) => ({ id: entry.node.id, entry, index }));
   const total = p.entries.length;
 
-  const columns: ListColumn<Row>[] = [
-    {
-      key: "name",
-      title: t("files.col.name"),
-      render: ({ entry, id }) => {
-        const on = id === p.currentId;
-        const name = entry.node.name;
-        const tags = getTags(id);
-        if (entry.mark === "unavailable") {
-          return (
-            <span className="media-title--off" data-testid="media-unavailable">
-              <bdi>{t("files.playlists.unavailable")}</bdi>
-            </span>
-          );
-        }
-        const shown = displayTitle(name, tags);
-        const artist = kindOf(entry.node) === "audio" ? displayArtist(tags) : undefined;
+  const phone = usePhoneWidth();
+  const nameColumn: ListColumn<Row> = {
+    key: "name",
+    title: t("files.col.name"),
+    render: ({ entry, id }) => {
+      const on = id === p.currentId;
+      const name = entry.node.name;
+      const tags = getTags(id);
+      if (entry.mark === "unavailable") {
         return (
-          <span className="media-qname">
-            <span className="media-qname-line">
-              {/* The whole title is in its title attribute: a cut name still reads in full on hover. */}
-              <bdi dir="auto" title={shown}>
-                {shown}
-              </bdi>
-              {/* The playing mark is an icon, with its word for a screen reader, as the drawer's row has it. */}
-              <span className="media-state">
-                {on &&
-                  (p.playing ? (
-                    <>
-                      <Play size={12} aria-hidden="true" />
-                      <span className="sr-only">{t("files.media.playing")}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Pause size={12} aria-hidden="true" />
-                      <span className="sr-only">{t("files.media.paused")}</span>
-                    </>
-                  ))}
-                {entry.mark === "restricted" && t("files.media.restricted")}
-                {entry.mark === "failed" && t("files.media.skippedRow")}
-              </span>
-            </span>
-            {artist !== undefined && (
-              <span className="media-row-artist" dir="auto" title={artist}>
-                {artist}
-              </span>
-            )}
+          <span className="media-title--off" data-testid="media-unavailable">
+            <bdi>{t("files.playlists.unavailable")}</bdi>
           </span>
         );
-      },
+      }
+      const shown = displayTitle(name, tags);
+      // The album page's numbered list keeps the name to one line, so the artist's second line is a wider window's only.
+      const artist = !phone && kindOf(entry.node) === "audio" ? displayArtist(tags) : undefined;
+      return (
+        <span className="media-qname">
+          <span className="media-qname-line">
+            {/* The whole title is in its title attribute: a cut name still reads in full on hover. */}
+            <bdi dir="auto" title={shown}>
+              {shown}
+            </bdi>
+            {/* The playing mark is an icon, with its word for a screen reader, as the drawer's row has it. */}
+            <span className="media-state">
+              {on &&
+                (p.playing ? (
+                  <>
+                    <Play size={12} aria-hidden="true" />
+                    <span className="sr-only">{t("files.media.playing")}</span>
+                  </>
+                ) : (
+                  <>
+                    <Pause size={12} aria-hidden="true" />
+                    <span className="sr-only">{t("files.media.paused")}</span>
+                  </>
+                ))}
+              {entry.mark === "restricted" && t("files.media.restricted")}
+              {entry.mark === "failed" && t("files.media.skippedRow")}
+            </span>
+          </span>
+          {artist !== undefined && (
+            <span className="media-row-artist" dir="auto" title={artist}>
+              {artist}
+            </span>
+          )}
+        </span>
+      );
     },
-    { key: "pos", title: "#", width: 48, render: (r) => r.index + 1 },
-    {
-      key: "length",
-      title: mt.t("media.queue.length"),
-      secondary: true,
-      align: "end",
-      render: ({ id }) => {
-        const tags = getTags(id);
-        // Nothing known of the length: an em dash, with no screen-reader text.
-        return tags?.state === "ready" && tags.duration_ms !== undefined ? formatTime(tags.duration_ms / 1000) : "—";
-      },
+  };
+  const posColumn: ListColumn<Row> = { key: "pos", title: "#", width: 48, render: (r) => r.index + 1 };
+  const lengthColumn: ListColumn<Row> = {
+    key: "length",
+    title: mt.t("media.queue.length"),
+    // A secondary column is the name's second line below md; the numbered list keeps the length on the name's own line.
+    secondary: !phone,
+    align: "end",
+    width: phone ? 64 : undefined,
+    render: ({ id }) => {
+      const tags = getTags(id);
+      // Nothing known of the length: an em dash, with no screen-reader text.
+      return tags?.state === "ready" && tags.duration_ms !== undefined ? formatTime(tags.duration_ms / 1000) : "—";
     },
-  ];
+  };
+  // At phone width the queue is the album page's numbered list (mp7): "# name length ⋮" on one line, no cover per row and
+  // no second line. The # leads as the name cell and the name and length follow on the same line; every wider window keeps
+  // the table as it was, the name cell with its cover and the artist under it. Listing's own defaults are unchanged.
+  const columns: ListColumn<Row>[] = phone ? [posColumn, nameColumn, lengthColumn] : [nameColumn, posColumn, lengthColumn];
 
   const actions = (r: Row): ListAction[] => {
     const name = r.entry.node.name;
@@ -131,7 +138,7 @@ export default function MediaQueueTable(p: MediaQueueProps) {
   };
 
   return (
-    <section ref={box} className="media-queue media-queue--table" data-testid="media-queue-table" style={{ borderColor: palette.line, color: palette.text }}>
+    <section ref={box} className={`media-queue media-queue--table${phone ? " media-queue--phone" : ""}`} data-testid="media-queue-table" style={{ borderColor: palette.line, color: palette.text }}>
       <QueueHead p={p} />
       <QueueCapped p={p} />
       <Listing<Row>
@@ -139,15 +146,20 @@ export default function MediaQueueTable(p: MediaQueueProps) {
         label={t("files.media.queue")}
         rowLabel={(r) => displayTitle(r.entry.node.name, getTags(r.id))}
         columns={columns}
-        icon={(r) => (
-          <TagCover
-            nod={r.id}
-            kind={kindOf(r.entry.node) === "video" ? "video" : "audio"}
-            size={40}
-            enabled={kindOf(r.entry.node) === "audio" && (r.entry.node.has_thumbnail === true || hasCover(r.id))}
-            node={r.entry.node}
-          />
-        )}
+        // The numbered list has no cover per row (the big cover is above the player); a wider window keeps the small cover.
+        icon={
+          phone
+            ? undefined
+            : (r) => (
+                <TagCover
+                  nod={r.id}
+                  kind={kindOf(r.entry.node) === "video" ? "video" : "audio"}
+                  size={40}
+                  enabled={kindOf(r.entry.node) === "audio" && (r.entry.node.has_thumbnail === true || hasCover(r.id))}
+                  node={r.entry.node}
+                />
+              )
+        }
         actions={actions}
         onOpen={(r) => {
           if (r.entry.mark !== "restricted" && r.entry.mark !== "unavailable") p.onPlay(r.id);

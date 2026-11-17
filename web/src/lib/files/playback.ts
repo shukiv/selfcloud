@@ -17,7 +17,8 @@ import { registerBusy } from "../pwa/busy";
 import { parkBox } from "./playerBox";
 
 // PlaybackSeed is what the viewer plays: the file it starts with, the folder's files (read a page at a time) or the
-// selection the person chose.
+// selection the person chose. folderName is the queue's folder as the person sees it (the place they opened it from); a
+// children listing does not carry the parent's name on its files, so the player cannot read it from the node (mp7).
 export interface PlaybackSeed {
   start: Node;
   folder: Pager;
@@ -25,6 +26,7 @@ export interface PlaybackSeed {
   // shuffle starts the queue with shuffle on, dealt the way the queue's own Shuffle button deals it (queue.ts toggleShuffle).
   // Left out, the queue starts in order.
   shuffle?: boolean;
+  folderName?: string;
 }
 
 // NowPlaying is the file on screen of the playlist.

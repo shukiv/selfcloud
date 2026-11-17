@@ -127,7 +127,9 @@ const SAMPLER = `(() => {
   window.__x3Watch.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
   return true;
 })()`;
-const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null`;
+// The phone head's bdi names the album or the folder, not the playing file, so it is excluded: the title is the stage's name
+// (mp7). At desktop there is no phone head, so this reads exactly as before.
+const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi:not([data-testid="media-phone-head"] bdi), [data-testid="preview"] .media-art-name bdi')?.textContent ?? null`;
 
 
 // lineUp checks the viewer's two lines start at the same edge in the page's direction, and the playlist row's title and artist are
@@ -135,7 +137,7 @@ const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi, 
 async function lineUp(page, check, what) {
   const m = await page.evaluate(`(() => {
     const rtl = document.documentElement.dir === 'rtl';
-    const t = document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi').getBoundingClientRect();
+    const t = document.querySelector('[data-testid="preview"] header bdi:not([data-testid="media-phone-head"] bdi), [data-testid="preview"] .media-art-name bdi').getBoundingClientRect();
     const a = document.querySelector('[data-testid="media-artist"]').getBoundingClientRect();
     const row = [...document.querySelectorAll('[data-testid="media-row"]')].find((x) => x.querySelector('.media-row-artist'));
     const rt = row.querySelector('.media-title bdi').getBoundingClientRect();
@@ -261,7 +263,7 @@ export async function x3Checks(h, { page, base, accountKey, accountID, memberID 
       check(dims.every((d) => d[0] > 0 && d[1] > 0) && distinct('box').length === 1, `the cover box keeps its size throughout (${q(distinct('box'))})`);
       check(distinct('header').length === 1, `the header keeps its height throughout (${q(distinct('header'))})`);
       check(distinct('top').length === 1, `the title line does not move in the header (${q(distinct('top'))})`);
-      const dirAuto = await page.evaluate(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.getAttribute('dir')`);
+      const dirAuto = await page.evaluate(`document.querySelector('[data-testid="preview"] header bdi:not([data-testid="media-phone-head"] bdi), [data-testid="preview"] .media-art-name bdi')?.getAttribute('dir')`);
       check(dirAuto === 'auto', 'the title is set with dir="auto"');
       const artist = await page.evaluate(`(() => { const a = document.querySelector('[data-testid="media-artist"]'); return a ? { text: a.textContent, dir: a.getAttribute('dir') } : null; })()`);
       check(artist?.text === 'Artist One' && artist?.dir === 'auto', `the artist shows under the title with dir="auto" (${q(artist)})`);

@@ -60,7 +60,8 @@ const who = (id: string): Session => ({ user: { id, email: `${id}@x.test` }, acc
 // (the player's own hook and antd's breakpoints), as a real resize does.
 function installWidth(px: number) {
   let width = px;
-  const listeners = new Map<string, Set<() => void>>();
+  type MQListener = (e: { matches: boolean; media: string; type: string }) => void;
+  const listeners = new Map<string, Set<MQListener>>();
   const matches = (q: string) => {
     const max = /max-width:\s*(\d+)px/.exec(q);
     const min = /min-width:\s*(\d+)px/.exec(q);
@@ -79,16 +80,17 @@ function installWidth(px: number) {
       },
       media: q,
       onchange: null,
-      addEventListener: (_: string, fn: () => void) => bag.add(fn),
-      removeEventListener: (_: string, fn: () => void) => bag.delete(fn),
-      addListener: (fn: () => void) => bag.add(fn),
-      removeListener: (fn: () => void) => bag.delete(fn),
+      addEventListener: (_: string, fn: MQListener) => bag.add(fn),
+      removeEventListener: (_: string, fn: MQListener) => bag.delete(fn),
+      addListener: (fn: MQListener) => bag.add(fn),
+      removeListener: (fn: MQListener) => bag.delete(fn),
       dispatchEvent: () => false,
     };
   });
   return (w: number) => {
     width = w;
-    for (const bag of listeners.values()) for (const fn of [...bag]) fn();
+    // Each listener is told the new state as a real change event does (antd's breakpoint observer reads e.matches).
+    for (const [q, bag] of listeners.entries()) for (const fn of [...bag]) fn({ matches: matches(q), media: q, type: "change" });
   };
 }
 
@@ -115,7 +117,6 @@ const draw = () =>
   );
 
 let play: ReturnType<typeof vi.spyOn>;
-let pause: ReturnType<typeof vi.spyOn>;
 let setWidth: (w: number) => void;
 
 beforeAll(async () => {
@@ -130,7 +131,7 @@ beforeEach(() => {
   startDownload.mockResolvedValue(true);
   vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
   play = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
-  pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
   session.set(who("u1"));
   folders.set([]);
   resetTags();
@@ -277,7 +278,7 @@ describe("the phone layout and the one element", () => {
     draw();
     const el = await open(file("song.mp3"));
     Object.defineProperty(el, "duration", { value: 65, configurable: true });
-    fireEvent.durationchange(el);
+    fireEvent.durationChange(el);
     await screen.findByTestId("media-phone-head");
     const bar = screen.getByTestId("media-controls");
     expect(bar.querySelector(".media-seek-row")).toBeTruthy();
@@ -322,7 +323,7 @@ describe("the phone layout and the one element", () => {
     const b = file("b.mp3");
     draw();
     await open(a, [a, b]);
-    expect(await screen.findByTestId("media-phone-line")).toHaveTextContent("1. A - First");
+    expect((await screen.findByTestId("media-phone-line")).textContent).toBe("1. A - First");
   });
 });
 

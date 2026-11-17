@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Alert, Button } from "antd";
+import { Alert, Button, Modal } from "antd";
 import IconButton from "../IconButton";
 import { ListMusic, X } from "lucide-react";
 import { ApiError } from "../../lib/apiError";
@@ -26,6 +26,7 @@ import {
   remove,
   restricted,
   toggleShuffle,
+  type Entry,
   type Queue,
 } from "../../lib/files/queue";
 import { getQueueControl, setQueueControl } from "../../lib/files/queueControl";
@@ -38,6 +39,7 @@ import MediaPlaylists from "./MediaPlaylists";
 import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
 import { usePaletteOrLight } from "../../theme/theme";
 import MediaArt from "./MediaArt";
+import MediaPhone from "./MediaPhone";
 
 // The Media page's queue is a table (mp1b). It is lazy, so the viewer's drawer and the first load never load Listing for
 // it; the drawer keeps the panel (MediaQueue).
@@ -115,6 +117,17 @@ export interface MediaPlaylistProps {
   // below the player, with no drawer and no Playlist toggle; given as null, no queue is drawn. Undefined keeps the
   // viewer's drawer, exactly as before.
   queueSlot?: HTMLElement | null;
+  // phone says the album-page layout is on (mp7): the queue is the table in the flow below the player, the large transport
+  // and the actions are drawn by MediaPhone, and the saved playlists open in a dialog from the Playlist action. A share
+  // page and every wider window leave this false and keep the drawer and the bar as they were.
+  phone?: boolean;
+  // onDetails opens the playing file's Details, and onDownload downloads it; the phone action row draws them. onDownload is
+  // given only when the person may download the file.
+  onDetails?: () => void;
+  onDownload?: () => void;
+  // onSource is told the name of the saved playlist that replaced the queue (null when none), so the owner's header can
+  // name it when the file's tags have no album.
+  onSource?: (name: string | null) => void;
 }
 
 export default function MediaPlaylist({
@@ -136,6 +149,10 @@ export default function MediaPlaylist({
   active = true,
   toggleSlot,
   queueSlot,
+  phone = false,
+  onDetails,
+  onDownload,
+  onSource,
 }: MediaPlaylistProps) {
   const { t } = useT();
   const palette = usePaletteOrLight();
@@ -189,6 +206,18 @@ export default function MediaPlaylist({
   subsRef.current = subtitlesOf;
   // playing says whether the file on screen plays now; the queue's current row shows it.
   const [playing, setPlaying] = useState(false);
+  // el is the element that plays, kept here so the phone transport can drive it; it is the same element the owner is given
+  // through onElement, never made again for the phone layout.
+  const [el, setEl] = useState<HTMLMediaElement | null>(null);
+  const giveElement = (e: HTMLMediaElement | null) => {
+    setEl(e);
+    onElement?.(e);
+  };
+  // plOpen says the saved-playlists dialog is open (the phone Playlist action). It closes when the window leaves phone width.
+  const [plOpen, setPlOpen] = useState(false);
+  useEffect(() => {
+    if (!phone) setPlOpen(false);
+  }, [phone]);
   // fromSaved is set when a saved playlist replaces the queue. Such a queue ends at its own end: the folder it came from
   // is not read on, so the playlist never plays the folder's files after its own (slice x4).
   const [fromSaved, setFromSaved] = useState(false);
@@ -563,28 +592,29 @@ export default function MediaPlaylist({
     onMove: (id, delta) => commit(move(qRef.current, id, delta)),
     onShuffle: () => void shuffleToggle(),
     onRepeat: () => commit(cycleRepeat(qRef.current)),
-    saved: saved ? (
-      <MediaPlaylists
-        queue={q.entries}
-        onOpen={(entries) => {
-          // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
-          // the list, so it would otherwise leave the player with no file to show.
-          setFromSaved(true);
-          const next = replaceQueueEntries(qRef.current, entries);
-          const first = next.entries.find((e) => e.mark === "ok");
-          if (first) pick(choose(next, first.node.id));
-          else commit(next);
-        }}
-      />
-    ) : undefined,
+    // At phone width the saved playlists are not under the queue: the Playlist action opens them in a dialog (below).
+    saved: saved && !phone ? <MediaPlaylists queue={q.entries} onOpen={openSaved} /> : undefined,
   };
   const queue = <MediaQueue {...queueProps} />;
+
+  // openSaved puts a saved playlist's entries in place of the queue and plays its first playable file. The file that was on
+  // screen is not in the list, so it would otherwise leave the player with no file to show. The owner is told the playlist's
+  // name for its header, and the phone dialog closes.
+  function openSaved(entries: Entry[], name: string) {
+    setFromSaved(true);
+    onSource?.(name);
+    setPlOpen(false);
+    const next = replaceQueueEntries(qRef.current, entries);
+    const first = next.entries.find((e) => e.mark === "ok");
+    if (first) pick(choose(next, first.node.id));
+    else commit(next);
+  }
 
   return (
     <div className="media-playlist" data-testid="media-playlist">
       <div className="media-main">
-        {queueSlot === undefined && (toggleSlot === undefined ? <div className="media-toolbar">{toggle}</div> : toggleSlot ? createPortal(toggle, toggleSlot) : null)}
-        <div className={`media-screen${drawer ? " media-screen--drawer" : ""}`} data-testid="media-screen">
+        {!phone && queueSlot === undefined && (toggleSlot === undefined ? <div className="media-toolbar">{toggle}</div> : toggleSlot ? createPortal(toggle, toggleSlot) : null)}
+        <div className={`media-screen${drawer ? " media-screen--drawer" : ""}${phone ? " media-screen--phone" : ""}`} data-testid="media-screen">
           {stop === "end" ? (
             <p role="status">{t("files.media.ended")}</p>
           ) : stop === "lost" ? (
@@ -668,19 +698,53 @@ export default function MediaPlaylist({
               subtitleKey={currentNode.id}
               onPress={onPress}
               onSave={saveRef.current ? (pos, dur) => saveRef.current?.(currentNode, pos, dur) : undefined}
-              onElement={onElement}
+              onElement={giveElement}
               active={active}
               keysInBox={queueSlot !== undefined}
               nav={{ next, previous }}
               art={kind === "audio" ? <MediaArt node={currentNode} /> : undefined}
+              phone={phone}
             />
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
           {stop !== null && kind === "audio" && currentNode !== undefined && <MediaArt node={currentNode} />}
+          {/* The album-page parts at phone width (mp7): the line, the large transport and the action row. They drive the same
+              element and the same navigation as the bar; the styles place them under the cover and the seek row. */}
+          {phone && currentNode !== undefined && (
+            <MediaPhone
+              node={currentNode}
+              position={position}
+              media={el}
+              playing={playing}
+              nav={{ next, previous }}
+              onPress={onPress ?? (() => {})}
+              onPlaylist={() => setPlOpen(true)}
+              onDownload={onDownload}
+              onDetails={onDetails ?? (() => {})}
+              shuffle={q.shuffle}
+              repeat={q.repeat}
+              onShuffle={() => void shuffleToggle()}
+              onRepeat={() => commit(cycleRepeat(qRef.current))}
+            />
+          )}
         {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 186),
             where the queue is a table (mp1b), lazy so the drawer never loads Listing. A null slot draws no queue; the
-            player keeps playing either way. */}
+            player keeps playing either way. At phone width the viewer's queue is the table in the flow below the player,
+            not a drawer (mp7): the same div, never inert, so the list is always in view. */}
         {queueSlot === undefined ? (
+          phone ? (
+            <div
+              id={DRAWER_ID}
+              className="media-drawer media-drawer--phone"
+              data-media-drawer=""
+              data-open="true"
+              style={{ color: palette.text }}
+            >
+              <Suspense fallback={null}>
+                <MediaQueueTable {...queueProps} />
+              </Suspense>
+            </div>
+          ) : (
           <div
             id={DRAWER_ID}
             className={`media-drawer${drawer ? "" : " media-drawer--closed"}`}
@@ -700,6 +764,7 @@ export default function MediaPlaylist({
             </div>
             {queue}
           </div>
+          )
         ) : queueSlot !== null ? (
           createPortal(
             <Suspense fallback={null}>
@@ -727,6 +792,13 @@ export default function MediaPlaylist({
         )}
       </div>
 
+      {/* At phone width the saved playlists open from the Playlist action in a dialog of their own (mp7), since the queue
+          below the player no longer carries them. Opening one plays it and closes the dialog (openSaved). */}
+      {phone && saved && (
+        <Modal open={plOpen} title={null} footer={null} onCancel={() => setPlOpen(false)} maskClosable={false} destroyOnHidden>
+          <MediaPlaylists queue={q.entries} onOpen={openSaved} />
+        </Modal>
+      )}
     </div>
   );
 }

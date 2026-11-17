@@ -437,6 +437,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await sleep(400);
       const over = await page.evaluate(`Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth`);
       check(over <= 0, `no horizontal overflow at 390x844 (overflow ${over}px)`);
+      // The album-page header has no back at phone width, so widen to reach the page's Stop and close.
+      await setPhone(page, false);
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
     });

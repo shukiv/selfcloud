@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Alert, ConfigProvider, Slider, theme } from "antd";
-import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import { Maximize2, Pause, Play, Share2, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
 import IconButton from "../IconButton";
 import { getResume, inlineRange, listSubtitles, putResume } from "../../lib/files/api";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
-import { downloadAllowed } from "../../lib/files/roles";
+import { atLeast, downloadAllowed } from "../../lib/files/roles";
+import { shareCap } from "../../lib/sharing/roles";
+import { locationOf } from "../../lib/drive/location";
+import { folders, hiddenFolders } from "../../lib/files/folders";
+import { useStore } from "../../lib/store";
+import { usePhoneWidth } from "../../lib/files/phone";
+import { useMT } from "../../lib/media/i18n";
 import {
   currentSessionKey,
   getPlayback,
@@ -36,6 +42,12 @@ import MediaPlaylist from "./MediaPlaylist";
 import TagCover, { useTagState } from "./TagCover";
 import { displayArtist, displayTitle, hasCover, loadTags, seedTags, subscribeTags } from "../../lib/files/tags";
 import { thumbnailPath } from "../../lib/files/thumbnail";
+
+// The phone header's dialogs (mp7) are lazy: they load only when the person opens Share, Details or Versions, so the
+// player's first load never carries them.
+const ShareDialog = lazy(() => import("../share/ShareDialog"));
+const Details = lazy(() => import("./Details"));
+const Versions = lazy(() => import("./Versions"));
 
 // MediaDock is the signed-in session drawn in the shell: the viewer (a full-window dialog with the playlist and its player)
 // while it is open, the mini player bar at the bottom of the shell once it is closed, and — while the Media page holds the
@@ -102,6 +114,22 @@ export default function MediaDock() {
   const canDownload = node ? downloadAllowed(node) : false;
   // The tags of the file on screen (decision 56): its title and artist show when they are read, and its name until then.
   const tags = useTagState(node?.id ?? "");
+  // The album-page layout (mp7) is on at phone width while the player is in view (the viewer or the Media page), never for
+  // the mini bar. The header names the album, else the saved playlist, else the folder; Share shows only when allowed.
+  const phone = usePhoneWidth();
+  const albumPhone = phone && placement !== "mini";
+  const mt = useMT();
+  const spaces = [...useStore(folders), ...useStore(hiddenFolders)];
+  const space = node ? (spaces.find((f) => f.id === node.folder_id) ?? null) : null;
+  const canShare = node ? shareCap({ role: node.role, editorsCanShare: node.editors_can_share, managersOnly: space?.sharing_managers_only ?? false }) !== null : false;
+  const [sourceName, setSourceName] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const album = tags?.state === "ready" && tags.album ? tags.album : undefined;
+  const placeName = node ? locationOf(node, spaces, t("nav.files")) : "";
+  const headName = album ?? sourceName ?? snap.seed?.folderName ?? placeName;
+  const headArtist = displayArtist(tags);
   const audio = node !== null && kindOf(node) === "audio";
   const coverSeen = useSyncExternalStore(subscribeTags, () => hasCover(node?.id ?? ""));
   useEffect(() => {
@@ -177,6 +205,10 @@ export default function MediaDock() {
       active={placement !== "mini"}
       toggleSlot={toggleSlot}
       queueSlot={snap.page ? snap.page.queue : undefined}
+      phone={albumPhone}
+      onDetails={() => setDetailsOpen(true)}
+      onDownload={canDownload ? () => void download() : undefined}
+      onSource={setSourceName}
     />
   ) : null;
 
@@ -256,6 +288,30 @@ export default function MediaDock() {
           <>
             {placement !== "mini" && (
               <>
+                {albumPhone ? (
+                  /* The album-page header at phone width (mp7): the viewer's Close at the start (the Media page has no back,
+                     its tab bar stays above), the album — else the saved playlist, else the folder — with the artist under it,
+                     and Share at the end only when the person may share the file. No count, no Playlist toggle, no Download:
+                     those live in the action row below the player. */
+                  <header className="media-viewer-head media-phone-head" data-testid="media-phone-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
+                    {placement === "dialog" && (
+                      <IconButton label={t("files.preview.close")} onClick={() => closeViewer()} icon={<X size={18} aria-hidden="true" focusable="false" />} />
+                    )}
+                    <div className="media-phone-titles">
+                      <p className="media-phone-album" title={headName}>
+                        <bdi dir="auto">{headName}</bdi>
+                      </p>
+                      {headArtist !== undefined && (
+                        <p className="media-phone-by">
+                          <bdi dir="auto">{mt.t("media.phone.by", { artist: headArtist })}</bdi>
+                        </p>
+                      )}
+                    </div>
+                    {canShare && node && (
+                      <IconButton label={t("share.open")} data-testid="media-phone-share" onClick={() => setShareOpen(true)} icon={<Share2 size={18} aria-hidden="true" focusable="false" />} />
+                    )}
+                  </header>
+                ) : (
                 <header className="media-viewer-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
                   {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. On the page
                       the X ends the session ("Stop and close"); in the dialog it only closes the viewer. */}
@@ -286,15 +342,41 @@ export default function MediaDock() {
                   <span ref={setToggleSlot} className="media-toggle-slot" style={{ display: "contents" }} />
                   {canDownload && <HeadDownload label={t("files.act.download")} onClick={() => void download()} />}
                 </header>
+                )}
                 {node && refused === node.id && <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />}
               </>
             )}
-            {/* Not clipped here: an open playlist drawer's shadow reaches past this box (decision 72). The closed drawer is clipped by the screen. */}
-            <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "visible" }}>{playlist}</div>
+            {/* Not clipped here: an open playlist drawer's shadow reaches past this box (decision 72). The closed drawer is clipped by the screen.
+                At phone width the album page is taller than the window, so this box scrolls instead (mp7). */}
+            <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: albumPhone ? "auto" : "visible" }}>{playlist}</div>
           </>,
           playerBox(),
         )}
       </div>
+      {/* The phone header's dialogs (mp7): Share, Details and Versions of the playing file, each lazy. They portal to the body,
+          so they show whichever place holds the session. */}
+      {node && (
+        <Suspense fallback={null}>
+          {shareOpen && <ShareDialog node={node} space={space} onclose={() => setShareOpen(false)} onchanged={() => {}} />}
+          {detailsOpen && (
+            <Details
+              node={node}
+              canVersions={atLeast(node.role, "viewer")}
+              canShare={canShare}
+              onClose={() => setDetailsOpen(false)}
+              onVersions={() => {
+                setDetailsOpen(false);
+                setVersionsOpen(true);
+              }}
+              onShare={() => {
+                setDetailsOpen(false);
+                setShareOpen(true);
+              }}
+            />
+          )}
+          {versionsOpen && <Versions node={node} onClose={() => setVersionsOpen(false)} onChanged={() => {}} />}
+        </Suspense>
+      )}
       {placement === "mini" && (
         <MiniPlayer
           name={node?.name ?? ""}
