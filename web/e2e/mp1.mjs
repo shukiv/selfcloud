@@ -98,9 +98,12 @@ async function setPhone(page, on) {
   }
 }
 
-// stopOnPage presses the page's Stop and close, the X of the session's header on the page's stage.
+// stopOnPage presses the page's Stop and close, the X of the session's header on the page's stage. The wide header
+// returns only after a width change reaches the player, so wait for the button before pressing it; a miss is named.
 async function stopOnPage(page) {
-  await page.evaluate(`[...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')?.click()`);
+  const stop = `[...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')`;
+  await until(page, `!!(${stop})`, 5000, "the page's Stop and close");
+  await page.evaluate(`(${stop}).click()`);
 }
 
 // clickTab presses one of the Media page's tabs by its label.
@@ -434,11 +437,12 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await h.clickNav(page, 'Media');
       await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page');
       await setPhone(page, true);
-      await sleep(400);
+      await until(page, `!!document.querySelector('.media-box--album')`, 5000, 'the album layout at phone width');
       const over = await page.evaluate(`Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth`);
       check(over <= 0, `no horizontal overflow at 390x844 (overflow ${over}px)`);
       // The album-page header has no back at phone width, so widen to reach the page's Stop and close.
       await setPhone(page, false);
+      await until(page, `!document.querySelector('.media-box--album')`, 5000, 'the album layout goes at the wide width');
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
     });

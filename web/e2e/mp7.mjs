@@ -289,7 +289,8 @@ export async function mp7Checks(h, { page, base, accountKey, accountID }) {
       // the phone header has no back, so widen first to reach it.
       await setWidth(page, 1280, false);
       await until(page, `!document.querySelector(${q(phoneHead)})`, 10000, 'the phone header goes before the stop');
-      await page.evaluate(`[...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')?.click()`);
+      await until(page, `!![...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')`, 5000, "the page's Stop and close");
+      await page.evaluate(`[...document.querySelectorAll('[data-testid="media-page-stage"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close').click()`);
       await until(page, `!document.querySelector('audio')`, 10000, 'the audio session ends');
       await openFolder(page, folderURL, 'zz-clip.webm');
       await dblClick(page, await rowPoint(page, 'zz-clip.webm'));
