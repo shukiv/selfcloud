@@ -7,6 +7,7 @@ import IconButton from "../IconButton";
 import { ListMusic, X } from "lucide-react";
 import { ApiError } from "../../lib/apiError";
 import { useT } from "../../lib/i18n";
+import { sessionChanged } from "../../lib/session";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
 import { isPopupTarget } from "../../lib/files/mediaKeys";
@@ -247,6 +248,9 @@ export default function MediaPlaylist({
   const [epoch, setEpoch] = useState(0);
   const fetchRef = useRef(fetchLink);
   fetchRef.current = fetchLink;
+  // stale says the session the playlist mounted under has ended. The skip timer and the link fetch then send nothing
+  // and report nothing, in the window between the sign-out and the owner's unmount (decision 223).
+  const stale = useRef(sessionChanged()).current;
   // ticket numbers the steps and picks. A step that is not the latest one does nothing once its wait ends: a pick or a
   // newer Next made meanwhile wins.
   const ticket = useRef(0);
@@ -343,7 +347,7 @@ export default function MediaPlaylist({
   // The link of the file on screen. A refused link marks the file restricted and moves on at once; any other failure
   // marks it failed and moves on after the pause.
   useEffect(() => {
-    if (!currentNode) return;
+    if (!currentNode || stale()) return;
     const id = currentNode.id;
     const failedAt = () => scheduleSkip(id);
     // A file the person may not download gets no request at all: the queue already knows it.
@@ -378,9 +382,11 @@ export default function MediaPlaylist({
     }
     fetchRef.current(currentNode).then(
       (link) => {
+        if (stale()) return;
         if (live) setCurrent((c) => (c && c.id === id ? { ...c, status: "ready", link } : c));
       },
       (err: unknown) => {
+        if (stale()) return;
         if (!live) return;
         if (err instanceof ApiError && err.code === "download_restricted") {
           setCurrent({ id, status: "restricted" });
@@ -428,7 +434,7 @@ export default function MediaPlaylist({
     cancelSkip();
     const timer = setTimeout(() => {
       skip.current = null;
-      if (qRef.current.current !== id) return;
+      if (stale() || qRef.current.current !== id) return;
       void step(qRef.current);
     }, SKIP_MS);
     skip.current = { timer, id };

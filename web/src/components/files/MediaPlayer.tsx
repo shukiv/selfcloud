@@ -7,7 +7,7 @@ import { LATE_START_S, SaveClock, startAt as placeToStart, type Resume } from ".
 import { MAX_SUBTITLE_BYTES, decodeSubtitle, parseCues, placeCue, type Cue, type SubtitleTrack } from "../../lib/files/subtitles";
 import { currentLang, useT } from "../../lib/i18n";
 import { readPref, writePref } from "../../lib/prefs";
-import { session } from "../../lib/session";
+import { session, sessionChanged } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import MediaControls, { type Nav } from "./MediaControls";
 
@@ -160,6 +160,9 @@ export default function MediaPlayer({
   // pending is set while a new link is being asked for: a failure reported meanwhile is the same one, not a new one.
   const pending = useRef(false);
   const stall = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // stale says the session the player mounted under has ended. The watchdog and the renewal then send nothing and
+  // report nothing, in the window between the sign-out and the owner's unmount (decision 223).
+  const stale = useRef(sessionChanged()).current;
   // The callbacks are read through refs, so a render with new ones does not restart a request in flight.
   const mintRef = useRef(mint);
   mintRef.current = mint;
@@ -276,7 +279,7 @@ export default function MediaPlayer({
   // renew asks for a new link and resumes at the place playback had reached. A failure reports itself when no link is
   // left to ask for or the ask fails; a stall does not, since the player keeps buffering.
   const renew = async (media: HTMLMediaElement, after: "error" | "stall") => {
-    if (pending.current) return;
+    if (stale() || pending.current) return;
     const at = media.currentTime;
     const next = takeRenewal(afterProgress(renewals.current, at), at);
     if (!next.allowed) {
@@ -289,7 +292,7 @@ export default function MediaPlayer({
     const id = gate.current.begin();
     try {
       const fresh = await mintRef.current();
-      if (!gate.current.current(id)) return;
+      if (stale() || !gate.current.current(id)) return;
       pending.current = false;
       if (fresh.url === currentRef.current.url) {
         // The same address as the link that failed: the browser keeps the element's error and loads nothing, so no
@@ -306,7 +309,7 @@ export default function MediaPlayer({
       renewed.current = true;
       setCurrent(fresh);
     } catch (err) {
-      if (!gate.current.current(id)) return;
+      if (stale() || !gate.current.current(id)) return;
       pending.current = false;
       resume.current = null;
       if (after === "error") failRef.current({ kind: "error", err });
@@ -368,6 +371,7 @@ export default function MediaPlayer({
     clearStall();
     stall.current = setTimeout(() => {
       stall.current = null;
+      if (stale()) return;
       const media = el.current;
       if (!media || media.paused) return;
       void renew(media, "stall");
