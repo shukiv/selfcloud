@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
 import { Pager, type PageLike } from "../../lib/files/pager";
 import type { Node } from "../../lib/files/types";
+import { session, type Session } from "../../lib/session";
 import MediaPlaylist, { SKIP_MS } from "./MediaPlaylist";
 
 function file(name: string, extra: Partial<Node> = {}): Node {
@@ -195,5 +196,104 @@ describe("MediaPlaylist", () => {
     expect(onLost).toHaveBeenCalledTimes(1);
     expect(fetchLink).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("alert").textContent).toContain("no longer available");
+  });
+
+  // The window between a sign-out and the owner's unmount: the skip timer and the link fetch keep the session the
+  // playlist mounted under, and send nothing and report nothing once it has ended.
+  describe("after the session ends", () => {
+    const who = (id: string): Session => ({ user: { id, email: `${id}@x.test` }, account: null, csrf: `c-${id}`, publicLinks: false }) as unknown as Session;
+    afterEach(() => {
+      act(() => session.set(null));
+    });
+
+    it("skips no file when the session ends during the pause", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      session.set(who("a"));
+      const files = [file("a.webm"), file("b.webm")];
+      const fetchLink = vi.fn(async (_n: Node): Promise<{ url: string }> => {
+        throw new ApiError(500, "internal", {}, 0);
+      });
+      const onPosition = vi.fn();
+      render(<MediaPlaylist start={files[0]} folder={new Pager(files, null, async () => ({ items: [] }))} fetchLink={fetchLink} onPosition={onPosition} />);
+      await flush();
+      expect(fetchLink).toHaveBeenCalledTimes(1);
+      act(() => session.set(null));
+      await act(async () => {
+        vi.advanceTimersByTime(SKIP_MS + 10);
+      });
+      await flush();
+      // No step to b and no link asked for it: a is still the file on screen.
+      expect(fetchLink).toHaveBeenCalledTimes(1);
+      expect(onPosition).toHaveBeenLastCalledWith({ position: 1, total: "2" });
+    });
+
+    it("asks for no link when a file is picked after the session ended", async () => {
+      session.set(who("a"));
+      const files = [file("a.webm"), file("b.webm")];
+      const fetchLink = vi.fn(async (n: Node) => linkTo(n));
+      render(<MediaPlaylist start={files[0]} folder={new Pager(files, null, async () => ({ items: [] }))} fetchLink={fetchLink} />);
+      await flush();
+      act(() => session.set(null));
+      fireEvent.click(screen.getByRole("button", { name: "b.webm" }));
+      await flush();
+      expect(fetchLink.mock.calls.map((c) => c[0].id)).toEqual(["a.webm"]);
+    });
+
+    it("drops a link answer that arrives after the session ended", async () => {
+      session.set(who("a"));
+      const files = [file("a.webm"), file("b.webm")];
+      let resolveA: (v: { url: string }) => void = () => {};
+      const fetchLink = vi.fn((n: Node) => {
+        if (n.id === "a.webm") return new Promise<{ url: string }>((r) => (resolveA = r));
+        return Promise.resolve(linkTo(n));
+      });
+      const { container } = render(<MediaPlaylist start={files[0]} folder={new Pager(files, null, async () => ({ items: [] }))} fetchLink={fetchLink} />);
+      await flush();
+      expect(playing(container)).toBeNull();
+      act(() => session.set(null));
+      await act(async () => {
+        resolveA(linkTo(files[0]));
+      });
+      await flush();
+      expect(playing(container)).toBeNull();
+      expect(fetchLink).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks no failure and skips nothing when a link refusal arrives after the session ended", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      session.set(who("a"));
+      const files = [file("a.webm"), file("b.webm")];
+      let refuseA: (err: unknown) => void = () => {};
+      const fetchLink = vi.fn((n: Node) => {
+        if (n.id === "a.webm") return new Promise<{ url: string }>((_, rej) => (refuseA = rej));
+        return Promise.resolve(linkTo(n));
+      });
+      render(<MediaPlaylist start={files[0]} folder={new Pager(files, null, async () => ({ items: [] }))} fetchLink={fetchLink} />);
+      await flush();
+      act(() => session.set(null));
+      await act(async () => {
+        refuseA(new ApiError(500, "internal", {}, 0));
+      });
+      await flush();
+      expect(screen.queryByRole("alert")).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(SKIP_MS + 10);
+      });
+      await flush();
+      expect(fetchLink).toHaveBeenCalledTimes(1);
+    });
+
+    it("plays the next file as before when the session stays the same", async () => {
+      session.set(who("a"));
+      const a = file("a.webm");
+      const b = file("b.webm");
+      const fetchLink = vi.fn(async (n: Node) => linkTo(n));
+      const { container } = render(<MediaPlaylist start={a} folder={new Pager([a, b], null, async () => ({ items: [] }))} fetchLink={fetchLink} />);
+      await flush();
+      fireEvent.ended(container.querySelector("video") as HTMLVideoElement);
+      await flush();
+      expect(playing(container)).toBe("https://content.example/b.webm");
+      expect(fetchLink.mock.calls.map((c) => c[0].id)).toEqual(["a.webm", "b.webm"]);
+    });
   });
 });

@@ -3,6 +3,7 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_RENEWALS } from "../../lib/files/media";
+import { session, type Session } from "../../lib/session";
 import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
 
 // fail gives the element the MediaError the browser would report, and fires the error event.
@@ -274,6 +275,104 @@ describe("MediaPlayer", () => {
       });
       expect(mint).toHaveBeenCalledTimes(1);
       expect(onFail).not.toHaveBeenCalled();
+    });
+  });
+
+  // The window between a sign-out and the owner's unmount: the watchdog and the renewal keep the session the player
+  // mounted under, and send nothing and report nothing once it has ended.
+  describe("after the session ends", () => {
+    const who = (id: string): Session => ({ user: { id, email: `${id}@x.test` }, account: null, csrf: `c-${id}`, publicLinks: false }) as unknown as Session;
+    afterEach(() => {
+      act(() => session.set(null));
+    });
+
+    it("asks for nothing when the session ends while the stall waits", async () => {
+      vi.useFakeTimers();
+      session.set(who("a"));
+      const mint = vi.fn(async (): Promise<Link> => ({ url: FRESH }));
+      const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={{ url: ORIGINAL }} mint={mint} onFail={() => {}} />);
+      const el = container.querySelector("video") as HTMLVideoElement;
+      at(el, 5);
+      fireEvent.waiting(el);
+      act(() => session.set(null));
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(mint).not.toHaveBeenCalled();
+    });
+
+    it("asks for nothing when a file fails after the session ended", async () => {
+      session.set(who("a"));
+      const mint = vi.fn(async (): Promise<Link> => ({ url: FRESH }));
+      const onFail = vi.fn();
+      const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={{ url: ORIGINAL }} mint={mint} onFail={onFail} />);
+      const el = container.querySelector("video") as HTMLVideoElement;
+      at(el, 42);
+      act(() => session.set(null));
+      fail(el, 4);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mint).not.toHaveBeenCalled();
+      expect(onFail).not.toHaveBeenCalled();
+    });
+
+    it("drops a stall renewal's answer that arrives after the session ended", async () => {
+      vi.useFakeTimers();
+      session.set(who("a"));
+      let answer: (l: Link) => void = () => {};
+      const mint = vi.fn(() => new Promise<Link>((resolve) => (answer = resolve)));
+      const onFail = vi.fn();
+      const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={{ url: ORIGINAL }} mint={mint} onFail={onFail} />);
+      const el = container.querySelector("video") as HTMLVideoElement;
+      at(el, 5);
+      fireEvent.waiting(el);
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+        await Promise.resolve();
+      });
+      expect(mint).toHaveBeenCalledTimes(1);
+      act(() => session.set(null));
+      await act(async () => {
+        answer({ url: FRESH });
+        await Promise.resolve();
+      });
+      expect(el.getAttribute("src")).toBe(ORIGINAL);
+      expect(onFail).not.toHaveBeenCalled();
+    });
+
+    it("reports no failure when a renewal's refusal arrives after the session ended", async () => {
+      session.set(who("a"));
+      let refuse: (err: unknown) => void = () => {};
+      const mint = vi.fn(() => new Promise<Link>((_, reject) => (refuse = reject)));
+      const onFail = vi.fn();
+      const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={{ url: ORIGINAL }} mint={mint} onFail={onFail} />);
+      const el = container.querySelector("video") as HTMLVideoElement;
+      at(el, 42);
+      fail(el, 4);
+      await waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+      act(() => session.set(null));
+      await act(async () => {
+        refuse(new Error("gone"));
+        await Promise.resolve();
+      });
+      expect(onFail).not.toHaveBeenCalled();
+      expect(el.getAttribute("src")).toBe(ORIGINAL);
+    });
+
+    it("asks for a link when the session stays the same", async () => {
+      vi.useFakeTimers();
+      session.set(who("a"));
+      const mint = vi.fn(async (): Promise<Link> => ({ url: FRESH }));
+      const { container } = render(<MediaPlayer kind="video" name="clip.webm" link={{ url: ORIGINAL }} mint={mint} onFail={() => {}} />);
+      const el = container.querySelector("video") as HTMLVideoElement;
+      at(el, 5);
+      fireEvent.waiting(el);
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+        await Promise.resolve();
+      });
+      expect(mint).toHaveBeenCalledTimes(1);
     });
   });
 
