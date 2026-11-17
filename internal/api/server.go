@@ -623,7 +623,8 @@ func New(opts Options) (*Server, error) {
 		brand := brandOptions(s.settings(), pics)
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
 			PublicURL: cfg.PublicURL, BrandName: brand.Name, BrandAccent: brand.Accent, BrandArtwork: brand.Artwork,
-			IconFile: brand.Icon, LogoFile: brand.Logo, FrameAncestors: s.frameAncestors}); err != nil {
+			IconFile: brand.Icon, LogoFile: brand.Logo, FrameAncestors: s.frameAncestors,
+			Scripts: s.settings().UI.Scripts}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 		s.buildBrand = s.ui.BuildBrand

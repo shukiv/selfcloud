@@ -4,6 +4,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -75,7 +76,7 @@ func TestUIScriptShapes(t *testing.T) {
 			t.Errorf("ui.scripts [%q] was accepted; want a refusal", entry)
 			continue
 		}
-		if !strings.Contains(err.Error(), "ui.scripts") || !strings.Contains(err.Error(), entry) {
+		if !strings.Contains(err.Error(), "ui.scripts") || !strings.Contains(err.Error(), fmt.Sprintf("%q", entry)) {
 			t.Errorf("ui.scripts [%q] error %q does not name the key and the entry", entry, err)
 		}
 	}
@@ -86,7 +87,7 @@ func TestUIScriptShapes(t *testing.T) {
 func TestUIScriptsLimits(t *testing.T) {
 	t.Parallel()
 	cfg := Defaults()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 9; i++ {
 		cfg.UI.Scripts = append(cfg.UI.Scripts, "https://cdn.example.com/"+string(rune('a'+i))+".js")
 	}
 	cfg.UI.Scripts = append(cfg.UI.Scripts, "/"+strings.Repeat("a", 2047))
@@ -165,11 +166,12 @@ func TestUIScriptsSetting(t *testing.T) {
 	if !slices.Equal(next.UI.Scripts, []string{"https://cdn.example.com/menu.js", "/help.js"}) {
 		t.Errorf("the changed list = %q", next.UI.Scripts)
 	}
-	if s := settingOf(t, next, "ui.scripts"); s.Source != SourceSettings || s.Locked {
-		t.Errorf("the changed setting = %+v, want source settings and not locked", s)
+	changedSetting := settingOf(t, next, "ui.scripts")
+	if changedSetting.Source != SourceSettings || changedSetting.Locked {
+		t.Errorf("the changed setting = %+v, want source settings and not locked", changedSetting)
 	}
-	if v, ok := s.Value.([]string); !ok || !slices.Equal(v, []string{"https://cdn.example.com/menu.js", "/help.js"}) {
-		t.Errorf("the changed value = %#v", s.Value)
+	if v, ok := changedSetting.Value.([]string); !ok || !slices.Equal(v, []string{"https://cdn.example.com/menu.js", "/help.js"}) {
+		t.Errorf("the changed value = %#v", changedSetting.Value)
 	}
 	if got := next.ValueText("ui.scripts"); got != text {
 		t.Errorf("ValueText after the change = %q, want %q", got, text)

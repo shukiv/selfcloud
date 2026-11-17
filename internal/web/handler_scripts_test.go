@@ -109,13 +109,13 @@ func TestScriptsEscaped(t *testing.T) {
 }
 
 // TestScriptsPolicyOrigins: script-src gains the origin of each URL entry, each once, on every response the handler sets
-// the policy on; a path adds nothing, and the rest of the policy is unchanged.
+// its policy on; a path adds nothing, and the rest of the policy is unchanged. A brand SVG keeps its own sandbox policy.
 func TestScriptsPolicyOrigins(t *testing.T) {
 	t.Parallel()
 	h := newTestHandler(t, scriptFiles(), Options{Scripts: []string{
 		"https://cdn.example.com/a.js", "https://cdn.example.com/b.js", "/c.js", "http://127.0.0.1:8080/d.js",
 	}})
-	for _, target := range []string{"/", "/files/x", "/assets/app-abc123.js", "/assets/missing.js", "/brand/wordmark.svg"} {
+	for _, target := range []string{"/", "/files/x", "/assets/app-abc123.js", "/assets/missing.js"} {
 		rec := get(t, h, http.MethodGet, target)
 		csp := rec.Header().Get("Content-Security-Policy")
 		if csp == "" {
@@ -127,6 +127,10 @@ func TestScriptsPolicyOrigins(t *testing.T) {
 		if n := strings.Count(csp, "https://cdn.example.com"); n != 1 {
 			t.Errorf("%s: the https origin appears %d times, want once: %q", target, n, csp)
 		}
+	}
+	// A brand SVG runs nothing and loads nothing; the list does not loosen its policy.
+	if csp := get(t, h, http.MethodGet, "/brand/mark.svg").Header().Get("Content-Security-Policy"); csp != svgPolicy {
+		t.Errorf("the brand SVG policy = %q, want %q", csp, svgPolicy)
 	}
 	// The whole policy is today's with the two origins in script-src and nothing else changed.
 	rec := get(t, h, http.MethodGet, "/")

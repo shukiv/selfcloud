@@ -17,7 +17,7 @@ func TestOfficeOriginIsInTheFrameAndFormPolicyOnlyWhenOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := on.policy("", "'none'")
+	p := on.policy("", "'none'", "")
 	for _, want := range []string{
 		"frame-src 'self' " + office,
 		"form-action 'self' " + office,
@@ -34,7 +34,7 @@ func TestOfficeOriginIsInTheFrameAndFormPolicyOnlyWhenOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	offPolicy := off.policy("", "'none'")
+	offPolicy := off.policy("", "'none'", "")
 	if strings.Contains(offPolicy, "office.example.com") {
 		t.Errorf("policy with office off names an office origin:\n%s", offPolicy)
 	}

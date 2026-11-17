@@ -14,7 +14,8 @@ describe("the settings page's fields", () => {
   it("draws every setting the server lists, the brand keys among them, once, and no other", () => {
     const go = readFileSync(resolve(__dirname, "../../../../internal/config/settings.go"), "utf8");
     const block = go.slice(go.indexOf("var settingDefs"), go.indexOf("// factKeys"));
-    const listed = [...block.matchAll(/\{key: "([a-z_.]+)"/g)].map((m) => m[1]).sort();
+    // A list setting has no field yet (decision 216): its card comes later, and the page skips it.
+    const listed = [...block.matchAll(/\{key: "([a-z_.]+)", typ: Type(\w+)/g)].filter((m) => m[2] !== "List").map((m) => m[1]).sort();
     expect(listed.length).toBeGreaterThan(40);
     expect(listed.filter((k) => k.startsWith("ui.brand.")).length).toBe(21);
     expect([...all].sort()).toEqual(listed);
@@ -48,6 +49,8 @@ describe("the settings page's fields", () => {
     let compared = 0;
     for (const m of block.matchAll(/\{key: "([a-z_.]+)", typ: Type(\w+)([^}\n]*)\}/g)) {
       const [, key, typ, rest] = m;
+      // A list setting has no field yet (decision 216): its card comes later.
+      if (typ === "List") continue;
       const min = /min: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const max = /max: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
       const zero = /zero: true/.test(rest);

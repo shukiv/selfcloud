@@ -18,15 +18,17 @@ export type Edits = Record<string, FieldEdit | undefined>;
 
 type Wire = boolean | number | string;
 
-// draftOf is a value as the box shows it.
+// draftOf is a value as the box shows it. A list has no box yet (decision 216): its card comes later.
 export function draftOf(s: Pick<Setting, "type" | "value">): Draft {
   switch (s.type) {
     case "bytes":
       return splitSize(s.value as string | number);
     case "duration":
       return splitDuration(s.value as string);
+    case "list":
+      return null;
     default:
-      return s.value;
+      return s.value as boolean | number | string;
   }
 }
 
@@ -72,7 +74,7 @@ export function isChanged(s: Setting, e: FieldEdit | undefined): boolean {
   if (e.reset) return s.source === "settings";
   const w = wireOf(s.type, e.value);
   if (w === null) return true;
-  return !sameValue(s.type, w, s.value);
+  return !sameValue(s.type, w, s.value as Wire);
 }
 
 export interface SectionChange {

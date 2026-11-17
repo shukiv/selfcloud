@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -455,11 +456,11 @@ func TestEverySettingNamesAField(t *testing.T) {
 	var keys []string
 	for _, s := range c.Settings() {
 		keys = append(keys, s.Key)
-		if s.Value != s.Default {
+		if !reflect.DeepEqual(s.Value, s.Default) {
 			t.Errorf("%s: value %v differs from the default %v on Defaults()", s.Key, s.Value, s.Default)
 		}
 		switch s.Type {
-		case TypeBool, TypeInt, TypeDuration, TypeBytes, TypeString:
+		case TypeBool, TypeInt, TypeDuration, TypeBytes, TypeString, TypeList:
 		default:
 			t.Errorf("%s has type %q", s.Key, s.Type)
 		}
@@ -472,6 +473,7 @@ func TestEverySettingNamesAField(t *testing.T) {
 		"sessions.admin_max_age", "sessions.idle_timeout", "sessions.max_age", "sharing.max_expiry", "storage.min_free",
 		"trash.retention"}
 	want = append(want, brandKeys...)
+	want = append(want, "ui.scripts")
 	want = append(want, "upload.max_chunk_size", "upload.max_file_size", "upload.max_small_file_size",
 		"users.external_sign_in_url", "users.external_signed_out_url", "users.password_sign_in",
 		"users.reset_ttl", "users.verification_ttl", "versions.max_age", "versions.max_count")

@@ -307,8 +307,8 @@ func manifestFor(b brandInfo) webManifest {
 }
 
 // servePWA answers the manifest, an icon, the link-preview picture or one of the brand's SVG files, from the brand b. It
-// reports false when p is none of them.
-func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) bool {
+// reports false when p is none of them. scriptSrc is the origins ui.scripts adds to the policy (decision 216).
+func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand, scriptSrc string) bool {
 	p := r.URL.Path
 	if p == manifestPath {
 		data, err := json.Marshal(manifestFor(b.info))
@@ -331,7 +331,7 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request, b *Brand) boo
 		// A brand file this brand has none of: the wordmark once the installation has its own logo (decision 126). Serves
 		// says so, but a request that read an older brand there reaches here; it gets 404, never the app page.
 		hd := w.Header()
-		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'", scriptSrc))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return true

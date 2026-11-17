@@ -2111,6 +2111,13 @@ paths:
         page load: the page's title, the manifest, the icons, the favicon and `/api/v1/info`. If the web interface's
         brand cannot be built, the answer is an error and nothing changes. The pictures are not settings here: their
         keys, and `ui.brand.logo_file` and `ui.brand.icon_file`, are `unknown_setting`.
+
+        `ui.scripts` (decision 216) is a `list` setting: a JSON array of at most 10 entries, each 1 to 2048 bytes, with
+        no exact duplicate. An entry is an https URL with a host (no userinfo, no fragment; a path and a query are
+        allowed), an http URL whose host is `127.0.0.1`, `[::1]` or `localhost`, or a same-origin absolute path (one
+        leading slash, no `..` segment). Each entry is added to every app page as a script tag before `</body>`, and
+        the page policy's `script-src` gains the origin of each URL entry. A listed script runs with the full power of
+        the page. A change shows at the next page load; `[]` removes them all.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -8926,14 +8933,15 @@ components:
     Setting:
       type: object
       description: |
-        One setting. `value` and `default` have the JSON shape of `type`: a boolean for `bool`, an integer for `int`, and
-        a string for `duration` (such as `"48h0m0s"`), `bytes` (such as `"64MiB"`) and `string`.
+        One setting. `value` and `default` have the JSON shape of `type`: a boolean for `bool`, an integer for `int`, a
+        string for `duration` (such as `"48h0m0s"`), `bytes` (such as `"64MiB"`) and `string`, and an array of strings
+        for `list` (such as `ui.scripts`).
       required: [key, type, value, default, source, locked, restart]
       properties:
         key:
           type: string
           description: The setting's path in the config file, such as `upload.max_file_size`.
-        type: { type: string, enum: [bool, int, duration, bytes, string] }
+        type: { type: string, enum: [bool, int, duration, bytes, string, list] }
         value: { description: The value the server uses now. }
         default: { description: The built-in default, which a reset returns to unless the file or environment sets the key. }
         source:
@@ -8968,10 +8976,10 @@ components:
           maxProperties: 64
           description: |
             New values by key. A `bool` takes `true` or `false`; an `int` a whole number; a `duration` a string such as
-            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes; a `string` a JSON string.
-            A value is at most 64 bytes of JSON, and `ui.brand.name` at most 1 KiB. A value must also lie within the
-            setting's floor and cap (decision 139) and pass the config file's rules on the whole configuration. A key
-            repeated here is refused.
+            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes; a `string` a JSON string;
+            a `list` a JSON array of strings. A value is at most 64 bytes of JSON, `ui.brand.name` at most 1 KiB, and
+            `ui.scripts` at most 122911 bytes. A value must also lie within the setting's floor and cap (decision 139)
+            and pass the config file's rules on the whole configuration. A key repeated here is refused.
           additionalProperties: true
         reset:
           type: array

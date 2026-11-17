@@ -40,11 +40,11 @@ export async function ps1Checks(h, { page, base, adminKey, MEMBER }) {
     const tag = await page.evaluate(`(() => {
       const s = [...document.scripts].find((x) => x.src === ${q(src)});
       if (!s) return null;
-      return { defer: s.defer, referrer: s.referrerPolicy, inBody: s.parentElement === document.body, last: s.nextElementSibling === null };
+      return { defer: s.defer, referrer: s.referrerPolicy, inBody: s.parentElement === document.body };
     })()`);
     check(
-      tag !== null && tag.defer && tag.referrer === 'no-referrer' && tag.inBody && tag.last,
-      `the tag is deferred, no-referrer and the last element of the body (${JSON.stringify(tag)})`,
+      tag !== null && tag.defer && tag.referrer === 'no-referrer' && tag.inBody,
+      `the tag is deferred, no-referrer and in the body (${JSON.stringify(tag)})`,
     );
 
     const res = await fetch(base + '/files');

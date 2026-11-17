@@ -77,6 +77,10 @@ type Options struct {
 	// is consulted only for the app page (index.html), never for an asset. A nil result, or a nil hook, keeps the page
 	// at frame-ancestors 'none' with X-Frame-Options DENY. The hook reads only; it writes nothing.
 	FrameAncestors func(*http.Request) []string
+	// Scripts are ui.scripts, the installation's page scripts (decision 216): each is added to the app page before
+	// </body>, and the policy's script-src gains the origin of each URL entry. An empty list changes nothing. A change
+	// while the server runs goes through UseScripts.
+	Scripts []string
 }
 
 // Handler serves the built files of the web interface.
@@ -97,6 +101,9 @@ type Handler struct {
 	brand atomic.Pointer[Brand]
 	// frameAncestors names the host origins that may frame the app page, or nil (decision 197).
 	frameAncestors func(*http.Request) []string
+	// scripts are the installation's page scripts (decision 216). A change builds a new one whole and swaps it in, and
+	// a request reads it once, so no answer mixes two lists.
+	scripts atomic.Pointer[pageScripts]
 }
 
 // Brand is one build of the installation's look in the web interface: the name the pages and the manifest carry, the drawn
@@ -239,18 +246,20 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		return nil, err
 	}
 	h.UseBrand(b)
+	h.UseScripts(opts.Scripts)
 	return h, nil
 }
 
 // policy returns the content policy. With no nonce it is the policy for assets and the not-built
 // page; with one, style-src also allows the inline styles that carry that nonce. ancestors is the
 // frame-ancestors value: "'none'" for every page but the app page a host may frame (decision 197).
-func (h *Handler) policy(nonce, ancestors string) string {
+// scriptSrc is the origins ui.scripts adds to script-src, each with a leading space, or "" (decision 216).
+func (h *Handler) policy(nonce, ancestors, scriptSrc string) string {
 	style := "'self'"
 	if nonce != "" {
 		style += " 'nonce-" + nonce + "'"
 	}
-	return "default-src 'self'; script-src 'self'; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
+	return "default-src 'self'; script-src 'self'" + scriptSrc + "; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
 		"; media-src 'self'" + h.origins +
 		"; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self'" + h.origins + h.officeOrigin +
 		"; frame-ancestors " + ancestors + "; base-uri 'none'; form-action 'self'" + h.officeOrigin
@@ -306,9 +315,15 @@ func hidden(p string) bool {
 }
 
 // ServeHTTP serves the file at the request path. A path with no file gets index.html, so the
-// client-side router can answer it. The brand is read once, so the answer comes from one brand.
+// client-side router can answer it. The brand and the page scripts are read once, so the answer
+// comes from one brand and one list.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b := h.brand.Load()
+	ps := h.scripts.Load()
+	scriptSrc := ""
+	if ps.src != "" {
+		scriptSrc = " " + ps.src
+	}
 	if r.URL.Path == shareTargetPath {
 		// The share target (decision 82). The body is never read: with no service worker in control, nothing the person
 		// shared reaches the server, and the page at /share says so. The answer is the same for every method.
@@ -321,7 +336,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if UnsafeAssetRequest(r) {
 		hd := w.Header()
-		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'", scriptSrc))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
@@ -334,7 +349,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "robots.txt", time.Time{}, strings.NewReader(robotsTxt))
 		return
 	}
-	if h.servePWA(w, r, b) {
+	if h.servePWA(w, r, b, scriptSrc) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
@@ -378,7 +393,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if missingAsset {
 		// A build asset that is not there is a stale or mistyped reference; answering with the app
 		// page would hide that behind a script or style that fails to parse.
-		hd.Set("Content-Security-Policy", h.policy("", "'none'"))
+		hd.Set("Content-Security-Policy", h.policy("", "'none'", scriptSrc))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
@@ -418,11 +433,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = []byte(strings.Join(b.index, nonce))
-		hd.Set("Content-Security-Policy", h.policy(nonce, ancestors))
+		hd.Set("Content-Security-Policy", h.policy(nonce, ancestors, scriptSrc))
 	} else {
 		// Any other file and the not-built page: the policy with no nonce. The not-built page is still the app
 		// page, so it carries the ancestors the hook allowed; every other file keeps 'none' (decision 197).
-		hd.Set("Content-Security-Policy", h.policy("", ancestors))
+		hd.Set("Content-Security-Policy", h.policy("", ancestors, scriptSrc))
+	}
+	if name == "index.html" && ps.tags != "" {
+		// The installation's page scripts sit right before </body>, in list order (decision 216).
+		data = bytes.Replace(data, []byte("</body>"), []byte(ps.tags+"</body>"), 1)
 	}
 	hd.Set("Content-Type", contentType(name))
 	if name == "offline.html" && err == nil {

@@ -3,15 +3,16 @@
 import { api } from "../api";
 
 // The settings an installation admin changes while the server runs (decision 139). type says how the value is written: a
-// JSON boolean, a JSON integer, or a string (a duration such as "168h0m0s", a size such as "64MiB", or text).
-export type SettingType = "bool" | "int" | "duration" | "bytes" | "string";
+// JSON boolean, a JSON integer, a string (a duration such as "168h0m0s", a size such as "64MiB", or text), or a list (a
+// JSON array of strings, such as ui.scripts).
+export type SettingType = "bool" | "int" | "duration" | "bytes" | "string" | "list";
 export type Source = "default" | "settings" | "file" | "env";
 
 export interface Setting {
   key: string;
   type: SettingType;
-  value: boolean | number | string;
-  default: boolean | number | string;
+  value: boolean | number | string | string[];
+  default: boolean | number | string | string[];
   source: Source;
   // locked is true when the config file or the environment writes the key, or the server reads it only at start.
   locked: boolean;

@@ -60,8 +60,9 @@ export default function SectionCard({ section, settings, edits, errors, notice, 
           {g.title !== null && <h3 style={{ margin: i === 0 ? "0 0 4px" : "16px 0 4px", fontSize: 14, fontWeight: 600 }}>{t(g.title)}</h3>}
           {g.fields.map((f) => {
             const s = byKey.get(f.key);
-            // A setting this server does not know is left out: the page draws what the server answers.
-            if (s === undefined || !keys.has(f.key)) return null;
+            // A setting this server does not know is left out: the page draws what the server answers. A list has no
+            // field yet (decision 216): its card comes later.
+            if (s === undefined || !keys.has(f.key) || s.type === "list") return null;
             return (
               <FieldRow
                 key={f.key}

@@ -35,13 +35,14 @@ const (
 type SettingType string
 
 // The setting types. A duration is a string such as "48h"; a byte size is a string such as "64MiB", and may also be sent
-// as a whole number of bytes.
+// as a whole number of bytes. A list is a JSON array of strings.
 const (
 	TypeBool     SettingType = "bool"
 	TypeInt      SettingType = "int"
 	TypeDuration SettingType = "duration"
 	TypeBytes    SettingType = "bytes"
 	TypeString   SettingType = "string"
+	TypeList     SettingType = "list"
 )
 
 // settingDef is one setting the settings API shows. A restart setting is shown read-only, because the server reads it
@@ -63,6 +64,11 @@ type settingDef struct {
 const maxNameJSON = 1024
 
 const maxExternalURLJSON = maxExternalURL*6 + 2
+
+// maxScriptsJSON is the longest JSON the settings API reads for ui.scripts: ten entries of 2048 bytes, each byte written
+// as a \u escape pair of 6 bytes, quotes included, plus the array's commas and brackets. No refusal of the list repeats
+// it.
+const maxScriptsJSON = MaxUIScripts*(maxUIScriptBytes*6+2) + MaxUIScripts + 1
 
 const (
 	minute = int64(time.Minute)
@@ -115,6 +121,8 @@ var settingDefs = []settingDef{
 	{key: "ui.brand.sidebar.caption", typ: TypeString},
 	{key: "ui.brand.sidebar.on_active", typ: TypeString},
 	{key: "ui.brand.sidebar.text", typ: TypeString},
+	// The page scripts (decision 216): the file's own rules check the list (checkUIScript), with no bounds of its own.
+	{key: "ui.scripts", typ: TypeList, maxJSON: maxScriptsJSON},
 	{key: "upload.max_chunk_size", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "upload.max_file_size", typ: TypeBytes, min: int64(MiB), max: int64(16 * TiB)},
 	{key: "upload.max_small_file_size", typ: TypeBytes, min: 64 * int64(KiB), max: int64(GiB)},
@@ -146,7 +154,8 @@ func lookupDef(key string) (settingDef, bool) {
 	return settingDefs[i], true
 }
 
-// Setting is one setting as the settings API shows it. Value and Default are a bool, an int64 or a string, by Type.
+// Setting is one setting as the settings API shows it. Value and Default are a bool, an int64, a string or a list of
+// strings, by Type.
 type Setting struct {
 	Key     string
 	Type    SettingType
@@ -226,8 +235,8 @@ func (c *Config) StoredText(key string) (string, bool) {
 	return t, ok
 }
 
-// MaxSettingValue is the longest JSON value of a setting, in bytes, but for the brand's name (maxNameJSON). The longest
-// the others need is a size in bytes, 20 digits at most.
+// MaxSettingValue is the longest JSON value of a setting, in bytes, but for the brand's name (maxNameJSON) and the page
+// scripts (maxScriptsJSON). The longest the others need is a size in bytes, 20 digits at most.
 const MaxSettingValue = 64
 
 // ValueText returns the value of the setting key as the text the table would hold for it, or "" for an unknown key.
@@ -241,8 +250,8 @@ func (c *Config) ValueText(key string) string {
 
 // SettingText turns a JSON value from the settings API into the text the setting is stored as. The JSON type must be the
 // setting's: a string is not a bool, and a fraction, an exponent or an overflow is not an integer. The text is parsed and
-// bounded later, by Change. A value longer than MaxSettingValue bytes (maxNameJSON for the name) is refused before it is
-// read, so no error repeats a long input.
+// bounded later, by Change. A value longer than MaxSettingValue bytes (maxNameJSON for the name, maxScriptsJSON for the
+// page scripts) is refused before it is read, so no error repeats a long input.
 func SettingText(key string, raw []byte) (string, error) {
 	d, ok := lookupDef(key)
 	if !ok {
@@ -298,6 +307,22 @@ func SettingText(key string, raw []byte) (string, error) {
 			return "", bad("a string")
 		}
 		return text, nil
+	case TypeList:
+		if !strings.HasPrefix(s, "[") {
+			return "", bad("a JSON array of strings")
+		}
+		var items []*string
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return "", bad("a JSON array of strings")
+		}
+		list := make([]string, 0, len(items))
+		for _, p := range items {
+			if p == nil {
+				return "", bad("a JSON array of strings")
+			}
+			list = append(list, *p)
+		}
+		return listText(list), nil
 	}
 	return "", fmt.Errorf("config: %s is read at start and is set in the config file only", key)
 }
@@ -502,7 +527,13 @@ func (c *Config) build(rows map[string]string, changed []string) (*Config, []Pro
 		}
 		fv := mustField(cur, d)
 		v := reflect.New(fv.Type()).Elem()
-		if err := setFromString(v, rows[k]); err != nil {
+		var err error
+		if d.typ == TypeList {
+			err = setList(v, rows[k])
+		} else {
+			err = setFromString(v, rows[k])
+		}
+		if err != nil {
 			problems = append(problems, Problem{Keys: []string{k}, Message: fmt.Sprintf("config: %s: %v", k, err)})
 			continue
 		}
@@ -597,6 +628,12 @@ func jsonValue(v reflect.Value, t SettingType) any {
 		return v.Int()
 	case TypeString:
 		return v.String()
+	case TypeList:
+		items := v.Interface().([]string)
+		if items == nil {
+			return []string{}
+		}
+		return items
 	}
 	return valueText(v, t)
 }
@@ -612,8 +649,32 @@ func valueText(v reflect.Value, t SettingType) string {
 		return Duration(v.Int()).String()
 	case TypeBytes:
 		return ByteSize(v.Int()).String()
+	case TypeList:
+		return listText(v.Interface().([]string))
 	}
 	return v.String()
+}
+
+// listText is the JSON array of strings the settings table holds for a list value; an empty list is [].
+func listText(items []string) string {
+	if items == nil {
+		items = []string{}
+	}
+	b, _ := json.Marshal(items)
+	return string(b)
+}
+
+// setList sets v, a string slice field, from the JSON array of strings the table holds for a list setting.
+func setList(v reflect.Value, s string) error {
+	var items []string
+	if err := json.Unmarshal([]byte(s), &items); err != nil {
+		return fmt.Errorf("it is not a JSON array of strings")
+	}
+	if items == nil {
+		items = []string{}
+	}
+	v.Set(reflect.ValueOf(items))
+	return nil
 }
 
 // mustField returns the field d names in the Config value v, and panics when the field is missing or of a kind d's type
@@ -635,6 +696,8 @@ func mustField(v reflect.Value, d settingDef) reflect.Value {
 		fits = fv.Type() == reflect.TypeFor[ByteSize]()
 	case TypeString:
 		fits = fv.Kind() == reflect.String
+	case TypeList:
+		fits = fv.Kind() == reflect.Slice && fv.Type().Elem().Kind() == reflect.String
 	}
 	if !fits {
 		panic("config: setting " + d.key + " has type " + string(d.typ) + " but its field is " + fv.Type().String())

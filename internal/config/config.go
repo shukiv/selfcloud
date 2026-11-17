@@ -761,7 +761,17 @@ type UIConfig struct {
 	// Brand is the installation's look. It is the same for every user; per-tenant branding is
 	// not built.
 	Brand BrandConfig `yaml:"brand"`
+	// Scripts are the installation's page scripts (decision 216): each is added to every app page as a script tag.
+	// An https URL with a host, an http URL on loopback, or a same-origin absolute path. At most MaxUIScripts, each
+	// 1 to 2048 bytes, no exact duplicate. A listed script runs with the full power of the page.
+	Scripts []string `yaml:"scripts"`
 }
+
+// MaxUIScripts is the most entries ui.scripts holds (decision 216).
+const MaxUIScripts = 10
+
+// maxUIScriptBytes is the longest one ui.scripts entry, in bytes (decision 216).
+const maxUIScriptBytes = 2048
 
 // DefaultBrandName is the name of a new installation (decision 109).
 const DefaultBrandName = "SelfCloud"
@@ -1078,6 +1088,19 @@ func (c *Config) Validate() error {
 			bad("embed.origins: %v", err)
 		}
 	}
+	if len(c.UI.Scripts) > MaxUIScripts {
+		bad("ui.scripts holds more than %d entries", MaxUIScripts)
+	}
+	listed := make(map[string]bool, len(c.UI.Scripts))
+	for _, s := range c.UI.Scripts {
+		if err := checkUIScript(s); err != nil {
+			bad("ui.scripts: %v", err)
+		}
+		if listed[s] {
+			bad("ui.scripts: %q is listed twice", s)
+		}
+		listed[s] = true
+	}
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
 		bad("users.verification_ttl and users.reset_ttl must be positive")
 	}
@@ -1365,6 +1388,73 @@ func normalizeOrigin(s string) (string, error) {
 		out += ":" + port
 	}
 	return out, nil
+}
+
+// checkUIScript checks one ui.scripts entry (decision 216): an https URL with a host, no userinfo and no fragment (a
+// path and a query are allowed); an http URL whose host is 127.0.0.1, [::1] or localhost; or a same-origin absolute
+// path: one leading slash, no backslash, no .. segment, no space or control character. The entry is served as it is
+// written, so nothing is normalised. The host is held to the same form as an embed origin's, so it can never carry a
+// CSP separator into script-src. Every refusal names the entry.
+func checkUIScript(s string) error {
+	bad := func(reason string) error {
+		return fmt.Errorf("%q is not an allowed script: %s", s, reason)
+	}
+	if s == "" {
+		return bad("it is empty")
+	}
+	if len(s) > maxUIScriptBytes {
+		return bad(fmt.Sprintf("it is longer than %d bytes", maxUIScriptBytes))
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] <= 0x20 || s[i] == 0x7f {
+			return bad("it holds a space or control character")
+		}
+	}
+	if strings.Contains(s, `\`) {
+		return bad("it holds a backslash")
+	}
+	if strings.HasPrefix(s, "/") {
+		if strings.HasPrefix(s, "//") {
+			return bad("a path starts with one slash, not two")
+		}
+		for _, seg := range strings.Split(s, "/") {
+			if seg == ".." {
+				return bad("a path holds no .. segment")
+			}
+		}
+		return nil
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return bad(err.Error())
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "https" && scheme != "http" {
+		return bad("only https is allowed, or http on 127.0.0.1, [::1] and localhost")
+	}
+	if u.User != nil {
+		return bad("it carries userinfo")
+	}
+	if strings.Contains(s, "#") {
+		return bad("it carries a fragment")
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return bad("it has no host")
+	}
+	if _, err := netip.ParseAddr(host); err != nil && !validEmbedHost(host) {
+		return bad("the host is not a valid DNS name or IP address")
+	}
+	if scheme == "http" && host != "127.0.0.1" && host != "::1" && host != "localhost" {
+		return bad("http is allowed only on 127.0.0.1, [::1] and localhost")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || !digitsOnly(port) {
+			return bad("the port must be a number from 1 to 65535")
+		}
+	}
+	return nil
 }
 
 // validEmbedHost reports whether host is an ASCII DNS name: labels of [a-z0-9-], 1 to 63 bytes, not
