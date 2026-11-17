@@ -7,6 +7,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MORE_OPEN_STILL } from './mp7.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const q = (v) => JSON.stringify(v);
@@ -650,12 +651,21 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
       check(m.handles.length >= (m.phone ? 1 : 2) && m.handles.every((h) => h.w >= 44 && h.h >= 44), `every slider handle is at least 44 by 44 px on a phone (${m.handles.length} handles: ${JSON.stringify(m.handles)})`);
       check(m.overflow <= 0, `no sideways scroll on a phone (${m.overflow} px over)`);
       if (m.phone) {
-        // The Speed item of the More menu is a finger's target too: open More and read its row (mp7).
+        // The Speed item of the More menu is a finger's target too: open More and read its row (mp7). The row is read only once
+        // its own dropdown is open and still, and from that dropdown, not the first match in the document.
         await page.evaluate(`document.querySelector('[data-testid="media-phone-more"]').click()`);
-        await page.waitFor(`!!document.querySelector('.media-phone-menu .ant-dropdown-menu-submenu-title')`, 5000);
-        const sp = await page.evaluate(`(() => { const r = document.querySelector('.media-phone-menu .ant-dropdown-menu-submenu-title').getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+        try {
+          await page.waitFor(MORE_OPEN_STILL, 5000);
+        } catch {
+          // The wait timed out: name every More menu dropdown's classes and title box, then let the check fail as it reads now.
+          const seen = await page.evaluate(`JSON.stringify([...document.querySelectorAll('.ant-dropdown')].filter((x) => x.classList.contains('media-phone-menu') || x.querySelector('.media-phone-menu')).map((x) => { const t = x.querySelector('.ant-dropdown-menu-submenu-title'); const r = t && t.getBoundingClientRect(); return { classes: [...x.classList], title: r ? { w: r.width, h: r.height } : null }; }))`).catch(() => 'unavailable');
+          console.log(`DIAG the More menu did not open still: ${seen}`);
+        }
+        const sp = await page.evaluate(`(() => { const d = [...document.querySelectorAll('.ant-dropdown')].find((x) => (x.classList.contains('media-phone-menu') || x.querySelector('.media-phone-menu')) && !x.classList.contains('ant-dropdown-hidden')); const t = d && d.querySelector('.ant-dropdown-menu-submenu-title'); if (!t) return { w: 0, h: 0 }; const r = t.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
         check(sp.w >= 44 && sp.h >= 44, `the More menu's Speed item is at least 44 by 44 px on a phone (${sp.w} by ${sp.h} px)`);
         await page.evaluate(`document.querySelector('[data-testid="media-phone-more"]').click()`);
+        // The close animates too: wait until that dropdown is hidden again, so a later step never meets it half open.
+        await page.waitFor(`[...document.querySelectorAll('.ant-dropdown')].filter((x) => x.classList.contains('media-phone-menu') || x.querySelector('.media-phone-menu')).every((x) => x.classList.contains('ant-dropdown-hidden'))`, 5000);
       } else {
         const speed = await page.evaluate(`document.querySelector('[data-testid="media-controls"] .media-speed')?.getBoundingClientRect().height ?? 0`);
         check(speed >= 44, `the speed list is at least 44 px tall (${speed})`);

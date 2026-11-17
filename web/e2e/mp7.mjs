@@ -22,6 +22,22 @@ const MEMBER = { email: 'mateo@example.com', name: 'Mateo Member', password: PAS
 const q = (v) => JSON.stringify(v);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// MORE_OPEN_STILL is true once the phone More menu's own dropdown is open and still: a dropdown is in the document before it
+// is shown and while it animates open (and a closed one stays in it hidden), so a row of the menu is read only when the
+// .ant-dropdown that holds .media-phone-menu carries no ant-dropdown-hidden, its submenu title's box is wider and taller than
+// 0, and no animation runs anywhere in the dropdown. The motion's classes must be gone too: the appear draws one frame at full
+// size before its animation starts and one scaled to nothing right after, and neither carries an animation yet, so "no
+// animation" alone can meet either frame (the slide rows of the file menus wait out their motion the same way, decision 200).
+export const MORE_OPEN_STILL = `(() => {
+  const d = [...document.querySelectorAll('.ant-dropdown')].find((x) => (x.classList.contains('media-phone-menu') || x.querySelector('.media-phone-menu')) && !x.classList.contains('ant-dropdown-hidden'));
+  if (!d) return false;
+  if ([...d.classList].some((c) => c.includes('-appear') || c.includes('-enter') || c.includes('-leave'))) return false;
+  const t = d.querySelector('.ant-dropdown-menu-submenu-title');
+  if (!t) return false;
+  const r = t.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && d.getAnimations({ subtree: true }).length === 0;
+})()`;
+
 async function step(name, fn) {
   console.log(`-- ${name}`);
   await fn();
@@ -225,7 +241,8 @@ export async function mp7Checks(h, { page, base, accountKey, accountID }) {
 
     await step('the More menu holds Speed, Shuffle, Repeat, Details and Open folder', async () => {
       await page.evaluate(`document.querySelector('[data-testid="media-phone-more"]').click()`);
-      await until(page, `!![...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim().startsWith('Speed') && !x.closest('.ant-dropdown-hidden'))`, 5000, 'the More menu');
+      // The rows below are read, so the menu must be open and still before they are (the player's phone check waits the same).
+      await until(page, MORE_OPEN_STILL, 5000, 'the More menu');
       for (const name of ['Shuffle', 'Details', 'Open folder']) {
         check(await page.evaluate(`!![...document.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]')].find((x) => x.textContent.trim() === ${q(name)} && !x.closest('.ant-dropdown-hidden'))`), `More has ${name}`);
       }
