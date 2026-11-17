@@ -156,3 +156,26 @@ describe('the logo URL is checked before it reaches an image', () => {
     expect(logoOf(null)).toBeNull();
   });
 });
+
+// The icon is a URL the page puts in an <img src> too (decision 221): the server sends only the favicon's path, and the same
+// guard as the logo keeps anything else out of the image.
+describe('the icon URL is checked before it reaches an image', () => {
+  const base = { name: 'Acme', palette: { light: {}, dark: {} }, sidebar: {} } as never as Record<string, unknown>;
+  const iconOf = (icon_url: string | null | undefined) => resolveBrand({ ...base, logo_url: null, icon_url } as never).icon_url;
+
+  it('keeps the same-origin path the server sends, with its cache stamp', () => {
+    expect(iconOf('/favicon.svg')).toBe('/favicon.svg');
+    expect(iconOf('/favicon.svg?v=abc123')).toBe('/favicon.svg?v=abc123');
+  });
+
+  it('refuses a script URL, a protocol-relative URL, a backslash path, and a data URL of another type (guard: safeLogo)', () => {
+    for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', '//evil.example/icon.png', '/\\evil.example/x', 'data:text/html;base64,PHNjcmlwdD4=', 'ftp://example.com/icon.png', 'vbscript:x']) {
+      expect(iconOf(bad), bad).toBeNull();
+    }
+  });
+
+  it('gives no icon when none is set', () => {
+    expect(iconOf(null)).toBeNull();
+    expect(iconOf(undefined)).toBeNull();
+  });
+});

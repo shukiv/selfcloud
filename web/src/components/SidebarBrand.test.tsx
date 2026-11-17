@@ -7,11 +7,12 @@ import SidebarBrand from "./SidebarBrand";
 import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
 import { sidebarRow } from "../theme/sidebarRow";
 
-// The brand at the top of the sidebar (decision 109, its edge replaced by decision 193). Expanded: the wordmark (or the tile
-// logo where the wordmark would not read) fills the block's width, the custom logo is centred at up to 42 px high, or the name
-// as text. The block takes the rows' inline margin, so every part of the sidebar starts at one edge, and the space above the
-// picture and below the block is S, the sider's inline padding plus that margin, on a mouse and a finger alike. Folded to the
-// rail: the SelfCloud mark for every name (decision 119), or the custom logo small, with the rail's own edges unchanged.
+// The brand at the top of the sidebar (decision 109, its edge replaced by decision 193, the uploaded logo's centring replaced
+// by decision 221). Expanded: the wordmark (or the tile logo where the wordmark would not read) fills the block's width, the
+// custom logo sits at the start edge at up to 42 px high, or the name as text. The block takes the rows' inline margin, so every
+// part of the sidebar starts at one edge, and the space above the picture and below the block is S, the sider's inline padding
+// plus that margin, on a mouse and a finger alike. Folded to the rail: the uploaded icon (decision 221), else the custom logo
+// kept in its own shape, else the SelfCloud mark for every name (decision 119), with the rail's own edges unchanged.
 const SIDEBAR_BLUE = "#053D8E";
 // The desktop sider's inline padding and width (Shell.tsx). The block's content width is the width less S at each side.
 const SIDE_PAD = 12;
@@ -28,7 +29,7 @@ function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", backg
 // height when the brand loads (decision 193): the wordmark (38/211) on a dark sidebar, the taller tile logo (398/1731.65) on a light one.
 const reserved = (width: number, edge: number, light = false) => Math.ceil((width - 2 * edge) * (light ? 398 / 1731.65 : 38 / 211));
 
-describe("SidebarBrand (decisions 109 and 193)", () => {
+describe("SidebarBrand (decisions 109, 193 and 221)", () => {
   beforeEach(() => brandLoaded.set(true));
   afterEach(() => {
     brandLoaded.set(false);
@@ -82,8 +83,10 @@ describe("SidebarBrand (decisions 109 and 193)", () => {
     expect(container.textContent).toBe("");
   });
 
-  // Decision 193: an uploaded logo keeps its aspect, centred in the block, at most as wide as the block and 42 px high.
-  it("shows a custom logo centred, at most 42 px high and as wide as the block, and small in the rail", () => {
+  // Decision 221 replaces decision 193's centring for an uploaded logo: it sits at the start edge (the end edge in Hebrew and
+  // Arabic, which flex mirrors), keeps its aspect, at most as wide as the block and 42 px high. In the rail it is kept in its
+  // own shape: a box at most 40 wide and 28 high, never stretched.
+  it("shows a custom logo at the start edge, at most 42 px high and as wide as the block, and in its own shape in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", artwork: false });
     const expanded = renderBrand(false).container;
     const img = expanded.querySelector("img");
@@ -93,11 +96,55 @@ describe("SidebarBrand (decisions 109 and 193)", () => {
     expect(img?.style.objectFit).toBe("contain");
     expect(img?.style.width).toBe("auto");
     expect(img?.style.height).toBe("auto");
-    expect(expanded.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("center");
+    expect(expanded.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("flex-start");
     const rail = renderBrand(true).container.querySelector("img");
     expect(rail?.getAttribute("src")).toBe("/brand/logo");
-    expect(rail?.getAttribute("height")).toBe("28");
     expect(rail?.style.maxWidth).toBe("40px");
+    expect(rail?.style.maxHeight).toBe("28px");
+    expect(rail?.style.objectFit).toBe("contain");
+  });
+
+  // Decision 221: the folded rail shows the uploaded icon, the picture the favicon is drawn from, at 28 by 28 and kept in
+  // shape, ahead of the logo. The rail's centring is unchanged.
+  it("folds to the uploaded icon in the rail, 28 by 28, kept in shape", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", icon_url: "/favicon.svg", artwork: false });
+    const { container } = renderBrand(true);
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/favicon.svg");
+    expect(img?.getAttribute("alt")).toBe("Acme Drive");
+    expect(img?.getAttribute("width")).toBe("28");
+    expect(img?.getAttribute("height")).toBe("28");
+    expect(img?.style.objectFit).toBe("contain");
+    expect(container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("center");
+  });
+
+  // The icon stands in the rail even when the installation has no logo (the artwork shows expanded).
+  it("folds to the uploaded icon with no logo, and keeps the artwork expanded", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, icon_url: "/favicon.svg", artwork: true });
+    const rail = renderBrand(true).container.querySelector("img");
+    expect(rail?.getAttribute("src")).toBe("/favicon.svg");
+    expect(rail?.getAttribute("width")).toBe("28");
+    expect(rail?.getAttribute("height")).toBe("28");
+    const expanded = renderBrand(false).container.querySelector("img");
+    expect(expanded?.getAttribute("src")).toBe("/brand/wordmark.svg");
+    expect(expanded?.style.width).toBe("100%");
+  });
+
+  // An icon URL goes through the same guard as the logo: an unsafe one is not drawn, and the rail falls back to the logo.
+  it("shows no picture for an unsafe icon URL, and folds to the logo instead", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", icon_url: "javascript:alert(1)", artwork: false });
+    const rail = renderBrand(true).container.querySelector("img");
+    expect(rail?.getAttribute("src")).toBe("/brand/logo");
+    const expanded = renderBrand(false).container.querySelector("img");
+    expect(expanded?.getAttribute("src")).toBe("/brand/logo");
+  });
+
+  // An unsafe icon URL with no logo leaves the artwork's mark in the rail.
+  it("draws the mark when the icon URL is unsafe and there is no logo", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, icon_url: "javascript:alert(1)", artwork: true });
+    const rail = renderBrand(true).container;
+    expect(rail.querySelector("img")).toBeNull();
+    expect(rail.querySelector('[role="img"]')?.getAttribute("style")).toContain("/brand/mark.svg");
   });
 
   // A logo URL goes through safeLogo before it reaches an image: an unsafe one shows no picture at all.

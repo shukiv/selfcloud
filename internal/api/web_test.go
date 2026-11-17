@@ -149,8 +149,8 @@ func TestContentURLIsAllowedInTheShellPolicy(t *testing.T) {
 	}
 }
 
-// TestInfoBrand: /info carries the installation's name and accent, and the logo as a URL; the
-// file's path never appears.
+// TestInfoBrand: /info carries the installation's name and accent, the logo as a URL and the icon's URL (null with no icon,
+// decision 221); the file's path never appears.
 func TestInfoBrand(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
@@ -159,7 +159,7 @@ func TestInfoBrand(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`"name":"SelfCloud"`,
-		`"brand":{"name":"SelfCloud","accent":"#053D8E","logo_url":null,"artwork":true}`,
+		`"brand":{"name":"SelfCloud","accent":"#053D8E","logo_url":null,"icon_url":null,"artwork":true}`,
 		`"password_min_length":8`,
 	} {
 		if !strings.Contains(body, want) {
@@ -170,7 +170,7 @@ func TestInfoBrand(t *testing.T) {
 	// A name of its own and no logo file: the artwork, with the installation's name (decision 126).
 	s = newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive" })
 	body = serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
-	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#053D8E","logo_url":null,"artwork":true}`) {
+	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#053D8E","logo_url":null,"icon_url":null,"artwork":true}`) {
 		t.Errorf("info = %s", body)
 	}
 
@@ -182,7 +182,7 @@ func TestInfoBrand(t *testing.T) {
 		c.UI.Brand = config.BrandConfig{Name: "Acme Drive", Accent: "#0F766E", LogoFile: logo}
 	})
 	body = serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
-	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#0F766E","logo_url":"/brand/logo","artwork":false}`) {
+	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#0F766E","logo_url":"/brand/logo","icon_url":null,"artwork":false}`) {
 		t.Errorf("info = %s", body)
 	}
 	if strings.Contains(body, "palette") || strings.Contains(body, "sidebar") {
