@@ -415,6 +415,8 @@ describe("the album page is for audio only", () => {
   it("a video's bar hides while it plays at phone width, and a tap on the picture shows it", async () => {
     draw();
     const el = await openVideo(video("clip.webm"));
+    // The element reports it is playing (jsdom keeps paused true otherwise), as the bar's hide count reads it.
+    Object.defineProperty(el, "paused", { value: false, configurable: true });
     fireEvent.play(el);
     const bar = screen.getByTestId("media-controls");
     await waitFor(() => expect(bar.classList.contains("media-controls--hidden")).toBe(true), { timeout: 4000 });

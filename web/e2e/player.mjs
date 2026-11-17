@@ -789,14 +789,6 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
       await openFolderView(page, lookURL, 'bright.webm');
       await playItem(page, 'bright.webm');
       const r = await page.evaluate(`(() => {
-        // At phone width the queue is the table in the flow (mp7): its rows are the listing's rows, the name in .media-qname-line.
-        // On a desktop it is the drawer's row, as before.
-        if (matchMedia('(max-width: 599px)').matches) {
-          const row = [...document.querySelectorAll('[data-testid="media-queue-table"] [role="row"]')].find((x) => (x.querySelector('.media-qname-line bdi')?.textContent ?? '').startsWith('a-very-long'));
-          if (!row) return null;
-          row.scrollIntoView({ block: 'center' });
-          return { row: row.getBoundingClientRect().height, name: row.querySelector('.media-qname-line bdi').getBoundingClientRect().height };
-        }
         const row = [...document.querySelectorAll('[data-testid="media-row"]')].find((x) => (x.querySelector('.media-title bdi')?.textContent ?? '').startsWith('a-very-long'));
         if (!row) return null;
         return { row: row.getBoundingClientRect().height, name: row.querySelector('.media-title bdi').getBoundingClientRect().height };
@@ -823,27 +815,12 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
         .map((b) => b.getAttribute('aria-label') ?? b.textContent.trim());
       const scrolls = (el) => { const s = getComputedStyle(el); return (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1; };
       const scrollers = [...root.querySelectorAll('*')].filter(scrolls).length;
-      const phone = matchMedia('(max-width: 599px)').matches;
-      const ancestors = (el) => { const out = []; for (let p = el.parentElement; p; p = p.parentElement) out.push(p); return out; };
-      const isContainer = (el) => { const s = getComputedStyle(el); return s.overflowY === 'auto' || s.overflowY === 'scroll'; };
       let around = 0;
-      let album = 0;
-      if (phone) {
-        // The album box is the player's one scroll container by its style (overflowY auto or scroll), even when its content
-        // fits (mp7); no other ancestor of the seek row or the transport actually scrolls.
-        const all = [...ancestors(document.querySelector('[data-testid="media-controls"] .media-seek-row')), ...ancestors(document.querySelector('[data-testid="media-phone-transport"]'))];
-        const containers = new Set(all.filter(isContainer));
-        album = containers.size;
-        around = new Set(all.filter((p) => scrolls(p) && !containers.has(p))).size;
-      } else {
-        for (let el = document.querySelector('[data-testid="media-controls"]').parentElement; el; el = el.parentElement) if (scrolls(el)) around++;
-      }
+      for (let el = document.querySelector('[data-testid="media-controls"]').parentElement; el; el = el.parentElement) if (scrolls(el)) around++;
       return {
-        phone,
         clipped,
         scrollers,
         around,
-        album,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         steps: document.querySelectorAll('[data-testid="preview"] .media-steps').length,
         headerButtons: document.querySelectorAll('[data-testid="preview"] header button').length,
@@ -851,12 +828,7 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
     })()`);
     soft(e.clipped.length === 0, `390 px, Hebrew: no control clipped by the viewer's edge (${e.clipped.join(', ') || 'none'})`);
     soft(e.scrollers <= 1, `390 px, Hebrew: one vertical scroller at most (${e.scrollers})`);
-    if (e.phone) {
-      soft(e.album === 1, `390 px, Hebrew: exactly one scroll container holds the player, the album box, even when its content fits (${e.album})`);
-      soft(e.around === 0, `390 px, Hebrew: no other ancestor of the seek row or the transport actually scrolls (${e.around})`);
-    } else {
-      soft(e.around === 0, `390 px, Hebrew: the bar is not inside a scroller (${e.around} above it)`);
-    }
+    soft(e.around === 0, `390 px, Hebrew: the bar is not inside a scroller (${e.around} above it)`);
     soft(e.overflow <= 0, `390 px, Hebrew: no sideways scroll (${e.overflow} px over)`);
     soft(e.steps === 0, `a video has no second Previous and Next below the player (${e.steps} steps rows)`);
     soft(e.headerButtons >= 2, `the viewer header holds Download beside the count (${e.headerButtons} buttons)`);

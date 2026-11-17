@@ -5,7 +5,6 @@ import { ArrowDown, ArrowUp, Pause, Play, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { useMT } from "../../lib/media/i18n";
 import { kindOf } from "../../lib/files/kind";
-import { usePhoneWidth } from "../../lib/files/phone";
 import { formatTime } from "../../lib/files/mediaKeys";
 import { displayArtist, displayTitle, getTags, hasCover, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
 import type { Entry } from "../../lib/files/queue";
@@ -55,7 +54,9 @@ export default function MediaQueueTable(p: MediaQueueProps) {
   const rows: Row[] = p.entries.map((entry, index) => ({ id: entry.node.id, entry, index }));
   const total = p.entries.length;
 
-  const phone = usePhoneWidth();
+  // The album-page switch comes from the owner (phone width and an audio file, mp7), not the width alone: a video at phone
+  // width keeps the table as it was.
+  const phone = p.phone ?? false;
   const nameColumn: ListColumn<Row> = {
     key: "name",
     title: t("files.col.name"),

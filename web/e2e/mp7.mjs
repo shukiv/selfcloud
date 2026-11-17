@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The album-page player at phone width (slice mp7), run inside the shared end-to-end run (run.mjs) on the shared page,
-// server and accounts. At a window no wider than 599 px the signed-in session is laid out as an album page in both the
-// viewer and the Media page's Now playing: a header naming the album (else the folder) with the artist under it and Share
-// when allowed, a full-width square cover (a video plays there at 16:9), the seek row, one centred line, a large transport,
-// an action row (Playlist, Download, More), then the queue as a table below a dashed divider. The checks judge the layout,
-// the sizes, the absence of the bar's own transport at phone width, the queue as the table, no sideways scroll from 320 to
-// 599 px, and — the heart of it — the one element that plays, marked, never made again across a width change or a move
-// between the viewer and the page. Over 599 px the bar and the drawer are as they were. Run it alone with
-// SELFCLOUD_E2E_ONLY=mp7. The checks end signed in as the member, which the rest of the run expects; the interface's
-// language and theme and the listing's view are put back afterwards.
+// The album-page player at phone width (slice mp7), for audio only, run inside the shared end-to-end run (run.mjs) on the
+// shared page, server and accounts. At a window no wider than 599 px an audio file in the signed-in session is laid out as an
+// album page in both the viewer and the Media page's Now playing: a header naming the album (else the folder) with the artist
+// under it and Share when allowed, a full-width square cover, the seek row, one centred line, a large transport, an action row
+// (Playlist, Download, More), then the queue as a table below a dashed divider. A video at phone width keeps the player it had
+// before the album page — the bar that hides while it plays, the count header, the Playlist toggle and the drawer — and is
+// judged so here. The checks judge the layout, the sizes, the absence of the bar's own transport at phone width for audio, the
+// queue as the table, no sideways scroll from 320 to 599 px, and — the heart of it — the one element that plays, marked, never
+// made again across a width change or a move between the viewer and the page. Over 599 px the bar and the drawer are as they
+// were. Run it alone with SELFCLOUD_E2E_ONLY=mp7. The checks end signed in as the member, which the rest of the run expects;
+// the interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -266,7 +267,7 @@ export async function mp7Checks(h, { page, base, accountKey, accountID }) {
       check(over <= 0, `the Media page fits the phone (overflow ${over}px)`);
     });
 
-    await step('a video plays in the cover place at 16:9, the same element across the width change', async () => {
+    await step('a video at phone width keeps the player it had: no album page, and the bar hides while it plays', async () => {
       // End the audio session, then open the video from the folder. The page's Stop and close is the desktop header's X;
       // the phone header has no back, so widen first to reach it.
       await setWidth(page, 1280, false);
@@ -277,30 +278,37 @@ export async function mp7Checks(h, { page, base, accountKey, accountID }) {
       await dblClick(page, await rowPoint(page, 'zz-clip.webm'));
       await until(page, viewerShown, 15000, 'the viewer opens');
       await until(page, `!!document.querySelector('[data-testid="media-screen"] video')`, 15000, 'the video element');
+      await playing(page);
       await mark(page, '[data-testid="media-screen"] video');
+      // At phone width the video is not the album page: no album header and no album part, and the screen keeps its wide
+      // layout. The width change must not make the element again.
       await setWidth(page, 390, true);
-      await until(page, `!!document.querySelector(${q(phoneHead)})`, 10000, 'the phone header for the video');
-      // The large transport drives the one video: a press pauses what plays, the next plays it on. The file may have
-      // started on its own (the open was a press) or wait for one, so take it to a pause first either way.
-      await until(page, `!!window.__mp7el && window.__mp7el.readyState >= 2`, 15000, 'the video has data');
-      if (!(await page.evaluate(`window.__mp7el.paused`))) {
-        await page.evaluate(`document.querySelector('[data-testid="media-phone-play"]').click()`);
-        await until(page, `window.__mp7el.paused`, 5000, 'the transport pauses the video');
-      }
-      await page.evaluate(`document.querySelector('[data-testid="media-phone-play"]').click()`);
-      await until(page, `(() => { const v = ${MEDIA}; return !!v && !v.paused && v.currentTime > 0.1; })()`, 15000, 'the video plays');
-      const shape = await page.evaluate(`(() => { const v = document.querySelector('[data-testid="media-screen"] video'); const r = v.getBoundingClientRect(); return { w: r.width, h: r.height, vw: window.innerWidth }; })()`);
-      check(Math.abs(shape.w / shape.h - 16 / 9) < 0.1 && shape.w >= shape.vw - 24, `the video is full width at 16:9 (${JSON.stringify(shape)})`);
+      check(await page.evaluate(`!document.querySelector(${q(phoneHead)})`), 'a video at phone width has no album header');
+      check(await page.evaluate(`!document.querySelector('[data-testid="media-phone-line"]') && !document.querySelector('[data-testid="media-phone-transport"]') && !document.querySelector('[data-testid="media-phone-actions"]')`), 'a video at phone width draws no album part');
+      check(await page.evaluate(`!document.querySelector('[data-testid="media-screen"]').classList.contains('media-screen--phone')`), 'the screen is not the album layout for a video');
+      check(await page.evaluate(`!document.querySelector('.media-box--album')`), 'the album class is not on the box for a video');
+      // The old header: the count and the Playlist toggle; the bar keeps its own transport; the queue is the drawer panel.
+      check(await page.evaluate(`!!document.querySelector('[data-testid="media-count"]')`), 'the video keeps the count header');
+      check(await page.evaluate(`!!document.querySelector('.media-playlist-toggle')`), 'the video keeps the Playlist toggle');
+      check(await page.evaluate(`!!document.querySelector(${q(barButtons)})`), "the video's bar keeps its own transport at phone width");
+      check(await page.evaluate(`!!document.querySelector('[data-testid="media-screen"] .media-drawer [data-testid="media-queue"]')`), 'the queue is the drawer panel for a video');
+      check(await page.evaluate(`!document.querySelector('[data-testid="media-queue-table"]')`), 'the album queue table is not drawn for a video');
+      // The bar hides while the video plays, and a tap on the picture shows it again.
+      await until(page, `document.querySelector('[data-testid="media-controls"]').classList.contains('media-controls--hidden')`, 6000, 'the bar hides while the video plays');
+      await page.evaluate(`document.querySelector('[data-testid="media-stage"]').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))`);
+      await until(page, `!document.querySelector('[data-testid="media-controls"]').classList.contains('media-controls--hidden')`, 5000, 'a tap on the picture shows the bar');
       check(await page.evaluate(`document.querySelector('[data-testid="media-screen"] video') === window.__mp7el && window.__mp7el.__mp7 === 1`), 'the same marked video element');
+      // No album header and no sideways scroll at 375 and 390 px.
+      for (const w of [375, 390]) {
+        await setWidth(page, w, true);
+        check(await page.evaluate(`!document.querySelector(${q(phoneHead)})`), `no album header for the video at ${w}px`);
+        const over = await page.evaluate(overflow);
+        check(over <= 0, `the video player fits the phone at ${w}px (overflow ${over}px)`);
+      }
+      // Over 599 px the video is unchanged, the same one element.
       await setWidth(page, 1280, false);
-      await until(page, `!document.querySelector(${q(phoneHead)})`, 10000, 'the phone header goes');
       check(await page.evaluate(`document.querySelector('[data-testid="media-screen"] video') === window.__mp7el && window.__mp7el.__mp7 === 1`), 'the same video on desktop');
       check(await page.evaluate(`document.querySelectorAll('video').length === 1`), 'one video element');
-      await setWidth(page, 390, true);
-      await until(page, `!!document.querySelector(${q(phoneHead)})`, 10000, 'the phone header returns');
-      check(await page.evaluate(`document.querySelector('[data-testid="media-screen"] video') === window.__mp7el && window.__mp7el.__mp7 === 1 && !window.__mp7el.paused`), 'the same video plays on at phone width');
-      const over = await page.evaluate(overflow);
-      check(over <= 0, `the video album page fits the phone (overflow ${over}px)`);
       await closeViewer(page);
       await page.evaluate(`[...document.querySelectorAll('[data-testid="media-mini"] button')].find((b) => b.getAttribute('aria-label') === 'Stop and close')?.click()`);
       await until(page, `!document.querySelector('video')`, 10000, 'the video session ends');

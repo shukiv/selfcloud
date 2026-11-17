@@ -114,10 +114,13 @@ export default function MediaDock() {
   const canDownload = node ? downloadAllowed(node) : false;
   // The tags of the file on screen (decision 56): its title and artist show when they are read, and its name until then.
   const tags = useTagState(node?.id ?? "");
-  // The album-page layout (mp7) is on at phone width while the player is in view (the viewer or the Media page), never for
-  // the mini bar. The header names the album, else the saved playlist, else the folder; Share shows only when allowed.
+  // The album-page layout (mp7) is for audio only: it is on at phone width while the player is in view (the viewer or the
+  // Media page) and the playing file is audio, never for the mini bar. A video at phone width keeps the player it had before
+  // the album page — the full-width picture, the bar that hides while it plays, the header and the Playlist toggle. The
+  // header names the album, else the saved playlist, else the folder; Share shows only when allowed.
   const phone = usePhoneWidth();
-  const albumPhone = phone && placement !== "mini";
+  const audio = node !== null && kindOf(node) === "audio";
+  const albumPhone = phone && placement !== "mini" && audio;
   const mt = useMT();
   const spaces = [...useStore(folders), ...useStore(hiddenFolders)];
   const space = node ? (spaces.find((f) => f.id === node.folder_id) ?? null) : null;
@@ -130,7 +133,6 @@ export default function MediaDock() {
   const placeName = node ? locationOf(node, spaces, t("nav.files")) : "";
   const headName = album ?? sourceName ?? snap.seed?.folderName ?? placeName;
   const headArtist = displayArtist(tags);
-  const audio = node !== null && kindOf(node) === "audio";
   const coverSeen = useSyncExternalStore(subscribeTags, () => hasCover(node?.id ?? ""));
   useEffect(() => {
     if (!node || !audio) return;
@@ -220,6 +222,12 @@ export default function MediaDock() {
     const target = snap.page ? snap.page.stage : viewerRef.current;
     if (target !== null) placeBox(target);
   });
+  // The album-page class is on the session's box only while the album layout is on — phone width and an audio file (mp7).
+  // The phone styles hang off it, so a video at phone width, which keeps the player it had, never draws them. The box is
+  // made once and kept for the whole page, so the class is toggled on it; the element that plays is never made again.
+  useLayoutEffect(() => {
+    playerBox().classList.toggle("media-box--album", albumPhone);
+  }, [albumPhone]);
   // The viewer takes the focus on its container, not on Close, so a Space press reaches the player when it opens.
   useEffect(() => {
     if (viewing) viewerRef.current?.focus();

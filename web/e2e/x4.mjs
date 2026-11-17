@@ -50,11 +50,23 @@ async function setInput(page, root, value) {
   })()`);
 }
 
-// openPlayer opens the player on the first file of the listing: the queue panel, with the saved playlists under it, is part
-// of the player.
+// openPlayer opens the player on the first file of the listing and reveals the saved playlists so their rows can be measured.
+// On a desktop they sit under the queue panel in the drawer. At phone width an audio file is the album page (mp7): the queue
+// is the table in the flow and the saved playlists open from the Playlist action in a dialog of their own, so they are opened
+// there instead. The rows are the same either way.
 async function openPlayer(page, name = 'one.ogg') {
   await until(page, `!!document.querySelector('[role="row"][aria-label=${q(name)}]')`, 15000, `row ${name}`);
   await page.evaluate(`(() => { document.querySelector('[role="row"][aria-label=${q(name)}]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true; })()`);
+  const phone = await page.evaluate(`matchMedia('(max-width: 599px)').matches`);
+  if (phone) {
+    await until(page, `!!document.querySelector('[data-testid="media-phone-playlist"]')`, 15000, 'the album page Playlist action');
+    await page.evaluate(`document.querySelector('[data-testid="media-phone-playlist"]').click()`);
+    await until(page, `!!document.querySelector('[data-testid="media-playlists"]')`, 15000, 'the saved playlists dialog');
+    // The dialog zooms in over ~200 ms. Let it settle before any position is read: a getAnimations read right at mount can
+    // be 0 before the zoom starts, which would measure the rows mid-scale.
+    await sleep(SETTLE_MS);
+    return;
+  }
   await until(page, `!!document.querySelector('[data-testid="media-queue"]')`, 15000, 'the queue');
   await until(page, `!!document.querySelector('[data-testid="media-playlists"]')`, 15000, 'the saved playlists');
   // The playlist is a drawer, closed by default (decision 63): its rows are measured here, so it is opened.

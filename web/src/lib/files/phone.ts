@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-// PHONE_QUERY is the one width the album-page player uses (mp7): a window no wider than 599 px. It is the same break the
-// styles use, so the layout the person sees and the parts the player draws change together. Over it nothing of the phone
-// layout is drawn.
+// PHONE_QUERY is the width the album-page player uses (mp7): a window no wider than 599 px. It is the same break the styles
+// use, so the layout the person sees and the parts the player draws change together. The album page is drawn only for an audio
+// file at this width; a video keeps the player it had before. Over it nothing of the phone layout is drawn.
 export const PHONE_QUERY = "(max-width: 599px)";
 
 // usePhoneWidth says whether the window is at phone width, and follows a resize. It reads the media query, not the element

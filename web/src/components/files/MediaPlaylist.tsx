@@ -581,6 +581,9 @@ export default function MediaPlaylist({
     candidates,
     adding,
     playing,
+    // The album-page switch (phone width and an audio file) reaches the queue table, so a video at phone width keeps the
+    // table as it was, not the album page's numbered list (mp7).
+    phone,
     onAddOpen: () => setAdding((v) => !v),
     onAdd: (n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n)),
     onLoadMore: () => void loadMore(),

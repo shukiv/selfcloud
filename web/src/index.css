@@ -1471,11 +1471,14 @@ video.media-cue-l::cue {
   opacity: 0.8;
 }
 
-/* The album-page player at phone width (mp7). The class is on the screen only while the window is no wider than 599 px and
-   the signed-in session is in view, so every rule here is phone-only: a share page and every wider window keep the player as
-   it was. The parts are reordered with flex order, not moved in the DOM, so the element that plays is never made again: the
-   stage and the bar become display:contents and their children take their place in one column — the cover (or the picture),
-   the seek row, the line, the large transport, the action row, then the queue. Only the page scrolls; nothing scrolls sideways. */
+/* The album-page player at phone width (mp7), for audio only. The album class (media-box--album) is on the session's box
+   only while the window is no wider than 599 px, the signed-in session is in view and the playing file is audio; the screen
+   class (media-screen--phone) is set with it, so every rule here is phone-and-audio only. A video at phone width keeps the
+   player it had before the album page — the full-width picture, the bar that hides while it plays, the header and the
+   Playlist toggle — and a share page and every wider window keep the player as it was. The parts are reordered with flex
+   order, not moved in the DOM, so the element that plays is never made again: the stage and the bar become display:contents
+   and their children take their place in one column — the cover, the seek row, the line, the large transport, the action
+   row, then the queue. Only the page scrolls; nothing scrolls sideways. */
 .media-screen--phone {
   display: flex;
   flex-direction: column;
@@ -1512,16 +1515,7 @@ video.media-cue-l::cue {
 .media-screen--phone .media-cover-box img {
   object-fit: cover;
 }
-/* A video plays in the same place at its own shape, full width and 16:9. */
-.media-screen--phone .media-picture {
-  order: 1;
-  flex: 0 0 auto;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-}
-/* The seek row keeps the bar's elapsed and total, full width under the cover. A video's bar is no scrim here: it sits in the
-   flow in the page's own colours, and never fades (the bar's --hidden class is not set at phone width). */
+/* The seek row keeps the bar's elapsed and total, full width under the cover. */
 .media-screen--phone .media-press {
   order: 2;
 }
@@ -1529,17 +1523,8 @@ video.media-cue-l::cue {
   order: 2;
   width: 100%;
 }
-.media-screen--phone .media-subs-note {
-  order: 2;
-}
-.media-screen--phone .media-stage[data-kind="video"] .media-controls {
-  position: static;
-  inset: auto;
-  background: transparent;
-  color: inherit;
-}
-/* The line, the transport and the action row (MediaPhone). */
-.media-phone-line {
+/* The line, the transport and the action row (MediaPhone), all under the album box class. */
+.media-box--album .media-phone-line {
   order: 3;
   margin: 0;
   text-align: center;
@@ -1548,43 +1533,43 @@ video.media-cue-l::cue {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.media-phone-line bdi {
+.media-box--album .media-phone-line bdi {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.media-phone-transport {
+.media-box--album .media-phone-transport {
   order: 4;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 24px;
 }
-.media-phone-transport .media-phone-step.ant-btn.ant-btn {
+.media-box--album .media-phone-transport .media-phone-step.ant-btn.ant-btn {
   width: 48px;
   height: 48px;
   min-width: 48px;
 }
-.media-phone-transport .media-phone-play.ant-btn.ant-btn {
+.media-box--album .media-phone-transport .media-phone-play.ant-btn.ant-btn {
   width: 64px;
   height: 64px;
   min-width: 64px;
   background: var(--ant-color-primary);
   color: #fff;
 }
-.media-phone-transport .media-phone-play.ant-btn.ant-btn:hover {
+.media-box--album .media-phone-transport .media-phone-play.ant-btn.ant-btn:hover {
   background: var(--ant-color-primary-hover);
   color: #fff;
 }
-.media-phone-actions {
+.media-box--album .media-phone-actions {
   order: 5;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   gap: 8px;
 }
-.media-phone-act.ant-btn {
+.media-box--album .media-phone-act.ant-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1593,7 +1578,8 @@ video.media-cue-l::cue {
   min-height: 44px;
   padding: 8px 12px;
 }
-/* The album page's More menu is a finger's too: every row it draws, the Speed submenu among them, is a 44 px target (mp7). */
+/* The album page's More menu is a finger's too: every row it draws, the Speed submenu among them, is a 44 px target (mp7).
+   The menu is portaled to the body, so it cannot sit under the box class; it only opens from the album page (audio). */
 @media (pointer: coarse) {
   .media-phone-menu .ant-dropdown-menu-item,
   .media-phone-menu .ant-dropdown-menu-submenu-title {
@@ -1621,8 +1607,8 @@ video.media-cue-l::cue {
 }
 /* The album page's numbered queue (mp7): one line per row, "# name length ⋮", no cover and no second line. The row's height
    comes from the ⋮ finger target (44 px), not from cell padding; the name keeps its ellipsis in the fixed-layout table. The
-   table frame, its headers and its empty state stay, as the lists rule asks. Scoped to the queue table at phone width only;
-   every other list keeps Listing's standard phone layout. */
+   table frame, its headers and its empty state stay, as the lists rule asks. The class is set only for the album page (audio
+   at phone width); every other list keeps Listing's standard phone layout. */
 .media-queue--phone.media-queue--table .ant-table-tbody > tr > td.ant-table-cell {
   padding-block: 4px;
   overflow: hidden;
@@ -1630,7 +1616,8 @@ video.media-cue-l::cue {
 .media-queue--phone .media-qname {
   gap: 0;
 }
-/* The Media page's queue host takes the same divider and full-width list at phone width; an empty host takes no room. */
+/* The Media page's queue host takes the same divider and full-width list for the album page (audio at phone width); an empty
+   host takes no room. */
 .media-page-queue--phone {
   border-top: 1px dashed var(--ant-color-split);
   padding-top: 12px;
@@ -1644,19 +1631,19 @@ video.media-cue-l::cue {
   overflow: visible;
 }
 /* The album-page header: the title block takes the room between Close and Share, centred, each line one ellipsized line. */
-.media-phone-titles {
+.media-box--album .media-phone-titles {
   flex: 1 1 0;
   min-width: 0;
   text-align: center;
 }
-.media-phone-album {
+.media-box--album .media-phone-album {
   margin: 0;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.media-phone-by {
+.media-box--album .media-phone-by {
   margin: 0;
   font-size: 13px;
   opacity: 0.8;

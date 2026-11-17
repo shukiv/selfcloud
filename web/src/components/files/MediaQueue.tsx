@@ -35,6 +35,9 @@ export interface MediaQueueProps {
   adding: boolean;
   // playing says the file on screen plays now. A current row that is not playing says Paused, not Playing.
   playing?: boolean;
+  // phone says the album-page layout is on (phone width and an audio file, mp7): the table is the album page's numbered
+  // list. A video at phone width and every wider window leave it false and keep the table as it was.
+  phone?: boolean;
   onAddOpen: () => void;
   onAdd: (node: Node, where: "next" | "end") => void;
   onLoadMore: () => void;
