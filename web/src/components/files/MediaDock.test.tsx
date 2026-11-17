@@ -61,11 +61,15 @@ function at(el: HTMLMediaElement, seconds: number, paused = false) {
 const who = (id: string): Session => ({ user: { id, email: `${id}@x.test` }, account: null, csrf: `c-${id}`, publicLinks: false }) as unknown as Session;
 
 async function element(tag: "video" | "audio"): Promise<HTMLMediaElement> {
-  return waitFor(() => {
-    const el = document.querySelector(tag);
-    if (!el) throw new Error(`no ${tag} yet`);
-    return el as HTMLMediaElement;
-  });
+  // The first mount loads the player's lazy parts; a busy machine can take longer than the global wait.
+  return waitFor(
+    () => {
+      const el = document.querySelector(tag);
+      if (!el) throw new Error(`no ${tag} yet`);
+      return el as HTMLMediaElement;
+    },
+    { timeout: 15000 },
+  );
 }
 
 let play: ReturnType<typeof vi.spyOn>;

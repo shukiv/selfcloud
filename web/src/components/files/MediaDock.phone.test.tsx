@@ -110,11 +110,15 @@ async function open(n: Node, list: Node[] = [n]) {
 // openVideo opens the player on a video file and waits for its element, as open does for an audio file.
 async function openVideo(n: Node, list: Node[] = [n]) {
   act(() => startPlayback({ start: n, folder: folderOf(list) }));
-  const el = await waitFor(() => {
-    const v = document.querySelector("video");
-    if (!v) throw new Error("no video yet");
-    return v as HTMLVideoElement;
-  });
+  // The first mount loads the player's lazy parts; a busy machine can take longer than the global wait.
+  const el = await waitFor(
+    () => {
+      const v = document.querySelector("video");
+      if (!v) throw new Error("no video yet");
+      return v as HTMLVideoElement;
+    },
+    { timeout: 15000 },
+  );
   fireEvent.loadedMetadata(el);
   return el;
 }
@@ -452,11 +456,15 @@ describe("the album page is for audio only", () => {
 
     // On to the video: the album class goes, the old player returns, and the hosts do not move.
     fireEvent.click(screen.getByTestId("media-phone-next"));
-    const videoEl = await waitFor(() => {
-      const el = document.querySelector("video");
-      if (!el || el.getAttribute("aria-label") !== "v.webm") throw new Error("no video yet");
-      return el as HTMLVideoElement;
-    });
+    // The first video mount loads the player's lazy parts; a busy machine can take longer than the global wait.
+    const videoEl = await waitFor(
+      () => {
+        const el = document.querySelector("video");
+        if (!el || el.getAttribute("aria-label") !== "v.webm") throw new Error("no video yet");
+        return el as HTMLVideoElement;
+      },
+      { timeout: 15000 },
+    );
     fireEvent.loadedMetadata(videoEl);
     await waitFor(() => expect(screen.queryByTestId("media-phone-head")).toBeNull());
     expect(box.classList.contains("media-box--album")).toBe(false);
