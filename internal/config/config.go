@@ -761,16 +761,16 @@ type UIConfig struct {
 	// Brand is the installation's look. It is the same for every user; per-tenant branding is
 	// not built.
 	Brand BrandConfig `yaml:"brand"`
-	// Scripts are the installation's page scripts (decision 216): each is added to every app page as a script tag.
+	// Scripts are the installation's page scripts (decision 219): each is added to every app page as a script tag.
 	// An https URL with a host, an http URL on loopback, or a same-origin absolute path. At most MaxUIScripts, each
 	// 1 to 2048 bytes, no exact duplicate. A listed script runs with the full power of the page.
 	Scripts []string `yaml:"scripts"`
 }
 
-// MaxUIScripts is the most entries ui.scripts holds (decision 216).
+// MaxUIScripts is the most entries ui.scripts holds (decision 219).
 const MaxUIScripts = 10
 
-// maxUIScriptBytes is the longest one ui.scripts entry, in bytes (decision 216).
+// maxUIScriptBytes is the longest one ui.scripts entry, in bytes (decision 219).
 const maxUIScriptBytes = 2048
 
 // DefaultBrandName is the name of a new installation (decision 109).
@@ -1390,7 +1390,7 @@ func normalizeOrigin(s string) (string, error) {
 	return out, nil
 }
 
-// checkUIScript checks one ui.scripts entry (decision 216): an https URL with a host, no userinfo and no fragment (a
+// checkUIScript checks one ui.scripts entry (decision 219): an https URL with a host, no userinfo and no fragment (a
 // path and a query are allowed); an http URL whose host is 127.0.0.1, [::1] or localhost; or a same-origin absolute
 // path: one leading slash, no backslash, no .. segment, no space or control character. The entry is served as it is
 // written, so nothing is normalised. The host is held to the same form as an embed origin's, so it can never carry a

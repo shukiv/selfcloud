@@ -77,7 +77,7 @@ type Options struct {
 	// is consulted only for the app page (index.html), never for an asset. A nil result, or a nil hook, keeps the page
 	// at frame-ancestors 'none' with X-Frame-Options DENY. The hook reads only; it writes nothing.
 	FrameAncestors func(*http.Request) []string
-	// Scripts are ui.scripts, the installation's page scripts (decision 216): each is added to the app page before
+	// Scripts are ui.scripts, the installation's page scripts (decision 219): each is added to the app page before
 	// </body>, and the policy's script-src gains the origin of each URL entry. An empty list changes nothing. A change
 	// while the server runs goes through UseScripts.
 	Scripts []string
@@ -101,7 +101,7 @@ type Handler struct {
 	brand atomic.Pointer[Brand]
 	// frameAncestors names the host origins that may frame the app page, or nil (decision 197).
 	frameAncestors func(*http.Request) []string
-	// scripts are the installation's page scripts (decision 216). A change builds a new one whole and swaps it in, and
+	// scripts are the installation's page scripts (decision 219). A change builds a new one whole and swaps it in, and
 	// a request reads it once, so no answer mixes two lists.
 	scripts atomic.Pointer[pageScripts]
 }
@@ -253,7 +253,7 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 // policy returns the content policy. With no nonce it is the policy for assets and the not-built
 // page; with one, style-src also allows the inline styles that carry that nonce. ancestors is the
 // frame-ancestors value: "'none'" for every page but the app page a host may frame (decision 197).
-// scriptSrc is the origins ui.scripts adds to script-src, each with a leading space, or "" (decision 216).
+// scriptSrc is the origins ui.scripts adds to script-src, each with a leading space, or "" (decision 219).
 func (h *Handler) policy(nonce, ancestors, scriptSrc string) string {
 	style := "'self'"
 	if nonce != "" {
@@ -440,7 +440,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Content-Security-Policy", h.policy("", ancestors, scriptSrc))
 	}
 	if name == "index.html" && ps.tags != "" {
-		// The installation's page scripts sit right before the last </body>, in list order (decision 216): an earlier
+		// The installation's page scripts sit right before the last </body>, in list order (decision 219): an earlier
 		// one — in a comment, say — must not pull them up into a comment or the head.
 		if i := bytes.LastIndex(data, []byte("</body>")); i >= 0 {
 			out := make([]byte, 0, len(data)+len(ps.tags))

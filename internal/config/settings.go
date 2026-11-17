@@ -121,7 +121,7 @@ var settingDefs = []settingDef{
 	{key: "ui.brand.sidebar.caption", typ: TypeString},
 	{key: "ui.brand.sidebar.on_active", typ: TypeString},
 	{key: "ui.brand.sidebar.text", typ: TypeString},
-	// The page scripts (decision 216): the file's own rules check the list (checkUIScript), with no bounds of its own.
+	// The page scripts (decision 219): the file's own rules check the list (checkUIScript), with no bounds of its own.
 	{key: "ui.scripts", typ: TypeList, maxJSON: maxScriptsJSON},
 	{key: "upload.max_chunk_size", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "upload.max_file_size", typ: TypeBytes, min: int64(MiB), max: int64(16 * TiB)},

@@ -61,7 +61,7 @@ export default function SectionCard({ section, settings, edits, errors, notice, 
           {g.fields.map((f) => {
             const s = byKey.get(f.key);
             // A setting this server does not know is left out: the page draws what the server answers. A list has no
-            // field yet (decision 216): its card comes later.
+            // field yet (decision 219): its card comes later.
             if (s === undefined || !keys.has(f.key) || s.type === "list") return null;
             return (
               <FieldRow

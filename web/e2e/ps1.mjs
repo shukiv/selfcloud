@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Page scripts (ps1, decision 216): an installation setting that adds scripts to every page of the web interface.
+// Page scripts (ps1, decision 219): an installation setting that adds scripts to every page of the web interface.
 // It runs inside the shared end-to-end run (run.mjs) in its own browser with its own profile, or alone with
 // SELFCLOUD_E2E_ONLY=ps1. A small local server on 127.0.0.1 serves one script that marks the page; the installation
 // admin sets ui.scripts to it through the settings API, and the next page served carries the tag right before

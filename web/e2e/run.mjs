@@ -1318,7 +1318,7 @@ async function main() {
         eb2aBrowser = null;
       }
     }, { as: 'member' });
-    // Slice ps1 (decision 216): the installation's page scripts. Its own browser, so the shared page's requests stay
+    // Slice ps1 (decision 219): the installation's page scripts. Its own browser, so the shared page's requests stay
     // same-origin; a local server on 127.0.0.1 serves the one script the admin lists through the settings API.
     if (!only || onlySet.has('ps1')) await section('ps1', async () => {
       const ps1Launch = await launchBrowser(await findBrowser(), join(dir, 'ps1-profile'));

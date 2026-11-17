@@ -18,7 +18,7 @@ export type Edits = Record<string, FieldEdit | undefined>;
 
 type Wire = boolean | number | string;
 
-// draftOf is a value as the box shows it. A list has no box yet (decision 216): its card comes later.
+// draftOf is a value as the box shows it. A list has no box yet (decision 219): its card comes later.
 export function draftOf(s: Pick<Setting, "type" | "value">): Draft {
   switch (s.type) {
     case "bytes":

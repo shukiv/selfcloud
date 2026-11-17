@@ -166,7 +166,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 			s.useBrand(next, s.pics.Load(), built)
 		}
 		if _, ok := changes["ui.scripts"]; ok && s.ui != nil {
-			// The page scripts apply from the next page served (decision 216).
+			// The page scripts apply from the next page served (decision 219).
 			s.ui.UseScripts(next.UI.Scripts)
 		}
 		s.settingsChanged(context.WithoutCancel(ctx), cur, next)

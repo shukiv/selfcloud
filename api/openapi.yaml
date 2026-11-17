@@ -2112,7 +2112,7 @@ paths:
         brand cannot be built, the answer is an error and nothing changes. The pictures are not settings here: their
         keys, and `ui.brand.logo_file` and `ui.brand.icon_file`, are `unknown_setting`.
 
-        `ui.scripts` (decision 216) is a `list` setting: a JSON array of at most 10 entries, each 1 to 2048 bytes, with
+        `ui.scripts` (decision 219) is a `list` setting: a JSON array of at most 10 entries, each 1 to 2048 bytes, with
         no exact duplicate. An entry is an https URL with a host (no userinfo, no fragment; a path and a query are
         allowed), an http URL whose host is `127.0.0.1`, `[::1]` or `localhost`, or a same-origin absolute path (one
         leading slash, no `..` segment). Each entry is added to every app page as a script tag before `</body>`, and

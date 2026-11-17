@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// pageScripts is the built form of ui.scripts (decision 216): the tags the app page gains before </body>, and the
+// pageScripts is the built form of ui.scripts (decision 219): the tags the app page gains before </body>, and the
 // script-src origins the policy gains. Both are built once for a list, so a request reads one whole answer.
 type pageScripts struct {
 	tags string
