@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "Как долго остаются открытыми общие ресурсы и ссылки и как долго хранятся удалённые файлы и старые версии.",
   "settings.section.signin": "Вход, поиск, офис и администрирование",
   "settings.section.signin.intro": "Как долго люди остаются в системе, что они могут искать, редактирование в браузере и что разрешено администраторам.",
+  "settings.section.scripts": "Скрипты страниц",
+  "settings.section.scripts.intro": "Скрипты, добавляемые на каждую страницу диска, например меню сайта, которому он принадлежит. Скрипт выполняется со всей властью страницы: он видит то, что видит вошедший пользователь, и может действовать от его имени. Добавляйте только скрипты, которым доверяете так же, как этому серверу",
   "settings.section.about": "О системе",
   "settings.section.about.intro": "Сведения об этой установке. Их задаёт файл конфигурации сервера.",
   "settings.group.links": "Общий доступ и ссылки",
@@ -150,6 +152,11 @@
   "settings.on": "Включено",
   "settings.off": "Выключено",
   "settings.none": "Нет",
+  "settings.scripts.add": "Добавить скрипт",
+  "settings.scripts.remove": "Удалить скрипт {n}",
+  "settings.scripts.entry": "Скрипт {n}",
+  "settings.scripts.max": "Не более 10 скриптов",
+  "settings.scripts.empty": "Нет скриптов",
   "settings.about.version": "Версия",
   "settings.about.publicUrl": "Публичный адрес",
   "settings.about.webInterface": "Веб-интерфейс",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "Наибольший файл для редактирования",
   "settings.field.office.max_file_bytes.help": "Самый большой документ, который открывает редактор в браузере.",
   "settings.field.admin.tenant_access.label": "«Войти как» для администраторов",
-  "settings.field.admin.tenant_access.help": "Позволяет администратору установки открывать файлы арендатора как один из его людей. Каждое посещение записывается в действия арендатора."
+  "settings.field.admin.tenant_access.help": "Позволяет администратору установки открывать файлы арендатора как один из его людей. Каждое посещение записывается в действия арендатора.",
+  "settings.field.ui.scripts.label": "Скрипты",
+  "settings.field.ui.scripts.help": "Адрес https, адрес http на 127.0.0.1, [::1] или localhost либо путь на этом сервере, начинающийся с одной /. Скрипты выполняются на каждой странице в порядке списка."
 }

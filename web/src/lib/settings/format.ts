@@ -60,6 +60,10 @@ export function formatValue(type: Setting["type"], value: Setting["value"], lang
       return formatSizeBytes(sizeBytes(value as string | number), lang);
     case "duration":
       return formatSeconds(durationSeconds(value as string), lang);
+    case "list": {
+      const entries = value as string[];
+      return entries.length === 0 ? words.none : entries.join(", ");
+    }
     default:
       return value === "" ? words.none : String(value);
   }

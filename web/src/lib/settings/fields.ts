@@ -41,7 +41,7 @@ export interface Group {
   folded?: boolean;
 }
 
-export type SectionId = "branding" | "uploads" | "sharing" | "signin" | "about";
+export type SectionId = "branding" | "uploads" | "sharing" | "signin" | "scripts" | "about";
 
 export interface SectionSpec {
   id: SectionId;
@@ -150,6 +150,15 @@ export const SECTIONS: SectionSpec[] = [
       {
         title: "settings.group.admin",
         fields: [{ key: "admin.tenant_access", type: "bool" }],
+      },
+    ],
+  },
+  {
+    id: "scripts",
+    groups: [
+      {
+        title: null,
+        fields: [{ key: "ui.scripts", type: "list" }],
       },
     ],
   },

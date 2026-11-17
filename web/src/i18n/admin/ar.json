@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "المدة التي تبقى فيها المشاركات والروابط مفتوحة، والمدة التي تُحفظ فيها الملفات المحذوفة والإصدارات القديمة.",
   "settings.section.signin": "تسجيل الدخول والبحث وأوفيس والإدارة",
   "settings.section.signin.intro": "المدة التي يبقى فيها الأشخاص مسجّلين، وما يمكنهم البحث عنه، والتحرير في المتصفح، وما يحق للمديرين فعله.",
+  "settings.section.scripts": "نصوص برمجية للصفحات",
+  "settings.section.scripts.intro": "نصوص برمجية تُضاف إلى كل صفحة من صفحات القرص، مثل قائمة موقع ينتمي إليه. يعمل النص البرمجي بكامل صلاحيات الصفحة: يرى ما يراه الشخص المسجّل دخوله ويمكنه التصرف باسمه. أدرج فقط نصوصًا برمجية تثق بها بقدر ثقتك بهذا الخادم",
   "settings.section.about": "حول",
   "settings.section.about.intro": "معلومات عن هذا التثبيت. يحدّدها ملف إعدادات الخادم.",
   "settings.group.links": "المشاركة والروابط",
@@ -150,6 +152,11 @@
   "settings.on": "مفعّل",
   "settings.off": "معطّل",
   "settings.none": "لا شيء",
+  "settings.scripts.add": "إضافة نص برمجي",
+  "settings.scripts.remove": "إزالة النص البرمجي {n}",
+  "settings.scripts.entry": "نص برمجي {n}",
+  "settings.scripts.max": "10 نصوص برمجية على الأكثر",
+  "settings.scripts.empty": "لا نصوص برمجية",
   "settings.about.version": "الإصدار",
   "settings.about.publicUrl": "العنوان العام",
   "settings.about.webInterface": "الواجهة الإلكترونية",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "أكبر ملف للتحرير",
   "settings.field.office.max_file_bytes.help": "أكبر مستند يفتحه محرر المتصفح.",
   "settings.field.admin.tenant_access.label": "«الدخول بصفة» للمديرين",
-  "settings.field.admin.tenant_access.help": "يتيح لمدير التثبيت فتح ملفات مستأجر بصفة أحد أشخاصه. تُسجَّل كل زيارة في نشاط المستأجر."
+  "settings.field.admin.tenant_access.help": "يتيح لمدير التثبيت فتح ملفات مستأجر بصفة أحد أشخاصه. تُسجَّل كل زيارة في نشاط المستأجر.",
+  "settings.field.ui.scripts.label": "النصوص البرمجية",
+  "settings.field.ui.scripts.help": "عنوان https، أو عنوان http على 127.0.0.1 أو [::1] أو localhost، أو مسار على هذا الخادم يبدأ بشرطة مائلة واحدة /. تعمل النصوص البرمجية على كل صفحة، بترتيب القائمة."
 }

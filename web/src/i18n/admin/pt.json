@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "Durante quanto tempo as partilhas e os links ficam abertos, e durante quanto tempo se guardam os ficheiros eliminados e as versões antigas.",
   "settings.section.signin": "Início de sessão, pesquisa, office e administração",
   "settings.section.signin.intro": "Durante quanto tempo as pessoas ficam com a sessão iniciada, o que podem pesquisar, a edição no navegador e o que os administradores podem fazer.",
+  "settings.section.scripts": "Scripts de página",
+  "settings.section.scripts.intro": "Scripts adicionados a todas as páginas do drive, como o menu de um site a que pertence. Um script é executado com todo o poder da página: vê o que a pessoa com a sessão iniciada vê e pode agir como ela. Adicione apenas scripts em que confie tanto como neste servidor",
   "settings.section.about": "Acerca de",
   "settings.section.about.intro": "Dados desta instalação. O ficheiro de configuração do servidor é que os fixa.",
   "settings.group.links": "Partilha e links",
@@ -150,6 +152,11 @@
   "settings.on": "Ativado",
   "settings.off": "Desativado",
   "settings.none": "Nenhum",
+  "settings.scripts.add": "Adicionar script",
+  "settings.scripts.remove": "Remover script {n}",
+  "settings.scripts.entry": "Script {n}",
+  "settings.scripts.max": "No máximo 10 scripts",
+  "settings.scripts.empty": "Sem scripts",
   "settings.about.version": "Versão",
   "settings.about.publicUrl": "Endereço público",
   "settings.about.webInterface": "Interface web",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "Maior ficheiro a editar",
   "settings.field.office.max_file_bytes.help": "O maior documento que o editor do navegador abre.",
   "settings.field.admin.tenant_access.label": "«Iniciar sessão como» para administradores",
-  "settings.field.admin.tenant_access.help": "Permite que um administrador da instalação abra os ficheiros de um cliente como uma das suas pessoas. Cada visita fica registada na atividade do cliente."
+  "settings.field.admin.tenant_access.help": "Permite que um administrador da instalação abra os ficheiros de um cliente como uma das suas pessoas. Cada visita fica registada na atividade do cliente.",
+  "settings.field.ui.scripts.label": "Scripts",
+  "settings.field.ui.scripts.help": "Um endereço https, um endereço http em 127.0.0.1, [::1] ou localhost, ou um caminho deste servidor que comece com uma única /. Os scripts são executados em todas as páginas, na ordem da lista."
 }

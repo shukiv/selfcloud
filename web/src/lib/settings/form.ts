@@ -4,8 +4,9 @@ import { ApiError } from "../apiError";
 import type { Setting } from "./api";
 import { durationSeconds, durationText, sizeBytes, sizeText, splitDuration, splitSize, type Amount, type DurationUnit, type SizeUnit } from "./units";
 
-// What a person has typed into one field: a switch, a text, a count, or a number with its unit. A box that was emptied holds null.
-export type Draft = boolean | string | number | null | Amount<SizeUnit> | Amount<DurationUnit>;
+// What a person has typed into one field: a switch, a text, a count, a number with its unit, or a list of texts. A box that was
+// emptied holds null.
+export type Draft = boolean | string | number | null | string[] | Amount<SizeUnit> | Amount<DurationUnit>;
 
 // FieldEdit is an edit of one field. reset is set by the Reset icon: the stored value is to be removed, so the default applies.
 export interface FieldEdit {
@@ -16,9 +17,9 @@ export interface FieldEdit {
 // Edits holds only the fields a person has touched. A field with no entry shows the server's value as it is now.
 export type Edits = Record<string, FieldEdit | undefined>;
 
-type Wire = boolean | number | string;
+type Wire = boolean | number | string | string[];
 
-// draftOf is a value as the box shows it. A list has no box yet (decision 219): its card comes later.
+// draftOf is a value as the box shows it. A list is drafted as a copy, so an edit never touches the answer it came from.
 export function draftOf(s: Pick<Setting, "type" | "value">): Draft {
   switch (s.type) {
     case "bytes":
@@ -26,13 +27,14 @@ export function draftOf(s: Pick<Setting, "type" | "value">): Draft {
     case "duration":
       return splitDuration(s.value as string);
     case "list":
-      return null;
+      return [...(s.value as string[])];
     default:
       return s.value as boolean | number | string;
   }
 }
 
-// wireOf is the value the API is sent for a draft, or null while the box is incomplete.
+// wireOf is the value the API is sent for a draft, or null while the box is incomplete. A list is sent trimmed, with its empty
+// rows dropped; a list of empty rows alone is the empty list, which the server holds.
 export function wireOf(type: Setting["type"], d: Draft): Wire | null {
   switch (type) {
     case "bytes":
@@ -43,6 +45,8 @@ export function wireOf(type: Setting["type"], d: Draft): Wire | null {
       return typeof d === "number" ? d : null;
     case "bool":
       return typeof d === "boolean" ? d : null;
+    case "list":
+      return Array.isArray(d) ? d.map((x) => x.trim()).filter((x) => x !== "") : null;
     default:
       return typeof d === "string" ? d : null;
   }
@@ -52,6 +56,12 @@ export function wireOf(type: Setting["type"], d: Draft): Wire | null {
 function sameValue(type: Setting["type"], a: Wire, b: Wire): boolean {
   if (type === "bytes") return sizeBytes(a as string | number) === sizeBytes(b as string | number);
   if (type === "duration") return durationSeconds(a as string) === durationSeconds(b as string);
+  // A list is the same when every entry is the same, in the same order.
+  if (type === "list") {
+    const x = a as string[];
+    const y = b as string[];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  }
   // A colour is the same in either case: #0f766e and #0F766E are one colour.
   if (typeof a === "string" && typeof b === "string" && COLOUR.test(a) && COLOUR.test(b)) return a.toLowerCase() === b.toLowerCase();
   return a === b;

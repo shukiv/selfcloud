@@ -55,7 +55,7 @@ export interface SettingsAnswer {
 }
 
 export interface SettingsChange {
-  set?: Record<string, boolean | number | string>;
+  set?: Record<string, boolean | number | string | string[]>;
   reset?: string[];
 }
 

@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "How long shares and links stay open, and how long deleted files and old versions are kept.",
   "settings.section.signin": "Sign-in, search, office and administration",
   "settings.section.signin.intro": "How long people stay signed in, what they can search, editing in the browser, and what admins may do.",
+  "settings.section.scripts": "Page scripts",
+  "settings.section.scripts.intro": "Scripts added to every page of the drive, such as the menu of a site it belongs to. A script runs with the full power of the page: it sees what the signed-in person sees and can act as them. List only scripts you trust as much as this server",
   "settings.section.about": "About",
   "settings.section.about.intro": "Facts about this installation. The server's config file owns them.",
   "settings.group.links": "Sharing and links",
@@ -150,6 +152,11 @@
   "settings.on": "On",
   "settings.off": "Off",
   "settings.none": "None",
+  "settings.scripts.add": "Add script",
+  "settings.scripts.remove": "Remove script {n}",
+  "settings.scripts.entry": "Script {n}",
+  "settings.scripts.max": "At most 10 scripts",
+  "settings.scripts.empty": "No scripts",
   "settings.about.version": "Version",
   "settings.about.publicUrl": "Public address",
   "settings.about.webInterface": "Web interface",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "Largest file to edit",
   "settings.field.office.max_file_bytes.help": "The biggest document the browser editor opens.",
   "settings.field.admin.tenant_access.label": "“Sign in as” for admins",
-  "settings.field.admin.tenant_access.help": "Lets an installation admin open a tenant's files as one of its people. Every visit is recorded in the tenant's activity."
+  "settings.field.admin.tenant_access.help": "Lets an installation admin open a tenant's files as one of its people. Every visit is recorded in the tenant's activity.",
+  "settings.field.ui.scripts.label": "Scripts",
+  "settings.field.ui.scripts.help": "An https address, an http address on 127.0.0.1, [::1] or localhost, or a path on this server starting with one /. The scripts run on every page, in list order."
 }

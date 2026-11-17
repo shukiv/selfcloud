@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "Cuánto duran abiertos los recursos compartidos y los enlaces, y cuánto se conservan los archivos eliminados y las versiones antiguas.",
   "settings.section.signin": "Inicio de sesión, búsqueda, office y administración",
   "settings.section.signin.intro": "Cuánto tiempo siguen conectadas las personas, qué pueden buscar, la edición en el navegador y lo que pueden hacer los administradores.",
+  "settings.section.scripts": "Scripts de página",
+  "settings.section.scripts.intro": "Scripts añadidos a cada página del drive, como el menú de un sitio al que pertenece. Un script se ejecuta con todo el poder de la página: ve lo que ve la persona conectada y puede actuar como ella. Añade solo scripts en los que confíes tanto como en este servidor",
   "settings.section.about": "Acerca de",
   "settings.section.about.intro": "Datos de esta instalación. Los fija el archivo de configuración del servidor.",
   "settings.group.links": "Compartir y enlaces",
@@ -150,6 +152,11 @@
   "settings.on": "Activado",
   "settings.off": "Desactivado",
   "settings.none": "Ninguno",
+  "settings.scripts.add": "Añadir script",
+  "settings.scripts.remove": "Quitar script {n}",
+  "settings.scripts.entry": "Script {n}",
+  "settings.scripts.max": "Como máximo 10 scripts",
+  "settings.scripts.empty": "Sin scripts",
   "settings.about.version": "Versión",
   "settings.about.publicUrl": "Dirección pública",
   "settings.about.webInterface": "Interfaz web",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "Archivo más grande que se puede editar",
   "settings.field.office.max_file_bytes.help": "El mayor documento que abre el editor del navegador.",
   "settings.field.admin.tenant_access.label": "«Iniciar sesión como» para administradores",
-  "settings.field.admin.tenant_access.help": "Permite que un administrador de la instalación abra los archivos de un cliente como una de sus personas. Cada visita queda registrada en la actividad del cliente."
+  "settings.field.admin.tenant_access.help": "Permite que un administrador de la instalación abra los archivos de un cliente como una de sus personas. Cada visita queda registrada en la actividad del cliente.",
+  "settings.field.ui.scripts.label": "Scripts",
+  "settings.field.ui.scripts.help": "Una dirección https, una dirección http en 127.0.0.1, [::1] o localhost, o una ruta de este servidor que empiece por una sola /. Los scripts se ejecutan en cada página, en el orden de la lista."
 }

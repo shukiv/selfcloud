@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "Combien de temps les partages et les liens restent ouverts, et combien de temps les fichiers supprimés et les anciennes versions sont conservés.",
   "settings.section.signin": "Connexion, recherche, office et administration",
   "settings.section.signin.intro": "Combien de temps les personnes restent connectées, ce qu’elles peuvent rechercher, la modification dans le navigateur, et ce que les administrateurs peuvent faire.",
+  "settings.section.scripts": "Scripts de page",
+  "settings.section.scripts.intro": "Scripts ajoutés à chaque page du drive, comme le menu d’un site auquel il appartient. Un script s’exécute avec tout le pouvoir de la page : il voit ce que voit la personne connectée et peut agir comme elle. N’ajoutez que des scripts auxquels vous faites autant confiance qu’à ce serveur",
   "settings.section.about": "À propos",
   "settings.section.about.intro": "Informations sur cette installation. Le fichier de configuration du serveur en est le propriétaire.",
   "settings.group.links": "Partage et liens",
@@ -150,6 +152,11 @@
   "settings.on": "Activé",
   "settings.off": "Désactivé",
   "settings.none": "Aucun",
+  "settings.scripts.add": "Ajouter un script",
+  "settings.scripts.remove": "Retirer le script {n}",
+  "settings.scripts.entry": "Script {n}",
+  "settings.scripts.max": "10 scripts au plus",
+  "settings.scripts.empty": "Aucun script",
   "settings.about.version": "Version",
   "settings.about.publicUrl": "Adresse publique",
   "settings.about.webInterface": "Interface web",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "Plus gros fichier à modifier",
   "settings.field.office.max_file_bytes.help": "Le plus gros document que l’éditeur du navigateur ouvre.",
   "settings.field.admin.tenant_access.label": "« Se connecter en tant que » pour les administrateurs",
-  "settings.field.admin.tenant_access.help": "Permet à un administrateur de l’installation d’ouvrir les fichiers d’un locataire comme l’une de ses personnes. Chaque visite est consignée dans l’activité du locataire."
+  "settings.field.admin.tenant_access.help": "Permet à un administrateur de l’installation d’ouvrir les fichiers d’un locataire comme l’une de ses personnes. Chaque visite est consignée dans l’activité du locataire.",
+  "settings.field.ui.scripts.label": "Scripts",
+  "settings.field.ui.scripts.help": "Une adresse https, une adresse http sur 127.0.0.1, [::1] ou localhost, ou un chemin de ce serveur commençant par une seule /. Les scripts s’exécutent sur chaque page, dans l’ordre de la liste."
 }

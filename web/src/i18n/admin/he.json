@@ -113,6 +113,8 @@
   "settings.section.sharing.intro": "כמה זמן שיתופים וקישורים נשארים פתוחים, וכמה זמן נשמרים קבצים שנמחקו וגרסאות ישנות.",
   "settings.section.signin": "כניסה, חיפוש, אופיס וניהול",
   "settings.section.signin.intro": "כמה זמן אנשים נשארים מחוברים, מה הם יכולים לחפש, עריכה בדפדפן, ומה מותר למנהלים.",
+  "settings.section.scripts": "סקריפטים לדפים",
+  "settings.section.scripts.intro": "סקריפטים שנוספים לכל דף של הכונן, למשל התפריט של אתר שהוא שייך לו. סקריפט רץ במלוא הכוח של הדף: הוא רואה את מה שהאדם המחובר רואה ויכול לפעול בשמו. הוסיפו רק סקריפטים שאתם בוטחים בהם כמו בשרת הזה",
   "settings.section.about": "אודות",
   "settings.section.about.intro": "עובדות על ההתקנה הזו. קובץ התצורה של השרת קובע אותן.",
   "settings.group.links": "שיתוף וקישורים",
@@ -150,6 +152,11 @@
   "settings.on": "פעיל",
   "settings.off": "כבוי",
   "settings.none": "אין",
+  "settings.scripts.add": "הוספת סקריפט",
+  "settings.scripts.remove": "הסרת סקריפט {n}",
+  "settings.scripts.entry": "סקריפט {n}",
+  "settings.scripts.max": "לכל היותר 10 סקריפטים",
+  "settings.scripts.empty": "אין סקריפטים",
   "settings.about.version": "גרסה",
   "settings.about.publicUrl": "כתובת ציבורית",
   "settings.about.webInterface": "ממשק רשת",
@@ -211,5 +218,7 @@
   "settings.field.office.max_file_bytes.label": "הקובץ הגדול ביותר לעריכה",
   "settings.field.office.max_file_bytes.help": "המסמך הגדול ביותר שעורך הדפדפן פותח.",
   "settings.field.admin.tenant_access.label": "״כניסה בתור״ למנהלים",
-  "settings.field.admin.tenant_access.help": "מאפשר למנהל ההתקנה לפתוח את הקבצים של לקוח כאחד מאנשיו. כל ביקור נרשם בפעילות של הלקוח."
+  "settings.field.admin.tenant_access.help": "מאפשר למנהל ההתקנה לפתוח את הקבצים של לקוח כאחד מאנשיו. כל ביקור נרשם בפעילות של הלקוח.",
+  "settings.field.ui.scripts.label": "סקריפטים",
+  "settings.field.ui.scripts.help": "כתובת https, כתובת http ב־127.0.0.1, [::1] או localhost, או נתיב בשרת הזה שמתחיל ב־/ אחד. הסקריפטים רצים בכל דף, לפי סדר הרשימה."
 }
