@@ -45,9 +45,6 @@ afterEach(() => {
   restoreViewport();
 });
 
-// The row that names the origin, by its text.
-const rowOf = (region: HTMLElement, origin: string) => within(region).getByRole("row", { name: new RegExp(origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
-
 describe("embedding page", () => {
   it("lists the account's origins from the read, each left to right", async () => {
     stubFetch((c) => (isGet(c) ? { status: 200, body: { origins: ["https://a.example", "https://b.example"] } } : fail(404, "not_found")));
@@ -82,7 +79,7 @@ describe("embedding page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add site" }));
     const input = await screen.findByPlaceholderText("https://app.example.com");
     // Add is disabled while the input is empty.
-    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(input, { target: { value: "https://new.example" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(calls.filter(isPut)).toHaveLength(1));
@@ -139,8 +136,8 @@ describe("embedding page", () => {
     await within(region).findByText("https://a.example");
     fireEvent.click(within(region).getByRole("button", { name: "Remove: https://a.example" }));
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
-    await waitFor(() => expect(within(region).getByRole("button", { name: "Remove: https://a.example" })).toBeDisabled());
-    expect(screen.getByRole("button", { name: "Add site" })).toBeDisabled();
+    await waitFor(() => expect((within(region).getByRole("button", { name: "Remove: https://a.example" }) as HTMLButtonElement).disabled).toBe(true));
+    expect((screen.getByRole("button", { name: "Add site" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("a failed PUT keeps the list as it was and shows the error", async () => {

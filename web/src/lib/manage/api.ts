@@ -113,6 +113,16 @@ export function usage(id: string): Promise<Usage> {
   return api<Usage>('GET', `${acc(id)}/usage`);
 }
 
+// The sites that may frame the account's pages (eb2b). The whole list is read and replaced at once: the server
+// normalises, deduplicates and sorts what it is sent, and answers with the list it keeps.
+export function listEmbedOrigins(id: string): Promise<{ origins: string[] }> {
+  return api<{ origins: string[] }>('GET', `${acc(id)}/embed`);
+}
+
+export function replaceEmbedOrigins(id: string, origins: string[], signal?: AbortSignal): Promise<{ origins: string[] }> {
+  return api<{ origins: string[] }>('PUT', `${acc(id)}/embed`, { body: { origins }, signal, nameBadValue: true });
+}
+
 export function listPeople(id: string, cursor?: string): Promise<Page<Person>> {
   return api<Page<Person>>('GET', `${acc(id)}/users${query({ cursor, limit: PAGE_SIZE })}`);
 }

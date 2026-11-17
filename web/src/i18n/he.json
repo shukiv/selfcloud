@@ -1247,6 +1247,7 @@
   "colour.slate": "אפור-כחול",
   "colour.grey": "אפור",
   "nav.manageLabels": "תוויות",
+  "nav.manageEmbedding": "הטמעה",
   "manage.labels.title": "תוויות",
   "labels.intro": "שדות שמתארים פריטים. כל מי שרואה פריט רואה את ערכיו; עורכים קובעים אותם. שדה מוגבל נראה ונקבע רק על ידי מנהלי הפריט.",
   "labels.new": "שדה חדש",

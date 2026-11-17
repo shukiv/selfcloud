@@ -6,7 +6,7 @@ import type { User } from './types';
 // every call; this only decides which page a person is shown. A page the person may not open is the
 // not-found view, not a redirect (docs/design.md, section 10).
 
-export type ManageSection = 'overview' | 'people' | 'groups' | 'spaces' | 'storage' | 'labels' | 'links' | 'audit';
+export type ManageSection = 'overview' | 'people' | 'groups' | 'spaces' | 'storage' | 'labels' | 'links' | 'embedding' | 'audit';
 export type AdminSection = 'tenants' | 'tenant' | 'admins' | 'settings';
 
 export type Target =
@@ -21,6 +21,7 @@ const MANAGE: Record<string, ManageSection> = {
   '/manage/storage': 'storage',
   '/manage/labels': 'labels',
   '/manage/links': 'links',
+  '/manage/embedding': 'embedding',
   '/manage/audit': 'audit',
 };
 

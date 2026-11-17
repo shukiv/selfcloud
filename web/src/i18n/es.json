@@ -1247,6 +1247,7 @@
   "colour.slate": "Pizarra",
   "colour.grey": "Gris",
   "nav.manageLabels": "Etiquetas",
+  "nav.manageEmbedding": "Incrustación",
   "manage.labels.title": "Etiquetas",
   "labels.intro": "Campos que describen los elementos. Quien puede ver un elemento ve sus valores; los editores los establecen. Un campo restringido solo lo ven y lo establecen los gestores del elemento.",
   "labels.new": "Campo nuevo",

@@ -140,6 +140,7 @@ fn	lib/manage/api.ts:getSpace	folder show	cli8	built in cli8
 fn	lib/manage/api.ts:listAccountLinks	link ls	cli7	built in cli7
 fn	lib/manage/api.ts:listAccounts	account ls	cli9a2	built in cli9a2
 fn	lib/manage/api.ts:listAdmins	admin ls	cli9a3	built in cli9a3
+fn	lib/manage/api.ts:listEmbedOrigins	embed show	eb2b	built in eb2b
 fn	lib/manage/api.ts:listGroupMembers	group members	cli8	built in cli8
 fn	lib/manage/api.ts:listGroups	group ls	cli8	built in cli8
 fn	lib/manage/api.ts:listKeys	account key ls	cli9a1	built in cli9a1
@@ -149,6 +150,7 @@ fn	lib/manage/api.ts:removeGroupMember	group remove-member	cli8	built in cli8
 fn	lib/manage/api.ts:removePerson	user rm	cli9b1	built in cli9b1
 fn	lib/manage/api.ts:renameGroup	group rename	cli8	built in cli8
 fn	lib/manage/api.ts:renameSpace	folder rename	cli8	built in cli8
+fn	lib/manage/api.ts:replaceEmbedOrigins	embed set	eb2b	built in eb2b
 fn	lib/manage/api.ts:resendVerification	user verify	cli9b2	built in cli9b2
 fn	lib/manage/api.ts:resetUserPassword	user reset-password	cli9b2	built in cli9b2
 fn	lib/manage/api.ts:revokeKey	account key revoke	cli9a1	built in cli9a1

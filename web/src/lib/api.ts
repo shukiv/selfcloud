@@ -23,6 +23,10 @@ export interface RequestOptions {
   signal?: AbortSignal;
   // timeoutMs is how long the call may wait for its answer, headers and body both; 0 turns the limit off.
   timeoutMs?: number;
+  // nameBadValue keeps the server's own message for a refusal (ApiError.serverMessage). It is for the one place that
+  // shows the value the server refused by name (an embed origin that is not one); every other call leaves it empty,
+  // so the interface still shows codes, never the server's words.
+  nameBadValue?: boolean;
 }
 
 // REQUEST_TIMEOUT_MS is the default wait for an answer. A call here is small JSON that the server answers in well under
@@ -118,10 +122,11 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   } finally {
     window.clearTimeout(timer);
   }
-  const env = data as { error?: { code?: unknown; details?: unknown } } | null;
+  const env = data as { error?: { code?: unknown; details?: unknown; message?: unknown } } | null;
   const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
   const raw = env?.error?.details;
   const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const serverMessage = opts.nameBadValue === true && typeof env?.error?.message === 'string' ? env.error.message : '';
 
   // The one-hour sign-in as has ended: the admin's own session is restored in place of it, and the page carries on
   // with that session. The request that found out fails with its code; the page shows nothing more for it.
@@ -147,7 +152,7 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   }
   if (!res.ok) {
     const retry = Number(res.headers.get('Retry-After') ?? 0);
-    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0);
+    throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0, serverMessage);
   }
   return data as T;
 }

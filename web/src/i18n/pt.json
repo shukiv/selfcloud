@@ -1247,6 +1247,7 @@
   "colour.slate": "Ardósia",
   "colour.grey": "Cinzento",
   "nav.manageLabels": "Etiquetas",
+  "nav.manageEmbedding": "Incorporação",
   "manage.labels.title": "Etiquetas",
   "labels.intro": "Campos que descrevem os itens. Quem pode ver um item vê os seus valores; os editores definem-nos. Um campo restrito só é visto e definido pelos gestores do item.",
   "labels.new": "Novo campo",

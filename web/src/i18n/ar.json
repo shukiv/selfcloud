@@ -1247,6 +1247,7 @@
   "colour.slate": "رمادي مزرق",
   "colour.grey": "رمادي",
   "nav.manageLabels": "الوسوم",
+  "nav.manageEmbedding": "التضمين",
   "manage.labels.title": "الوسوم",
   "labels.intro": "حقول تصف العناصر. يرى كل من يرى العنصر قيمه، ويضبطها المحررون. لا يراه ولا يضبطه إلا مديرو العنصر إذا كان الحقل مقيّدًا.",
   "labels.new": "حقل جديد",

@@ -1247,6 +1247,7 @@
   "colour.slate": "Slate",
   "colour.grey": "Grey",
   "nav.manageLabels": "Labels",
+  "nav.manageEmbedding": "Embedding",
   "manage.labels.title": "Labels",
   "labels.intro": "Fields that describe items. Everyone who can see an item sees its values; editors set them. A restricted field is seen and set only by managers of the item.",
   "labels.new": "New field",

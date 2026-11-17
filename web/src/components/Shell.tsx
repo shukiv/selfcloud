@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, t
 import { followTarget, keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, Cloud, FolderOpen, Inbox, MonitorPlay, Share2, Star, Tags, Trash2, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import { Clock, Cloud, FolderOpen, Frame, Inbox, MonitorPlay, Share2, Star, Tags, Trash2, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import IconButton from "./IconButton";
 import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -146,6 +146,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
         { key: "/manage/storage", label: t("nav.manageStorage"), icon: icon(Cloud) },
         { key: "/manage/labels", label: t("nav.manageLabels"), icon: icon(Tags) },
         { key: "/manage/links", label: t("nav.links"), icon: icon(Share2) },
+        { key: "/manage/embedding", label: t("nav.manageEmbedding"), icon: icon(Frame) },
         { key: "/manage/audit", label: t("nav.audit"), icon: icon(Settings) },
       ],
     });
