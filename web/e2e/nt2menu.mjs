@@ -98,7 +98,19 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const size = await page.waitFor(`(() => { const s = ${NEW_MENU_SIZE}; return s && s.rowH === 40 ? s : null; })()`, 5000);
     check(size.rowH === 40, `a mouse's row is 40 px (${size.rowH})`);
     // Every top-level row of the open New menu, submenu titles included (a submenu's row is its title, a child of its item).
-    const heights = await page.evaluate(`[...(${NEW_MENU})?.querySelectorAll(':scope > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)') ?? []].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
+    // The rows lay out from 0 px during a fresh open animation of the same menu, so a one-shot read can catch them at 0 between
+    // the size wait above and this read. The wait returns the same heights string only once every row is 40 px and none is '?';
+    // a first read that is not yet 40 is noted, and a timeout reads once more so the check below fails with that string.
+    const heightsOf = `[...(${NEW_MENU})?.querySelectorAll(':scope > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)') ?? []].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`;
+    const rowsSettled = (s) => !/:(?!40\b)-?\d+/.test(s) && !s.includes('?');
+    const firstHeights = await page.evaluate(heightsOf);
+    if (!rowsSettled(firstHeights)) console.log(`INFO nt2menu rows were still laying out (${firstHeights})`);
+    let heights;
+    try {
+      heights = await page.waitFor(`(() => { const s = ${heightsOf}; return !/:(?!40\\b)-?\\d+/.test(s) && !s.includes('?') ? s : null; })()`, 5000);
+    } catch {
+      heights = await page.evaluate(heightsOf);
+    }
     check(!/:(?!40\b)-?\d+/.test(heights) && !heights.includes('?'), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
     check(size.w >= 320 && size.w <= 400, `the menu is 320 to 400 px wide (${size.w})`);
     // From a template, under Document, goes to the gallery at this folder, with the kind.
