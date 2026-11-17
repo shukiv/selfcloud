@@ -118,14 +118,6 @@ describe("what a row shows", () => {
     expect(within(r).queryByRole("button", { name: /Back to the default/ })).toBeNull();
   });
 
-  it("skips a list setting: the sections draw, and no row for it (its card comes later)", async () => {
-    server({ "ui.scripts": { value: ["https://cdn.example.com/menu.js"], source: "settings" } });
-    renderPage();
-    await screen.findByRole("region", { name: "Uploads and storage" });
-    expect(row("ui.scripts")).toBeNull();
-    expect(screen.queryByText("https://cdn.example.com/menu.js")).toBeNull();
-  });
-
   it("shows a stored row as set here, with Reset naming the default", async () => {
     server({ "trash.retention": { value: "360h0m0s", source: "settings" } });
     renderPage();
@@ -211,6 +203,183 @@ describe("what a row shows", () => {
     expect(within(row("sessions.admin_idle_timeout")).getByText(/Lowering it signs out/)).toBeTruthy();
     expect(within(row("sessions.admin_max_age")).getByText(/Lowering it signs out/)).toBeTruthy();
     expect(within(row("trash.retention")).queryByText(/Lowering it signs out/)).toBeNull();
+  });
+});
+
+// The Page scripts section (ui.scripts, a list): one row per entry, Add and Remove, and the section's own Save.
+describe("the page scripts section", () => {
+  const scriptInput = (n: number) => within(row("ui.scripts")).getByRole("textbox", { name: `Script ${n}` }) as HTMLInputElement;
+  const addButton = () => within(row("ui.scripts")).getByRole("button", { name: "Add script" });
+  const twoScripts = { "ui.scripts": { value: ["https://cdn.example.com/a.js", "https://cdn.example.com/b.js"], source: "settings" as const } };
+
+  it("draws the section with its entries in order, and its tab on a narrow content", async () => {
+    server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    expect(scriptInput(1).value).toBe("https://cdn.example.com/a.js");
+    expect(scriptInput(2).value).toBe("https://cdn.example.com/b.js");
+    expect(scriptInput(1).maxLength).toBe(2048);
+    expect(scriptInput(1).placeholder).toBe("https://example.com/menu.js");
+    expect(within(row("ui.scripts")).getByText("Set here")).toBeTruthy();
+  });
+
+  it("draws the section as a tab that opens its card", async () => {
+    const saved = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      private cb: ResizeObserverCallback;
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb;
+      }
+      observe() {
+        this.cb([{ contentRect: { width: 560 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      server();
+      renderPage();
+      const tablist = await screen.findByRole("tablist");
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Page scripts" }));
+      expect(await screen.findByRole("region", { name: "Page scripts" })).toBeTruthy();
+      expect(within(row("ui.scripts")).getByText("No scripts")).toBeTruthy();
+    } finally {
+      globalThis.ResizeObserver = saved;
+    }
+  });
+
+  it("says No scripts above Add when the list is empty", async () => {
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    expect(within(row("ui.scripts")).getByText("No scripts")).toBeTruthy();
+    expect(within(row("ui.scripts")).queryByRole("textbox")).toBeNull();
+    expect(addButton()).toBeTruthy();
+  });
+
+  it("Add appends an empty row and focuses it", async () => {
+    server({ "ui.scripts": { value: ["https://cdn.example.com/a.js"], source: "settings" } });
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.click(addButton());
+    const input = scriptInput(2);
+    expect(input.value).toBe("");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("Add is disabled at ten rows, with its tooltip", async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `https://cdn.example.com/${i}.js`);
+    server({ "ui.scripts": { value: ten, source: "settings" } });
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    const add = addButton() as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.mouseEnter(add.parentElement as HTMLElement);
+    expect(await screen.findByText("At most 10 scripts")).toBeTruthy();
+  });
+
+  it("Remove removes its row, and the rows after it keep their order", async () => {
+    server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.click(within(row("ui.scripts")).getByRole("button", { name: "Remove script 1" }));
+    expect(scriptInput(1).value).toBe("https://cdn.example.com/b.js");
+    expect(within(row("ui.scripts")).queryByRole("textbox", { name: "Script 2" })).toBeNull();
+  });
+
+  it("Tab order is input, remove, next row, Add", async () => {
+    server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    const focusables = [...row("ui.scripts").querySelectorAll("input, button")].map((el) => el.getAttribute("aria-label") ?? el.textContent);
+    expect(focusables).toEqual(["Script 1", "Remove script 1", "Script 2", "Remove script 2", "Add script", "Back to the default (None)"]);
+  });
+
+  it("Enter in a row neither saves nor adds a row", async () => {
+    const { calls } = server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.keyDown(scriptInput(1), { key: "Enter", code: "Enter" });
+    fireEvent.keyPress(scriptInput(1), { key: "Enter", code: "Enter" });
+    fireEvent.keyUp(scriptInput(1), { key: "Enter", code: "Enter" });
+    expect(within(row("ui.scripts")).queryByRole("textbox", { name: "Script 3" })).toBeNull();
+    expect(writes(calls)).toHaveLength(0);
+  });
+
+  it("Save sends the list trimmed, without empty rows", async () => {
+    const { calls } = server({ "ui.scripts": { value: ["https://cdn.example.com/a.js"], source: "settings" } });
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.change(scriptInput(1), { target: { value: "  https://cdn.example.com/b.js  " } });
+    fireEvent.click(addButton());
+    fireEvent.click(save("Page scripts"));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toEqual({ set: { "ui.scripts": ["https://cdn.example.com/b.js"] } });
+    await waitFor(() => expect((save("Page scripts") as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it("an unchanged list makes Save do nothing", async () => {
+    const { calls } = server({ "ui.scripts": { value: ["https://cdn.example.com/a.js"], source: "settings" } });
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.change(scriptInput(1), { target: { value: " https://cdn.example.com/a.js " } });
+    expect((save("Page scripts") as HTMLButtonElement).disabled).toBe(true);
+    expect(within(row("ui.scripts")).queryByRole("img", { name: "Changed" })).toBeNull();
+    expect(writes(calls)).toHaveLength(0);
+  });
+
+  it("shows the server's refusal for the list under the field, and keeps the edit", async () => {
+    server({}, () =>
+      fail(400, "invalid_request", {
+        reason: "invalid_setting",
+        keys: ["ui.scripts"],
+        errors: ["config: ui.scripts: entry 1 is not an address this server may load as a script"],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.click(addButton());
+    fireEvent.change(scriptInput(1), { target: { value: "ftp://example.com/menu.js" } });
+    fireEvent.click(save("Page scripts"));
+    expect(await within(row("ui.scripts")).findByText(/entry 1 is not an address this server may load as a script/)).toBeTruthy();
+    expect(scriptInput(1).value).toBe("ftp://example.com/menu.js");
+    expect((save("Page scripts") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a list the config file writes is read-only, with no add or remove", async () => {
+    server({ "ui.scripts": { value: ["https://cdn.example.com/a.js"], source: "file", locked: true } });
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    expect(scriptInput(1).value).toBe("https://cdn.example.com/a.js");
+    expect(scriptInput(1).readOnly).toBe(true);
+    expect(within(row("ui.scripts")).queryByRole("button", { name: "Add script" })).toBeNull();
+    expect(within(row("ui.scripts")).queryByRole("button", { name: /Remove script/ })).toBeNull();
+    expect(within(row("ui.scripts")).getByText("Set in the server's config file")).toBeTruthy();
+    expect((save("Page scripts") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Discard restores the saved entries", async () => {
+    server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.click(within(row("ui.scripts")).getByRole("button", { name: "Remove script 1" }));
+    fireEvent.click(addButton());
+    fireEvent.change(scriptInput(2), { target: { value: "https://cdn.example.com/c.js" } });
+    fireEvent.click(within(region("Page scripts")).getByRole("button", { name: "Discard" }));
+    expect(scriptInput(1).value).toBe("https://cdn.example.com/a.js");
+    expect(scriptInput(2).value).toBe("https://cdn.example.com/b.js");
+    expect((save("Page scripts") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Reset sends the list in reset, and the rows go back to the default", async () => {
+    const { calls } = server(twoScripts);
+    renderPage();
+    await screen.findByRole("region", { name: "Page scripts" });
+    fireEvent.click(within(row("ui.scripts")).getByRole("button", { name: "Back to the default (None)" }));
+    expect(within(row("ui.scripts")).getByText("No scripts")).toBeTruthy();
+    fireEvent.click(save("Page scripts"));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toEqual({ reset: ["ui.scripts"] });
   });
 });
 
@@ -573,7 +742,7 @@ describe("the layout follows the content's width", () => {
     await screen.findByRole("region", { name: "Uploads and storage" });
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getAllByRole("region")).toHaveLength(5);
+    expect(screen.getAllByRole("region")).toHaveLength(6);
     expect(twoColumns("upload.max_file_size")).toBe(true);
   });
 
@@ -659,7 +828,7 @@ describe("the layout follows the content's width", () => {
 });
 
 describe("the layout", () => {
-  it("lists the five sections beside the cards on a wide window, Branding first", async () => {
+  it("lists the six sections beside the cards on a wide window, Branding first", async () => {
     server();
     renderPage();
     await screen.findByRole("region", { name: "Uploads and storage" });
@@ -669,9 +838,10 @@ describe("the layout", () => {
       "Uploads and storage",
       "Sharing, trash and versions",
       "Sign-in, search, office and administration",
+      "Page scripts",
       "About",
     ]);
-    expect(screen.getAllByRole("region")).toHaveLength(5);
+    expect(screen.getAllByRole("region")).toHaveLength(6);
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 
@@ -691,6 +861,7 @@ describe("the layout", () => {
       "Uploads and storage",
       "Sharing, trash and versions",
       "Sign-in, search, office and administration",
+      "Page scripts",
       "About",
     ]);
     fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "5" } });

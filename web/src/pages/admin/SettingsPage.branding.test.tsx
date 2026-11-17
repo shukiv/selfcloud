@@ -118,7 +118,7 @@ describe("the Branding card", () => {
     renderPage();
     await ready();
     const cards = [...document.querySelectorAll("section[id^='settings-']")].map((s) => s.id);
-    expect(cards).toEqual(["settings-branding", "settings-uploads", "settings-sharing", "settings-signin", "settings-about"]);
+    expect(cards).toEqual(["settings-branding", "settings-uploads", "settings-sharing", "settings-signin", "settings-scripts", "settings-about"]);
     const names = within(screen.getByRole("navigation", { name: "Sections" })).getAllByRole("button").map((b) => b.textContent);
     expect(names[0]).toBe("Branding");
     expect(within(region("Branding")).getByText("How the installation looks to everyone: its name, colour, logo, icon and app icon.")).toBeTruthy();

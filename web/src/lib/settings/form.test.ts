@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../apiError";
-import { draftOf, isChanged, messagesFor, refusal, sectionChange, withoutSent, type Edits } from "./form";
+import { draftOf, isChanged, messagesFor, refusal, sectionChange, wireOf, withoutSent, type Edits } from "./form";
 import type { Setting } from "./api";
 
 function setting(over: Partial<Setting> & { key: string; type: Setting["type"]; value: Setting["value"] }): Setting {
@@ -151,6 +151,56 @@ describe("what a saved change leaves of the edits", () => {
   it("keeps a field that was touched again, even when it was set back to the same text", () => {
     const again = { value: 50, reset: false };
     expect(withoutSent({ ...sent, "versions.max_count": again }, sent, ["versions.max_count"])).toEqual({ ...sent, "versions.max_count": again, "trash.retention": sent["trash.retention"] });
+  });
+});
+
+describe("a list of page scripts", () => {
+  const scripts = setting({ key: "ui.scripts", type: "list", value: ["https://cdn.example.com/a.js", "/menu.js"], default: [] });
+  const storedScripts = setting({ key: "ui.scripts", type: "list", value: ["https://cdn.example.com/a.js"], default: [], source: "settings" });
+  const lockedScripts = setting({ key: "ui.scripts", type: "list", value: ["https://cdn.example.com/a.js"], default: [], source: "file", locked: true });
+  const emptyScripts = setting({ key: "ui.scripts", type: "list", value: [], default: [] });
+
+  it("drafts a copy of the list, so an edit never touches the answer", () => {
+    const d = draftOf(scripts) as string[];
+    expect(d).toEqual(["https://cdn.example.com/a.js", "/menu.js"]);
+    d.push("https://cdn.example.com/x.js");
+    expect(scripts.value).toEqual(["https://cdn.example.com/a.js", "/menu.js"]);
+  });
+
+  it("wires a list trimmed, with the empty rows dropped", () => {
+    expect(wireOf("list", ["  https://cdn.example.com/a.js  ", "", "   ", "/menu.js"])).toEqual(["https://cdn.example.com/a.js", "/menu.js"]);
+    expect(wireOf("list", ["", "  "])).toEqual([]);
+    expect(wireOf("list", [])).toEqual([]);
+  });
+
+  it("is unchanged only when every entry is the same, in the same order", () => {
+    expect(isChanged(scripts, { value: ["https://cdn.example.com/a.js", "/menu.js"], reset: false })).toBe(false);
+    expect(isChanged(scripts, { value: ["/menu.js", "https://cdn.example.com/a.js"], reset: false })).toBe(true);
+    expect(isChanged(scripts, { value: ["https://cdn.example.com/a.js"], reset: false })).toBe(true);
+    expect(isChanged(scripts, { value: ["https://cdn.example.com/a.js", "/menu.js", "x"], reset: false })).toBe(true);
+    // Trim and the empty rows are the wire's own rules, so they alone are not a change.
+    expect(isChanged(scripts, { value: [" https://cdn.example.com/a.js ", "/menu.js", ""], reset: false })).toBe(false);
+  });
+
+  it("sends the trimmed list without empty rows, and nothing when it is unchanged", () => {
+    const keys = ["ui.scripts"];
+    expect(sectionChange([scripts], keys, { "ui.scripts": { value: [" https://cdn.example.com/b.js ", "", "/menu.js"], reset: false } })).toEqual({
+      set: { "ui.scripts": ["https://cdn.example.com/b.js", "/menu.js"] },
+      reset: [],
+      incomplete: [],
+    });
+    expect(sectionChange([scripts], keys, { "ui.scripts": { value: ["https://cdn.example.com/a.js", "/menu.js"], reset: false } })).toEqual({ set: {}, reset: [], incomplete: [] });
+  });
+
+  it("sends an empty list when every row was emptied, and nothing when the list is already empty", () => {
+    expect(sectionChange([scripts], ["ui.scripts"], { "ui.scripts": { value: ["", "  "], reset: false } }).set).toEqual({ "ui.scripts": [] });
+    expect(sectionChange([emptyScripts], ["ui.scripts"], { "ui.scripts": { value: [""], reset: false } })).toEqual({ set: {}, reset: [], incomplete: [] });
+  });
+
+  it("sends a reset for a stored list, and never changes a locked one", () => {
+    expect(sectionChange([storedScripts], ["ui.scripts"], { "ui.scripts": { value: [], reset: true } })).toEqual({ set: {}, reset: ["ui.scripts"], incomplete: [] });
+    expect(isChanged(lockedScripts, { value: [], reset: false })).toBe(false);
+    expect(sectionChange([lockedScripts], ["ui.scripts"], { "ui.scripts": { value: [], reset: false } })).toEqual({ set: {}, reset: [], incomplete: [] });
   });
 });
 

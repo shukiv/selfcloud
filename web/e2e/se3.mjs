@@ -205,8 +205,8 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     check(true, 'the old Installation address lands on /admin/settings');
     const sections = await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Sections"] button')].map((b) => b.textContent.trim())`);
     check(
-      sections.join('|') === 'Branding|Uploads and storage|Sharing, trash and versions|Sign-in, search, office and administration|About',
-      `the section list names the five sections, Branding first (${sections.join(' | ')})`,
+      sections.join('|') === 'Branding|Uploads and storage|Sharing, trash and versions|Sign-in, search, office and administration|Page scripts|About',
+      `the section list names the six sections, Branding first (${sections.join(' | ')})`,
     );
 
     // 2. Change the trash retention, save, reload, reset.
@@ -274,7 +274,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
 
     // 5. A phone, Hebrew and the dark theme. A phone stacks every section (mob4): antd's tabs cut the third one under its
     //    "···" at these widths, so a section could not be reached. Every card is on the page and scrolls into view.
-    const SECTIONS = ['branding', 'uploads', 'sharing', 'signin', 'about'];
+    const SECTIONS = ['branding', 'uploads', 'sharing', 'signin', 'scripts', 'about'];
     for (const width of [375, 360]) {
       await setWidth(page, width);
       await page.waitFor(`!!document.getElementById('settings-uploads') && !document.querySelector('[role="tablist"]')`, 10000);
@@ -288,7 +288,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
         };
       })()`);
       check(!stacked.tabs && !stacked.more && !stacked.nav && stacked.cards.every((c) => c.there && c.w > 0),
-        `at ${width} px the five sections are stacked cards, each reachable (${JSON.stringify(stacked.cards.map((c) => c.id))}; tabs ${stacked.tabs}, more ${stacked.more})`);
+        `at ${width} px the six sections are stacked cards, each reachable (${JSON.stringify(stacked.cards.map((c) => c.id))}; tabs ${stacked.tabs}, more ${stacked.more})`);
       check(!(await sideways(page)), `at ${width} px the Settings page has no sideways scroll`);
     }
     await setWidth(page, 375);
@@ -301,7 +301,7 @@ export async function se3Checks(h, { page, base, adminKey, ADMIN, refused }) {
     await page.waitFor(`!!document.querySelector('nav') && !!document.getElementById('settings-uploads')`, 10000);
     const sides = await page.evaluate(`(() => {
       // The section list is the nav beside the cards: its next sibling holds the first card.
-      const nav = [...document.querySelectorAll('nav')].find((n) => n.querySelectorAll('button').length === 5 && n.nextElementSibling?.querySelector('#settings-uploads'));
+      const nav = [...document.querySelectorAll('nav')].find((n) => n.querySelectorAll('button').length === 6 && n.nextElementSibling?.querySelector('#settings-uploads'));
       const card = document.getElementById('settings-uploads');
       return { nav: nav.getBoundingClientRect().left, card: card.getBoundingClientRect().left };
     })()`);

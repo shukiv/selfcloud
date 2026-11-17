@@ -1329,7 +1329,7 @@ async function main() {
       ps1Page.base = base;
       try {
         await ps1Page.start(EXPECTED);
-        await ps1Checks(h, { page: ps1Page, base, adminKey, MEMBER });
+        await ps1Checks(h, { page: ps1Page, base, adminKey, MEMBER, ADMIN });
         check(ps1Page.errors.length === 0, `the page scripts browser has no console errors or policy violations (${ps1Page.errors.join(' | ') || 'none'})`);
       } finally {
         ps1Page.close();
