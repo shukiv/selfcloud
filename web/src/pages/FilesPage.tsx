@@ -1518,19 +1518,21 @@ export default function FilesPage() {
     await reload([{ folder: dest.folder, dir: dest.dir }, ...nodes.map((n) => ({ folder: n.folder_id, dir: n.parent_id }))]);
   }
 
-  // watchJob polls a copy that the server runs as a job, until it finishes.
+  // watchJob polls a copy that the server runs as a job, until it finishes. A sign-out ends the watch quietly:
+  // no further ask, and no failed mark, as a page that is left.
   function watchJob(id: string, also: Branch[] = []) {
     setJobs((prev) => [...prev, { id, status: "queued" }]);
+    const stale = sessionChanged();
     const poll = async () => {
-      if (!mounted.current) return;
+      if (stale() || !mounted.current) return;
       try {
         const j = await getJob(id);
-        if (!mounted.current) return;
+        if (stale() || !mounted.current) return;
         setJobs((prev) => prev.map((x) => (x.id === id ? { id, status: j.status } : x)));
         if (j.status === "queued" || j.status === "running") setTimeout(() => void poll(), 1500);
         else if (j.status === "succeeded") await reload(also);
       } catch {
-        if (mounted.current) setJobs((prev) => prev.map((x) => (x.id === id ? { id, status: "failed" } : x)));
+        if (!stale() && mounted.current) setJobs((prev) => prev.map((x) => (x.id === id ? { id, status: "failed" } : x)));
       }
     };
     void poll();

@@ -68,7 +68,13 @@ export default function OpenLinkPage() {
     clearTimer();
     const b = bearerRef.current;
     if (b === null || !aliveRef.current) return;
-    timerRef.current = setTimeout(() => void renewNow(), renewDelay(b.expiresAt, Date.now()));
+    // The wait keeps the session it was set under: the renewal goes through api, which carries the session's CSRF
+    // token and cookie beside the link's bearer, so a changed session ends the wait quietly, before the send.
+    const stale = sessionChanged();
+    timerRef.current = setTimeout(() => {
+      if (stale()) return;
+      void renewNow();
+    }, renewDelay(b.expiresAt, Date.now()));
   };
 
   // toSignIn keeps the secret for the sign-in and goes to it. The address loses its fragment, and the page comes back

@@ -3,6 +3,9 @@
 // Polling of a background job (GET /jobs/{job}). The wait grows from half a second and stops growing at eight
 // seconds, so a long deletion is checked a few times a minute, not every half second.
 
+import { session, sessionKey as keyOfSession } from '../session';
+import { get } from '../store';
+
 export const FIRST_DELAY = 500;
 export const MAX_DELAY = 8000;
 
@@ -21,7 +24,9 @@ export const MAX_ERRORS = 3;
 
 // poll calls check until it answers done, with the backoff between calls. It returns a function that stops it.
 // A stopped poll never calls check again, and never reports, so a page that is left stops asking. Exactly one
-// of onDone, onError and onGiveUp is called, once, unless the poll is stopped first.
+// of onDone, onError and onGiveUp is called, once, unless the poll is stopped first. A poll whose session ends
+// stops the same way: it keeps the key it started under, and a changed key means no further check and no report,
+// so a sign-out is never followed by a request or an error under the session it ended.
 export function poll<T>(
   check: () => Promise<T>,
   isDone: (value: T) => boolean,
@@ -30,12 +35,26 @@ export function poll<T>(
   onGiveUp: () => void = () => undefined,
   schedule: (fn: () => void, ms: number) => unknown = setTimeout,
   cancel: (handle: unknown) => void = (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  sessionKey: () => string = () => keyOfSession(get(session)),
 ): () => void {
   let stopped = false;
   let handle: unknown = null;
   let polls = 0;
   let errors = 0;
+  // The session the poll starts under. A poll with no session keeps its empty key valid while it stays empty.
+  const startedKey = sessionKey();
+  const sessionGone = () => sessionKey() !== startedKey;
+  const stop = () => {
+    stopped = true;
+    if (handle !== null) cancel(handle);
+    handle = null;
+  };
   const again = () => {
+    if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     if (polls >= MAX_POLLS) {
       onGiveUp();
       return;
@@ -45,10 +64,18 @@ export function poll<T>(
   const step = () => {
     handle = null;
     if (stopped) return;
+    if (sessionGone()) {
+      stop();
+      return;
+    }
     polls++;
     check().then(
       (value) => {
         if (stopped) return;
+        if (sessionGone()) {
+          stop();
+          return;
+        }
         errors = 0;
         if (isDone(value)) {
           onDone(value);
@@ -58,6 +85,10 @@ export function poll<T>(
       },
       (err: unknown) => {
         if (stopped) return;
+        if (sessionGone()) {
+          stop();
+          return;
+        }
         if (++errors >= MAX_ERRORS) {
           onError(err);
           return;
@@ -67,9 +98,5 @@ export function poll<T>(
     );
   };
   handle = schedule(step, 0);
-  return () => {
-    stopped = true;
-    if (handle !== null) cancel(handle);
-    handle = null;
-  };
+  return stop;
 }
