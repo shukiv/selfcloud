@@ -7485,7 +7485,7 @@ components:
 
     MediaBookmark:
       type: object
-      description: A place a user marked in a media file (decision 216). Private to its user.
+      description: A place a user marked in a media file (decision 218). Private to its user.
       required: [id, position_seconds, label, created_at]
       properties:
         id: { type: string, pattern: "^bmk_" }

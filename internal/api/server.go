@@ -516,7 +516,7 @@ func New(opts Options) (*Server, error) {
 			// A place in a media file, per user. A client writes one at most every 15 seconds while a file plays, and one on
 			// each pause that moved it: about 4 a minute of playing, so 60 a minute leaves room for seeks and file changes.
 			"resume.write": newLimiter(60),
-			// Bookmarks in a media file, per user (decision 216). A person marks and edits places by hand, far fewer than
+			// Bookmarks in a media file, per user (decision 218). A person marks and edits places by hand, far fewer than
 			// the resume writes a playing file makes, so the same 60 a minute leaves ample room.
 			"bookmarks.write": newLimiter(60),
 			// Saved playlists, per user (decision 58). A read walks the reach of every entry, up to 500, so reads are
@@ -820,7 +820,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/resume", handle: s.handleGetMediaResume, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/resume", handle: s.handlePutMediaResume, auth: true, imp: impRefuse},
-		// Bookmarks in a media file (decision 216): the signed-in user's own, with no token and no impersonation.
+		// Bookmarks in a media file (decision 218): the signed-in user's own, with no token and no impersonation.
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/bookmarks", handle: s.handleListMediaBookmarks, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/bookmarks", handle: s.handleCreateMediaBookmark, auth: true, imp: impRefuse},
 		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}/bookmarks/{bmk}", handle: s.handleRelabelMediaBookmark, auth: true, imp: impRefuse},

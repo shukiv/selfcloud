@@ -1,4 +1,4 @@
--- Where a user marked places in a video or audio file (design section 14, slice mp6a, decision 216).
+-- Where a user marked places in a video or audio file (design section 14, slice mp6a, decision 218).
 --
 -- A row is one user's bookmark in one file: a time and an optional label. It is private to its user, as the place a
 -- user stopped at is (media_resume, migration 0040): no route reads another user's row, and the cascades remove it

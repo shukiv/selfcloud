@@ -126,7 +126,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/subtitles.go":    2,
 	// Slice mp6a added one in media_bookmarks.go: a bookmark is written only for a file, and a folder or a shortcut gets
 	// not_found, after nodeAccessWith has run inside the write (the relabel and delete share the create's check). It fails
-	// closed and grants nothing, as the resume place does. Decision 216.
+	// closed and grants nothing, as the resume place does. Decision 218.
 	"internal/api/media_bookmarks.go": 1,
 	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
 	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
