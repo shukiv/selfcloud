@@ -228,6 +228,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       const doc = await page.evaluate(`JSON.stringify({ ready: document.readyState, root: document.getElementById('root')?.childElementCount ?? null, list: !!document.querySelector('.files-list'), text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 240) })`).catch((x) => String(x));
       const unended = [...page.inflight.values()].filter((r) => r.url.startsWith(page.base)).map((r) => `${r.url.slice(page.base.length)} status ${r.status} for ${Date.now() - r.at} ms`);
       console.log(`DIAG open ${view} page ${doc}; requests not ended: ${unended.join(' ; ') || 'none'}; errors: ${page.errors.slice(-5).join(' | ') || 'none'}`);
+      // An empty root means the app never started: the boot report names the scripts and chunks the document loaded.
+      const root = await page.evaluate(`document.getElementById('root')?.childElementCount ?? null`, 5000).catch(() => null);
+      if (root === 0) console.log(`DIAG open ${view} boot ${await page.bootReport()}`);
       throw e;
     }
     console.log(`DIAG open ${view} listed after ${Date.now() - started} ms`);

@@ -153,6 +153,9 @@ export class Page {
     // inflight holds the requests not yet finished, by the browser's request ID: { url, at (ms), status (0 until the
     // answer's headers come) }. A wait that times out prints it, so a request that never ended can be named.
     this.inflight = new Map();
+    // failed holds the last 20 loads the browser gave up on: { url, errorText, blockedReason, canceled, type }. A page
+    // that never started can be explained by what did not load (a blocked script, a cancelled chunk).
+    this.failed = [];
     // expectedAnswers maps a name the run chose to the URLs of the failed requests it caused on
     // purpose (for example a 401 for a wrong password). The browser logs each failed request; the
     // run counts these and checks that they came from the step it ran.
@@ -243,7 +246,7 @@ export class Page {
       for (let s = p.initiator?.stack; s && frames.length < 12; s = s.parent) {
         for (const f of s.callFrames ?? []) frames.push(`${f.functionName || '?'}@${(f.url ?? '').split('/').pop()}:${f.lineNumber}:${f.columnNumber}`);
       }
-      this.sent.push({ method: p.request.method, url: p.request.url, initiator: frames.slice(0, 12).join(' < ') });
+      this.sent.push({ requestId: p.requestId, method: p.request.method, url: p.request.url, initiator: frames.slice(0, 12).join(' < ') });
       this.inflight.set(p.requestId, { url: p.request.url, at: Date.now(), status: 0 });
     });
     this.on('Network.responseReceived', (p) => {
@@ -251,7 +254,13 @@ export class Page {
       if (r) r.status = p.response.status;
     });
     this.on('Network.loadingFinished', (p) => this.inflight.delete(p.requestId));
-    this.on('Network.loadingFailed', (p) => this.inflight.delete(p.requestId));
+    this.on('Network.loadingFailed', (p) => {
+      // The flight record names the request; a navigation can have dropped it, so the sent list is the fallback.
+      const url = this.inflight.get(p.requestId)?.url ?? [...this.sent].reverse().find((r) => r.requestId === p.requestId)?.url ?? null;
+      this.inflight.delete(p.requestId);
+      this.failed.push({ url, errorText: p.errorText ?? null, blockedReason: p.blockedReason ?? null, canceled: Boolean(p.canceled), type: p.type ?? null });
+      if (this.failed.length > 20) this.failed.splice(0, this.failed.length - 20);
+    });
     // A main-frame navigation ends the old document's requests, and the browser can lose their end events on the way
     // out; the flight record drops what started before it, so a stale entry cannot hold a later section's wait.
     this.on('Page.frameNavigated', (p) => {
@@ -347,6 +356,49 @@ export class Page {
     return res.result.value;
   }
 
+  // bootReport is one line of JSON naming what a page loaded: the root's child count, the document's state, the
+  // navigation entry, the document's scripts, the asset chunks the resource list holds, the controlling service worker,
+  // and the last requests sent and failed. A part that cannot be read becomes null, so a page that answers nothing still
+  // gets a report; the page's own read is bounded to 5 s.
+  async bootReport() {
+    const read = (fn) => {
+      try {
+        return fn();
+      } catch {
+        return null;
+      }
+    };
+    const path = (url) => url.replace(/^https?:\/\/[^/]+/, '');
+    let seen = null;
+    try {
+      seen = await this.evaluate(`(() => {
+        const read = (fn) => { try { return fn(); } catch { return null; } };
+        const file = (url) => String(url).split('/').pop() || null;
+        return {
+          root: read(() => document.getElementById('root')?.childElementCount ?? null),
+          ready: read(() => document.readyState),
+          nav: read(() => { const n = performance.getEntriesByType('navigation')[0]; return n ? { type: n.type, responseStatus: n.responseStatus ?? null } : null; }),
+          scripts: read(() => [...document.scripts].map((s) => ({ file: s.src ? file(s.src) : 'inline', type: s.type || null }))),
+          assets: read(() => performance.getEntriesByType('resource').filter((r) => new URL(r.name).pathname.includes('/assets/')).map((r) => ({ file: file(r.name), responseStatus: r.responseStatus ?? null, duration: Math.round(r.duration), transferSize: r.transferSize ?? null }))),
+          sw: read(() => { const c = navigator.serviceWorker?.controller; return c ? { file: file(c.scriptURL), state: c.state } : null; }),
+        };
+      })()`, 5000);
+    } catch {
+      seen = null;
+    }
+    const report = {
+      root: seen?.root ?? null,
+      ready: seen?.ready ?? null,
+      nav: seen?.nav ?? null,
+      scripts: seen?.scripts ?? null,
+      assets: seen?.assets ?? null,
+      sw: seen?.sw ?? null,
+      sent: read(() => this.sent.slice(-6).map((r) => ({ method: r.method, path: path(r.url) }))),
+      failed: read(() => this.failed.slice(-6).map((f) => ({ url: f.url ? path(f.url) : null, errorText: f.errorText, blockedReason: f.blockedReason, canceled: f.canceled, type: f.type }))),
+    };
+    return read(() => JSON.stringify(report)) ?? '{}';
+  }
+
   // waitFor polls an expression until it is truthy, and returns its value.
   async waitFor(expression, timeoutMs = 10000) {
     const deadline = Date.now() + timeoutMs;
@@ -360,7 +412,11 @@ export class Page {
         // the page recorded (a dialog, a crash) is on the error too.
         const tabs = await this.openTabs();
         const recorded = this.errors.slice(-3).join(' | ') || 'none';
-        throw new Error(`timed out waiting for: ${expression} (the page is at ${at}; open tabs: ${tabs}; page errors: ${recorded})`);
+        // A document that loaded while its root stayed empty never started: the boot report names what it did load, so
+        // the timeout says why the app is not there (a script that never ran, a chunk that never came, a blocked load).
+        const root = await this.evaluate(`document.getElementById('root')?.childElementCount ?? null`, 5000).catch(() => undefined);
+        const boot = root === 0 ? ` boot: ${await this.bootReport()}` : '';
+        throw new Error(`timed out waiting for: ${expression} (the page is at ${at}; open tabs: ${tabs}; page errors: ${recorded})${boot}`);
       }
       await sleep(100);
     }
