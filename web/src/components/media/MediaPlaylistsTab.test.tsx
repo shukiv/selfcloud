@@ -682,4 +682,71 @@ describe("the Playlists tab's Add files", () => {
       expect(tip?.textContent).toBe("A playlist holds at most 500 files");
     });
   });
+
+  it("a second Add waits for the first replace and its re-read, so the first batch is not lost", async () => {
+    const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0)]);
+    let gate!: () => void;
+    const held = new Promise<void>((res) => (gate = res));
+    const { calls } = stubFetch(async (c) => {
+      if (c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`) {
+        await held;
+        return { status: 200, body: {} };
+      }
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    const before = calls.filter((c) => c.method === "GET" && c.url === `${PLAYLISTS}/pls_a`).length;
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    act(() => {
+      p.onPick([song("nod_b1", "c.mp3") as unknown as Node]);
+    });
+    // The first replace is on its way and held: Add files waits, off.
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1));
+    expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(true);
+    // A second pick while the first runs sends no second replace.
+    act(() => {
+      p.onPick([song("nod_b2", "d.mp3") as unknown as Node]);
+    });
+    expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1);
+    expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(true);
+    // The replace lands and the detail re-reads; only then is Add files on again.
+    await act(async () => {
+      gate();
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url === `${PLAYLISTS}/pls_a`).length).toBe(before + 1));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1);
+  });
+
+  it("a failed replace re-enables Add files and shows the tab's error", async () => {
+    const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0)]);
+    let gate!: () => void;
+    const held = new Promise<void>((res) => (gate = res));
+    const { calls } = stubFetch(async (c) => {
+      if (c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`) {
+        await held;
+        return fail(500, "internal");
+      }
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    act(() => {
+      p.onPick([song("nod_b1", "c.mp3") as unknown as Node]);
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1));
+    expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      gate();
+    });
+    expect(await screen.findByText("That did not work. Try again.")).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1);
+  });
 });
