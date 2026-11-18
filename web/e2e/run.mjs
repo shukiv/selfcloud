@@ -1095,7 +1095,7 @@ async function main() {
     // shared page after mp1, and ends signed in as the member, as mp1 does.
     if (!only || onlySet.has('mp3')) await section('mp3', () => mp3Checks(h, { page, base }), { as: 'member' });
     if (!only || onlySet.has('mp7')) await section('mp7', () => mp7Checks(h, { page, base, accountKey, accountID }), { as: 'member' });
-    // Slice mp6b (decision 224): bookmarks in the media player. It runs on the shared page after mp7, and ends signed in as
+    // Slice mp6b (decision 226): bookmarks in the media player. It runs on the shared page after mp7, and ends signed in as
     // the member, as mp7 does.
     if (!only || onlySet.has('mp6b')) await section('mp6b', () => mp6bChecks(h, { page, base, accountKey, accountID }), { as: 'member' });
     // Slice pk1: the Playlists tab's New playlist and Add files, the file picker on My files. It runs on the shared page
