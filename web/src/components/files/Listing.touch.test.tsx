@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// A finger's targets in the listing (mob3): a sortable column header is at least 44 px tall, a tap anywhere in a row's select
-// cell toggles the row (not only the little box), and that tap selects without opening the item. On a mouse none of this
-// changes: there is no select cell, and the header keeps its small height. A preset list's ⋮ menu rows are a finger's size too.
+// A finger's targets in the listing (mob3): a sortable column header is at least 44 px tall. A finger selects a row by a long
+// press, and a tap toggles a row while something is selected; with nothing selected a tap opens the item. There is no select
+// cell and no checkbox. On a mouse none of this changes: a click selects the row. A preset list's ⋮ menu rows are a finger's size too.
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import Listing, { type ItemListingProps, type ListingProps } from "./Listing";
 import { coarsePointer } from "../../test/viewport";
@@ -122,32 +122,87 @@ describe("a sortable column header is a finger's target (mob3)", () => {
   });
 });
 
-describe("a tap in a row's select cell toggles the row on a finger (mob3)", () => {
-  it("selects the row away from the box, opens nothing, and a second tap clears it", () => {
-    restore = coarsePointer();
-    const { container } = render(<FilesPage view="list" />);
-    const cell = container.querySelector('[data-id="n3"] .ant-table-selection-column') as HTMLElement;
-    expect(cell).not.toBeNull();
-    fireEvent.click(cell);
-    expect(selected(container, "n3")).toBe("true");
-    expect(screen.getByTestId("opens").textContent).toBe("");
-    fireEvent.click(cell);
-    expect(selected(container, "n3")).toBe("false");
-    expect(screen.getByTestId("opens").textContent).toBe("");
+describe("a finger selects a row by long press, and taps toggle while something is selected", () => {
+  it("a long press selects the row and opens nothing; the tap that ends it selects nothing more", () => {
+    vi.useFakeTimers();
+    try {
+      restore = coarsePointer();
+      const { container } = render(<FilesPage view="list" />);
+      const row = container.querySelector('[data-id="n3"]') as HTMLElement;
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(selected(container, "n3")).toBe("true");
+      expect(screen.getByTestId("opens").textContent).toBe("");
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      expect(selected(container, "n3")).toBe("true");
+      expect(screen.getByTestId("opens").textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("a tap on the box itself toggles once, not twice", () => {
-    restore = coarsePointer();
-    const { container } = render(<FilesPage view="list" />);
-    const box = container.querySelector('[data-id="n4"] input[type="checkbox"]') as HTMLElement;
-    expect(box).not.toBeNull();
-    fireEvent.click(box);
-    expect(selected(container, "n4")).toBe("true");
+  it("a second long press on a selected row clears it", () => {
+    vi.useFakeTimers();
+    try {
+      restore = coarsePointer();
+      const { container } = render(<FilesPage view="list" />);
+      const row = container.querySelector('[data-id="n3"]') as HTMLElement;
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(selected(container, "n3")).toBe("false");
+      expect(screen.getByTestId("opens").textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("on a mouse there is no select cell, and a click selects the row without opening it", () => {
+  it("with something selected, a plain tap on another row toggles it in and opens nothing", () => {
+    vi.useFakeTimers();
+    try {
+      restore = coarsePointer();
+      const { container } = render(<FilesPage view="list" />);
+      const row = container.querySelector('[data-id="n3"]') as HTMLElement;
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      expect(selected(container, "n3")).toBe("true");
+      fireEvent.click(container.querySelector('[data-id="n4"]') as HTMLElement);
+      expect(selected(container, "n4")).toBe("true");
+      expect(screen.getByTestId("opens").textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("with nothing selected, a tap opens the row", () => {
+    restore = coarsePointer();
+    const { container } = render(<FilesPage view="list" />);
+    const row = container.querySelector('[data-id="n2"]') as HTMLElement;
+    fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(row, { pointerType: "touch" });
+    fireEvent.click(row);
+    expect(selected(container, "n2")).toBe("false");
+    expect(screen.getByTestId("opens").textContent).toBe("n2");
+  });
+
+  it("on a mouse there is no select cell or checkbox, and a click selects the row without opening it", () => {
     const { container } = render(<FilesPage view="list" />);
     expect(container.querySelector(".ant-table-selection-column")).toBeNull();
+    expect(container.querySelector(".ant-checkbox")).toBeNull();
     const row = container.querySelector('[data-id="n2"]') as HTMLElement;
     fireEvent.click(row);
     expect(selected(container, "n2")).toBe("true");
@@ -155,16 +210,29 @@ describe("a tap in a row's select cell toggles the row on a finger (mob3)", () =
   });
 });
 
-describe("a preset list's select cell and ⋮ menu on a finger (mob3)", () => {
-  it("a tap in the select cell toggles the row", () => {
-    restore = coarsePointer();
-    const { container } = render(<Listing<Row> {...presetProps()} />);
-    const cell = container.querySelector('[data-id="a"] .ant-table-selection-column') as HTMLElement;
-    expect(cell).not.toBeNull();
-    fireEvent.click(cell);
-    expect(selected(container, "a")).toBe("true");
-    fireEvent.click(cell);
-    expect(selected(container, "a")).toBe("false");
+describe("a preset list's long press and ⋮ menu on a finger (mob3)", () => {
+  it("a long press toggles the row, and a tap while something is selected toggles too", () => {
+    vi.useFakeTimers();
+    try {
+      restore = coarsePointer();
+      const { container } = render(<Listing<Row> {...presetProps()} />);
+      const row = container.querySelector('[data-id="a"]') as HTMLElement;
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(selected(container, "a")).toBe("true");
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      expect(selected(container, "a")).toBe("true");
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(selected(container, "a")).toBe("false");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the ⋮ menu's rows are 44 px tall on a coarse pointer", async () => {

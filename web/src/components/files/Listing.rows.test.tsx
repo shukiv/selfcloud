@@ -187,7 +187,7 @@ describe("Listing focus: the press's focus is applied with the click's own updat
     expect((container.querySelector('[data-id="n6"]') as HTMLElement).getAttribute("tabindex")).toBe("0");
   });
 
-  it("a click on a row's checkbox is one page render, and the focus held for it is dropped, not applied a turn later", async () => {
+  it("a click on a row's mark is one page render, and the focus held for it is dropped, not applied a turn later", async () => {
     let focusCalls = 0;
     function Probe() {
       const [sel, setSel] = useState<Set<string>>(new Set());
@@ -207,7 +207,7 @@ describe("Listing focus: the press's focus is applied with the click's own updat
       );
     }
     const { container } = render(<Probe />);
-    const box = container.querySelector('[data-id="n4"] .row-check input[type="checkbox"]') as HTMLElement;
+    const box = container.querySelector('[data-id="n4"] button.row-mark') as HTMLElement;
     expect(box).not.toBeNull();
     pageRenders.n = 0;
     fireEvent.pointerDown(box, { pointerType: "mouse" });

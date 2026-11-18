@@ -153,8 +153,10 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   // icon on every file row. No file link is asked for before a click.
   const heads = await page.evaluate(`[...document.querySelectorAll('.files-list th')].map((th) => th.textContent)`);
   h.check(heads.some((x) => x.includes('Name')) && heads.some((x) => x.includes('Size')) && heads.some((x) => x.includes('Modified')) && !heads.some((x) => x.includes('Your access')), "the visitor's table has Name, Size and Modified, and no owner columns");
-  const boxes = await page.evaluate(`document.querySelectorAll('.files-list input[type="checkbox"]').length`);
+  const boxes = await page.evaluate(`document.querySelectorAll('.files-list input[type="checkbox"], .files-list .ant-checkbox').length`);
   h.check(boxes === 0, "the visitor's table has no checkboxes");
+  const marks = await page.evaluate(`({ rowMarks: document.querySelectorAll('.files-list button.row-mark').length, headMark: document.querySelectorAll('.files-list button.head-mark').length, badges: document.querySelectorAll('.files-list .check-badge').length })`);
+  h.check(marks.rowMarks === 0 && marks.headMark === 0 && marks.badges === 0, `the visitor's table has no selection marks or badges (${JSON.stringify(marks)})`);
   const rowHasDownload = (name) => `!!([...document.querySelectorAll('.files-list tr[data-id]')].find((r) => r.getAttribute('aria-label') === ${q(name)})?.querySelector('button[aria-label="Download"]'))`;
   const icons = await page.evaluate(`({ brief: ${rowHasDownload('brief.txt')}, pic: ${rowHasDownload('plan.png')}, notes: ${rowHasDownload('Notes')} })`);
   h.check(icons.brief && icons.pic && !icons.notes, 'every file row has a Download icon, and the folder row has none');

@@ -188,32 +188,30 @@ describe("the page hears a row by its place in the whole list, not in the slice 
   });
 });
 
-describe("the coarse pointer's select-all box reflects every loaded row (decision 183)", () => {
-  it("all loaded rows selected, drawn or not: the box is checked", () => {
+describe("the select-all mark reflects every loaded row (decision 183)", () => {
+  it("all loaded rows selected, drawn or not: the mark reads true", () => {
     setCoarse(true);
     const list = items(300);
     const selected = new Set(list.map((n) => n.id));
     const { container } = render(<Listing {...props(list, { selected })} />);
-    const box = container.querySelector<HTMLInputElement>("thead .head-check input")!;
+    const box = container.querySelector<HTMLElement>("thead button.head-mark")!;
     expect(box).not.toBeNull();
-    expect(box.checked).toBe(true);
-    expect(container.querySelector("thead .head-check .ant-checkbox-indeterminate")).toBeNull();
+    expect(box.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("only drawn rows selected: the box is indeterminate, not checked", async () => {
+  it("only drawn rows selected: the mark reads mixed, not true", async () => {
     setCoarse(true);
     const list = items(300);
     // The first three rows are drawn at the top of the list, so these are the selected rows the page can see.
     const { container } = render(<Listing {...props(list, { selected: new Set(["n0", "n1", "n2"]) })} />);
-    expect(container.querySelector<HTMLInputElement>("thead .head-check input")!.checked).toBe(false);
-    expect(container.querySelector("thead .head-check .ant-checkbox-indeterminate")).not.toBeNull();
+    expect(container.querySelector<HTMLElement>("thead button.head-mark")!.getAttribute("aria-checked")).toBe("mixed");
   });
 
-  it("the box selects every loaded row, not the slice", () => {
+  it("the mark selects every loaded row, not the slice", () => {
     setCoarse(true);
     const onSelectAll = vi.fn();
     const { container } = render(<Listing {...props(items(300), { onSelectAll })} />);
-    fireEvent.click(container.querySelector<HTMLElement>("thead .head-check .ant-checkbox")!);
+    fireEvent.click(container.querySelector<HTMLElement>("thead button.head-mark")!);
     expect(onSelectAll).toHaveBeenCalledWith(true);
   });
 });

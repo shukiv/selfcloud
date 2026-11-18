@@ -2018,21 +2018,24 @@ describe("slice w2: the five fixes from w1's notes", () => {
     expect(rowHeight).toBe("56px");
   });
 
-  it("on a finger a tap on a row's checkbox selects the row (decision 128)", async () => {
+  it("on a finger a long press on a row selects the row (decision 128)", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
     renderAt(FOLDER);
     const row = (await screen.findByRole("row", { name: "alpha.txt" })) as HTMLElement;
-    const box = row.querySelector('input[type="checkbox"]') as HTMLElement;
-    expect(box).not.toBeNull();
-    // A touch makes its pointer events first, then the mouse's events with the focus, then the click.
-    fireEvent.pointerDown(box, { pointerType: "touch" });
-    fireEvent.pointerUp(box, { pointerType: "touch" });
-    fireEvent.mouseDown(box);
-    act(() => box.focus());
-    fireEvent.mouseUp(box);
-    fireEvent.click(box);
-    expect(await screen.findByTestId("selection-panel")).toBeTruthy();
-    expect((rows("alpha.txt") as Element).getAttribute("aria-selected")).toBe("true");
+    vi.useFakeTimers();
+    try {
+      // A touch holds the row past the long-press time; the selection is made at the hold, and the tap that ends it opens nothing.
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      expect(screen.getByTestId("selection-panel")).toBeTruthy();
+      expect((rows("alpha.txt") as Element).getAttribute("aria-selected")).toBe("true");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("on a finger the panel is 52 pixels with 44 pixel buttons inside it, and the row is the same 52", async () => {
@@ -2369,7 +2372,7 @@ describe("slice w2: drag onto a folder, and the rubber band", () => {
     send(document.body, "pointerup", 650, 150);
   });
 
-  it("does not start on a button, a checkbox, a row, or a finger, and not on the scroll bar's side of the window", async () => {
+  it("does not start on a button, a row mark, a row, or a finger, and not on the scroll bar's side of the window", async () => {
     boxes();
     await ready();
     const toolbarButton = screen.getByTestId("view-toggle");
@@ -2377,7 +2380,7 @@ describe("slice w2: drag onto a folder, and the rubber band", () => {
     send(toolbarButton, "pointermove", 300, 215);
     expect(screen.queryByTestId("rubber-band")).toBeNull();
     send(document.body, "pointerup", 650, 215);
-    const box = screen.getAllByRole("checkbox")[1];
+    const box = within(rows("alpha.txt") as HTMLElement).getByRole("button", { name: "Select alpha.txt" });
     send(box, "pointerdown", 650, 90);
     send(box, "pointermove", 300, 215);
     expect(screen.queryByTestId("rubber-band")).toBeNull();

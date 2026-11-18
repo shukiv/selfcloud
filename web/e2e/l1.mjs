@@ -2,10 +2,11 @@
 
 // Slice l1: the list is a Drive list (decision 70). A member's browser, at 1280 wide in English and light, is checked for: each
 // row has a More button, and the four icons (Share, Download, Rename, Star) show on a hovered or a selected row only; a selected
-// row is an accent band with no edge line (decision 72), a hovered row a grey band; a row's checkbox takes its icon's place on hover and on
-// every row while anything is selected; the More menu is grouped (the first group, then Share, Organize and Information as
-// submenus with their shortcuts at the right, then Move to trash), and Rename and Move to trash work from it. On a finger the
-// icons are gone and the checkboxes stay. In Hebrew the More button is at the start of the row, and in dark the bands hold.
+// row is an accent band with no edge line (decision 72), a hovered row a grey band; a row's icon stays in its mark on every row,
+// and a selected row shows a yellow check badge on its icon (no checkbox anywhere); the More menu is grouped (the first group,
+// then Share, Organize and Information as submenus with their shortcuts at the right, then Move to trash), and Rename and Move to
+// trash work from it. On a finger the icons are gone and a long press selects. In Hebrew the More button is at the start of the
+// row, and in dark the bands hold.
 // The folder and its files are removed before the section ends, and the language, theme, viewport and selection are put back.
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures named in the brief.
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -16,22 +17,25 @@ import { LABELS, hoverMenuTitle, menuRowChecks, menuShot, pickMenuEntry } from '
 const q = (v) => JSON.stringify(v);
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
 
-// rowState reads what a row shows: its icons' visibility, its checkbox and icon, its More button, and its cells' background.
+// rowState reads what a row shows: its icons' visibility, its mark, icon and badge, its More button, and its cells' background.
 const rowState = (page, name) =>
   page.evaluate(`(() => {
     const row = document.querySelector(${q(rowSel(name))});
     if (!row) return null;
     const acts = row.querySelector('.row-acts');
     const td = row.querySelector('td');
-    const check = row.querySelector('.row-check');
+    const mark = row.querySelector('button.row-mark');
     const icon = row.querySelector('.row-icon');
+    const badge = row.querySelector('.check-badge');
     const more = row.querySelector('button[aria-haspopup="menu"]');
     const cs = (el) => (el ? getComputedStyle(el) : null);
     return {
       actsVisible: acts ? cs(acts).visibility === 'visible' : null,
       actsCount: row.querySelectorAll('.row-acts button').length,
       names: [...row.querySelectorAll('.row-acts button')].map((b) => b.getAttribute('aria-label')),
-      checkShown: check ? cs(check).display !== 'none' : null,
+      mark: !!mark,
+      checkbox: !!row.querySelector('.ant-checkbox'),
+      badge: !!badge,
       iconShown: icon ? cs(icon).display !== 'none' : null,
       more: more ? more.getAttribute('aria-label') : null,
       moreX: more ? more.getBoundingClientRect().left : null,
@@ -255,15 +259,15 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     const cold = await rowState(page, alpha);
     check(cold && cold.more === `More actions for ${alpha}`, `every row has a More button named for its item (${cold?.more})`);
     check(cold && cold.actsVisible === false, `an unhovered row shows no icons (visibility ${cold?.actsVisible})`);
-    check(cold && cold.checkShown === false && cold.iconShown === true, `an unhovered row shows its file icon, not a checkbox (check ${cold?.checkShown}, icon ${cold?.iconShown})`);
+    check(cold && cold.mark && cold.iconShown === true && !cold.checkbox && !cold.badge, `an unhovered row shows its file icon in its mark, with no checkbox and no badge (mark ${cold?.mark}, icon ${cold?.iconShown}, checkbox ${cold?.checkbox}, badge ${cold?.badge})`);
 
-    // A row with the focus, with nothing selected and no pointer on it, shows its checkbox in the icon's place, never both, and
-    // its name stays put (the owner, 2026-11-03: "bug. also it jumps when selecting"; the icon stayed beside the box).
+    // A row with the focus, with nothing selected and no pointer on it, keeps its icon in its mark (there is no swap), and its
+    // name stays put (the owner, 2026-11-03: "bug. also it jumps when selecting"; the icon stayed beside the box).
     await clearHover(page);
     const coldBeta = await rowState(page, beta);
     await page.evaluate(`document.querySelector(${q(rowSel(beta))}).focus(), true`);
     const focused = await rowState(page, beta);
-    check(focused && focused.selected !== 'true' && focused.checkShown === true && focused.iconShown === false, `a focused row shows its checkbox in the icon's place, not both (check ${focused?.checkShown}, icon ${focused?.iconShown}, selected ${focused?.selected})`);
+    check(focused && focused.selected !== 'true' && focused.mark && focused.iconShown === true && !focused.checkbox && !focused.badge, `a focused row keeps its icon in its mark, with no checkbox and no badge (mark ${focused?.mark}, icon ${focused?.iconShown}, selected ${focused?.selected})`);
     check(focused && coldBeta && focused.nameX === coldBeta.nameX, `the focused row's name does not move (${coldBeta?.nameX} to ${focused?.nameX})`);
     await page.evaluate(`document.activeElement?.blur(), true`);
 
@@ -273,7 +277,7 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     check(hot && hot.actsVisible === true, `a hovered row shows its icons (visibility ${hot?.actsVisible})`);
     // The member is an editor, who may not share by default (the menu leaves Share out for it too), so the row has three icons.
     check(hot && JSON.stringify(hot.names) === JSON.stringify(['Download', 'Rename', 'Star']), `the hovered row's icons are Download, Rename and Star, with no Share for an editor who may not share (${hot?.names?.join(', ')})`);
-    check(hot && hot.checkShown === true && hot.iconShown === false, `the hovered row's checkbox takes the icon's place (check ${hot?.checkShown}, icon ${hot?.iconShown})`);
+    check(hot && hot.mark && hot.iconShown === true && !hot.checkbox && !hot.badge, `the hovered row keeps its icon in its mark, with no checkbox and no badge (mark ${hot?.mark}, icon ${hot?.iconShown})`);
     const tip = await hoverOver(page, `${rowSel(beta)} .row-acts button[aria-label="Rename"]`).then(() => page.evaluate(`[...document.querySelectorAll('.ant-tooltip:not(.ant-tooltip-hidden)')].map((t) => t.textContent.trim()).join('|')`));
     check(tip === 'Rename', `the Rename icon shows its tooltip (${tip})`);
     await snap('l1-list-hover.png');
@@ -282,17 +286,18 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     const page0 = await pageBackground(page);
     check(hot && hot.bg !== null && hot.bg !== page0 && hot.bg !== 'rgba(0, 0, 0, 0)', `a hovered row is a grey band (${hot?.bg}, page ${page0})`);
 
-    // Selecting: the row is an accent band with no edge line (decision 72); the checkboxes of every row show.
+    // Selecting: the row is an accent band with no edge line (decision 72); the selected row shows the badge on its icon.
     await selectRow(page, alpha);
     await clearHover(page);
     const sel = await rowState(page, alpha);
     check(sel && sel.selected === 'true', `the clicked row is selected (${sel?.selected})`);
     check(sel && sel.bg !== null && sel.bg !== page0 && sel.bg !== hot?.bg, `a selected row is an accent band (${sel?.bg})`);
     check(sel && (sel.shadow === 'none' || sel.shadow === ''), `a selected row has no edge line (${sel?.shadow})`);
+    check(sel && sel.badge && sel.iconShown === true && !sel.checkbox, `the selected row shows the badge on its icon, which stays (${JSON.stringify({ badge: sel?.badge, icon: sel?.iconShown, checkbox: sel?.checkbox })})`);
     const other = await rowState(page, beta);
-    check(other && other.checkShown === true && other.iconShown === false, `while something is selected every row shows its checkbox (${other?.checkShown})`);
-    const head = await page.evaluate(`(() => { const c = document.querySelector('.files-list .head-check'); return c ? getComputedStyle(c).display !== 'none' : null; })()`);
-    check(head === true, `the select-all box shows while something is selected (${head})`);
+    check(other && other.mark && other.iconShown === true && !other.badge && !other.checkbox, `an unselected row keeps its icon and shows no badge while another row is selected (${JSON.stringify({ mark: other?.mark, badge: other?.badge, checkbox: other?.checkbox })})`);
+    const head = await page.evaluate(`(() => { const c = document.querySelector('.files-list thead button.head-mark'); return c ? { present: true, checked: c.getAttribute('aria-checked') } : null; })()`);
+    check(head !== null && head.checked === 'mixed', `the select-all mark is in the header and reads mixed while some rows are selected (${JSON.stringify(head)})`);
     await snap('l1-list-selected.png');
 
     // The More menu: the first group flat, then Share, Organize and Information as submenus, then Move to trash.

@@ -118,7 +118,7 @@ const oneLineRow = (page, id) =>
 // targets returns the touch size of each control that a finger reaches on the tree and the tiles (the rest and the focus).
 const targets = (page) =>
   page.evaluate(`(() => {
-    const sel = '[data-testid="folder-tree"] .tree-row button, [role="option"] button[aria-label^="More actions for"], [role="option"] button[aria-label^="Star"], [role="option"] button[aria-label^="Select"]';
+    const sel = '[data-testid="folder-tree"] .tree-row button, [role="option"] button[aria-label^="More actions for"], [role="option"] button[aria-label^="Star"]';
     return [...document.querySelectorAll(sel)].map((b) => { const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) }; });
   })()`);
 

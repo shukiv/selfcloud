@@ -136,8 +136,8 @@ describe("Starred is one table (tl4, decision 137)", () => {
     });
     renderPage();
     const region = await table();
-    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Budget.pdf" }));
-    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Plan.doc" }));
+    fireEvent.click(within(region).getByRole("button", { name: "Select Budget.pdf" }));
+    fireEvent.click(within(region).getByRole("button", { name: "Select Plan.doc" }));
     const bar = await waitFor(() => {
       const b = within(region).getByRole("button", { name: "Remove star" });
       return b;

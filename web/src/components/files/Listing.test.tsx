@@ -51,8 +51,9 @@ function props(over: Partial<ListingProps> = {}): ListingProps {
 const rowOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
 
 // A starred item shows one star: the button where the person may star, and the mark only where no button is shown.
+// The row's selection mark is a button with a pressed state too, and is not a star control.
 const starControls = (el: HTMLElement) => ({
-  buttons: el.querySelectorAll('button[aria-pressed]').length,
+  buttons: el.querySelectorAll('button[aria-pressed]:not(.row-mark)').length,
   marks: Array.from(el.querySelectorAll(".sr-only")).filter((x) => x.textContent === "Starred").length,
 });
 
@@ -256,53 +257,75 @@ describe("the table listing", () => {
     expect(container.querySelector(".ant-table-tbody-virtual")).toBeNull();
   });
 
-  it("does not hand Enter or Space from a row's checkbox to the row key handler", () => {
+  it("does not hand Enter or Space from a row's mark to the row key handler", () => {
     const onKeyDown = vi.fn();
     render(<Listing {...props({ onKeyDown })} />);
     const row = screen.getByRole("row", { name: "plan.txt" });
-    const box = within(row).getByRole("checkbox");
-    fireEvent.keyDown(box, { key: "Enter" });
-    fireEvent.keyDown(box, { key: " " });
+    const mark = within(row).getByRole("button", { name: "Select plan.txt" });
+    fireEvent.keyDown(mark, { key: "Enter" });
+    fireEvent.keyDown(mark, { key: " " });
     expect(onKeyDown).not.toHaveBeenCalled();
   });
 
-  it("still hands arrow keys from a row's checkbox to the list", () => {
+  it("still hands arrow keys from a row's mark to the list", () => {
     const onKeyDown = vi.fn();
     render(<Listing {...props({ onKeyDown })} />);
-    const box = within(screen.getByRole("row", { name: "plan.txt" })).getByRole("checkbox");
-    fireEvent.keyDown(box, { key: "ArrowDown" });
+    const mark = within(screen.getByRole("row", { name: "plan.txt" })).getByRole("button", { name: "Select plan.txt" });
+    fireEvent.keyDown(mark, { key: "ArrowDown" });
     expect(onKeyDown).toHaveBeenCalledTimes(1);
   });
 
-  it("takes the row checkboxes out of the tab order, and keeps the select-all box in it", () => {
+  it("takes the row marks out of the tab order, and keeps the select-all mark in it", () => {
     render(<Listing {...props()} />);
     const row = screen.getByRole("row", { name: "plan.txt" });
-    expect(within(row).getByRole("checkbox").getAttribute("tabindex")).toBe("-1");
-    // The select-all box is the checkbox in the header row, which has no data-id.
-    const all = screen.getAllByRole("checkbox").find((c) => !c.closest("tr[data-id]")) as HTMLInputElement | undefined;
-    expect(all).toBeDefined();
-    expect(all?.getAttribute("tabindex")).not.toBe("-1");
+    expect(within(row).getByRole("button", { name: "Select plan.txt" }).getAttribute("tabindex")).toBe("-1");
+    // The select-all mark is the checkbox-role button in the header row, which has no data-id.
+    const all = screen.getByRole("checkbox", { name: "Select all" });
+    expect(all.closest("tr[data-id]")).toBeNull();
+    expect(all.getAttribute("tabindex")).not.toBe("-1");
   });
 });
 
-describe("a checkbox click selects its row once", () => {
-  it("passes one selection for a click on a row's checkbox, not one from the row as well", () => {
+describe("a mark click selects its row once", () => {
+  it("passes one selection for a click on a row's mark, not one from the row as well, and keeps the rest", () => {
     const onRowClick = vi.fn();
     render(<Listing {...props({ onRowClick })} />);
-    const box = within(screen.getByRole("row", { name: "plan.txt" })).getByRole("checkbox");
-    fireEvent.click(box);
+    const mark = within(screen.getByRole("row", { name: "plan.txt" })).getByRole("button", { name: "Select plan.txt" });
+    fireEvent.click(mark);
     expect(onRowClick).toHaveBeenCalledTimes(1);
+    expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ ctrlKey: true, shiftKey: false, metaKey: false }));
   });
 });
 
-describe("the selection cell outside its checkbox", () => {
-  it("a click on the checkbox's own slot selects nothing, since only the checkbox selects", () => {
+describe("the row's mark is its icon", () => {
+  it("wraps the file icon in the mark button, and no checkbox is drawn in the row or the header", () => {
+    const { container } = render(<Listing {...props()} />);
+    const row = rowOf("n1");
+    const mark = row.querySelector("button.row-mark") as HTMLElement;
+    expect(mark).not.toBeNull();
+    expect(mark.querySelector("svg")).not.toBeNull();
+    expect(row.querySelector(".ant-checkbox")).toBeNull();
+    expect(container.querySelector(".ant-checkbox")).toBeNull();
+    expect(container.querySelector(".ant-table-selection-column")).toBeNull();
+  });
+
+  it("a click on the icon inside the mark toggles once, and the row's own click does not also run", () => {
     const onRowClick = vi.fn();
-    const { container } = render(<Listing {...props({ onRowClick })} />);
-    const slot = container.querySelector("tr[data-id='n1'] .row-check") as HTMLElement;
-    expect(slot).not.toBeNull();
-    fireEvent.click(slot);
-    expect(onRowClick).not.toHaveBeenCalled();
+    render(<Listing {...props({ onRowClick })} />);
+    const icon = rowOf("n1").querySelector("button.row-mark svg") as HTMLElement;
+    expect(icon).not.toBeNull();
+    fireEvent.click(icon);
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("the mark says its pressed state, and the row says its selection", () => {
+    const { rerender } = render(<Listing {...props()} />);
+    const mark = () => within(rowOf("n1")).getByRole("button", { name: "Select plan.txt" });
+    expect(mark().getAttribute("aria-pressed")).toBe("false");
+    expect(rowOf("n1").getAttribute("aria-selected")).toBe("false");
+    rerender(<Listing {...props({ selected: new Set(["n1"]) })} />);
+    expect(mark().getAttribute("aria-pressed")).toBe("true");
+    expect(rowOf("n1").getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -343,23 +366,36 @@ describe("touch and mouse", () => {
     expect(onRowDoubleClick).not.toHaveBeenCalled();
   });
 
-  it("gives a tile a checkbox when the main pointer is a finger, and none otherwise", () => {
-    const stub = (coarse: boolean) =>
-      vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarse && query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
-    stub(true);
-    const onRowClick = vi.fn<(index: number, e: Click) => void>();
-    const { unmount } = render(<Listing {...props({ view: "grid", onRowClick })} />);
-    const box = screen.getByRole("checkbox", { name: "Select plan.txt" });
-    fireEvent.click(box);
-    expect(onRowClick).toHaveBeenCalledTimes(1);
-    expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ ctrlKey: true }));
-    // The checkbox is not a tab stop.
-    expect(box.getAttribute("tabindex")).toBe("-1");
-    unmount();
-    stub(false);
-    render(<Listing {...props({ view: "grid" })} />);
-    expect(screen.queryByRole("checkbox", { name: "Select plan.txt" })).toBeNull();
-    vi.unstubAllGlobals();
+  it("gives a tile no checkbox on any pointer, and a finger's long press selects it", () => {
+    vi.useFakeTimers();
+    try {
+      const stub = (coarse: boolean) =>
+        vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarse && query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+      stub(true);
+      const onRowClick = vi.fn<(index: number, e: Click) => void>();
+      const { unmount } = render(<Listing {...props({ view: "grid", onRowClick })} />);
+      expect(screen.queryByRole("checkbox", { name: "Select plan.txt" })).toBeNull();
+      expect(document.querySelector(".ant-checkbox")).toBeNull();
+      const tile = rowOf("n1");
+      fireEvent.pointerDown(tile, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+      expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ ctrlKey: true }));
+      // The tap that ends the long press is part of it: it selects nothing more.
+      fireEvent.pointerUp(tile, { pointerType: "touch" });
+      fireEvent.click(tile);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+      unmount();
+      stub(false);
+      render(<Listing {...props({ view: "grid" })} />);
+      expect(document.querySelector(".ant-checkbox")).toBeNull();
+      expect(screen.queryByRole("checkbox", { name: "Select plan.txt" })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -415,7 +451,7 @@ describe("the listing's right-click and cut state", () => {
     expect(screen.getByRole("option", { name: "plan.txt" }).style.opacity).toBe("0.5");
   });
 
-  it("a long press on a finger opens the menu at the press, and the tap that ends it opens nothing", () => {
+  it("a long press on a finger selects the row, and the tap that ends it opens nothing", () => {
     vi.useFakeTimers();
     try {
       const onRowContext = vi.fn();
@@ -426,48 +462,50 @@ describe("the listing's right-click and cut state", () => {
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(onRowContext).toHaveBeenCalledWith("n1", 0, 30, 60);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+      expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ ctrlKey: true }));
+      expect(onRowContext).not.toHaveBeenCalled();
       fireEvent.click(row);
-      expect(onRowClick).not.toHaveBeenCalled();
+      expect(onRowClick).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("a finger that moves more than 10 pixels is scrolling, so no menu opens; 10 pixels or less still holds the press", () => {
+  it("a finger that moves more than 10 pixels is scrolling, so nothing is selected; 10 pixels or less still holds the press", () => {
     vi.useFakeTimers();
     try {
-      const onRowContext = vi.fn();
-      render(<Listing {...props({ onRowContext } as Partial<ListingProps>)} />);
+      const onRowClick = vi.fn();
+      render(<Listing {...props({ onRowClick } as Partial<ListingProps>)} />);
       const row = screen.getByRole("row", { name: "plan.txt" });
       fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
       fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 71 });
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(onRowContext).not.toHaveBeenCalled();
+      expect(onRowClick).not.toHaveBeenCalled();
       fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
       fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 70 });
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(onRowContext).toHaveBeenCalledTimes(1);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("the mousedown after a long press is stopped before the window's later listeners, so the menu it opened stays", () => {
+  it("the mousedown after a long press is stopped before the window's later listeners", () => {
     vi.useFakeTimers();
     try {
-      const onRowContext = vi.fn();
-      render(<Listing {...props({ onRowContext } as Partial<ListingProps>)} />);
+      const onRowClick = vi.fn();
+      render(<Listing {...props({ onRowClick } as Partial<ListingProps>)} />);
       const row = screen.getByRole("row", { name: "plan.txt" });
       fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(onRowContext).toHaveBeenCalled();
+      expect(onRowClick).toHaveBeenCalled();
       // A listener added after the listing, as the menu's outside-click listener is when the menu opens.
       const later = vi.fn();
       window.addEventListener("mousedown", later, true);
@@ -621,17 +659,19 @@ describe("the row end: the ⋮ button and the hover icons", () => {
   });
 });
 
-describe("checkboxes on demand (decision 70)", () => {
+describe("the selection marks (the checkbox swap is gone)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("with a mouse the list has no checkbox column, and the row's checkbox is in its icon's place", () => {
+  it("with a mouse the list has no checkbox column and no checkbox anywhere, and the row's mark is in its icon's place", () => {
     withPointer(false);
     const { container } = render(<Listing {...props()} />);
     expect(container.querySelector(".ant-table-selection-column")).toBeNull();
-    expect(within(rowOf("n1")).getByRole("checkbox", { name: "Select plan.txt" })).toBeTruthy();
+    expect(container.querySelector(".ant-checkbox")).toBeNull();
+    const mark = within(rowOf("n1")).getByRole("button", { name: "Select plan.txt" });
+    expect(mark.querySelector("svg")).not.toBeNull();
   });
 
-  it("the list says whether anything is selected, so the checkboxes of every row can show", () => {
+  it("the list says whether anything is selected", () => {
     withPointer(false);
     const { container, rerender } = render(<Listing {...props()} />);
     expect(container.querySelector(".files-list")?.getAttribute("data-has-selection")).toBe("false");
@@ -639,19 +679,64 @@ describe("checkboxes on demand (decision 70)", () => {
     expect(container.querySelector(".files-list")?.getAttribute("data-has-selection")).toBe("true");
   });
 
-  it("with a mouse the select-all box is in the name's header, and selects every item", () => {
+  it("the select-all mark is always in the name's header, reads false, mixed and true, and selects all then clears", () => {
     withPointer(false);
     const onSelectAll = vi.fn();
-    render(<Listing {...props({ onSelectAll })} />);
-    const all = screen.getByRole("checkbox", { name: "Select all" });
-    fireEvent.click(all);
-    expect(onSelectAll).toHaveBeenCalledWith(true);
+    const { rerender } = render(<Listing {...props({ onSelectAll })} />);
+    const all = () => screen.getByRole("checkbox", { name: "Select all" });
+    expect(all().closest("thead")).not.toBeNull();
+    expect(all().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(all());
+    expect(onSelectAll).toHaveBeenLastCalledWith(true);
+    rerender(<Listing {...props({ onSelectAll, selected: new Set(["n1"]) })} />);
+    expect(all().getAttribute("aria-checked")).toBe("mixed");
+    rerender(<Listing {...props({ onSelectAll, selected: new Set(["n1", "n2"]) })} />);
+    expect(all().getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(all());
+    expect(onSelectAll).toHaveBeenLastCalledWith(false);
   });
 
-  it("on a finger the list keeps its checkbox column, as it has", () => {
+  it("on a finger the list has no checkbox column either, and the select-all mark stays in the header", () => {
     withPointer(true);
     const { container } = render(<Listing {...props()} />);
-    expect(container.querySelector(".ant-table-selection-column")).not.toBeNull();
+    expect(container.querySelector(".ant-table-selection-column")).toBeNull();
+    expect(container.querySelector(".ant-checkbox")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Select all" }).closest("thead")).not.toBeNull();
+  });
+
+  it("the badge is drawn only on a selected row, on its icon, and says nothing to a screen reader", () => {
+    withPointer(false);
+    const { rerender } = render(<Listing {...props()} />);
+    expect(rowOf("n1").querySelector(".check-badge")).toBeNull();
+    expect(rowOf("n2").querySelector(".check-badge")).toBeNull();
+    rerender(<Listing {...props({ selected: new Set(["n1"]) })} />);
+    const badge = rowOf("n1").querySelector(".check-badge") as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute("aria-hidden")).toBe("true");
+    expect(getComputedStyle(badge).backgroundColor).toBe("rgb(254, 204, 0)");
+    expect(badge.querySelector("svg")).not.toBeNull();
+    // The icon stays, and the other row has no badge.
+    expect(rowOf("n1").querySelector("button.row-mark svg")).not.toBeNull();
+    expect(rowOf("n2").querySelector(".check-badge")).toBeNull();
+  });
+
+  it("the badge is drawn only on a selected tile, and no tile has a checkbox", () => {
+    const { rerender } = render(<Listing {...props({ view: "grid" })} />);
+    expect(rowOf("n1").querySelector(".check-badge")).toBeNull();
+    rerender(<Listing {...props({ view: "grid", selected: new Set(["n1"]) })} />);
+    expect(rowOf("n1").querySelector(".check-badge")).not.toBeNull();
+    expect(rowOf("n2").querySelector(".check-badge")).toBeNull();
+    expect(document.querySelector(".ant-checkbox")).toBeNull();
+  });
+
+  it("a hover changes nothing on the icon: no checkbox appears and the icon stays", () => {
+    withPointer(false);
+    const { container } = render(<Listing {...props()} />);
+    fireEvent.pointerEnter(rowOf("n1"), { pointerType: "mouse" });
+    expect(rowOf("n1").querySelector(".ant-checkbox")).toBeNull();
+    expect(rowOf("n1").querySelector("button.row-mark svg")).not.toBeNull();
+    expect(rowOf("n1").querySelector(".check-badge")).toBeNull();
+    expect(container.querySelector(".ant-checkbox")).toBeNull();
   });
 });
 
@@ -910,10 +995,12 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it("a list without selectable has no checkboxes and no aria-selected", () => {
+  it("a list without selectable has no checkboxes, no marks and no aria-selected", () => {
     viewport(1200);
     const { container } = render(<Listing {...itemProps()} />);
     expect(container.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+    expect(container.querySelector(".row-mark")).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     expect(itemRow("Acme Studio").hasAttribute("aria-selected")).toBe(false);
   });
 
@@ -938,14 +1025,60 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("false");
   });
 
-  it("a selectable list: a click selects the row, Ctrl adds one, and the mouse's checkbox toggles it", () => {
+  it("a selectable list: a click selects the row, Ctrl adds one, and the mouse's mark toggles it", () => {
     viewport(1200);
     render(<Listing {...itemProps({ selectable: true })} />);
     fireEvent.click(itemRow("Acme Studio").querySelector("td") as HTMLElement);
     fireEvent.click(itemRow("Cedar Pine").querySelector("td") as HTMLElement, { ctrlKey: true });
     expect(["Acme Studio", "Beta Clinic", "Cedar Pine"].map((n) => itemRow(n).getAttribute("aria-selected"))).toEqual(["true", "false", "true"]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Beta Clinic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Beta Clinic" }));
     expect(itemRow("Beta Clinic").getAttribute("aria-selected")).toBe("true");
+    // The mark is out of the tab order, and no checkbox is drawn anywhere.
+    expect(screen.getByRole("button", { name: "Select Beta Clinic" }).getAttribute("tabindex")).toBe("-1");
+    expect(document.querySelector(".ant-checkbox")).toBeNull();
+  });
+
+  it("a selectable preset list has the select-all mark in its header, reading false, mixed and true", () => {
+    viewport(1200);
+    render(<Listing {...itemProps({ selectable: true })} />);
+    const all = () => screen.getByRole("checkbox", { name: "Select all" });
+    expect(all().closest("thead")).not.toBeNull();
+    expect(all().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(itemRow("Acme Studio"));
+    expect(all().getAttribute("aria-checked")).toBe("mixed");
+    fireEvent.click(all());
+    expect(all().getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(all());
+    expect(all().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("a selectable preset list on a finger: a long press toggles the row, and a tap while something is selected toggles too", () => {
+    vi.useFakeTimers();
+    try {
+      viewport(1200, true);
+      render(<Listing {...itemProps({ selectable: true })} />);
+      expect(document.querySelector(".ant-checkbox")).toBeNull();
+      const row = itemRow("Acme Studio");
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("true");
+      fireEvent.pointerUp(row, { pointerType: "touch" });
+      fireEvent.click(row);
+      expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("true");
+      // With something selected, a plain tap on another row toggles it in.
+      fireEvent.click(itemRow("Beta Clinic"));
+      expect(itemRow("Beta Clinic").getAttribute("aria-selected")).toBe("true");
+      // A long press on a selected row takes it out again.
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 5, clientY: 5 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("false");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("each row carries its label as aria-label", () => {

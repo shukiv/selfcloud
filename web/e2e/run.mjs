@@ -477,8 +477,8 @@ async function buttonTexts(page) {
   return page.evaluate(`[...document.querySelectorAll('button')].flatMap((b) => [b.textContent.trim(), b.getAttribute('aria-label')]).filter(Boolean)`);
 }
 
-// sizeCell reads the size column of a row. The column is found by its header, because the cells before it depend on the pointer:
-// a finger has a check box column, a mouse has the check box in the name cell (decision 70).
+// sizeCell reads the size column of a row. The column is found by its header: the name cell holds the row's mark and icon, and
+// there is no separate selection column on any pointer.
 const sizeCell = (name) =>
   `(() => { const row = document.querySelector(${q(rowSel(name))}); const heads = [...(row.closest('.ant-table')?.querySelectorAll('thead th') ?? [])]; const i = heads.findIndex((h) => h.textContent.trim().startsWith('Size')); return i < 0 ? null : row.querySelectorAll('td')[i].textContent.trim(); })()`;
 

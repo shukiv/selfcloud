@@ -139,7 +139,7 @@ describe("Trash is one table (tl4, decision 137)", () => {
   it("restores the selected rows in one bulk action", async () => {
     renderTrash([item("t1", "Old logo.png", "editor"), item("t2", "Draft.xlsx", "editor")]);
     const region = await table();
-    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Old logo.png" }));
+    fireEvent.click(within(region).getByRole("button", { name: "Select Old logo.png" }));
     const bulk = await waitFor(() => within(region).getByRole("button", { name: "Restore" }));
     fireEvent.click(bulk);
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("t1"));
@@ -185,8 +185,8 @@ describe("Trash is one table (tl4, decision 137)", () => {
     api.purgeTrashed.mockResolvedValue(undefined);
     renderTrash([item("t1", "Old logo.png", "manager"), item("t2", "Draft.xlsx", "editor")]);
     const region = await table();
-    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Old logo.png" }));
-    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Draft.xlsx" }));
+    fireEvent.click(within(region).getByRole("button", { name: "Select Old logo.png" }));
+    fireEvent.click(within(region).getByRole("button", { name: "Select Draft.xlsx" }));
     fireEvent.click(await waitFor(() => within(region).getByRole("button", { name: "Delete forever" })));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete forever" }));

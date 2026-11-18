@@ -170,6 +170,7 @@ describe("Listing without visitor: today's behaviour", () => {
     expect(screen.getByRole("columnheader", { name: "Your access" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /More actions for/ }).length).toBeGreaterThan(0);
     expect(rowOf("n0").getAttribute("data-drop-dir")).toBe("n0");
-    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+    expect(screen.getByRole("checkbox", { name: "Select all" })).toBeTruthy();
+    expect(rowOf("n0").querySelector("button.row-mark")).not.toBeNull();
   });
 });

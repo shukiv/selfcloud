@@ -16,7 +16,7 @@ const GEOM = `function geom() {
   const r = (el) => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 100) / 100); };
   const head = [...list.querySelectorAll('.ant-table-thead th')].map(r);
   const rows = {};
-  // Each row's cells, and every element inside them (the icon, the checkbox, the name), with the row's own border widths: a
+  // Each row's cells, and every element inside them (the mark, the icon, the name), with the row's own border widths: a
   // line that thickens or moves on hover shows here.
   for (const tr of list.querySelectorAll('tbody tr[data-id]')) {
     const inside = [...tr.children[0].querySelectorAll('*')].map((el) => ({ k: el.tagName.toLowerCase() + '.' + String(typeof el.className === 'string' ? el.className : '').split(' ').filter(Boolean).slice(0, 2).join('.'), b: r(el) }));
@@ -80,8 +80,8 @@ function diffs(rest, g) {
     for (let i = 0; i < shared; i++) {
       const a = rr.inside[i];
       const b = gr.inside[i];
-      // The icon and the checkbox swap places on hover (one is display none at rest): an element with no box in either state is
-      // the swap, and is left out. The row's end (the icons) is not in these lists.
+      // The badge a selected row draws is a new element on its icon: an element with no box in either state is left out, so a
+      // selection's badge is not read as a move. The row's end (the icons) is not in these lists.
       if ((a.b[2] === 0 && a.b[3] === 0) || (b.b[2] === 0 && b.b[3] === 0)) continue;
       cmp(`${name} inside[${i}] ${a.k}`, a.b, b.b);
     }
@@ -103,11 +103,11 @@ async function measureCombo(h, page, label, names) {
   const restRead = await page.evaluate(READ);
   const rest = restRead.g;
   // DIAG: the boxes that hold the name on the first row, at rest and on hover (top and height), so the moving one is named.
-  const chain = `(() => { const tr = document.querySelector('.files-list tbody tr[data-id]'); const td = tr.children[0]; const outer = td.firstElementChild; const slot = outer.firstElementChild; const box = (el) => { if (!el) return 'none'; const b = el.getBoundingClientRect(); return [b.top, b.height].map((v) => Math.round(v * 100) / 100).join('/') + (el.getAttribute('style') ? ' [' + el.getAttribute('style').slice(0, 90) + ']' : ''); }; return { row: box(tr), td: box(td), outer: box(outer), slot: box(slot), icon: box(slot.querySelector('.row-icon')), check: box(slot.querySelector('.row-check')), name: box(outer.children[1]), bdi: box(outer.querySelector('bdi')) }; })()`;
+  const chain = `(() => { const tr = document.querySelector('.files-list tbody tr[data-id]'); const td = tr.children[0]; const outer = td.firstElementChild; const slot = outer.firstElementChild; const box = (el) => { if (!el) return 'none'; const b = el.getBoundingClientRect(); return [b.top, b.height].map((v) => Math.round(v * 100) / 100).join('/') + (el.getAttribute('style') ? ' [' + el.getAttribute('style').slice(0, 90) + ']' : ''); }; return { row: box(tr), td: box(td), outer: box(outer), slot: box(slot), icon: box(slot.querySelector('.row-icon')), badge: box(slot.querySelector('.check-badge')), name: box(outer.children[1]), bdi: box(outer.querySelector('bdi')) }; })()`;
   const chainRest = await page.evaluate(chain);
   console.log(`DIAG fu5 ${label} chain at rest ${JSON.stringify(chainRest)}`);
   await moveTo(page, await rowCentre(page, names[0]));
-  await page.waitFor(`!!document.querySelector('.files-list tbody tr[data-id] .row-check') && getComputedStyle(document.querySelector('.files-list tbody tr[data-id] .row-check')).display !== 'none'`, 10000).catch(() => undefined);
+  await page.waitFor(`(() => { const tr = document.querySelector('.files-list tbody tr[data-id]'); const a = tr && tr.querySelector('.row-acts'); return !!a && getComputedStyle(a).visibility === 'visible'; })()`, 10000).catch(() => undefined);
   console.log(`DIAG fu5 ${label} chain on hover ${JSON.stringify(await page.evaluate(chain))}`);
   await moveTo(page, away);
   // DIAG: what the first inner elements of the first row are, and their parents' classes (the names of the moving boxes).
@@ -178,8 +178,33 @@ export async function fu5Checks(h, { page, base, accountKey, teamA }) {
       await setLanguage(page, lang);
       await rowAppears(page, names[0]);
       await page.waitFor(`document.querySelectorAll('.files-list tbody tr[data-id]').length === ${names.length}`, 15000);
+      const combo = `${theme} ${lang === 'English' ? 'English' : 'Hebrew'}`;
+      // The selection marks: every row's mark wraps its icon, the select-all mark is in the header, and with nothing selected
+      // there is no checkbox and no badge anywhere in the list.
+      const marks = await page.evaluate(`(() => {
+        const rows = [...document.querySelectorAll('.files-list tbody tr[data-id]')];
+        return {
+          rows: rows.length,
+          marks: rows.filter((tr) => tr.querySelector('button.row-mark')).length,
+          icons: rows.filter((tr) => tr.querySelector('button.row-mark svg')).length,
+          checkboxes: document.querySelectorAll('.files-list .ant-checkbox').length,
+          headMark: !!document.querySelector('.files-list thead button.head-mark'),
+          badges: document.querySelectorAll('.files-list tbody .check-badge').length,
+        };
+      })()`);
+      check(marks.rows === names.length && marks.marks === names.length && marks.icons === names.length, `${combo}: every row's mark wraps its icon (${JSON.stringify(marks)})`);
+      check(marks.checkboxes === 0 && marks.badges === 0, `${combo}: no checkbox and no badge with nothing selected (${JSON.stringify(marks)})`);
+      check(marks.headMark, `${combo}: the select-all mark is in the header (${JSON.stringify(marks)})`);
       // Each combination is measured and reported before any check is made, so one failing combination does not hide the others.
-      results.push(await measureCombo(h, page, `${theme} ${lang === 'English' ? 'English' : 'Hebrew'}`, names));
+      results.push(await measureCombo(h, page, combo, names));
+      // A selected row shows the badge on its icon, and the icon stays; a second click on the mark takes the badge away.
+      await page.evaluate(`document.querySelector('.files-list tbody tr[data-id] button.row-mark').click()`);
+      await page.waitFor(`!!document.querySelector('.files-list tbody tr[data-id][aria-selected="true"] .check-badge')`, 5000).catch(() => undefined);
+      const sel = await page.evaluate(`(() => { const tr = document.querySelector('.files-list tbody tr[data-id][aria-selected="true"]'); return { badge: !!tr?.querySelector('.check-badge'), icon: !!tr?.querySelector('button.row-mark svg'), hidden: tr?.querySelector('.check-badge')?.getAttribute('aria-hidden') }; })()`);
+      check(sel.badge && sel.icon && sel.hidden === 'true', `${combo}: a selected row shows the badge on its icon, which stays (${JSON.stringify(sel)})`);
+      await page.evaluate(`document.querySelector('.files-list tbody tr[data-id][aria-selected="true"] button.row-mark').click()`);
+      await page.waitFor(`!document.querySelector('.files-list tbody .check-badge')`, 5000).catch(() => undefined);
+      check(await page.evaluate(`!document.querySelector('.files-list tbody .check-badge')`), `${combo}: clearing the selection takes the badge away`);
       await setLanguage(page, 'English');
     }
   } finally {

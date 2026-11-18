@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // A preset list (Starred, Trash, Search, the Manage and admin tables) draws its rows as My files does: a press is one update,
-// and a row's checkbox, icons and ⋮ button are drawn again only when that row's own state changes (decision 128).
+// and a row's mark, icons and ⋮ button are drawn again only when that row's own state changes (decision 128).
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Listing, { type ItemListingProps, type ListAction } from "./Listing";
 import { desktopViewport } from "../../test/viewport";
 
-// buttons counts the renders of each icon button by its label, and checks the renders of each row's checkbox by its name.
+// buttons counts the renders of each icon button by its label, and checks the renders of each row's mark by its name. The mark is
+// drawn in the name cell with the row's icon, so the icon's render counts the same pass the mark is drawn in.
 const buttons = vi.hoisted(() => ({} as Record<string, number>));
 const checks = vi.hoisted(() => ({} as Record<string, number>));
 vi.mock("../IconButton", async (orig) => {
@@ -19,16 +20,6 @@ vi.mock("../IconButton", async (orig) => {
       return createElement(real.default, p);
     },
   };
-});
-vi.mock("antd", async (orig) => {
-  const real = await orig<typeof import("antd")>();
-  const { createElement } = await import("react");
-  const Checkbox = (p: Record<string, unknown>) => {
-    const name = String(p["aria-label"] ?? "");
-    checks[name] = (checks[name] ?? 0) + 1;
-    return createElement(real.Checkbox, p as never);
-  };
-  return { ...real, Checkbox };
 });
 
 type Row = { id: string; name: string };
@@ -66,6 +57,10 @@ function props(over: Over = {}): ItemListingProps<Row> {
     rowLabel: (r) => r.name,
     columns,
     selectable: true,
+    icon: (r) => {
+      checks[r.name] = (checks[r.name] ?? 0) + 1;
+      return <span data-icon={r.id} />;
+    },
     actions: actionsOf(),
     menu: (r) => [{ key: "info", label: `Info ${r.name}`, onSelect: () => undefined }],
     empty: { title: "Nothing here" },
@@ -82,6 +77,8 @@ const sumFor = (counts: Record<string, number>, name: string) =>
 const rowLabels = (counts: Record<string, number>) => Object.keys(counts).filter((label) => /Row \d+$/.test(label));
 const othersSum =(counts: Record<string, number>, except: string[]) =>
   rows.filter((r) => !except.includes(r.name)).reduce((s, r) => s + sumFor(counts, r.name), 0);
+// othersChecks sums the mark renders of every row but the ones named: the mark is counted by the row's own name.
+const othersChecks = (except: string[]) => rows.filter((r) => !except.includes(r.name)).reduce((s, r) => s + (checks[r.name] ?? 0), 0);
 
 let undoView: () => void = () => undefined;
 beforeEach(() => {
@@ -93,13 +90,13 @@ afterEach(() => {
 });
 
 describe("a preset list draws a row again only when its own state changes (decision 128)", () => {
-  it("a click that selects a row draws that row's checkbox, and no other row's checkbox or buttons", () => {
+  it("a click that selects a row draws that row's mark, and no other row's mark or buttons", () => {
     render(<Listing<Row> {...props()} />);
     reset();
     fireEvent.click(rowOf("Row 4"));
     expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("true");
-    expect(checks["Select Row 4"]).toBeGreaterThan(0);
-    expect(othersSum(checks, ["Row 4"])).toBe(0);
+    expect(checks["Row 4"]).toBeGreaterThan(0);
+    expect(othersChecks(["Row 4"])).toBe(0);
     expect(rowLabels(buttons)).toEqual([]);
   });
 
@@ -160,7 +157,7 @@ describe("a preset list draws a row again only when its own state changes (decis
     fireEvent.contextMenu(rowOf("Row 2"));
     expect(await screen.findByText("Info Row 2")).toBeTruthy();
     expect(othersSum(buttons, ["Row 2"])).toBe(0);
-    expect(othersSum(checks, ["Row 2"])).toBe(0);
+    expect(othersChecks(["Row 2"])).toBe(0);
   });
 
   it("a hover on a row draws no row's buttons again", () => {
@@ -171,7 +168,7 @@ describe("a preset list draws a row again only when its own state changes (decis
     expect(rowLabels(buttons)).toEqual([]);
   });
 
-  it("a page render with new callbacks and the same data draws no row's buttons or checkbox again", () => {
+  it("a page render with new callbacks and the same data draws no row's buttons or mark again", () => {
     const { rerender } = render(<Listing<Row> {...props()} />);
     reset();
     rerender(<Listing<Row> {...props()} />);

@@ -63,6 +63,14 @@ async function tap(page, { x, y }) {
   await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+// longPress is one finger's hold on a phone: down, held past the listing's long-press time, then up. The row is selected at the
+// hold, and the tap that ends it opens nothing.
+async function longPress(page, { x, y }, hold = 650) {
+  await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await sleep(hold);
+  await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 // The install offer card (decision 179) appears after a delay and sits over the listing's lower rows, so a tap on a tile's More
 // button can land on it. Answer it the way the landing branch does: keep the app's own dismissal and close the card if it is up.
 async function answerInstallCard(page) {
@@ -129,7 +137,7 @@ async function clearSelection(page) {
 }
 
 // The selection actions can be read by a check as one list of buttons, whatever the width.
-export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, setWidth, shot, sleep, tap };
+export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, longPress, openedName, point, q, setLanguage, setPhone, setTheme, setWidth, shot, sleep, tap };
 
 // E2E_ACCENT is the brand accent the e2e server runs with (run.mjs BRAND). onActiveInk is the text colour the page draws on the
 // sidebar's active highlight, worked out from the sources the page itself uses, so a change there moves the expected colour too:
@@ -385,7 +393,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     });
   }
 
-  // ---- 2. on a phone one tap opens a file or a folder, and the checkbox selects ----
+  // ---- 2. on a phone one tap opens a file or a folder, and a long press selects ----
   // Decision 185: the selection bar shows as many of its ordered actions as fit its own width; the rest are the first entries
   // of its More menu, in order. The file picked here (pic.png in media-test) is one the signed-in member may change and share,
   // so its actions are Share, Copy link, Download, Move and Delete. At 375 and 360 Move and Delete are in More; at 320
@@ -407,12 +415,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
             await open(view);
             const bare = await wideElements(page);
             check(bare.scrollWidth <= width, `${lang}, ${width} px, ${view}, nothing selected: the page fits its window (scrollWidth ${bare.scrollWidth}; wider: ${JSON.stringify(bare.top.slice(0, 2))})`);
-            const box = await page.evaluate(`(() => { const c = document.querySelector(${q(itemSel('pic.png'))})?.querySelector('input[type="checkbox"]'); if (!c) return null; c.scrollIntoView({ block: 'center' }); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-            if (box === null) {
-              check(false, `${lang}, ${width} px, ${view}: a row has a checkbox to select it`);
-              continue;
-            }
-            await tap(page, box);
+            // A finger selects the row by a long press on it; there is no checkbox.
+            const at = await point(page, 'pic.png');
+            await longPress(page, at);
             await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000).catch(() => undefined);
             // Decision 185: the bar fits its icons before paint and keeps one fixed-height row, so drawing it changes neither
             // its own height nor the page's scroll. Read both as the selection appears and again 500 ms later: both equal.
@@ -495,14 +500,15 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await tap(page, tilePoint);
     const tapLog = await page.evaluate(`JSON.stringify(window.__tap.slice(0, 12))`);
     const tile = await openedName(page);
-    await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))}).querySelector('input[type="checkbox"]')?.click()`);
+    await closePreview(page);
+    // A finger selects the tile by a long press; there is no checkbox. The page is measured with the selection, then without.
+    await longPress(page, await point(page, 'tone.ogg'));
     await sleep(800);
     const tilesSel = await wideElements(page);
     check(tilesSel.scrollWidth <= 390, `the page fits a 390 px phone in Tiles with a selection (scrollWidth ${tilesSel.scrollWidth}; wider: ${JSON.stringify(tilesSel.top.slice(0, 3))})`);
-    await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))}).querySelector('input[type="checkbox"]')?.click()`);
+    await longPress(page, await point(page, 'tone.ogg'));
     await sleep(300);
     check(tile === 'tone.ogg', `one tap on a tile on a phone opens the file (opened ${tile ?? 'nothing'}; the tap hit ${tileHit}; geometry ${geom}; events ${tapLog})`);
-    await closePreview(page);
     // The tile's More button is the one target on a tile (decision 70: the star is a mark, changed in the menu). A tap on it opens the
     // item's menu, and opens nothing. A tile is taller in the tile view (slice d1): the button is brought into the window first.
     // The install offer (decision 179) is a card lifted above the mini-player; on this listing it can sit over the tile's More button
@@ -557,21 +563,19 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await open('List');
     const listWide = await wideElements(page);
     check(listWide.scrollWidth <= 390, `the page fits a 390 px phone in List (scrollWidth ${listWide.scrollWidth}; wider: ${JSON.stringify(listWide.top.slice(0, 3))})`);
-    const box = await page.evaluate(`(() => { const r = document.querySelector(${q(itemSel('pic.png'))}).querySelector('input[type="checkbox"]')?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
-    check(box !== null, 'a phone list has a checkbox for each row');
-    await tap(page, box);
+    // A finger selects a row by a long press on it; the list has no checkbox.
+    check(await page.evaluate(`!document.querySelector(${q(itemSel('pic.png'))})?.querySelector('.ant-checkbox')`), 'a phone list row has no checkbox');
+    await longPress(page, await point(page, 'pic.png'));
     await sleep(300);
     const picked = await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`);
-    check(picked, 'a tap on the checkbox selects the row on a phone');
+    check(picked, 'a long press selects the row on a phone');
     await clearSelection(page);
-    // A tile has no checkbox on the desktop; on a finger's screen it has one, so a tile can be selected too.
+    // A tile is selected by a long press too; it has no checkbox on any pointer.
     await open('Tiles');
-    // The tile is brought into the window first: a tile is taller in the tile view (slice d1).
-    const tileBox = await page.evaluate(`(() => { const box = document.querySelector('[role="option"][aria-label="pic.png"] input[type="checkbox"]'); if (!box) return null; box.scrollIntoView({ block: 'center' }); const r = box.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    check(tileBox !== null, 'a phone tile has a checkbox');
-    await tap(page, tileBox);
+    check(await page.evaluate(`!document.querySelector('[role="option"][aria-label="pic.png"] .ant-checkbox')`), 'a phone tile has no checkbox');
+    await longPress(page, await point(page, 'pic.png'));
     await sleep(300);
-    check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`), 'a tap on a tile checkbox selects the tile on a phone');
+    check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`), 'a long press selects the tile on a phone');
     await clearSelection(page);
     await setPhone(page, false);
   });
@@ -585,31 +589,28 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     // The sortable column header's button is at least 44 px tall on a finger.
     const headBtn = await page.evaluate(`(() => { const b = document.querySelector('.files-list .ant-table-thead th button'); if (!b) return null; const r = b.getBoundingClientRect(); return { h: r.height }; })()`);
     check(headBtn !== null && headBtn.h >= 43.5, `on a finger the sort header's button is at least 44 px tall (${JSON.stringify(headBtn)})`);
-    // A tap in the select cell, away from the box, toggles the row and opens nothing. The point is taken fresh each time: the
-    // selection panel takes the toolbar's row, so the rows can shift between taps.
-    const cellPoint = () =>
+    // A long press on the row toggles it and opens nothing. The point is taken fresh each time: the selection panel takes the
+    // toolbar's row, so the rows can shift between presses.
+    const rowPoint = () =>
       page.evaluate(`(() => {
         const row = document.querySelector(${q(itemSel('pic.png'))});
         if (!row) return null;
         row.scrollIntoView({ block: 'center' });
-        const cell = row.querySelector('.ant-table-selection-column');
-        const box = row.querySelector('input[type="checkbox"]');
-        if (!cell || !box) return null;
-        const c = cell.getBoundingClientRect(); const b = box.getBoundingClientRect();
-        return { x: (c.left + b.left) / 2, y: c.top + c.height / 2, url: location.pathname };
+        const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, url: location.pathname };
       })()`);
-    const first = await cellPoint();
-    check(first !== null, 'a phone list row has a select cell and a box');
-    await tap(page, first);
+    const first = await rowPoint();
+    check(first !== null && await page.evaluate(`!document.querySelector(${q(itemSel('pic.png'))})?.querySelector('.ant-checkbox')`), 'a phone list row has no checkbox');
+    await longPress(page, first);
     await sleep(400);
     const cellSel = await page.evaluate(`(() => { const p = document.querySelector('[data-testid="selection-panel"]'); return { sel: !!p && p.textContent.includes('1 selected'), opened: !!document.querySelector('[data-testid="preview"]'), url: location.pathname }; })()`);
-    check(cellSel.sel && !cellSel.opened && cellSel.url === first.url, `a tap in the select cell selects the row, opens nothing, and stays put (${JSON.stringify(cellSel)})`);
-    const second = await cellPoint();
-    await tap(page, second);
+    check(cellSel.sel && !cellSel.opened && cellSel.url === first.url, `a long press selects the row, opens nothing, and stays put (${JSON.stringify(cellSel)})`);
+    const second = await rowPoint();
+    await longPress(page, second);
     await sleep(400);
-    check(await page.evaluate(`!document.querySelector('[data-testid="selection-panel"]')`), 'a second tap in the select cell clears the selection');
+    check(await page.evaluate(`!document.querySelector('[data-testid="selection-panel"]')`), 'a second long press clears the selection');
     // Select the row, switch to the dark theme, and open the Move dialog from the selection panel.
-    await tap(page, await cellPoint());
+    await longPress(page, await rowPoint());
     await sleep(400);
     await setTheme(page, 'Dark');
     const moveBtn = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
@@ -769,23 +770,21 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
   });
 
-  // ---- 5b. a mouse's click on a row's checkbox selects the row, and a second click clears it ----
+  // ---- 5b. a mouse's click on a row's mark selects the row, and a second click clears it ----
   // The click is a real one (the browser's own events). Between the capture and the bubble phases of such a click React draws what
-  // was changed in the capture phase, and a checkbox it draws then loses the click: a listing must not change state there (decision 128).
-  await step('a mouse click on a row checkbox selects the row and clears it', async () => {
+  // was changed in the capture phase, and a control it draws then loses the click: a listing must not change state there (decision 128).
+  await step('a mouse click on a row mark selects the row and clears it', async () => {
     await open('List');
     const row = itemSel('pic.png');
-    // The box shows on a hovered row, or a row with the focus: the focus is given by script, and the click on the box is the real one.
-    await page.evaluate(`document.querySelector(${q(row)}).focus()`);
-    await page.waitFor(`getComputedStyle(document.querySelector(${q(row)}).querySelector('.row-check')).display !== 'none'`, 10000);
-    const rect = () => page.evaluate(`(() => { const r = document.querySelector(${q(row)}).querySelector('.row-check input').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    // The mark is the row's icon wrapped in a button, always drawn; the click on it is the real one.
+    const rect = () => page.evaluate(`(() => { const m = document.querySelector(${q(row)}).querySelector('button.row-mark'); m.scrollIntoView({ block: 'center' }); const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     await click(page, await rect());
     const selected = () => page.evaluate(`document.querySelector(${q(row)}).getAttribute('aria-selected') === 'true'`);
     await page.waitFor(`document.querySelector(${q(row)}).getAttribute('aria-selected') === 'true'`, 5000).catch(() => undefined);
-    check(await selected(), 'a real mouse click on a row checkbox selects the row');
+    check(await selected(), 'a real mouse click on a row mark selects the row');
     await click(page, await rect());
     await page.waitFor(`document.querySelector(${q(row)}).getAttribute('aria-selected') !== 'true'`, 5000).catch(() => undefined);
-    check(!(await selected()), 'a second real mouse click on the checkbox clears the row');
+    check(!(await selected()), 'a second real mouse click on the mark clears the row');
   });
 
   // ---- 6. real playback: a video, an audio file and a picture ----

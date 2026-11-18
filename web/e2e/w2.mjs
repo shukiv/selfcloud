@@ -443,15 +443,15 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     await clearSelection(page);
   });
 
-  await step('a press on a button, a checkbox or a row starts no band', async () => {
+  await step('a press on a button, a row mark or a row starts no band', async () => {
     await open(shortURL, 'List', 's01.txt');
     const button = await centre(page, '[data-testid="view-toggle"]');
     const mid1 = await dragTo(page, button, { x: button.x - 200, y: button.y + 300 }, { during: () => bandBox(page) });
     check(mid1 === null, 'a press on a toolbar button starts no band');
     await page.evaluate(`window.scrollTo(0, 0)`);
-    const box = await page.evaluate(`(() => { const c = document.querySelectorAll('[role="row"] .ant-checkbox-input')[2]; const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const box = await page.evaluate(`(() => { const c = document.querySelectorAll('[role="row"] button.row-mark')[2]; const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     const mid2 = await dragTo(page, box, { x: box.x + 200, y: box.y + 100 }, { during: () => bandBox(page) });
-    check(mid2 === null, 'a press on a row checkbox starts no band');
+    check(mid2 === null, 'a press on a row mark starts no band');
     await clearSelection(page);
     const row = await nameAt(page, 's02.txt');
     const mid3 = await dragTo(page, row, { x: row.x + 150, y: row.y + 90 }, { during: async () => ({ band: await bandBox(page), ghost: await ghost(page) }) });
@@ -510,15 +510,15 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
   // ---- 11. Select all says it took only the loaded rows ----
   await step('Select all says it took only the loaded rows when more pages exist', async () => {
     await open(manyURL, 'List', 'm01.txt');
-    // The select-all box of a mouse is in the header's place and shows on a hovered header or while something is selected
-    // (decision 70). This browser reports no hover, so one row is selected first: the box then shows, and Select all takes the rest.
+    // The select-all mark is always in the name's header. One row is selected first, so the mark reads mixed; a click on it then
+    // takes every loaded row.
     await click(page, await nameAt(page, 'm01.txt'));
-    await page.waitFor(`!!document.querySelector('.files-list .head-check') && getComputedStyle(document.querySelector('.files-list .head-check')).display !== 'none'`, 8000);
-    const box = await page.evaluate(`(() => { const c = document.querySelector('.files-list .head-check .ant-checkbox-input'); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await page.waitFor(`!!document.querySelector('.files-list thead button.head-mark')`, 8000);
+    const box = await page.evaluate(`(() => { const c = document.querySelector('.files-list thead button.head-mark'); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     check(await page.evaluate(`!!document.querySelector('.ant-btn') && [...document.querySelectorAll('button')].some((b) => /load more/i.test(b.textContent))`), 'the folder has more pages than are loaded');
     await click(page, box);
     await page.waitFor(`document.body.innerText.includes('Selected the items loaded so far: 50')`, 8000).catch(async (err) => {
-      const seen = await page.evaluate(`JSON.stringify({ box: ${q(box)}, head: (() => { const h = document.querySelector('.files-list .head-check'); const r = h?.getBoundingClientRect(); return h ? { display: getComputedStyle(h).display, x: r.left, y: r.top, w: r.width } : null; })(), input: (() => { const i = document.querySelector('.files-list .head-check input'); return i ? { checked: i.checked, indeterminate: i.indeterminate } : null; })(), theads: document.querySelectorAll('.files-list thead').length, selected: document.querySelectorAll('[role="row"][aria-selected="true"]').length, panel: document.querySelector('[data-testid="selection-panel"]')?.textContent?.slice(0, 60) ?? null })`);
+      const seen = await page.evaluate(`JSON.stringify({ box: ${q(box)}, head: (() => { const h = document.querySelector('.files-list thead button.head-mark'); const r = h?.getBoundingClientRect(); return h ? { checked: h.getAttribute('aria-checked'), x: r.left, y: r.top, w: r.width } : null; })(), theads: document.querySelectorAll('.files-list thead').length, selected: document.querySelectorAll('[role="row"][aria-selected="true"]').length, panel: document.querySelector('[data-testid="selection-panel"]')?.textContent?.slice(0, 60) ?? null })`);
       throw new Error(`${err.message.slice(0, 80)}; ${seen}`);
     });
     const took = await selectedNames(page);
