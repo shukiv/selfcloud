@@ -1099,7 +1099,7 @@ async function main() {
     // Slice mp6b (decision 226): bookmarks in the media player. It runs on the shared page after mp7, and ends signed in as
     // the member, as mp7 does.
     if (!only || onlySet.has('mp6b')) await section('mp6b', () => mp6bChecks(h, { page, base, accountKey, accountID }), { as: 'member' });
-    // Slice mp2b (decision 228): choosing a subtitle file from the drive in the player's Subtitles menu. It runs on the
+    // Slice mp2b (decision 229): choosing a subtitle file from the drive in the player's Subtitles menu. It runs on the
     // shared page after mp6b, and ends signed in as the member, as mp6b does.
     if (!only || onlySet.has('mp2b')) await section('mp2b', () => mp2bChecks(h, { page, base }), { as: 'member' });
     // Slice pk1: the Playlists tab's New playlist and Add files, the file picker on My files. It runs on the shared page
