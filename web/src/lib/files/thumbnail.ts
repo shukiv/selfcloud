@@ -5,7 +5,7 @@
 // bounded number of waits. The loader is written without the DOM, so its waits and its stop can be tested directly.
 
 import { Limiter } from './limiter';
-import { session, sessionKey } from '../session';
+import { session, sessionKey, signingOut, trackRequest } from '../session';
 import { get } from '../store';
 
 // The size a tile asks for: the server's default thumbnail size (derived.thumb_sizes).
@@ -58,8 +58,8 @@ export interface ThumbSink {
   none(): void;
 }
 
-// ThumbDeps are the parts a test replaces: the request, the timers, the object addresses, the limit on requests, and the
-// reading of the session's key.
+// ThumbDeps are the parts a test replaces: the request, the timers, the object addresses, the limit on requests, the
+// reading of the session's key, and the sign-out's guard and record of requests on their way.
 export interface ThumbDeps {
   fetch: typeof fetch;
   schedule: (fn: () => void, ms: number) => unknown;
@@ -68,6 +68,8 @@ export interface ThumbDeps {
   revokeURL: (url: string) => void;
   limiter: Limiter;
   sessionKey: () => string;
+  signingOut: () => boolean;
+  track: (c: AbortController) => () => void;
 }
 
 // liveDeps is the browser's own parts. The limiter is shared, so the page's tiles together stay within THUMB_CONCURRENCY.
@@ -82,6 +84,8 @@ export function liveDeps(): ThumbDeps {
     revokeURL: (url) => URL.revokeObjectURL(url),
     limiter: shared,
     sessionKey: () => sessionKey(get(session)),
+    signingOut,
+    track: trackRequest,
   };
 }
 
@@ -89,6 +93,8 @@ export function liveDeps(): ThumbDeps {
 // that stops it: a stopped watch never asks again, cancels its wait and its request, and revokes its image address.
 // Exactly one of image and none is reported, unless the watch is stopped first. A watch whose session ends before its
 // request goes out reports none and asks no more, so a sign-out is never followed by a request under the session it ended.
+// A sign-out on its way counts as an ended session too: the key stays unchanged until the logout answers, so the watch
+// reads signingOut as well, and records its request on the way so the sign-out can abort it.
 export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = liveDeps()): () => void {
   let stopped = false;
   let waits = 0;
@@ -99,7 +105,14 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
   const abort = typeof AbortController === 'undefined' ? null : new AbortController();
   // The session the watch starts under. A share page has none, and its empty key stays the same for the whole watch.
   const startedKey = deps.sessionKey();
-  const sessionGone = () => deps.sessionKey() !== startedKey;
+  // A sign-out on its way ends the session too, though the key changes only once the logout answers (session.ts).
+  const sessionGone = () => deps.sessionKey() !== startedKey || deps.signingOut();
+  // forget drops the record of the request on its way; it is answered, fails, or the watch stops.
+  let forget: (() => void) | null = null;
+  const untrack = () => {
+    forget?.();
+    forget = null;
+  };
 
   const finish = (src: string | null) => {
     if (stopped) return;
@@ -110,6 +123,7 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    untrack();
     abort?.abort();
     if (handle !== null) deps.cancel(handle);
     handle = null;
@@ -137,13 +151,19 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
     }
     deps
       .limiter.run(() => {
-        // The slot may have been waited for across a sign-out: the key is read again just before the request goes out.
+        // The slot may have been waited for across a sign-out: the key and the sign-out are read again just before the
+        // request goes out.
         if (sessionGone()) {
           finish(null);
           stop();
           return Promise.reject(new Error('the session ended'));
         }
-        return deps.fetch(path, { credentials: 'same-origin', redirect: 'manual', signal: abort?.signal });
+        // The request is recorded while it is on its way, so a sign-out aborts it before its own call goes out, and is
+        // forgotten once it is answered or fails.
+        forget = abort !== null ? deps.track(abort) : null;
+        return deps
+          .fetch(path, { credentials: 'same-origin', redirect: 'manual', signal: abort?.signal })
+          .finally(untrack);
       })
       .then(
         async (res) => {
@@ -161,7 +181,11 @@ export function watchThumbnail(path: string, sink: ThumbSink, deps: ThumbDeps = 
                 new Promise<void>((resolve) => {
                   release = resolve;
                   if (stopped) resolve();
-                  else sink.redirect(path, resolve);
+                  else if (sessionGone()) {
+                    // No image address is handed to the browser once the session ended or while a sign-out is on its way.
+                    finish(null);
+                    stop();
+                  } else sink.redirect(path, resolve);
                 }),
             );
             return;
