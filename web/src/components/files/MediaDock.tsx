@@ -135,12 +135,13 @@ export default function MediaDock() {
   const spaces = [...useStore(folders), ...useStore(hiddenFolders)];
   const space = node ? (spaces.find((f) => f.id === node.folder_id) ?? null) : null;
   // The frame save (decision 231) goes to the top of the person's own My files alone: the personal space the sidebar's
-  // My files link finds. An impersonated session and a person without a personal space get no save, so the More menu
-  // draws no Save frame for them. The PNG joins the shared upload queue, so the tray shows it and the name-conflict
-  // question applies as to any upload.
+  // My files link finds. An impersonated session, a person without a personal space, and a file the person may not
+  // download get no save, so the More menu draws no Save frame for them — a frame is a copy of the file's content, so
+  // it is offered only where Download is (the same downloadAllowed). The PNG joins the shared upload queue, so the
+  // tray shows it and the name-conflict question applies as to any upload.
   const personal = spaces.find((f) => f.kind === "personal") ?? null;
   const frames: Frames | undefined =
-    sess && !sess.impersonation && personal
+    sess && !sess.impersonation && personal && canDownload
       ? {
           save: (blob: Blob, seconds: number) => {
             const name = frameName(node?.name ?? "", seconds);
