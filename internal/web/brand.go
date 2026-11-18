@@ -22,7 +22,7 @@ var brandFS embed.FS
 
 const (
 	// FaviconPath is the browser's icon, built from the brand (decision 109). The brand answer names it as the icon's URL
-	// when the installation has an icon picture (decision 221).
+	// when the installation has an icon picture (decision 225).
 	FaviconPath = "/favicon.svg"
 	// wordmarkPath is the SelfCloud wordmark with no background, for the sidebar's top.
 	wordmarkPath = "/brand/wordmark.svg"

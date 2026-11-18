@@ -161,7 +161,7 @@ export default function MediaPlayer({
   const pending = useRef(false);
   const stall = useRef<ReturnType<typeof setTimeout> | null>(null);
   // stale says the session the player mounted under has ended. The watchdog and the renewal then send nothing and
-  // report nothing, in the window between the sign-out and the owner's unmount (decision 223).
+  // report nothing, in the window between the sign-out and the owner's unmount (decision 224).
   const stale = useRef(sessionChanged()).current;
   // The callbacks are read through refs, so a render with new ones does not restart a request in flight.
   const mintRef = useRef(mint);

@@ -71,7 +71,7 @@ describe("refreshBrand", () => {
     expect(get(brand).logo_url).toBe("/brand/logo");
   });
 
-  // Decision 221: the icon's address is stamped with the icon's hash, as the logo's is, so a new icon is fetched again and not
+  // Decision 225: the icon's address is stamped with the icon's hash, as the logo's is, so a new icon is fetched again and not
   // served from the cache.
   it("stamps the icon's address with the hash it is given, beside the logo's", async () => {
     const a = refreshBrand("abc123", "def456");

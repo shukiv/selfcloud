@@ -8,10 +8,10 @@ import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
 import { sidebarRow } from "../theme/sidebarRow";
 
 // The brand at the top of the sidebar (decision 109, its edge replaced by decision 193, the uploaded logo's centring replaced
-// by decision 221). Expanded: the wordmark (or the tile logo where the wordmark would not read) fills the block's width, the
+// by decision 225). Expanded: the wordmark (or the tile logo where the wordmark would not read) fills the block's width, the
 // custom logo sits at the start edge at up to 42 px high, or the name as text. The block takes the rows' inline margin, so every
 // part of the sidebar starts at one edge, and the space above the picture and below the block is S, the sider's inline padding
-// plus that margin, on a mouse and a finger alike. Folded to the rail: the artwork keeps its mark (decision 221), else the
+// plus that margin, on a mouse and a finger alike. Folded to the rail: the artwork keeps its mark (decision 225), else the
 // uploaded icon, else the custom logo kept in its own shape, else the SelfCloud mark for every name (decision 119), with the
 // rail's own edges unchanged.
 const SIDEBAR_BLUE = "#053D8E";
@@ -30,7 +30,7 @@ function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", backg
 // height when the brand loads (decision 193): the wordmark (38/211) on a dark sidebar, the taller tile logo (398/1731.65) on a light one.
 const reserved = (width: number, edge: number, light = false) => Math.ceil((width - 2 * edge) * (light ? 398 / 1731.65 : 38 / 211));
 
-describe("SidebarBrand (decisions 109, 193 and 221)", () => {
+describe("SidebarBrand (decisions 109, 193 and 225)", () => {
   beforeEach(() => brandLoaded.set(true));
   afterEach(() => {
     brandLoaded.set(false);
@@ -84,7 +84,7 @@ describe("SidebarBrand (decisions 109, 193 and 221)", () => {
     expect(container.textContent).toBe("");
   });
 
-  // Decision 221 replaces decision 193's centring for an uploaded logo: it sits at the start edge (the end edge in Hebrew and
+  // Decision 225 replaces decision 193's centring for an uploaded logo: it sits at the start edge (the end edge in Hebrew and
   // Arabic, which flex mirrors), keeps its aspect, at most as wide as the block and 42 px high. In the rail it is kept in its
   // own shape: a box at most 40 wide and 28 high, never stretched.
   it("shows a custom logo at the start edge, at most 42 px high and as wide as the block, and in its own shape in the rail", () => {
@@ -105,7 +105,7 @@ describe("SidebarBrand (decisions 109, 193 and 221)", () => {
     expect(rail?.style.objectFit).toBe("contain");
   });
 
-  // Decision 221: the folded rail shows the uploaded icon, the picture the favicon is drawn from, at 28 by 28 and kept in
+  // Decision 225: the folded rail shows the uploaded icon, the picture the favicon is drawn from, at 28 by 28 and kept in
   // shape, ahead of the logo but after the artwork's mark. The rail's centring is unchanged.
   it("folds to the uploaded icon in the rail, 28 by 28, kept in shape", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", icon_url: "/favicon.svg", artwork: false });
@@ -119,7 +119,7 @@ describe("SidebarBrand (decisions 109, 193 and 221)", () => {
     expect(container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("center");
   });
 
-  // Decision 221 (review): the artwork keeps its mark in the rail even with an icon. An installation with no logo of its own
+  // Decision 225: the artwork keeps its mark in the rail even with an icon. An installation with no logo of its own
   // folds to the mark at 32, not the icon, so the wordmark expanded and the mark folded stay the artwork's pair; expanded it
   // still shows the artwork.
   it("the artwork folds to the mark even with an icon", () => {

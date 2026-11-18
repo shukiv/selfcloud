@@ -10,7 +10,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
-// The icon's URL in the brand answer (decision 221): the favicon's path when the installation has an icon picture, the config
+// The icon's URL in the brand answer (decision 225): the favicon's path when the installation has an icon picture, the config
 // file's or an upload's, which the favicon is drawn from (decision 119); null with no icon. The app icon never sets it
 // (decision 220), and a logo alone is not an icon.
 

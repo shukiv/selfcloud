@@ -49,7 +49,7 @@ export function logoHash(a: SettingsAnswer): string | undefined {
 }
 
 // iconHash is the hash of the icon in use (an upload or the config file's), or undefined when none is. It stamps the icon's
-// address as the logo's is stamped, so a new icon is fetched again (decision 221).
+// address as the logo's is stamped, so a new icon is fetched again (decision 225).
 export function iconHash(a: SettingsAnswer): string | undefined {
   const p = a.pictures.find((x) => x.key === "ui.brand.icon");
   return p !== undefined && (p.state === "uploaded" || p.state === "file") ? p.sha256 : undefined;

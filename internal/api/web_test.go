@@ -150,7 +150,7 @@ func TestContentURLIsAllowedInTheShellPolicy(t *testing.T) {
 }
 
 // TestInfoBrand: /info carries the installation's name and accent, the logo as a URL and the icon's URL (null with no icon,
-// decision 221); the file's path never appears.
+// decision 225); the file's path never appears.
 func TestInfoBrand(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

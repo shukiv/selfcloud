@@ -108,7 +108,7 @@ type infoBrand struct {
 	Accent  string  `json:"accent"`
 	LogoURL *string `json:"logo_url"`
 	// IconURL is the favicon's path when the installation has an icon picture, the config file's or an upload's, which the
-	// favicon is drawn from (decisions 119 and 221); null otherwise. The app icon never sets it (decision 220).
+	// favicon is drawn from (decisions 119 and 225); null otherwise. The app icon never sets it (decision 220).
 	IconURL *string `json:"icon_url"`
 	// Artwork is true when the installation shows the SelfCloud artwork, which is whenever it has no logo, from the file or an
 	// upload (decisions 109, 126 and 141).
@@ -186,7 +186,7 @@ func (s *Server) features() []string {
 // brandInfo describes the brand in use (decision 141). The logo URL is set only for a logo of the installation's own, the file's
 // or an upload, so a client that reads it as "has a custom logo" is right; the artwork, which shows when there is none, is named
 // by artwork instead (decisions 109 and 126). The icon URL is the favicon's path when an icon picture is in use, which the
-// favicon is drawn from (decisions 119 and 221); the app icon never sets it (decision 220).
+// favicon is drawn from (decisions 119 and 225); the app icon never sets it (decision 220).
 func (s *Server) brandInfo() infoBrand {
 	brand := s.settings().UI.Brand
 	pics := s.pics.Load()

@@ -14,10 +14,10 @@
 //     with a trailing slash lands on Settings.
 //  8. Branding (decision 152): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
 //     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is
-//     uploaded, drawn in the preview and the sidebar at the start edge (decision 221), the folded rail draws the icon while the
+//     uploaded, drawn in the preview and the sidebar at the start edge (decision 225), the folded rail draws the icon while the
 //     logo is set, and the logo is removed; a file that is not a picture is refused in the page's own words for a logo; an app
 //     icon is uploaded, draws the app icons while the favicon keeps the icon file's and the folded rail keeps the artwork's mark
-//     (decision 221), refuses an SVG in the page's own words, and is removed, the icons byte for byte as before; no page error
+//     (decision 225), refuses an SVG in the page's own words, and is removed, the icons byte for byte as before; no page error
 //     or policy violation.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -117,7 +117,7 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
     })()`);
     check(shown.w > 0 && shown.src.includes('/brand/logo?v='), `the preview draws the uploaded logo (${shown.src}, ${shown.w} px wide)`);
     check(/^\/brand\/logo\?v=/.test(shown.side ?? ''), `the page's own sidebar draws the uploaded logo at once (${shown.side})`);
-    // Decision 221 replaces decision 193's centring: the uploaded logo sits at the start edge of the brand's block (the end edge
+    // Decision 225 replaces decision 193's centring: the uploaded logo sits at the start edge of the brand's block (the end edge
     // in Hebrew and Arabic), not centred. The logo is narrower than the block, so the edge it starts at is a real measurement.
     const atEdge = await page.evaluate(`(() => {
       const block = document.querySelector('[data-testid="sidebar-brand"]');
@@ -129,7 +129,7 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
       return { gap: Math.abs(rtl ? b.right - r.right : r.left - b.left), width: r.width, blockWidth: b.width };
     })()`);
     check(atEdge !== null && atEdge.gap <= 0.5 && atEdge.width < atEdge.blockWidth, `the uploaded logo sits at the start edge, not centred (${JSON.stringify(atEdge)})`);
-    // Decision 221 (review): while the installation has a logo of its own (the artwork off), the folded rail draws the icon, the
+    // Decision 225: while the installation has a logo of its own (the artwork off), the folded rail draws the icon, the
     // picture the favicon is drawn from, at 28 px kept in shape — not the logo. The rail's saved choice is put back afterwards.
     const railWas = await page.evaluate(`window.localStorage.getItem('selfcloud.navRail')`);
     await h.clickOn(page, '[data-testid="rail-toggle"]');
@@ -194,8 +194,8 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
     await page.waitFor(`[...document.querySelectorAll('[data-preview="icons"] img')].some((i) => i.src.includes('/brand/icon-512.png?v=${held.sha256}'))`, 10000);
     check(true, 'the preview draws the app tiles from the app icon');
     // The folded rail keeps the artwork's mark while the app icon is set: the installation has no logo of its own here, so the
-    // artwork keeps its mark at 32 even with the icon file — never the icon and never the app icon (decisions 119, 220 and 221,
-    // review). The rail's saved choice is put back afterwards.
+    // artwork keeps its mark at 32 even with the icon file — never the icon and never the app icon (decisions 119, 220 and 225).
+    // The rail's saved choice is put back afterwards.
     const railWas = await page.evaluate(`window.localStorage.getItem('selfcloud.navRail')`);
     await h.clickOn(page, '[data-testid="rail-toggle"]');
     await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="sidebar-brand"] [role="img"]')`, 15000);

@@ -2209,7 +2209,7 @@ paths:
         (decision 119), checked as `ui.brand.icon_file` is: an SVG, or a square PNG of 512 to 2048 pixels on a side
         that decodes. The PNG's size is read from its header before it is decoded, so a picture that claims to be
         larger is refused without being decoded. The lock is `ui.brand.icon_file`, and the audit key
-        `ui.brand.icon`. With an icon in use, `brand.icon_url` in `/api/v1/info` is `/favicon.svg` (decision 221).
+        `ui.brand.icon`. With an icon in use, `brand.icon_url` in `/api/v1/info` is `/favicon.svg` (decision 225).
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -2234,7 +2234,7 @@ paths:
       description: |
         As `DELETE /api/v1/settings/brand/logo`. The app icons and the favicon go back to what decision 119 picks
         without an icon: the logo, when it is a PNG, or else the SelfCloud mark on the accent. With no icon in use,
-        `brand.icon_url` in `/api/v1/info` is null (decision 221).
+        `brand.icon_url` in `/api/v1/info` is null (decision 225).
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":
@@ -2253,7 +2253,7 @@ paths:
         checked as `ui.brand.app_icon_file` is: a square PNG of 512 to 2048 pixels on a side that decodes, never an
         SVG. The PNG's size is read from its header before it is decoded, so a picture that claims to be larger is
         refused without being decoded. The app icon never reaches the favicon, which keeps decision 119's rule, and
-        never sets `brand.icon_url` (decision 221). The lock is `ui.brand.app_icon_file`, and the audit key
+        never sets `brand.icon_url` (decision 225). The lock is `ui.brand.app_icon_file`, and the audit key
         `ui.brand.app_icon`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
@@ -8576,7 +8576,7 @@ components:
           description: The URL of the installation's own logo (`/brand/logo`), from the config file or an admin's upload, or null when it has neither. The file's path is never sent. The SelfCloud artwork has no URL here; `artwork` says whether it is shown.
         icon_url:
           type: [string, "null"]
-          description: The URL of the installation's icon (`/favicon.svg`), the picture the favicon is drawn from, when an icon is in use from the config file or an admin's upload, or null when none is (decisions 119 and 221). The file's path is never sent. The app icon never sets it (decision 220); a logo alone is not an icon.
+          description: The URL of the installation's icon (`/favicon.svg`), the picture the favicon is drawn from, when an icon is in use from the config file or an admin's upload, or null when none is (decisions 119 and 225). The file's path is never sent. The app icon never sets it (decision 220); a logo alone is not an icon.
         artwork:
           type: boolean
           description: "True when the installation shows the SelfCloud artwork, which is whenever it has no logo, from the config file or an upload, whatever its name. The artwork is one picture with the SelfCloud name inside it, so the web interface draws no name beside it; the installation's name labels the picture and titles the pages (decisions 109, 126 and 141)."

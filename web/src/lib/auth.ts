@@ -59,7 +59,7 @@ let brandReads = 0;
 
 // refreshBrand reads the brand again and applies it, so a change made on the Settings page shows in this page's own sidebar and title
 // at once. logoHash and iconHash are the hashes of the logo and the icon when they are in use: each stamps its picture's address, so
-// a new picture is fetched again and the same one is not, on every refresh (decision 221 for the icon). A failed read leaves the brand
+// a new picture is fetched again and the same one is not, on every refresh (decision 225 for the icon). A failed read leaves the brand
 // as it is.
 export async function refreshBrand(logoHash?: string, iconHash?: string): Promise<void> {
   const mine = ++brandReads;

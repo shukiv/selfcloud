@@ -249,7 +249,7 @@ export default function MediaPlaylist({
   const fetchRef = useRef(fetchLink);
   fetchRef.current = fetchLink;
   // stale says the session the playlist mounted under has ended. The skip timer and the link fetch then send nothing
-  // and report nothing, in the window between the sign-out and the owner's unmount (decision 223).
+  // and report nothing, in the window between the sign-out and the owner's unmount (decision 224).
   const stale = useRef(sessionChanged()).current;
   // ticket numbers the steps and picks. A step that is not the latest one does nothing once its wait ends: a pick or a
   // newer Next made meanwhile wins.

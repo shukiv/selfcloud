@@ -157,7 +157,7 @@ describe('the logo URL is checked before it reaches an image', () => {
   });
 });
 
-// The icon is a URL the page puts in an <img src> too (decision 221): the server sends only the favicon's path, and the same
+// The icon is a URL the page puts in an <img src> too (decision 225): the server sends only the favicon's path, and the same
 // guard as the logo keeps anything else out of the image.
 describe('the icon URL is checked before it reaches an image', () => {
   const base = { name: 'Acme', palette: { light: {}, dark: {} }, sidebar: {} } as never as Record<string, unknown>;
