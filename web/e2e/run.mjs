@@ -35,6 +35,7 @@ import { mp1Checks } from './mp1.mjs';
 import { mp3Checks } from './mp3.mjs';
 import { mp7Checks } from './mp7.mjs';
 import { mp6bChecks } from './mp6b.mjs';
+import { mp2bChecks } from './mp2b.mjs';
 import { pk1Checks } from './pk1.mjs';
 import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
@@ -1065,7 +1066,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, mp7, mp6b, pk1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, ps1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, mp7, mp6b, mp2b, pk1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, ps1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1098,6 +1099,9 @@ async function main() {
     // Slice mp6b (decision 226): bookmarks in the media player. It runs on the shared page after mp7, and ends signed in as
     // the member, as mp7 does.
     if (!only || onlySet.has('mp6b')) await section('mp6b', () => mp6bChecks(h, { page, base, accountKey, accountID }), { as: 'member' });
+    // Slice mp2b (decision 228): choosing a subtitle file from the drive in the player's Subtitles menu. It runs on the
+    // shared page after mp6b, and ends signed in as the member, as mp6b does.
+    if (!only || onlySet.has('mp2b')) await section('mp2b', () => mp2bChecks(h, { page, base }), { as: 'member' });
     // Slice pk1: the Playlists tab's New playlist and Add files, the file picker on My files. It runs on the shared page
     // after mp7, and ends signed in as the member, as mp7 does.
     if (!only || onlySet.has('pk1')) await section('pk1', () => pk1Checks(h, { page, base }), { as: 'member' });

@@ -4,13 +4,37 @@
 // timing offset kept per video file, and the size kept per person. The element's text tracks are stubbed as the browser
 // holds them (real cue objects), so an offset's shift of every cue can be read.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ConfigProvider } from "antd";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_SUBTITLE_BYTES, type SubtitleTrack } from "../../lib/files/subtitles";
+import { decodeSubtitle, MAX_SUBTITLE_BYTES, type SubtitleTrack } from "../../lib/files/subtitles";
+import type { FolderAccess, Node } from "../../lib/files/types";
 import { session, type Session } from "../../lib/session";
 import MediaPlayer from "./MediaPlayer";
+
+// The drive's picker is mocked: it keeps its props so a test can read them and hand back a pick at once, as the real
+// picker hands the chosen file. The subtitles module is spied on with its own implementations kept, so a test can read
+// the truncated flag a decode was given.
+const picker = vi.hoisted(() => ({
+  props: null as null | {
+    title: string;
+    action: string;
+    spaces: FolderAccess[];
+    startAt?: string;
+    accept: (n: Node) => boolean;
+    multiple?: boolean;
+    onPick: (nodes: Node[]) => void;
+    onClose: () => void;
+  },
+}));
+vi.mock("./PickFiles", () => ({
+  default: (props: NonNullable<typeof picker.props>) => {
+    picker.props = props;
+    return null;
+  },
+}));
+vi.mock("../../lib/files/subtitles", { spy: true });
 
 const LINK = { url: "https://content.example/clip.webm" };
 const mint = async () => LINK;
@@ -304,5 +328,186 @@ describe("a storage that throws", () => {
     expect(video().className).toContain("media-cue-l");
     await timingClick("Later 0.1 s");
     expect(made[0].cues[0].startTime).toBeCloseTo(1.1, 5);
+  });
+});
+
+// A subtitle file from the drive: the Choose item opens the lazy picker, and the picked file is read through the
+// driveSubtitles read, decoded and parsed exactly as a device file, becoming a track named after it. The session guard
+// (decision 222) keeps a read from going out, and an answer from landing, once the session has changed.
+const DRIVE_VTT = "WEBVTT\n\n00:00:01.000 --> 00:00:25.000\nFrom the drive\n";
+
+const driveSpaces: FolderAccess[] = [
+  { id: "f1", name: "My files", kind: "personal", access: "write", role: "manager", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: false },
+];
+
+function driveNode(name: string, size = 64): Node {
+  return {
+    id: "drive-sub",
+    folder_id: "f1",
+    parent_id: null,
+    name,
+    kind: "file",
+    size,
+    mime_type: "text/vtt",
+    created_at: "2026-10-01T00:00:00Z",
+    modified_at: "2026-10-01T00:00:00Z",
+    no_download: false,
+    editors_can_share: false,
+  };
+}
+
+describe("a subtitle file from the drive", () => {
+  const read = vi.fn();
+  const drive = { spaces: driveSpaces, startAt: "f1", read };
+
+  beforeEach(() => {
+    picker.props = null;
+    read.mockReset();
+    vi.mocked(decodeSubtitle).mockClear();
+  });
+
+  // openPicker presses the Choose item and waits for the lazy picker's props; pick hands back the chosen file as the
+  // picker's Use does.
+  async function openPicker(): Promise<void> {
+    const menu = await openMenu();
+    fireEvent.click(itemOf(menu, "Choose from my files…"));
+    await waitFor(() => expect(picker.props).not.toBeNull());
+  }
+  function pick(node: Node): void {
+    const p = picker.props;
+    if (!p) throw new Error("the picker is not open");
+    act(() => p.onPick([node]));
+  }
+
+  it("shows the Choose item right after Load only with driveSubtitles, and opens the single picker on the video's space", async () => {
+    const { unmount } = renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    expect(picker.props).toBeNull();
+    const menu = await openMenu();
+    const load = itemOf(menu, "Load from this device…");
+    const choose = itemOf(menu, "Choose from my files…");
+    expect(load.nextElementSibling).toBe(choose);
+    fireEvent.click(choose);
+    await waitFor(() => expect(picker.props).not.toBeNull());
+    const p = picker.props;
+    expect(p?.title).toBe("Choose subtitles");
+    expect(p?.action).toBe("Use");
+    expect(p?.spaces).toBe(driveSpaces);
+    expect(p?.startAt).toBe("f1");
+    expect(p?.multiple).toBeFalsy();
+    expect(p?.accept(driveNode("a.SRT"))).toBe(true);
+    expect(p?.accept(driveNode("b.VtT"))).toBe(true);
+    expect(p?.accept(driveNode("c.txt"))).toBe(false);
+    expect(p?.accept(driveNode("d.srtx"))).toBe(false);
+    unmount();
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} />);
+    const plain = await openMenu();
+    expect(within(plain).queryByText("Choose from my files…")).toBeNull();
+    expect(within(plain).getByText("Load from this device…")).toBeTruthy();
+  });
+
+  it("has no Subtitles button on audio, even with driveSubtitles", () => {
+    renderPlayer(<MediaPlayer kind="audio" name="song.mp3" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    expect(screen.queryByRole("button", { name: "Subtitles" })).toBeNull();
+  });
+
+  it("reads the picked file once and shows its track named after the file at once", async () => {
+    read.mockResolvedValue(new Response(DRIVE_VTT, { status: 200 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("drive.vtt"));
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ id: "drive-sub", name: "drive.vtt" }));
+    expect(made[0].label).toBe("drive.vtt");
+    expect(made[0].mode).toBe("showing");
+    expect(made[0].cues[0].text).toBe("From the drive");
+    const menu = await openMenu();
+    expect(itemOf(menu, "drive.vtt").getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText("No subtitles were found in that file")).toBeNull();
+  });
+
+  it("a 206 answer works like a 200", async () => {
+    read.mockResolvedValue(new Response(DRIVE_VTT, { status: 206 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("drive.vtt"));
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(made[0].label).toBe("drive.vtt");
+    expect(made[0].mode).toBe("showing");
+    expect(made[0].cues[0].text).toBe("From the drive");
+  });
+
+  it("shows the note and adds nothing when the file holds no cues", async () => {
+    read.mockResolvedValue(new Response("not a subtitle file", { status: 200 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("empty.vtt"));
+    expect(await screen.findByText("No subtitles were found in that file")).toBeTruthy();
+    expect(made).toHaveLength(0);
+  });
+
+  it("shows the note and adds nothing when the answer is not 200 or 206", async () => {
+    read.mockResolvedValue(new Response(DRIVE_VTT, { status: 404 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("drive.vtt"));
+    expect(await screen.findByText("No subtitles were found in that file")).toBeTruthy();
+    expect(made).toHaveLength(0);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the note and adds nothing when the read throws", async () => {
+    read.mockRejectedValue(new Error("down"));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("drive.vtt"));
+    expect(await screen.findByText("No subtitles were found in that file")).toBeTruthy();
+    expect(made).toHaveLength(0);
+  });
+
+  it("a file over the cap is decoded with the truncated flag, its first bytes only", async () => {
+    read.mockResolvedValue(new Response(DRIVE_VTT + "x".repeat(MAX_SUBTITLE_BYTES), { status: 206 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("big.vtt", MAX_SUBTITLE_BYTES + 100));
+    await waitFor(() => expect(made).toHaveLength(1));
+    const call = vi.mocked(decodeSubtitle).mock.calls.at(-1);
+    expect(call?.[1]).toBe("en");
+    expect(call?.[2]).toBe(true);
+    expect((call?.[0] as Uint8Array).length).toBe(MAX_SUBTITLE_BYTES);
+    expect(made[0].cues[0].text).toBe("From the drive");
+  });
+
+  it("sends no read when the session ended before the pick", async () => {
+    session.set(who("a"));
+    read.mockResolvedValue(new Response(DRIVE_VTT, { status: 200 }));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    act(() => session.set(null));
+    pick(driveNode("drive.vtt"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(made).toHaveLength(0);
+    expect(screen.queryByText("No subtitles were found in that file")).toBeNull();
+  });
+
+  it("drops an answer that arrives after the session ended: no track, no note", async () => {
+    session.set(who("a"));
+    let answer: (r: Response) => void = () => {};
+    read.mockImplementation(() => new Promise<Response>((resolve) => (answer = resolve)));
+    renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
+    await openPicker();
+    pick(driveNode("drive.vtt"));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    act(() => session.set(null));
+    await act(async () => {
+      answer(new Response(DRIVE_VTT, { status: 200 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(made).toHaveLength(0);
+    expect(screen.queryByText("No subtitles were found in that file")).toBeNull();
   });
 });

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HIDE_MS, VOLUME_STEP, playerPrefs } from "../../lib/files/mediaKeys";
+import MediaControls from "./MediaControls";
 import MediaPlayer from "./MediaPlayer";
 
 // at sets where playback is, and whether it is paused, as the element reports them.
@@ -141,5 +142,43 @@ describe("MediaControls", () => {
       vi.advanceTimersByTime(HIDE_MS * 2);
     });
     expect(getByTestId("media-controls").className).not.toContain("media-controls--hidden");
+  });
+});
+
+// The Subtitles menu's Choose from my files… item: it is drawn only when the subtitles prop carries onChoose, right
+// after Load from this device…, and a press calls onChoose once. Without onChoose the menu is unchanged.
+describe("the Subtitles menu's Choose item", () => {
+  const subs = (onChoose?: () => void) => ({
+    labels: [],
+    active: -1,
+    onPick: () => {},
+    onLoad: () => {},
+    offset: 0,
+    onOffset: () => {},
+    size: "m" as const,
+    onSize: () => {},
+    ...(onChoose ? { onChoose } : {}),
+  });
+  const openSubs = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Subtitles" }));
+    return screen.findByRole("menu");
+  };
+
+  it("draws Choose from my files… right after Load and calls onChoose once", async () => {
+    const onChoose = vi.fn();
+    render(<MediaControls media={document.createElement("video")} kind="video" stage={null} subtitles={subs(onChoose)} />);
+    const menu = await openSubs();
+    const load = within(menu).getByText("Load from this device…").closest("li") as HTMLElement;
+    const choose = within(menu).getByText("Choose from my files…").closest("li") as HTMLElement;
+    expect(load.nextElementSibling).toBe(choose);
+    fireEvent.click(choose);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the menu unchanged without onChoose", async () => {
+    render(<MediaControls media={document.createElement("video")} kind="video" stage={null} subtitles={subs()} />);
+    const menu = await openSubs();
+    expect(within(menu).queryByText("Choose from my files…")).toBeNull();
+    expect(within(menu).getByText("Load from this device…")).toBeTruthy();
   });
 });
