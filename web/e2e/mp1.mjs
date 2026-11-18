@@ -5,7 +5,8 @@
 // files, a file played from My files that goes on in the mini player and then on the Media page — the same element,
 // marked, never made again — with the queue table below it (mp1b: a click on row 2 plays it in the page's one player)
 // and no mini player beside it, the mini player back on My files, the page's Stop and close that ends the session, the
-// More menu's A-B loop and its sleep timer's End of this file, and the page fitting a phone with no sideways scroll. Run it
+// More menu's A-B loop and its sleep timer's End of this file, the More menu's Equalizer on an audio file (the choice
+// kept across a reload while the sound plays on), and the page fitting a phone with no sideways scroll. Run it
 // alone with SELFCLOUD_E2E_ONLY=mp1. The checks end signed in as the member, which the rest of the run expects; the
 // interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
@@ -213,6 +214,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
   const kept = await page.evaluate(`(() => ({ lang: localStorage.getItem('selfcloud.lang'), theme: localStorage.getItem('selfcloud.theme'), files: localStorage.getItem('selfcloud.files') }))()`);
   // The picture choices the person already kept, put back the same way: the Picture step writes its own.
   const keptPicture = await page.evaluate(`Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('selfcloud.picture.')).map((k) => [k, localStorage.getItem(k)]))`);
+  // The equalizer choices the person already kept, put back the same way: the Equalizer step writes its own.
+  const keptEq = await page.evaluate(`Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('selfcloud.equalizer.')).map((k) => [k, localStorage.getItem(k)]))`);
   // The fixtures: a folder of the owner's own with two audio files, one of them played and marked.
   const folder = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'MP1 media' })).id;
   const tone = await readFile(join(media, 'tone.ogg'));
@@ -552,6 +555,62 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `!document.querySelector('video')`, 10000, 'the session ends');
     });
 
+    // The More menu's Equalizer: On and the Bass preset on the audio fixture these checks already uploaded; the panel
+    // shows the choice, the sound path plays on while it is applied, a reload and a fresh open still show it, and Reset
+    // and Off spend it. Nothing new is left in the owner's space, and the kept choice is put back at the end.
+    await step("the More menu's Equalizer keeps its choice across a reload while the sound plays on", async () => {
+      const panelButton = (name) => `[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === ${q(name)})`;
+      const presetItem = (name) => `[...document.querySelectorAll('.ant-modal .ant-segmented-item')].find((x) => x.textContent.trim() === ${q(name)})`;
+      const eqSwitch = `document.querySelector('.ant-modal [role="switch"]')`;
+      const bassOn = `(() => { const s = ${eqSwitch}; const b = ${presetItem('Bass')}; return !!s && !!b && s.getAttribute('aria-checked') === 'true' && b.classList.contains('ant-segmented-item-selected'); })()`;
+      const openPanel = async () => {
+        await openMore(page);
+        await pickMore(page, 'Equalizer…');
+        await until(page, `!!document.querySelector('.ant-modal [role="slider"][aria-label="31 Hz"]')`, 5000, 'the Equalizer panel');
+      };
+      await openFolder(page, folderURL, 'mp1-one.ogg');
+      await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
+      await until(page, viewerShown, 15000, 'the viewer opens');
+      await playing(page);
+      await h.clickNav(page, 'Media');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page');
+      // Paused at the start while the panel is used, so the short fixture cannot end and move the queue on.
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 0; return true; })()`);
+      await openPanel();
+      await page.evaluate(`${eqSwitch}.click()`);
+      await until(page, `${eqSwitch}.getAttribute('aria-checked') === 'true'`, 5000, 'the switch on');
+      await page.evaluate(`${presetItem('Bass')}.click()`);
+      await until(page, bassOn, 5000, 'the panel shows Bass and the switch on');
+      check(await page.evaluate(bassOn), 'the panel shows Bass and the switch on');
+      // The sound path still runs: the place goes on at least a second within three, with the graph applied.
+      await page.evaluate(`(() => { const v = ${MEDIA}; v.play(); return true; })()`);
+      const t0 = await page.evaluate(`${MEDIA}.currentTime`);
+      await until(page, `${MEDIA}.currentTime >= ${t0 + 1}`, 3000, 'the place goes on a second');
+      check(await page.evaluate(`${MEDIA}.currentTime >= ${t0 + 1}`), 'the sound path plays on with the equalizer on');
+      await page.evaluate(`${panelButton('Close')}.click()`);
+      // A reload and a fresh open of the same file: the kept choice meets the new element, and the panel still shows it.
+      await page.goto(base + '/');
+      await openFolder(page, folderURL, 'mp1-one.ogg');
+      await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
+      await until(page, viewerShown, 15000, 'the viewer opens again');
+      await playing(page);
+      await h.clickNav(page, 'Media');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] audio')`, 15000, 'the player on the page again');
+      await openPanel();
+      await until(page, bassOn, 5000, 'the kept Bass and On after the reload');
+      check(await page.evaluate(bassOn), 'the kept choice survives the reload');
+      await page.evaluate(`${panelButton('Reset')}.click()`);
+      const flat = `document.querySelector('.ant-modal [role="slider"][aria-label="31 Hz"]').getAttribute('aria-valuenow') === '0'`;
+      await until(page, flat, 5000, 'Reset returns the first band to 0');
+      check(await page.evaluate(flat), 'Reset returns the gains to flat');
+      await page.evaluate(`${eqSwitch}.click()`);
+      await until(page, `${eqSwitch}.getAttribute('aria-checked') === 'false'`, 5000, 'the switch off');
+      check(await page.evaluate(`${eqSwitch}.getAttribute('aria-checked') === 'false'`), 'the switch turns off');
+      await page.evaluate(`${panelButton('Close')}.click()`);
+      await stopOnPage(page);
+      await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
+    });
+
     await step('the Media page fits a phone with no sideways scroll', async () => {
       await openFolder(page, folderURL, 'mp1-one.ogg');
       await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
@@ -575,6 +634,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     const restore = [['selfcloud.lang', kept.lang], ['selfcloud.theme', kept.theme], ['selfcloud.files', kept.files]];
     await page.evaluate(`(() => { for (const [k, v] of ${q(restore)}) { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } return true; })()`);
     await page.evaluate(`(() => { for (const k of Object.keys(localStorage).filter((x) => x.startsWith('selfcloud.picture.'))) localStorage.removeItem(k); for (const [k, v] of Object.entries(${q(keptPicture)})) localStorage.setItem(k, v); return true; })()`);
+    await page.evaluate(`(() => { for (const k of Object.keys(localStorage).filter((x) => x.startsWith('selfcloud.equalizer.'))) localStorage.removeItem(k); for (const [k, v] of Object.entries(${q(keptEq)})) localStorage.setItem(k, v); return true; })()`);
   }
   // The phone size was just left: a fresh load of the shell lets the account menu open at the desktop size.
   await page.goto(base + '/');

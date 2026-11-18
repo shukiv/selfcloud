@@ -9,8 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { resetTags, seedTags } from "../../lib/files/tags";
 import { folders, hiddenFolders } from "../../lib/files/folders";
+import { PRESETS, writeEq } from "../../lib/files/equalizer";
 import type { Node } from "../../lib/files/types";
 import MediaPhone from "./MediaPhone";
+
+// The Web Audio graph is mocked: jsdom has no AudioContext, and the panel's clicks and the kept choice's play event
+// are judged by what they ask of the graph, not by sound.
+const eqGraph = vi.hoisted(() => ({
+  attach: vi.fn(async (_m: HTMLMediaElement): Promise<boolean> => true),
+  setGains: vi.fn((_m: HTMLMediaElement, _gains: number[]) => {}),
+}));
+vi.mock("../../lib/files/eqGraph", () => eqGraph);
 
 function file(name: string, extra: Partial<Node> = {}): Node {
   return {
@@ -245,5 +254,94 @@ describe("the phone action row", () => {
     fireEvent.click(screen.getByTestId("media-phone-more"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Open folder" }));
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("/files/f1"));
+  });
+});
+
+describe("the phone More's Equalizer", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    eqGraph.attach.mockClear();
+    eqGraph.attach.mockImplementation(async () => true);
+    eqGraph.setGains.mockClear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  const UP = 38;
+
+  async function openEqualizer(media: HTMLMediaElement) {
+    draw(file("song.mp3"), { media });
+    fireEvent.click(screen.getByTestId("media-phone-more"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Equalizer…" }));
+    return screen.findByRole("slider", { name: "31 Hz" });
+  }
+
+  const kept = () => JSON.parse(window.localStorage.getItem("selfcloud.equalizer.visitor") ?? "{}") as { on: boolean; gains: number[] };
+
+  it("More holds Equalizer…, and the panel has the switch, the presets and the ten sliders", async () => {
+    expect(await openEqualizer(document.createElement("audio"))).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "On" })).toBeTruthy();
+    for (const name of ["Flat", "Bass", "Treble", "Vocal"]) expect(screen.getByRole("radio", { name })).toBeTruthy();
+    for (const name of ["31 Hz", "62 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz"]) {
+      expect(screen.getByRole("slider", { name })).toBeTruthy();
+    }
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+  });
+
+  it("a slider writes the kept choice and calls setGains", async () => {
+    const m = document.createElement("audio");
+    const handle = await openEqualizer(m);
+    fireEvent.click(screen.getByRole("switch", { name: "On" }));
+    await waitFor(() => expect(eqGraph.attach).toHaveBeenCalledWith(m));
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(handle, { keyCode: UP });
+    expect(screen.getByText("+3 dB")).toBeTruthy();
+    expect(kept().on).toBe(true);
+    expect(kept().gains).toEqual([3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(eqGraph.setGains).toHaveBeenCalledWith(m, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("a preset sets the ten gains and keeps them", async () => {
+    const m = document.createElement("audio");
+    await openEqualizer(m);
+    fireEvent.click(screen.getByRole("switch", { name: "On" }));
+    await waitFor(() => expect(eqGraph.attach).toHaveBeenCalledWith(m));
+    fireEvent.click(screen.getByRole("radio", { name: "Vocal" }));
+    expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.vocal);
+    expect(kept().gains).toEqual(PRESETS.vocal);
+  });
+
+  it("Reset returns the gains to flat and keeps them", async () => {
+    await openEqualizer(document.createElement("audio"));
+    fireEvent.click(screen.getByRole("switch", { name: "On" }));
+    await waitFor(() => expect(eqGraph.attach).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("radio", { name: "Bass" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(kept().gains).toEqual(PRESETS.flat);
+    expect((screen.getByRole("radio", { name: "Flat" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("says so in one line when attach returns false, and the switch stays usable", async () => {
+    eqGraph.attach.mockImplementation(async () => false);
+    await openEqualizer(document.createElement("audio"));
+    const sw = screen.getByRole("switch", { name: "On" });
+    fireEvent.click(sw);
+    expect(await screen.findByText("The equalizer cannot change this file's sound.")).toBeTruthy();
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("false"));
+    expect(kept().on).toBe(false);
+  });
+
+  it("a kept on choice applies to the element at its first play, through attach alone", async () => {
+    writeEq(null, { on: true, gains: [...PRESETS.bass] });
+    const m = document.createElement("audio");
+    draw(file("song.mp3"), { media: m });
+    expect(eqGraph.attach).not.toHaveBeenCalled();
+    fireEvent(m, new Event("play"));
+    await waitFor(() => expect(eqGraph.attach).toHaveBeenCalledWith(m));
+    expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.bass);
   });
 });
