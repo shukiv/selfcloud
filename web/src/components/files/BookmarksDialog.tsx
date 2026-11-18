@@ -4,10 +4,12 @@
 // element and close, keeping play/pause), Rename (an inline input of at most LABEL_MAX characters, Enter saves, Escape cancels)
 // and Delete; the empty state with its add action; and a failed read's Retry. The footer keeps Add a bookmark here (disabled when
 // the file is full or there is no element) and Close. The hook owns the list and its messages; the dialog draws it and runs the
-// row actions, keeping a rename open if its save is refused.
-import { useState } from "react";
+// row actions: a refused rename keeps the input open and says the server's words on a 400, else the save-failure words, and one
+// Enter sends one save; a row's Delete and Rename are disabled while its delete runs, so a second press sends nothing.
+import { useRef, useState } from "react";
 import { App, Button, Input, Modal, Typography } from "antd";
 import { Pencil, Play, Trash2 } from "lucide-react";
+import { ApiError } from "../../lib/api";
 import { useMT } from "../../lib/media/i18n";
 import { formatTime } from "../../lib/files/mediaKeys";
 import { LABEL_MAX, type Marks } from "../../lib/files/bookmarks";
@@ -30,17 +32,41 @@ export default function BookmarksDialog({ name, marks, media, readFailed, onRela
   const { message } = App.useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // savingRef keeps a second Enter from sending a second PATCH while a save is on its way. deletingRef guards a second Delete
+  // press at once; deleting (the state) disables the row's Delete and Rename until the delete settles, so the press is seen too.
+  const savingRef = useRef(false);
+  const deletingRef = useRef<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Set<string>>(() => new Set());
 
   const startRename = (b: Bookmark) => {
     setEditing(b.id);
     setDraft(b.label);
   };
   const saveRename = () => {
-    if (editing === null) return;
+    if (editing === null || savingRef.current) return;
     const id = editing;
+    savingRef.current = true;
     void onRelabel(id, draft)
       .then(() => setEditing(null))
-      .catch(() => {});
+      .catch((e: unknown) => {
+        // A refused label is named by the server itself (a control character, say): that sentence is shown, the input stays open.
+        if (e instanceof ApiError && e.status === 400 && e.serverMessage !== "") message.error(e.serverMessage);
+        else message.error(mt.t("media.bookmarks.saveFailed"));
+      })
+      .finally(() => {
+        savingRef.current = false;
+      });
+  };
+  const startDelete = (id: string) => {
+    if (deletingRef.current.has(id)) return;
+    deletingRef.current.add(id);
+    setDeleting(new Set(deletingRef.current));
+    void onRemove(id)
+      .catch(() => message.error(mt.t("media.bookmarks.deleteFailed")))
+      .finally(() => {
+        deletingRef.current.delete(id);
+        setDeleting(new Set(deletingRef.current));
+      });
   };
 
   const columns: ListColumn<Bookmark>[] = [
@@ -84,15 +110,20 @@ export default function BookmarksDialog({ name, marks, media, readFailed, onRela
         onClose();
       },
     },
-    { key: "rename", label: mt.t("media.bookmarks.rename"), icon: <Pencil size={18} aria-hidden="true" focusable="false" />, run: () => startRename(b) },
+    {
+      key: "rename",
+      label: mt.t("media.bookmarks.rename"),
+      icon: <Pencil size={18} aria-hidden="true" focusable="false" />,
+      disabled: deleting.has(b.id),
+      run: () => startRename(b),
+    },
     {
       key: "delete",
       label: mt.t("media.bookmarks.delete"),
       icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
       danger: true,
-      run: () => {
-        void onRemove(b.id).catch(() => message.error(mt.t("media.bookmarks.deleteFailed")));
-      },
+      disabled: deleting.has(b.id),
+      run: () => startDelete(b.id),
     },
   ];
 
