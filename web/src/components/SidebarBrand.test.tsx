@@ -11,8 +11,9 @@ import { sidebarRow } from "../theme/sidebarRow";
 // by decision 221). Expanded: the wordmark (or the tile logo where the wordmark would not read) fills the block's width, the
 // custom logo sits at the start edge at up to 42 px high, or the name as text. The block takes the rows' inline margin, so every
 // part of the sidebar starts at one edge, and the space above the picture and below the block is S, the sider's inline padding
-// plus that margin, on a mouse and a finger alike. Folded to the rail: the uploaded icon (decision 221), else the custom logo
-// kept in its own shape, else the SelfCloud mark for every name (decision 119), with the rail's own edges unchanged.
+// plus that margin, on a mouse and a finger alike. Folded to the rail: the artwork keeps its mark (decision 221), else the
+// uploaded icon, else the custom logo kept in its own shape, else the SelfCloud mark for every name (decision 119), with the
+// rail's own edges unchanged.
 const SIDEBAR_BLUE = "#053D8E";
 // The desktop sider's inline padding and width (Shell.tsx). The block's content width is the width less S at each side.
 const SIDE_PAD = 12;
@@ -105,7 +106,7 @@ describe("SidebarBrand (decisions 109, 193 and 221)", () => {
   });
 
   // Decision 221: the folded rail shows the uploaded icon, the picture the favicon is drawn from, at 28 by 28 and kept in
-  // shape, ahead of the logo. The rail's centring is unchanged.
+  // shape, ahead of the logo but after the artwork's mark. The rail's centring is unchanged.
   it("folds to the uploaded icon in the rail, 28 by 28, kept in shape", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", icon_url: "/favicon.svg", artwork: false });
     const { container } = renderBrand(true);
@@ -118,13 +119,17 @@ describe("SidebarBrand (decisions 109, 193 and 221)", () => {
     expect(container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]')?.style.justifyContent).toBe("center");
   });
 
-  // The icon stands in the rail even when the installation has no logo (the artwork shows expanded).
-  it("folds to the uploaded icon with no logo, and keeps the artwork expanded", () => {
+  // Decision 221 (review): the artwork keeps its mark in the rail even with an icon. An installation with no logo of its own
+  // folds to the mark at 32, not the icon, so the wordmark expanded and the mark folded stay the artwork's pair; expanded it
+  // still shows the artwork.
+  it("the artwork folds to the mark even with an icon", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, icon_url: "/favicon.svg", artwork: true });
-    const rail = renderBrand(true).container.querySelector("img");
-    expect(rail?.getAttribute("src")).toBe("/favicon.svg");
-    expect(rail?.getAttribute("width")).toBe("28");
-    expect(rail?.getAttribute("height")).toBe("28");
+    const rail = renderBrand(true).container;
+    expect(rail.querySelector("img")).toBeNull();
+    const mark = rail.querySelector<HTMLElement>('[role="img"]');
+    expect(mark?.getAttribute("style")).toContain("/brand/mark.svg");
+    expect(mark?.style.width).toBe("32px");
+    expect(mark?.style.height).toBe("32px");
     const expanded = renderBrand(false).container.querySelector("img");
     expect(expanded?.getAttribute("src")).toBe("/brand/wordmark.svg");
     expect(expanded?.style.width).toBe("100%");
