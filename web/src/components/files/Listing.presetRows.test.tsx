@@ -8,7 +8,7 @@ import Listing, { type ItemListingProps, type ListAction } from "./Listing";
 import { desktopViewport } from "../../test/viewport";
 
 // buttons counts the renders of each icon button by its label, and checks the renders of each row's mark by its name. The mark is
-// drawn in the name cell with the row's icon, so the icon's render counts the same pass the mark is drawn in.
+// a memoised component that draws the row's icon inside its own pass, so the icon's render counts the same pass (decision 128).
 const buttons = vi.hoisted(() => ({} as Record<string, number>));
 const checks = vi.hoisted(() => ({} as Record<string, number>));
 vi.mock("../IconButton", async (orig) => {

@@ -170,7 +170,7 @@ describe("Listing: grid view", () => {
 // The sort arrow: the sorted column shows its direction, the other columns keep an empty box of the same width, and the
 // arrow is hidden from the header's name, which stays the label alone.
 describe("the sort arrow on the list header", () => {
-  const headerButtons = (c: HTMLElement) => Array.from(c.querySelectorAll<HTMLButtonElement>("thead button"));
+  const headerButtons = (c: HTMLElement) => Array.from(c.querySelectorAll<HTMLButtonElement>("thead button:not(.head-mark)"));
 
   it("points up on the sorted column when the sort is ascending, and at no other column", () => {
     const { container } = render(<Listing {...props({ sortKey: "name", sortDir: "asc" })} />);

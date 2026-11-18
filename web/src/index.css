@@ -1955,26 +1955,21 @@ tr[data-drop-state="refused"] > td {
   visibility: visible;
 }
 
-/* Checkboxes on demand, with a mouse: the box takes the file icon's place on a hovered row, on a selected row, on a row with the focus,
-   and on every row while anything is selected. The select-all box shows on the header's hover and while anything is selected. */
-.files-list .row-check,
-.files-list .head-check,
-.item-list .row-check,
-.item-list .head-check {
-  display: none;
-}
-
-.files-list tr[aria-selected="true"] .row-check,
-.files-list tr:focus-within .row-check,
-.files-list[data-has-selection="true"] .row-check,
-.files-list thead:focus-within .head-check,
-.files-list[data-has-selection="true"] .head-check,
-.item-list tr[aria-selected="true"] .row-check,
-.item-list tr:focus-within .row-check,
-.item-list[data-has-selection="true"] .row-check,
-.item-list thead:focus-within .head-check,
-.item-list[data-has-selection="true"] .head-check {
+/* The selection marks: a row's mark is its icon wrapped in a button (a mouse), and the select-all mark is in the name's header.
+   The icon stays on every row; a selected row shows a yellow check badge on its icon (drawn by the listing). There is no checkbox
+   and no swap on hover, focus or selection. */
+.files-list .row-mark,
+.item-list .row-mark {
+  position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: default;
 }
 
 .files-list .row-icon,
@@ -1982,40 +1977,26 @@ tr[data-drop-state="refused"] > td {
   display: inline-flex;
 }
 
-/* The icon gives way wherever the box shows: a focused row too, or the two are drawn together (the owner, 2026-11-03). */
-.files-list tr[aria-selected="true"] .row-icon,
-.files-list tr:focus-within .row-icon,
-.files-list[data-has-selection="true"] .row-icon,
-.item-list tr[aria-selected="true"] .row-icon,
-.item-list tr:focus-within .row-icon,
-.item-list[data-has-selection="true"] .row-icon {
-  display: none;
+/* The select-all mark is a round button in the header; on a finger its hit area is 44 px. It aligns by its middle, not its
+   baseline, so the header's line box keeps its height whether the mark is empty or filled (a selection moves no row). */
+.files-list .head-mark,
+.item-list .head-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
 }
 
-@media (hover: hover) {
-  .files-list tr:hover .row-check,
-  .files-list thead:hover .head-check,
-  .item-list tr:hover .row-check,
-  .item-list thead:hover .head-check {
-    display: inline-flex;
-  }
-  .files-list tr:hover .row-icon,
-  .item-list tr:hover .row-icon {
-    display: none;
-  }
-}
-
-/* A touch screen with a mouse (any pointer coarse, the primary one fine): the checkboxes stay visible, so a finger can select. */
-@media (any-pointer: coarse) {
-  .files-list .row-check,
-  .files-list .head-check,
-  .item-list .row-check,
-  .item-list .head-check {
-    display: inline-flex;
-  }
-  .files-list .row-icon,
-  .item-list .row-icon {
-    display: none;
+@media (pointer: coarse) {
+  .files-list .head-mark,
+  .item-list .head-mark {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

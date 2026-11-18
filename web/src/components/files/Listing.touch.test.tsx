@@ -109,14 +109,14 @@ describe("a sortable column header is a finger's target (mob3)", () => {
   it("is at least 44 px tall on a coarse pointer", () => {
     restore = coarsePointer();
     const { container } = render(<FilesPage view="list" />);
-    const btn = container.querySelector(".files-list .ant-table-thead th button") as HTMLElement;
+    const btn = container.querySelector(".files-list .ant-table-thead th button:not(.head-mark)") as HTMLElement;
     expect(btn).not.toBeNull();
     expect(btn.style.minHeight).toBe("44px");
   });
 
   it("keeps its small height on a mouse", () => {
     const { container } = render(<FilesPage view="list" />);
-    const btn = container.querySelector(".files-list .ant-table-thead th button") as HTMLElement;
+    const btn = container.querySelector(".files-list .ant-table-thead th button:not(.head-mark)") as HTMLElement;
     expect(btn).not.toBeNull();
     expect(btn.style.minHeight).toBe("");
   });

@@ -20,9 +20,9 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Button, Checkbox, Dropdown, Grid, Input, Table, theme as antdTheme, type MenuProps } from "antd";
+import { Button, Dropdown, Grid, Input, Table, theme as antdTheme, type MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Plus, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, EllipsisVertical, Link2, Minus, Plus, Star } from "lucide-react";
 import EmptyState from "../EmptyState";
 import IconButton from "../IconButton";
 import { translatePlural, useLang, useT } from "../../lib/i18n";
@@ -39,9 +39,13 @@ import { WINDOW_MIN_ROWS, sameRange, spacers, windowRange, withPinned, type Wind
 import { useListKeys, useListSelection, type ListSelection } from "../../lib/lists";
 import { getRowHover, setRowHover, subscribeRowHover } from "./rowHover";
 import Icon from "./Icon";
+import CheckBadge from "./CheckBadge";
+import PresetMark from "./PresetMark";
 import KindMarks from "./KindMarks";
 import SelectionBar, { type SelectionAction } from "./SelectionBar";
 import Thumb from "./Thumb";
+import { SIDEBAR } from "../../theme/tokens";
+import { useModeOrLight } from "../../theme/theme";
 
 // The hook lives in lib/pointer, so the shell can use it without loading this listing; it is still exported from here.
 export { useCoarsePointer };
@@ -420,6 +424,51 @@ interface FileCellProps {
 
 const CTRL_CLICK: Click = { shiftKey: false, ctrlKey: true, metaKey: false };
 
+// HeadMark is the select-all mark in the name's header: a round button that reads false (an empty outline), mixed (a filled
+// circle with a minus) or true (a filled circle with a check). It is always drawn, on every pointer, and is a tab stop. A click
+// selects every loaded row, or clears the selection when all are selected.
+function HeadMark({ state, onSelectAll }: { state: "none" | "some" | "all"; onSelectAll: (checked: boolean) => void }) {
+  const { t } = useT();
+  const { token } = antdTheme.useToken();
+  const dark = useModeOrLight() === "dark";
+  const filled = state !== "none";
+  const rim = dark ? "" : ", 0 0 0 3px rgba(13, 33, 66, 0.55)";
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state === "all" ? "true" : state === "some" ? "mixed" : "false"}
+      aria-label={t("files.selectAll.box")}
+      className="head-mark"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectAll(state !== "all");
+      }}
+      onKeyDown={keysStop}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 17,
+          height: 17,
+          borderRadius: "50%",
+          boxSizing: "border-box",
+          background: filled ? SIDEBAR.active : "transparent",
+          color: filled ? SIDEBAR.onActive : token.colorTextSecondary,
+          border: filled ? "none" : `2px solid ${token.colorTextSecondary}`,
+          boxShadow: filled ? `0 0 0 2px ${token.colorBgContainer}${rim}` : undefined,
+        }}
+      >
+        {state === "all" && <Check size={11} strokeWidth={3} aria-hidden="true" focusable="false" />}
+        {state === "some" && <Minus size={11} strokeWidth={3} aria-hidden="true" focusable="false" />}
+      </span>
+    </button>
+  );
+}
+
 function LinkBadge({ node }: { node: Node }) {
   const { t } = useT();
   const { token } = antdTheme.useToken();
@@ -517,28 +566,46 @@ const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H
   );
 });
 
-// FileNameCell is the name cell of a list row: the row's icon (or a mouse's checkbox in its place), the name, its marks.
+// FileNameCell is the name cell of a list row: the row's icon in its selection mark (a mouse), the name, its marks. A selected
+// row shows a yellow check badge on its icon; a visitor's row has neither mark nor badge.
 const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming, renameValue, renameError, visitor, H }: FileCellProps) {
   const { t } = useT();
+  const { token } = antdTheme.useToken();
+  const icon = <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />;
   return (
-    // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
-    // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
+    // verticalAlign middle: the line box does not take the baseline of the icon (decision 85, fu5). Without it the name moved
+    // 0.75 px up on a hovered row.
     // While renaming the icon, the field and the marks share one line that does not wrap (mob4): the field grows from no
     // basis into the room there is. A rename error keeps its own line, so the cell wraps again to let it drop below.
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: renaming && !renameError ? "nowrap" : "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
-      {coarse || visitor ? (
-        <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
-      ) : (
-        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
-          <span className="row-icon">
-            <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
-          </span>
-          {/* A mouse's checkbox takes the file icon's place when the row is hovered, or selected, or when anything is selected (the CSS
-              in index.css decides); it is not a tab stop, and a click on it selects by the box alone. */}
-          <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-            <Checkbox checked={selected} tabIndex={-1} aria-label={t("files.select.item", { name: n.name })} onChange={() => H.click(n.id, CTRL_CLICK)} />
-          </span>
+      {visitor ? (
+        icon
+      ) : coarse ? (
+        // A finger's row keeps its icon plain (a tap opens the item); a long press selects it, and the badge then shows on the icon.
+        <span style={{ position: "relative", display: "inline-flex", flex: "none", width: 22, height: 22 }}>
+          <span className="row-icon">{icon}</span>
+          {selected && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
         </span>
+      ) : (
+        // A mouse's mark is the icon wrapped in a button: a click on it toggles the row, as Ctrl does, and opens nothing. It is
+        // not a tab stop (the row takes focus), and the badge shows on the icon when the row is selected.
+        <button
+          type="button"
+          className="row-mark"
+          tabIndex={-1}
+          aria-pressed={selected}
+          aria-label={t("files.select.item", { name: n.name })}
+          style={{ width: 22, height: 22 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            H.click(n.id, CTRL_CLICK);
+          }}
+          onKeyDown={keysStop}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <span className="row-icon">{icon}</span>
+          {selected && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
+        </button>
       )}
       {renaming ? (
         <FileRename value={renameValue} error={renameError} H={H} />
@@ -621,11 +688,14 @@ function actsSig(acts: RowAct[]): string {
   return acts.map((a) => `${a.key}${a.enabled ? "+" : "-"}${a.label}`).join("|");
 }
 
-// TypeIcon is a file's type icon, which keeps its size when the name is long.
-function TypeIcon({ n }: { n: Node }) {
+// TypeIcon is a file's type icon, which keeps its size when the name is long. A folder's chip shows the selection badge on it
+// (badgeSize); a file's card shows the badge on its preview instead, so its name-row icon has none.
+function TypeIcon({ n, badgeSize, selected, visitor }: { n: Node; badgeSize?: number; selected: boolean; visitor: boolean }) {
+  const { token } = antdTheme.useToken();
   return (
-    <span style={{ display: "inline-flex", flex: "none" }}>
+    <span style={{ position: "relative", display: "inline-flex", flex: "none" }}>
       <Icon kind={kindOf(n)} size={20} colour={n.color} node={n} />
+      {badgeSize !== undefined && selected && !visitor && <CheckBadge size={badgeSize} ring={token.colorPrimaryBg} pos={{ insetBlockStart: -3, insetInlineStart: -3 }} />}
     </span>
   );
 }
@@ -649,17 +719,6 @@ function OneLine({ n, renaming, renameValue, renameError, H }: { n: Node; renami
       }}
     >
       <bdi title={n.name}>{n.name}</bdi>
-    </span>
-  );
-}
-
-// TileCheck is a finger's checkbox on a tile: a tile has no click that selects it, so its checkbox does (a list row has one already).
-// The wrapper stops the click: the checkbox toggles the item, and the item does not also open. A mouse has none.
-function TileCheck({ n, selected, H }: { n: Node; selected: boolean; H: FileHandlers }) {
-  const { t } = useT();
-  return (
-    <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", flex: "none" }}>
-      <Checkbox checked={selected} tabIndex={-1} aria-label={t("files.select.item", { name: n.name })} onChange={() => H.click(n.id, CTRL_CLICK)} />
     </span>
   );
 }
@@ -720,8 +779,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
           background: selected ? token.colorPrimaryBg : undefined,
         }}
       >
-        {coarse && !visitor && <TileCheck n={n} selected={selected} H={H} />}
-        <TypeIcon n={n} />
+        <TypeIcon n={n} badgeSize={17} selected={selected} visitor={visitor} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         <KindMarks node={n} />
         {!visitor && <StarMark node={n} />}
@@ -742,8 +800,7 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
-        {coarse && !visitor && <TileCheck n={n} selected={selected} H={H} />}
-        <TypeIcon n={n} />
+        <TypeIcon n={n} selected={selected} visitor={visitor} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         {!visitor && <StarMark node={n} />}
         {visitor ? <RowActIcons n={n} tab={focused ? 0 : -1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
@@ -757,6 +814,8 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
         ) : (
           <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
         )}
+        {/* A selected card shows the check badge at the preview's top-start corner; a visitor's tile has none (pb1). */}
+        {selected && !visitor && <CheckBadge size={28} ring={token.colorPrimaryBg} pos={{ insetBlockStart: 6, insetInlineStart: 6 }} />}
         <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
           <KindMarks node={n} />
           {!visitor && <LinkBadge node={n} />}
@@ -910,16 +969,6 @@ interface PresetHandlers {
   // settle applies the focus the press on the row held, with the click of a control that stops the click at the control.
   settle: (id: string) => void;
 }
-
-// PresetCheck is a preset row's checkbox, which takes the icon's place on a mouse's screen.
-const PresetCheck = memo(function PresetCheck({ id, checked, name, pick }: { id: string; checked: boolean; name: string; pick: ListSelection["pick"] }) {
-  const { t } = useT();
-  return (
-    <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-      <Checkbox checked={checked} tabIndex={-1} aria-label={t("files.select.item", { name })} onChange={() => pick(id, { toggle: true })} />
-    </span>
-  );
-});
 
 interface PresetEndProps {
   row: { id: string };
@@ -1131,8 +1180,9 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const RH = useMemo<RowHandlers>(() => {
     const files = () => latest.current as ListingProps;
     const idOf = (e: { currentTarget: HTMLElement }) => e.currentTarget.dataset.id ?? "";
-    // inSelectionColumn: a key or a click from the row's checkbox belongs to the checkbox.
-    const inCheck = (e: { target: EventTarget }) => !!(e.target as HTMLElement).closest(".ant-table-selection-column, .row-check");
+    // inMark: a key from the row's mark belongs to the mark, except the arrows that move the selection. The mark's own click
+    // stops at the mark, so it never reaches the row's click.
+    const inCheck = (e: { target: EventTarget }) => !!(e.target as HTMLElement).closest(".row-mark");
     return {
       // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
       // A visitor's row is no drag source for the page (pb1): it has no drop attributes and no gesture, but the browser's
@@ -1144,7 +1194,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         pointer.current = e.pointerType;
         pressed.current = false;
         endPress();
-        if (e.pointerType !== "touch" || files().renameID === id || !files().onRowContext) return;
+        if (e.pointerType !== "touch" || files().renameID === id || files().visitor) return;
         const { clientX: x, clientY: y } = e;
         press.current = {
           x,
@@ -1153,7 +1203,8 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             press.current = null;
             pressed.current = true;
             liftPending.current = true;
-            H.context(id, x, y);
+            // A finger's long press selects the row, as a Ctrl click does; the menu is the ⋮ button's and the right click's.
+            H.click(id, CTRL_CLICK);
           }, LONG_PRESS_MS),
         };
       },
@@ -1180,19 +1231,17 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         // The focus of a press is applied here, in the batch of the click's own update, so the two are one render.
         pf.settle(idOf(e));
-        // The checkbox column has its own handler, so a click on it must not also select the row. On a finger the whole select
-        // cell is the target (mob3): a tap in it away from the box toggles the row, as a Ctrl click does, and opens nothing. A tap
-        // on the box itself is left to the checkbox, so it toggles once, not twice.
-        if (inCheck(e)) {
-          const t = e.target as HTMLElement;
-          if (coarse && t.closest(".ant-table-selection-column") && !t.closest(".ant-checkbox-wrapper")) H.click(idOf(e), CTRL_CLICK);
-          return;
-        }
         // A click in the row's own rename field places the cursor there; the item is not opened by it.
         if (files().renameID === idOf(e)) return;
         // The tap that ends a long press is part of the press: it selects and opens nothing.
         if (pressed.current) {
           pressed.current = false;
+          return;
+        }
+        // A finger's tap toggles the row while anything is selected, as a Ctrl click does, and opens nothing; with nothing
+        // selected it opens the item (the page decides). A visitor's tap always opens (pb1).
+        if (pointer.current === "touch" && !files().visitor && files().selected.size > 0) {
+          H.click(idOf(e), CTRL_CLICK);
           return;
         }
         H.click(idOf(e), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, touch: pointer.current === "touch" });
@@ -1213,10 +1262,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       // A focus that comes from a press is the click's (settle); any other focus is the row's own.
       onFocus: (e: ReactFocusEvent<HTMLElement>) => pf.focus(idOf(e)),
     };
-    // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render. coarse is a
-    // value, so the handlers are made again when it changes (the select cell's tap, mob3).
+    // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render. The page's
+    // props are read at the call through latest, so the handlers do not depend on the selection or the pointer kind.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [H, pf, coarse]);
+  }, [H, pf]);
   // liftPending says a long press has opened its menu and no new press has begun since. Until one does, the mousedowns the
   // browser sends for the lifted finger are stopped, since the menu closes on a mousedown and would close at the lift. A
   // real mouse press always begins with a pointerdown, which clears the flag first. The listeners are added at mount, so
@@ -1405,7 +1454,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
     // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
     // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
-    const check = (r: T) => <PresetCheck id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} />;
+    const mark = (r: T) => <PresetMark id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} renderIcon={q.icon ? () => q.icon!(r) : undefined} pick={PH.pick} />;
     const nameCell = (r: T) => {
       // The phone's second line is one wrapping row of inline items (mob4): each non-empty cell is a span, and the dot between
       // two items is the stylesheet's (.row-second-item + .row-second-item::before), so no text node holds a separator and an
@@ -1415,9 +1464,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         <div style={{ minWidth: 0 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
             {selectable && !coarse ? (
-              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", minWidth: 22, height: 22 }}>
+              mark(r)
+            ) : selectable ? (
+              // A finger's row keeps its icon plain; a long press selects it, and the badge then shows on the icon.
+              <span style={{ position: "relative", display: "inline-flex", flex: "none", minWidth: 22, height: 22 }}>
                 {q.icon && <span className="row-icon">{q.icon(r)}</span>}
-                {check(r)}
+                {picked.has(r.id) && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
               </span>
             ) : (
               q.icon?.(r)
@@ -1452,24 +1504,18 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     };
 
     const nameHead = head(nameCol);
-    const allBox = (
-      <span className="head-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-        <Checkbox checked={allPicked} indeterminate={anyPicked && !allPicked} aria-label={t("files.selectAll.box")} onChange={(e) => (e.target.checked ? sel.selectAll() : sel.clear())} />
-      </span>
-    );
     const columns: ColumnsType<T> = [
       {
         key: nameCol.key,
         ...nameHead,
-        title:
-          selectable && !coarse ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              {allBox}
-              {nameHead.title}
-            </span>
-          ) : (
-            nameHead.title
-          ),
+        title: selectable ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}>
+            <HeadMark state={allPicked ? "all" : anyPicked ? "some" : "none"} onSelectAll={(checked) => (checked ? sel.selectAll() : sel.clear())} />
+            {nameHead.title}
+          </span>
+        ) : (
+          nameHead.title
+        ),
         render: (_v, r) => nameCell(r),
       },
       ...shown.map<ColumnsType<T>[number]>((c) => ({
@@ -1489,7 +1535,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     // passes up clicks in a portal the row opened (its ⋮ menu), which are not the row's.
     const isControl = (e: ReactMouseEvent<HTMLElement>) =>
       !e.currentTarget.contains(e.target as globalThis.Node) ||
-      !!(e.target as HTMLElement).closest("a, button, input, label, .row-check, .ant-table-selection-column");
+      !!(e.target as HTMLElement).closest("a, button, input, label, .row-mark");
     // A row's ⋮ menu holds the row's actions and the page's menu entries, all of them: a right click and a finger's long press open
     // it at the pointer (the same menu as the ⋮ button's, tl4).
     const entriesOf = (r: T): ListMenuEntry[] => [
@@ -1510,16 +1556,16 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         pf.settle(r.id);
-        if (isControl(e)) {
-          // On a finger the whole select cell is the target (mob3): a tap in it away from the box toggles the row, as the box does.
-          // A tap on the box itself is left to the checkbox, so it toggles once, not twice.
-          const t = e.target as HTMLElement;
-          if (coarse && selectable && t.closest(".ant-table-selection-column") && !t.closest(".ant-checkbox-wrapper")) PH.pick(r.id, { toggle: true });
-          return;
-        }
+        if (isControl(e)) return;
         // The tap that ends a long press is part of the press: it opens and selects nothing.
         if (pressed.current) {
           pressed.current = false;
+          return;
+        }
+        // A finger's tap toggles the row while anything is selected, and opens nothing; with nothing selected it opens the row
+        // (or selects it where the list has no open).
+        if (selectable && pointer.current === "touch" && picked.size > 0) {
+          PH.pick(r.id, { toggle: true });
           return;
         }
         if (selectable && (e.ctrlKey || e.metaKey || e.shiftKey)) sel.pick(r.id, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });
@@ -1528,9 +1574,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       },
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
         pf.down(r.id, e.pointerType);
+        pointer.current = e.pointerType;
         endPress();
         pressed.current = false;
-        if (e.pointerType !== "touch" || entriesOf(r).length === 0) return;
+        if (e.pointerType !== "touch") return;
+        const hasMenu = entriesOf(r).length > 0;
+        if (!selectable && !hasMenu) return;
         const { clientX: x, clientY: y } = e;
         press.current = {
           x,
@@ -1539,7 +1588,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             press.current = null;
             pressed.current = true;
             liftPending.current = true;
-            setRowMenu({ id: r.id, x, y });
+            // A finger's long press selects the row where the list has a selection; elsewhere it opens the row's menu. The menu on a
+            // selectable row opens from its ⋮ button on a finger (a mouse's right click still opens it).
+            if (selectable) PH.pick(r.id, { toggle: true });
+            else setRowMenu({ id: r.id, x, y });
           }, LONG_PRESS_MS),
         };
       },
@@ -1598,24 +1650,6 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
               </EmptyState>
             ),
           }}
-          rowSelection={
-            selectable && coarse
-              ? {
-                  type: "checkbox",
-                  columnWidth: 44,
-                  columnTitle: (selectAll: ReactNode) => (
-                    <>
-                      {selectAll}
-                      <span className="sr-only">{t("files.col.select")}</span>
-                    </>
-                  ),
-                  getCheckboxProps: () => ({ tabIndex: -1 }),
-                  selectedRowKeys: [...picked],
-                  onSelect: (r) => PH.pick(r.id, { toggle: true }),
-                  onSelectAll: (checked) => (checked ? sel.selectAll() : sel.clear()),
-                }
-              : undefined
-          }
           onRow={(r) => rowProps(r) as Record<string, unknown>}
         />
         <Dropdown
@@ -1655,14 +1689,11 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       H,
     };
   };
-  // The select-all box sits in the name's header on a mouse; it shows when something is selected or on the header's hover.
+  // The select-all mark is always in the name's header, on every pointer; a visitor has none (pb1). It reads every loaded row,
+  // not the drawn slice (decision 183).
   const someSelected = p.items.some((n) => p.selected.has(n.id));
   const allSelected = p.items.length > 0 && p.items.every((n) => p.selected.has(n.id));
-  const selectAllBox = (
-    <span className="head-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
-      <Checkbox checked={allSelected} indeterminate={someSelected && !allSelected} aria-label={t("files.selectAll.box")} onChange={(e) => p.onSelectAll(e.target.checked)} />
-    </span>
-  );
+  const selectAllBox = <HeadMark state={allSelected ? "all" : someSelected ? "some" : "none"} onSelectAll={p.onSelectAll} />;
 
   // The active column shows its direction as an arrow after the label (headCell, the frame's header).
   const sortHead = (key: SortKey, label: string) => headCell(label, p.sortKey === key ? p.sortDir : null, () => p.onSort(key));
@@ -1686,12 +1717,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       {
         key: "name",
         ...nameHead,
-        // A mouse's select-all box sits before the label; a finger keeps the checkbox column instead. A visitor has neither.
+        // The select-all mark sits before the label on every pointer. A visitor has none (pb1).
         title: visitor ? (
           nameHead.title
         ) : (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            {!coarse && selectAllBox}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}>
+            {selectAllBox}
             {nameHead.title}
           </span>
         ),
@@ -1755,7 +1786,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           if (e.target === e.currentTarget) H.keyDown(e);
         }}
       >
-        <WindowCtx.Provider value={{ windowed: winActive, top: gap.top, bottom: gap.bottom, rows: p.items.length + 1, cols: columns.length + (coarse ? 1 : 0) }}>
+        <WindowCtx.Provider value={{ windowed: winActive, top: gap.top, bottom: gap.bottom, rows: p.items.length + 1, cols: columns.length }}>
         <Table<Node>
           rowKey="id"
           size={compact ? "small" : "middle"}
@@ -1766,25 +1797,6 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           columns={columns}
           dataSource={drawn}
           components={FILES_TABLE_COMPONENTS}
-          // A mouse has no checkbox column: each row's checkbox is in its icon's place (see FileNameCell). A finger keeps the column.
-          // A visitor has no selection at all (pb1).
-          rowSelection={coarse && !visitor ? {
-            type: "checkbox",
-            columnWidth: 44,
-            // The header's box is ours, not antd's: antd counts the rows it is given, which are the drawn ones (decision 183). It
-            // reads every loaded row, through selectAllBox.
-            columnTitle: () => (
-              <>
-                {selectAllBox}
-                <span className="sr-only">{t("files.col.select")}</span>
-              </>
-            ),
-            // Each row's checkbox is not a tab stop: the row itself takes focus, and the arrow keys move between rows.
-            getCheckboxProps: () => ({ tabIndex: -1 }),
-            selectedRowKeys: p.items.filter((n) => p.selected.has(n.id)).map((n) => n.id),
-            // A checkbox toggles its row, as Ctrl or Cmd does. The header box is selectAllBox, above.
-            onSelect: (record) => H.click(record.id, CTRL_CLICK),
-          } : undefined}
           onRow={(n) => {
             // The selected band and the hovered band are painted on the cells (index.css), as antd paints a row's cells.
             const style = {

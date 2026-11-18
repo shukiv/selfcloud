@@ -28,7 +28,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("a preset row's ⋮ menu opens on a right click and on a finger's long press", () => {
+describe("a preset row's ⋮ menu opens on a right click and from its ⋮ button on a finger", () => {
   it("a right click on a row with entries opens its menu, and the browser's own menu does not", async () => {
     const run = vi.fn();
     list({ menu: () => [{ key: "open", label: "Open it", onSelect: run }] });
@@ -43,7 +43,7 @@ describe("a preset row's ⋮ menu opens on a right click and on a finger's long 
     expect(fireEvent.contextMenu(rowOf("Alpha"))).toBe(true);
   });
 
-  it("a finger's long press opens the menu, and the tap that ends it opens and selects nothing", () => {
+  it("a finger's long press selects the row and opens no menu; the tap that ends it selects nothing more, and the ⋮ opens the menu", async () => {
     vi.useFakeTimers();
     const open = vi.fn();
     list({ selectable: true, onOpen: open, menu: () => [{ key: "open", label: "Open it", onSelect: () => undefined }] });
@@ -52,11 +52,15 @@ describe("a preset row's ⋮ menu opens on a right click and on a finger's long 
     act(() => {
       vi.advanceTimersByTime(600);
     });
-    expect(screen.getByText("Open it")).toBeTruthy();
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("Open it")).toBeNull();
     fireEvent.pointerUp(row, { pointerType: "touch" });
     fireEvent.click(row);
     expect(open).not.toHaveBeenCalled();
-    expect(row.getAttribute("aria-selected")).toBe("false");
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Alpha" }));
+    expect(await screen.findByText("Open it")).toBeTruthy();
   });
 
   it("a finger that moves is scrolling, not a press, and opens no menu", () => {
