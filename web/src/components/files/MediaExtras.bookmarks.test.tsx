@@ -77,8 +77,10 @@ describe("the More menu's bookmark items", () => {
     expect((await screen.findByRole("menuitem", { name: "Add a bookmark" })).getAttribute("aria-disabled")).toBe("true");
     full.unmount();
 
+    // With no element the More button itself is disabled, so the menu (and its Add item) cannot open; the phone More, which
+    // stays enabled, shows the disabled Add item (MediaPhone.bookmarks.test.tsx).
     const noEl = draw(null, marks([b()]));
-    await openMenu();
-    expect((await screen.findByRole("menuitem", { name: "Add a bookmark" })).getAttribute("aria-disabled")).toBe("true");
+    expect((screen.getByRole("button", { name: "More options" }) as HTMLButtonElement).disabled).toBe(true);
+    noEl.unmount();
   });
 });

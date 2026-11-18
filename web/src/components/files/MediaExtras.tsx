@@ -5,8 +5,10 @@ import { App, Dropdown, type MenuProps } from "antd";
 import { Ellipsis } from "lucide-react";
 import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
+import { useMT } from "../../lib/media/i18n";
 import { formatTime } from "../../lib/files/mediaKeys";
 import { getSleep, setSleep, subscribeSleep, type SleepChoice } from "../../lib/files/sleepTimer";
+import type { Marks } from "../../lib/files/bookmarks";
 
 // MediaExtras is the player's More menu: one icon that holds the extras the bar has no room for, so later player
 // extras join one menu instead of adding buttons. It draws the A-B loop, which belongs to the file on screen, and the
@@ -16,6 +18,8 @@ import { getSleep, setSleep, subscribeSleep, type SleepChoice } from "../../lib/
 interface Props {
   media: HTMLMediaElement | null;
   popupHost: () => HTMLElement;
+  // marks, when the person may keep bookmarks (decision 218), adds Add a bookmark and Bookmarks (n) to the menu.
+  marks?: Marks;
 }
 
 // MIN_LOOP is the shortest A-B loop accepted: half a second.
@@ -31,8 +35,9 @@ const SLEEP_KEYS: Record<string, SleepChoice> = {
   "sleep-end": "end",
 };
 
-export default function MediaExtras({ media, popupHost }: Props) {
+export default function MediaExtras({ media, popupHost, marks }: Props) {
   const { t } = useT();
+  const mt = useMT();
   const { message } = App.useApp();
   const [loop, setLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const loopRef = useRef(loop);
@@ -89,6 +94,8 @@ export default function MediaExtras({ media, popupHost }: Props) {
     if (key === "loop-a") setA();
     else if (key === "loop-b") setB();
     else if (key === "loop-clear") setLoop({ a: null, b: null });
+    else if (key === "bookmark-add") marks?.add();
+    else if (key === "bookmarks") marks?.openList();
     else if (key in SLEEP_KEYS) setSleep(SLEEP_KEYS[key]);
   };
 
@@ -103,6 +110,13 @@ export default function MediaExtras({ media, popupHost }: Props) {
   const sleepKey = `sleep-${sleep.choice}`;
 
   const items: MenuProps["items"] = [
+    ...(marks
+      ? [
+          { key: "bookmark-add", label: mt.t("media.bookmarks.add"), disabled: !marks.ready || marks.full || !media },
+          { key: "bookmarks", label: mt.t("media.bookmarks.count", { count: marks.items.length }) },
+          { type: "divider" as const },
+        ]
+      : []),
     {
       key: "loop",
       label: t("files.media.loop"),

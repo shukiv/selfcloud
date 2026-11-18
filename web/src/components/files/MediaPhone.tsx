@@ -14,6 +14,7 @@ import { filesURL } from "../../lib/files/route";
 import { kindOf } from "../../lib/files/kind";
 import { SPEEDS, refusedPlay } from "../../lib/files/mediaKeys";
 import type { Repeat } from "../../lib/files/queue";
+import type { Marks } from "../../lib/files/bookmarks";
 import type { Node } from "../../lib/files/types";
 import { displayArtist, displayTitle } from "../../lib/files/tags";
 import { useTagState } from "./TagCover";
@@ -44,9 +45,11 @@ export interface MediaPhoneProps {
   repeat: Repeat;
   onShuffle: () => void;
   onRepeat: () => void;
+  // marks, when the person may keep bookmarks (decision 218), adds Add a bookmark and Bookmarks (n) to the More menu.
+  marks?: Marks;
 }
 
-export default function MediaPhone({ node, position, media, playing, nav, onPress, onPlaylist, onDownload, onDetails, shuffle, repeat, onShuffle, onRepeat }: MediaPhoneProps) {
+export default function MediaPhone({ node, position, media, playing, nav, onPress, onPlaylist, onDownload, onDetails, shuffle, repeat, onShuffle, onRepeat, marks }: MediaPhoneProps) {
   const { t } = useT();
   const mt = useMT();
   const navigate = useNavigate();
@@ -86,6 +89,13 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
   const speedRadio = (v: number): SubRadioItem => ({ key: `speed-${v}`, label: `${v}×`, role: "menuitemradio", "aria-checked": rate === v });
   const shuffleItem: MenuItemType & { role: "menuitemcheckbox"; "aria-checked": boolean } = { key: "shuffle", label: t("files.media.shuffle"), role: "menuitemcheckbox", "aria-checked": shuffle };
   const items: MenuProps["items"] = [
+    ...(marks
+      ? [
+          { key: "bookmark-add", label: mt.t("media.bookmarks.add"), disabled: !marks.ready || marks.full || !media },
+          { key: "bookmarks", label: mt.t("media.bookmarks.count", { count: marks.items.length }) },
+          { type: "divider" as const },
+        ]
+      : []),
     { key: "speed", label: t("files.media.speed"), children: SPEEDS.map(speedRadio) },
     shuffleItem,
     { key: "repeat", label: repeatLabel },
@@ -100,6 +110,8 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
     }
     if (key === "shuffle") onShuffle();
     else if (key === "repeat") onRepeat();
+    else if (key === "bookmark-add") marks?.add();
+    else if (key === "bookmarks") marks?.openList();
     else if (key === "details") onDetails();
     else if (key === "open-folder") openFolder();
   };

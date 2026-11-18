@@ -52,6 +52,7 @@ fn	lib/comments/api.ts:listPeople	-	-	browser session only: the server refuses e
 fn	lib/comments/api.ts:listReplies	comment ls	cli11c	built in cli11c
 fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser feature
 fn	lib/comments/api.ts:resolveComment	-	-	browser session only: the server refuses every token on this route
+fn	lib/files/api.ts:addBookmark	-	-	media bookmarks: a player feature
 fn	lib/files/api.ts:ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132)
 fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
 fn	lib/files/api.ts:commitUpload	put	cli6	built in cli6
@@ -59,6 +60,7 @@ fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5
 fn	lib/files/api.ts:createDocument	doc new	cli11g	built in cli11g
 fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
 fn	lib/files/api.ts:createZipJob	zip create	cli12	built in cli12
+fn	lib/files/api.ts:deleteBookmark	-	-	media bookmarks: a player feature
 fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
 fn	lib/files/api.ts:deleteVersion	version rm	cli11b	built in cli11b
 fn	lib/files/api.ts:emptyTrashStep	trash empty	cli5	built in cli5
@@ -66,6 +68,7 @@ fn	lib/files/api.ts:getJob	job show	cli10	built in cli10
 fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
 fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:inlineRange	-	-	the browser viewer's range read of a file: the text preview and the subtitles
+fn	lib/files/api.ts:listBookmarks	-	-	media bookmarks: a player feature
 fn	lib/files/api.ts:listSubtitles	-	-	playback subtitles: a player feature
 fn	lib/files/api.ts:listTrash	trash ls	cli5	built in cli5
 fn	lib/files/api.ts:listVersions	version ls	cli11b	built in cli11b
@@ -76,6 +79,7 @@ fn	lib/files/api.ts:myFolders	folder ls	cli8	built in cli8 (--mine)
 fn	lib/files/api.ts:purgeTrashed	trash rm	cli5	built in cli5
 fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:refreshNode	stat	cli5	built in cli5
+fn	lib/files/api.ts:relabelBookmark	-	-	media bookmarks: a player feature
 fn	lib/files/api.ts:renameNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	trash restore	cli5	built in cli5

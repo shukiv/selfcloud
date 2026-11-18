@@ -41,6 +41,8 @@ import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
 import { usePaletteOrLight } from "../../theme/theme";
 import MediaArt from "./MediaArt";
 import MediaPhone from "./MediaPhone";
+import { useBookmarks } from "./useBookmarks";
+import type { BookmarkApi } from "../../lib/files/bookmarks";
 
 // The Media page's queue is a table (mp1b). It is lazy, so the viewer's drawer and the first load never load Listing for
 // it; the drawer keeps the panel (MediaQueue).
@@ -129,6 +131,9 @@ export interface MediaPlaylistProps {
   // onSource is told the name of the saved playlist that replaced the queue (null when none), so the owner's header can
   // name it when the file's tags have no album.
   onSource?: (name: string | null) => void;
+  // bookmarks, when the signed-in person may keep bookmarks (decision 218), gives the player its marks and its lazy list.
+  // A share page and an impersonated session get none.
+  bookmarks?: BookmarkApi;
 }
 
 export default function MediaPlaylist({
@@ -154,6 +159,7 @@ export default function MediaPlaylist({
   onDetails,
   onDownload,
   onSource,
+  bookmarks,
 }: MediaPlaylistProps) {
   const { t } = useT();
   const palette = usePaletteOrLight();
@@ -291,6 +297,9 @@ export default function MediaPlaylist({
 
   const currentId = q.current;
   const currentNode = currentId === null ? undefined : q.entries.find((e) => e.node.id === currentId)?.node;
+
+  // The bookmarks of the file that plays (decision 218): its marks for the bar and the phone, and the lazy list dialog.
+  const { marks, dialog: bookmarksDialog } = useBookmarks(bookmarks, currentNode?.id ?? null, el);
 
   // loadMore reads the next page of the folder into the queue. It says whether the folder gave a page ("ok"), had no more
   // ("end"), or could not be read ("failed": the panel offers to try again, and the folder keeps its page).
@@ -713,6 +722,7 @@ export default function MediaPlaylist({
               nav={{ next, previous }}
               art={kind === "audio" ? <MediaArt node={currentNode} /> : undefined}
               phone={phone}
+              marks={marks}
             />
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
@@ -734,8 +744,10 @@ export default function MediaPlaylist({
               repeat={q.repeat}
               onShuffle={() => void shuffleToggle()}
               onRepeat={() => commit(cycleRepeat(qRef.current))}
+              marks={marks}
             />
           )}
+          {bookmarksDialog}
         {/* The queue's place: the viewer's drawer as before, or the Media page's slot below the player (decision 186),
             where the queue is a table (mp1b), lazy so the drawer never loads Listing. A null slot draws no queue; the
             player keeps playing either way. At phone width the viewer's queue is the table in the flow below the player,

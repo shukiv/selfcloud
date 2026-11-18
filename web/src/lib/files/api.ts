@@ -304,6 +304,38 @@ export function putResume(nod: string, position: number, duration: number): Prom
   return api<void>('PUT', `/api/v1/nodes/${nod}/resume`, { body: { position_seconds: position, duration_seconds: duration } });
 }
 
+// Bookmark is a place the signed-in person marked in a file, with an optional label (decision 218).
+export interface Bookmark {
+  id: string;
+  position_seconds: number;
+  label: string;
+  created_at: string;
+}
+
+// listBookmarks reads the person's own bookmarks for a file.
+export function listBookmarks(nod: string): Promise<Bookmark[]> {
+  needSession();
+  return api<{ bookmarks: Bookmark[] }>('GET', `/api/v1/nodes/${nod}/bookmarks`).then((r) => r.bookmarks ?? []);
+}
+
+// addBookmark marks a place in the file. The server keeps at most BOOKMARK_LIMIT per person and file.
+export function addBookmark(nod: string, position: number, label: string): Promise<Bookmark> {
+  needSession();
+  return api<Bookmark>('POST', `/api/v1/nodes/${nod}/bookmarks`, { body: { position_seconds: position, label } });
+}
+
+// relabelBookmark sets a bookmark's label.
+export function relabelBookmark(nod: string, bmk: string, label: string): Promise<Bookmark> {
+  needSession();
+  return api<Bookmark>('PATCH', `/api/v1/nodes/${nod}/bookmarks/${encodeURIComponent(bmk)}`, { body: { label } });
+}
+
+// deleteBookmark removes a bookmark.
+export function deleteBookmark(nod: string, bmk: string): Promise<void> {
+  needSession();
+  return api<void>('DELETE', `/api/v1/nodes/${nod}/bookmarks/${encodeURIComponent(bmk)}`);
+}
+
 // SubtitleFile is a .vtt or .srt file beside a video, with the same name.
 export interface SubtitleFile {
   id: string;

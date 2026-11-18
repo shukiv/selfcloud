@@ -60,12 +60,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   signIn();
-  document.querySelectorAll(".ant-message").forEach((n) => n.remove());
 });
 
 afterEach(() => {
   session.set(null);
-  document.querySelectorAll(".ant-message").forEach((n) => n.remove());
   vi.restoreAllMocks();
 });
 

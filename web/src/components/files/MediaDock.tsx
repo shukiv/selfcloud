@@ -6,7 +6,9 @@ import { Alert, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, Share2, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
 import IconButton from "../IconButton";
-import { getResume, inlineRange, listSubtitles, putResume } from "../../lib/files/api";
+import { addBookmark, deleteBookmark, getResume, inlineRange, listBookmarks, listSubtitles, putResume, relabelBookmark } from "../../lib/files/api";
+import type { BookmarkApi } from "../../lib/files/bookmarks";
+import { session } from "../../lib/session";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
 import { atLeast, downloadAllowed } from "../../lib/files/roles";
@@ -96,8 +98,13 @@ async function subtitlesSession(n: Node): Promise<SubtitleTrack[]> {
   return readTracks(files, inlineRange, currentLang());
 }
 
+// sessionBookmarks is the signed-in person's bookmark routes (decision 218). An impersonated session gets none: the admin
+// viewing as another person does not keep bookmarks under that person's row.
+const sessionBookmarks: BookmarkApi = { list: listBookmarks, add: addBookmark, relabel: relabelBookmark, remove: deleteBookmark };
+
 export default function MediaDock() {
   const snap = useSyncExternalStore(subscribePlayback, getPlayback, getPlayback);
+  const sess = useStore(session);
   const { t } = useT();
   const [pos, setPos] = useState<{ position: number; total: string }>({ position: 0, total: "0" });
   const [refused, setRefused] = useState<string | null>(null);
@@ -211,6 +218,7 @@ export default function MediaDock() {
       onDetails={() => setDetailsOpen(true)}
       onDownload={canDownload ? () => void download() : undefined}
       onSource={setSourceName}
+      bookmarks={sess && !sess.impersonation ? sessionBookmarks : undefined}
     />
   ) : null;
 

@@ -55,12 +55,19 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  // A desktop window with a mouse, so the row's three icons show inline (the shared preset list's rule).
+  vi.stubGlobal("matchMedia", (query: string) => {
+    const m = /min-width: (\d+)px/.exec(query);
+    const matches = m ? 1280 >= Number(m[1]) : false;
+    return { matches, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+  });
   vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("the table", () => {

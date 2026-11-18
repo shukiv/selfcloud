@@ -11,6 +11,7 @@ import { readNonce } from "../../csp/nonce";
 import { usePaletteOrLight } from "../../theme/theme";
 import { playerBox } from "../../lib/files/playerBox";
 import type { SubtitleSize } from "./MediaPlayer";
+import type { Marks } from "../../lib/files/bookmarks";
 import {
   HIDE_MS,
   SPEEDS,
@@ -115,9 +116,12 @@ interface Props {
   // are drawn by MediaPhone instead. The bar never fades at phone width, since its seek row is always in view. A share page
   // and every wider window leave this false and keep the whole bar.
   phone?: boolean;
+  // marks, when the signed-in person may keep bookmarks (decision 218), draws a tick per bookmark on the seek bar and gives
+  // the More menu its Add a bookmark and Bookmarks items. A share link and an impersonated session get none.
+  marks?: Marks;
 }
 
-export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false, phone = false }: Props) {
+export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false, phone = false, marks }: Props) {
   const { t } = useT();
   const p = usePaletteOrLight();
   const [snap, setSnap] = useState<Snap>(EMPTY);
@@ -483,6 +487,17 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
         </span>
         <div className="media-seek">
           <div className="media-buffered" data-testid="media-buffered" style={{ width: pct(snap.buffered) }} />
+          {marks &&
+            duration > 0 &&
+            marks.items.map((bm) => (
+              <span
+                key={bm.id}
+                className="media-bookmark-tick"
+                data-testid="media-bookmark-tick"
+                aria-hidden="true"
+                style={{ insetInlineStart: pct(bm.position_seconds), pointerEvents: "none" }}
+              />
+            ))}
           <Slider
             min={0}
             max={duration || 0}
@@ -599,7 +614,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
           }}
         />
 
-        <MediaExtras media={m} popupHost={popupHost} />
+        <MediaExtras media={m} popupHost={popupHost} marks={marks} />
 
         {kind === "video" &&
           typeof document !== "undefined" &&

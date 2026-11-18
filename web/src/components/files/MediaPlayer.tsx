@@ -10,6 +10,7 @@ import { readPref, writePref } from "../../lib/prefs";
 import { session, sessionChanged } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import MediaControls, { type Nav } from "./MediaControls";
+import type { Marks } from "../../lib/files/bookmarks";
 
 // MediaPlayer plays one video or audio file from a signed link. The link ends at a fixed time, and the server refuses
 // every request for it after that, so a seek or a resume past the end fails. Then the player asks for a new link and
@@ -112,6 +113,8 @@ interface Props {
   art?: ReactNode;
   // phone says the album-page layout is on (mp7): the bar keeps only its seek row, the rest is drawn by MediaPhone.
   phone?: boolean;
+  // marks, when the person may keep bookmarks (decision 218), gives the bar its ticks and its More-menu items.
+  marks?: Marks;
 }
 
 // STALL_MS is how long a player may wait for data while playing before it asks for a new link. Some browsers report a
@@ -140,6 +143,7 @@ export default function MediaPlayer({
   keysInBox = false,
   art,
   phone = false,
+  marks,
 }: Props) {
   const { t } = useT();
   const el = useRef<HTMLMediaElement | null>(null);
@@ -554,6 +558,7 @@ export default function MediaPlayer({
         active={active}
         keysInBox={keysInBox}
         phone={phone}
+        marks={marks}
       />
       {kind === "video" && subsNote && (
         <p role="status" className="media-subs-note" data-testid="media-subs-none">

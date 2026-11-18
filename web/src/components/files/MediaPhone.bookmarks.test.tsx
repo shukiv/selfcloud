@@ -108,7 +108,7 @@ describe("the album page's More menu bookmark items", () => {
     expect((await screen.findByRole("menuitem", { name: "Add a bookmark" })).getAttribute("aria-disabled")).toBe("true");
     full.unmount();
 
-    const noEl = draw(marks([b()]), null);
+    draw(marks([b()]), null);
     await openMore();
     expect((await screen.findByRole("menuitem", { name: "Add a bookmark" })).getAttribute("aria-disabled")).toBe("true");
   });
