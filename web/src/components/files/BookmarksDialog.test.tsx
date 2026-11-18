@@ -3,9 +3,10 @@
 // The bookmarks dialog: the file's places as a table, the row's Go to / Rename / Delete, the empty state with its add
 // action, and a failed read's Retry. It is the lazy dialog the hook opens; here it is drawn directly with its props.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "antd";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../lib/api";
 import { loadMedia } from "../../lib/media/i18n";
 import type { Bookmark } from "../../lib/files/api";
 import { LABEL_MAX, type Marks } from "../../lib/files/bookmarks";
@@ -29,14 +30,23 @@ function marks(items: Bookmark[], over: Partial<Marks> = {}): Marks {
   return { items, ready: true, full: false, add: vi.fn(), openList: vi.fn(), ...over };
 }
 
-function draw(items: Bookmark[], over: { marks?: Partial<Marks>; readFailed?: boolean; media?: HTMLMediaElement | null } = {}) {
+function draw(
+  items: Bookmark[],
+  over: {
+    marks?: Partial<Marks>;
+    readFailed?: boolean;
+    media?: HTMLMediaElement | null;
+    onRelabel?: (id: string, label: string) => Promise<Bookmark>;
+    onRemove?: (id: string) => Promise<void>;
+  } = {},
+) {
   const props = {
     name: "song.mp3",
     marks: marks(items, over.marks),
     media: over.media === undefined ? media() : over.media,
     readFailed: over.readFailed ?? false,
-    onRelabel: vi.fn(async (_id: string, label: string) => b({ label })),
-    onRemove: vi.fn(async () => {}),
+    onRelabel: over.onRelabel ?? vi.fn(async (_id: string, label: string) => b({ label })),
+    onRemove: over.onRemove ?? vi.fn(async () => {}),
     onRetry: vi.fn(),
     onClose: vi.fn(),
   };
@@ -49,6 +59,7 @@ function draw(items: Bookmark[], over: { marks?: Partial<Marks>; readFailed?: bo
 }
 
 const rows = () => screen.getAllByTestId("bookmark-row");
+const notices = () => [...document.querySelectorAll(".ant-message-notice")].map((n) => n.textContent ?? "");
 
 beforeAll(async () => {
   await loadMedia("en");
@@ -99,6 +110,22 @@ describe("the table", () => {
     fireEvent.click(within(rows()[0]).getByRole("button", { name: "Delete" }));
     expect(props.onRemove).toHaveBeenCalledWith("bmk_1");
   });
+
+  it("two Delete presses on one row send one remove and show no error", async () => {
+    let resolveDelete: () => void = () => {};
+    const onRemove = vi.fn(() => new Promise<void>((res) => { resolveDelete = res; }));
+    draw([b({ id: "bmk_1" })], { onRemove });
+    fireEvent.click(within(rows()[0]).getByRole("button", { name: "Delete" }));
+    // While the delete is on its way the row's Delete and Rename are disabled, so a second press sends nothing.
+    expect(within(rows()[0]).getByRole("button", { name: "Delete" }).getAttribute("aria-disabled")).toBe("true");
+    expect(within(rows()[0]).getByRole("button", { name: "Rename" }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(within(rows()[0]).getByRole("button", { name: "Delete" }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveDelete();
+    });
+    expect(notices().some((t) => t.includes("Could not delete the bookmark"))).toBe(false);
+  });
 });
 
 describe("Rename", () => {
@@ -123,6 +150,49 @@ describe("Rename", () => {
     expect(props.onRelabel).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
     expect(within(rows()[0]).getByText("Old")).toBeTruthy();
+  });
+
+  it("a refused relabel keeps the input open and says the save-failure words", async () => {
+    const onRelabel = vi.fn(async () => {
+      throw new ApiError(500, "internal", {}, 0);
+    });
+    draw([b({ id: "bmk_1", label: "Old" })], { onRelabel });
+    fireEvent.click(within(rows()[0]).getByRole("button", { name: "Rename" }));
+    const input = (await screen.findByRole("textbox")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Changed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(notices().some((t) => t.includes("Could not save the bookmark"))).toBe(true));
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Changed");
+  });
+
+  it("a 400 shows the server's own message and keeps the input open", async () => {
+    const onRelabel = vi.fn(async () => {
+      throw new ApiError(400, "invalid_request", { field: "label" }, 0, "label: must not contain control characters");
+    });
+    draw([b({ id: "bmk_1", label: "Old" })], { onRelabel });
+    fireEvent.click(within(rows()[0]).getByRole("button", { name: "Rename" }));
+    const input = (await screen.findByRole("textbox")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Bad\u0001" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(notices().some((t) => t.includes("label: must not contain control characters"))).toBe(true));
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
+  it("two Enters while a save is in flight send one relabel", async () => {
+    let resolveSave: (v: Bookmark) => void = () => {};
+    const onRelabel = vi.fn(() => new Promise<Bookmark>((res) => { resolveSave = res; }));
+    draw([b({ id: "bmk_1", label: "Old" })], { onRelabel });
+    fireEvent.click(within(rows()[0]).getByRole("button", { name: "Rename" }));
+    const input = (await screen.findByRole("textbox")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Intro" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyUp(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRelabel).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveSave(b({ label: "Intro" }));
+    });
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
   });
 });
 
