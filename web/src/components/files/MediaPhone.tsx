@@ -8,7 +8,8 @@ import { useNavigate } from "react-router-dom";
 import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { useMT } from "../../lib/media/i18n";
-import { useStore } from "../../lib/store";
+import { useStore, useStoreSelect } from "../../lib/store";
+import { session } from "../../lib/session";
 import { folders, hiddenFolders } from "../../lib/files/folders";
 import { filesURL } from "../../lib/files/route";
 import { kindOf } from "../../lib/files/kind";
@@ -17,11 +18,12 @@ import type { Repeat } from "../../lib/files/queue";
 import type { Marks } from "../../lib/files/bookmarks";
 import type { Node } from "../../lib/files/types";
 import { displayArtist, displayTitle } from "../../lib/files/tags";
+import MediaEqualizer, { useEqOnPlay } from "./MediaEqualizer";
 import { useTagState } from "./TagCover";
 
 // MediaPhone is the album-page player's own parts at phone width (mp7): the one centred line "{n}. {artist} - {title}", the
 // large transport that drives the same element and the same navigation as the bar, and the action row (Playlist, Download
-// when the person may download, and More with Speed, Shuffle, Repeat, Details and Open folder). The owner draws these only
+// when the person may download, and More with Speed, Shuffle, Repeat, Equalizer, Details and Open folder). The owner draws these only
 // at phone width and only for the signed-in session; a share page and every wider window keep the bar as it was. Nothing
 // here makes or moves the element that plays: the transport calls the same play/pause and Previous/Next the bar uses.
 
@@ -71,6 +73,17 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
     return () => media.removeEventListener("ratechange", on);
   }, [media]);
 
+  const userId = useStoreSelect(session, (s) => s?.user.id ?? null);
+  const [eqOpen, setEqOpen] = useState(false);
+
+  // The equalizer panel belongs to the element on screen: a new element closes it.
+  useEffect(() => {
+    setEqOpen(false);
+  }, [media]);
+
+  // A kept On equalizer choice applies to a new element at its first play, through attach alone.
+  useEqOnPlay(media, userId);
+
   const toggle = () => {
     if (!media) return;
     if (playing) media.pause();
@@ -99,6 +112,7 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
     { key: "speed", label: t("files.media.speed"), children: SPEEDS.map(speedRadio) },
     shuffleItem,
     { key: "repeat", label: repeatLabel },
+    { key: "equalizer", label: t("files.media.equalizer") },
     { type: "divider" },
     { key: "details", label: t("files.act.details") },
     { key: "open-folder", label: mt.t("media.lib.openFolder") },
@@ -110,6 +124,7 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
     }
     if (key === "shuffle") onShuffle();
     else if (key === "repeat") onRepeat();
+    else if (key === "equalizer") setEqOpen(true);
     else if (key === "bookmark-add") marks?.add();
     else if (key === "bookmarks") marks?.openList();
     else if (key === "details") onDetails();
@@ -163,6 +178,8 @@ export default function MediaPhone({ node, position, media, playing, nav, onPres
           </Button>
         </Dropdown>
       </div>
+      {/* The album page is audio only and never full screen, so the bar's popupHost here is the page itself. */}
+      <MediaEqualizer media={media} open={eqOpen} onClose={() => setEqOpen(false)} popupHost={() => document.body} />
     </>
   );
 }

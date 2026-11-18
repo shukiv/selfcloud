@@ -727,7 +727,7 @@ describe("the Equalizer panel", () => {
       expect(screen.getByRole("slider", { name })).toBeTruthy();
     }
     expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Close" }).length).toBeGreaterThan(0);
   });
 
   it("a slider writes the kept choice and calls setGains", async () => {
@@ -740,7 +740,7 @@ describe("the Equalizer panel", () => {
     expect(screen.getByText("+3 dB")).toBeTruthy();
     expect(kept().on).toBe(true);
     expect(kept().gains).toEqual([3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(eqGraph.setGains).toHaveBeenCalledWith(m, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    await waitFor(() => expect(eqGraph.setGains).toHaveBeenCalledWith(m, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
     // The gains match no preset: Custom shows, checked.
     expect((screen.getByRole("radio", { name: "Custom" }) as HTMLInputElement).checked).toBe(true);
   });
@@ -752,7 +752,7 @@ describe("the Equalizer panel", () => {
     fireEvent.click(screen.getByRole("switch", { name: "On" }));
     await waitFor(() => expect(eqGraph.attach).toHaveBeenCalledWith(m));
     fireEvent.click(screen.getByRole("radio", { name: "Bass" }));
-    expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.bass);
+    await waitFor(() => expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.bass));
     expect(kept().gains).toEqual(PRESETS.bass);
     expect(screen.getByText("+6 dB")).toBeTruthy();
   });

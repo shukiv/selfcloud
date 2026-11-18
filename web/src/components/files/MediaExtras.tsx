@@ -11,6 +11,7 @@ import { formatTime } from "../../lib/files/mediaKeys";
 import { getSleep, setSleep, subscribeSleep, type SleepChoice } from "../../lib/files/sleepTimer";
 import { DEFAULT_PICTURE, pictureStyle, readPicture, writePicture, type Picture } from "../../lib/files/picture";
 import { captureFrame, FrameError, type Frames } from "../../lib/files/frame";
+import MediaEqualizer, { useEqOnPlay } from "./MediaEqualizer";
 import { session } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import type { Marks } from "../../lib/files/bookmarks";
@@ -23,7 +24,9 @@ import type { Marks } from "../../lib/files/bookmarks";
 // the element exposes more than one audio track, the Audio track submenu. The picture outlives the element; the
 // tracks belong to the file on screen and nothing of them is kept for the next one. Audio is never styled. A video
 // with frames (decision 231) also gains Save frame, which keeps the picture on screen as a PNG in the person's own
-// My files through the shared upload queue.
+// My files through the shared upload queue. Both kinds gain the Equalizer (decision 232): ten bands kept per person
+// in lib/files/equalizer.ts, applied through a Web Audio graph that loads only when the panel opens or a kept On
+// choice meets a playing element.
 
 interface Props {
   media: HTMLMediaElement | null;
@@ -93,6 +96,7 @@ export default function MediaExtras({ media, popupHost, marks, frames }: Props) 
   const isVideo = media?.tagName === "VIDEO";
   const [picture, setPicture] = useState<Picture>(() => readPicture(userId));
   const [picOpen, setPicOpen] = useState(false);
+  const [eqOpen, setEqOpen] = useState(false);
   const [tracks, setTracks] = useState<TrackItem[]>([]);
 
   // The picture belongs to the person: a change of person reads their own kept choice.
@@ -100,10 +104,14 @@ export default function MediaExtras({ media, popupHost, marks, frames }: Props) 
     setPicture(readPicture(userId));
   }, [userId]);
 
-  // The panel belongs to the element on screen: a new element closes it.
+  // The panels belong to the element on screen: a new element closes them.
   useEffect(() => {
     setPicOpen(false);
+    setEqOpen(false);
   }, [media]);
+
+  // A kept On equalizer choice applies to a new element at its first play, through attach alone.
+  useEqOnPlay(media, userId);
 
   // The kept choice styles the video element at once and on every change; a new element takes it too. Audio is never
   // styled, and an element that leaves the player is left plain.
@@ -223,6 +231,7 @@ export default function MediaExtras({ media, popupHost, marks, frames }: Props) 
     else if (key === "bookmarks") marks?.openList();
     else if (key === "picture") setPicOpen(true);
     else if (key === "frame") void saveFrame();
+    else if (key === "equalizer") setEqOpen(true);
     else if (key.startsWith("audio-")) pickTrack(key);
     else if (key in SLEEP_KEYS) setSleep(SLEEP_KEYS[key]);
   };
@@ -281,6 +290,7 @@ export default function MediaExtras({ media, popupHost, marks, frames }: Props) 
           },
         ]
       : []),
+    { key: "equalizer", label: t("files.media.equalizer") },
   ];
 
   // One row of the panel: the control's name and its value in percent, then the slider itself.
@@ -363,6 +373,7 @@ export default function MediaExtras({ media, popupHost, marks, frames }: Props) 
           {pictureRow("saturation", t("files.media.pictureSaturation"))}
         </Modal>
       )}
+      <MediaEqualizer media={media} open={eqOpen} onClose={() => setEqOpen(false)} popupHost={popupHost} />
     </>
   );
 }

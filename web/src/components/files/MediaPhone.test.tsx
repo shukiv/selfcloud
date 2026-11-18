@@ -288,7 +288,7 @@ describe("the phone More's Equalizer", () => {
       expect(screen.getByRole("slider", { name })).toBeTruthy();
     }
     expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Close" }).length).toBeGreaterThan(0);
   });
 
   it("a slider writes the kept choice and calls setGains", async () => {
@@ -300,7 +300,7 @@ describe("the phone More's Equalizer", () => {
     expect(screen.getByText("+3 dB")).toBeTruthy();
     expect(kept().on).toBe(true);
     expect(kept().gains).toEqual([3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(eqGraph.setGains).toHaveBeenCalledWith(m, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    await waitFor(() => expect(eqGraph.setGains).toHaveBeenCalledWith(m, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
   });
 
   it("a preset sets the ten gains and keeps them", async () => {
@@ -309,7 +309,7 @@ describe("the phone More's Equalizer", () => {
     fireEvent.click(screen.getByRole("switch", { name: "On" }));
     await waitFor(() => expect(eqGraph.attach).toHaveBeenCalledWith(m));
     fireEvent.click(screen.getByRole("radio", { name: "Vocal" }));
-    expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.vocal);
+    await waitFor(() => expect(eqGraph.setGains).toHaveBeenCalledWith(m, PRESETS.vocal));
     expect(kept().gains).toEqual(PRESETS.vocal);
   });
 

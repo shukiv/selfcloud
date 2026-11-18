@@ -1210,6 +1210,27 @@ video.media-cue-l::cue {
 .media-picture-slider.ant-slider {
   margin-block: 4px 8px;
 }
+/* The Equalizer panel of the More menu: the On row and each band name its control and shows its value in dB; the
+   preset choice spans the row, and the sliders keep a compact margin of their own. */
+.media-eq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block: 12px 4px;
+}
+.media-eq-row:first-child {
+  margin-block-start: 0;
+}
+.media-eq-value {
+  font-variant-numeric: tabular-nums;
+}
+.media-eq-slider.ant-slider {
+  margin-block: 4px 8px;
+}
+.media-eq-blocked {
+  margin-block: 8px 0;
+}
 /* The mini player: one bar docked at the bottom of the shell while audio plays after the viewer closed. Its colours come from
    the sidebar (inline), and its controls read left to right in every language (dir on the bar). */
 .media-mini {
