@@ -25,6 +25,9 @@ function opaque(): Response {
 function deps(fetchImpl: ThumbDeps['fetch'], keyOf: () => string = () => 'person-1\ncsrf-1') {
   const createURL = vi.fn(() => 'blob:thumb-1');
   const revokeURL = vi.fn();
+  const signingOut = vi.fn<() => boolean>(() => false);
+  const forget = vi.fn();
+  const track = vi.fn<(c: AbortController) => () => void>(() => forget);
   const d: ThumbDeps = {
     fetch: fetchImpl,
     schedule: (fn, ms) => setTimeout(fn, ms),
@@ -33,8 +36,10 @@ function deps(fetchImpl: ThumbDeps['fetch'], keyOf: () => string = () => 'person
     revokeURL,
     limiter: new Limiter(4),
     sessionKey: keyOf,
+    signingOut,
+    track,
   };
-  return { d, createURL, revokeURL };
+  return { d, createURL, revokeURL, signingOut, track, forget };
 }
 
 // settle lets the promise chains of a request run to their next wait. The limiter takes its slot a few steps after a
@@ -271,6 +276,187 @@ describe('watchThumbnail', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no ask while a sign-out is on its way, though the key has not changed yet', async () => {
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(async () => answer(200));
+    const { d, signingOut, track } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    // The sign-out starts while the ask is still scheduled: the session is cleared only once the logout answers.
+    signingOut.mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no fetch whose limiter slot freed only after a sign-out started', async () => {
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(async () => answer(200));
+    const { d, signingOut } = deps(fetchImpl);
+    const s = sink();
+    // Four requests hold every slot, so the watch's fetch waits in the limiter for one to free.
+    const releases: Array<() => void> = [];
+    for (let i = 0; i < 4; i++) void d.limiter.run(() => new Promise<void>((resolve) => releases.push(resolve)));
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // The sign-out starts while the fetch is still waiting; the slot frees only afterwards.
+    signingOut.mockReturnValue(true);
+    for (const release of releases) release();
+    await settle();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(d.limiter.running).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks no second time when a sign-out starts during the wait after a 202', async () => {
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>().mockResolvedValueOnce(answer(202, { 'Retry-After': '2' })).mockResolvedValueOnce(answer(200));
+    const { d, signingOut } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    signingOut.mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a fetch on its way with track, and forgets it once it is answered', async () => {
+    let finishFetch: (r: Response) => void = () => undefined;
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(() => new Promise<Response>((resolve) => (finishFetch = resolve)));
+    const { d, track, forget } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(track).toHaveBeenCalledTimes(1);
+    const ctl = track.mock.calls[0][0];
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBe(ctl.signal);
+    expect(forget).not.toHaveBeenCalled();
+    finishFetch(answer(200));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(s.image).toHaveBeenCalledWith('blob:thumb-1');
+  });
+
+  it('forgets a fetch that fails on the network', async () => {
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(async () => {
+      throw new TypeError('network');
+    });
+    const { d, track, forget } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets a fetch on its way when the watch stops, and forgets it only once', async () => {
+    let finishFetch: (r: Response) => void = () => undefined;
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(() => new Promise<Response>((resolve) => (finishFetch = resolve)));
+    const { d, forget } = deps(fetchImpl);
+    const s = sink();
+    const stop = watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(forget).not.toHaveBeenCalled();
+    stop();
+    expect(forget).toHaveBeenCalledTimes(1);
+    finishFetch(answer(200));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+  });
+
+  it('ends quietly when a sign-out aborts the fetch on its way: the icon, no retry, nothing logged', async () => {
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+        }),
+    );
+    const { d, signingOut, track, forget } = deps(fetchImpl);
+    const s = sink();
+    const errors = vi.spyOn(console, 'error');
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    // beginSignOut: the sign-out is under way, and every request recorded on its way is aborted.
+    signingOut.mockReturnValue(true);
+    track.mock.calls[0][0].abort();
+    await settle();
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(s.none).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
+  });
+
+  it('hands the browser no address when a sign-out is on its way at the redirect step', async () => {
+    let finishFetch: (r: Response) => void = () => undefined;
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(() => new Promise<Response>((resolve) => (finishFetch = resolve)));
+    const { d, signingOut } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    signingOut.mockReturnValue(true);
+    finishFetch(opaque());
+    await settle();
+    expect(s.redirect).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(d.limiter.running).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.redirect).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the browser no address whose redirect slot freed only after a sign-out started', async () => {
+    let finishFetch: (r: Response) => void = () => undefined;
+    const fetchImpl = vi.fn<ThumbDeps['fetch']>(() => new Promise<Response>((resolve) => (finishFetch = resolve)));
+    const { d, signingOut } = deps(fetchImpl);
+    const s = sink();
+    watchThumbnail('/api/v1/nodes/nod_1/thumbnail?size=256', s, d);
+    await vi.advanceTimersByTimeAsync(0);
+    // The fetch holds one slot; three more requests take the rest, and a fourth waits, so the redirect waits too.
+    const releases: Array<() => void> = [];
+    for (let i = 0; i < 4; i++) void d.limiter.run(() => new Promise<void>((resolve) => releases.push(resolve)));
+    finishFetch(opaque());
+    await settle();
+    expect(s.redirect).not.toHaveBeenCalled();
+    // The sign-out starts while the redirect is still waiting for its slot.
+    signingOut.mockReturnValue(true);
+    for (const release of releases) release();
+    await settle();
+    expect(s.redirect).not.toHaveBeenCalled();
+    expect(s.none).toHaveBeenCalledTimes(1);
+    expect(s.image).not.toHaveBeenCalled();
+    expect(d.limiter.running).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('drops an answer that arrives after the stop, and makes no image address for it', async () => {
