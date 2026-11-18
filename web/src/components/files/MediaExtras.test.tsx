@@ -10,6 +10,7 @@ import { Pager } from "../../lib/files/pager";
 import type { Node } from "../../lib/files/types";
 import { setMedia, startPlayback, stopPlayback } from "../../lib/files/playback";
 import { getSleep, setSleep, stopsAtEnd } from "../../lib/files/sleepTimer";
+import { session, type Session } from "../../lib/session";
 import MediaControls from "./MediaControls";
 import MediaExtras from "./MediaExtras";
 import MediaPlayer from "./MediaPlayer";
@@ -371,5 +372,205 @@ describe("End of this file in the playlist", () => {
     fireEvent.ended(container.querySelector("video") as HTMLVideoElement);
     await flush();
     expect(container.querySelector("video")?.getAttribute("src")).toBe("https://content.example/b.webm");
+  });
+});
+
+// The Picture panel's sliders move by their step on the arrow keys, as antd's do: Up and Right add one step.
+const UP = 38;
+const DOWN = 40;
+
+async function openPicture() {
+  await openMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Picture…" }));
+  return screen.findByRole("slider", { name: "Brightness" });
+}
+
+describe("the Picture panel", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    session.set(null);
+  });
+
+  it("offers Picture… on a video only, and never styles an audio element", async () => {
+    const m = el("audio");
+    const audio = draw(m);
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Picture…" })).toBeNull();
+    expect(m.style.filter).toBe("");
+    expect(m.style.objectFit).toBe("");
+    audio.unmount();
+
+    draw(el("video"));
+    await openMenu();
+    expect(await screen.findByRole("menuitem", { name: "Picture…" })).toBeTruthy();
+  });
+
+  it("moving Brightness sets the element's filter at once, shows the value, and keeps it", async () => {
+    const m = el("video");
+    draw(m);
+    const handle = await openPicture();
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(handle, { keyCode: UP });
+    expect(m.style.filter).toBe("brightness(120%) contrast(100%) saturate(100%)");
+    expect(screen.getByText("120%")).toBeTruthy();
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.picture.visitor") ?? "{}").brightness).toBe(120);
+  });
+
+  it("Fit sets the element's objectFit: Fit, Fill and Stretch", async () => {
+    const m = el("video");
+    draw(m);
+    await openPicture();
+    fireEvent.click(await screen.findByRole("radio", { name: "Fill" }));
+    expect(m.style.objectFit).toBe("cover");
+    fireEvent.click(screen.getByRole("radio", { name: "Stretch" }));
+    expect(m.style.objectFit).toBe("fill");
+    fireEvent.click(screen.getByRole("radio", { name: "Fit" }));
+    expect(m.style.objectFit).toBe("contain");
+  });
+
+  it("Reset returns to the default and keeps it", async () => {
+    const m = el("video");
+    draw(m);
+    const handle = await openPicture();
+    fireEvent.keyDown(handle, { keyCode: UP });
+    fireEvent.click(screen.getByRole("radio", { name: "Fill" }));
+    expect(m.style.filter).not.toBe("none");
+    expect(m.style.objectFit).toBe("cover");
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(m.style.filter).toBe("none");
+    expect(m.style.objectFit).toBe("contain");
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.picture.visitor") ?? "{}")).toEqual({
+      fit: "contain",
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+    });
+  });
+
+  it("a new element takes the kept values, and the old one is left plain", async () => {
+    const first = el("video");
+    const { rerender } = draw(first);
+    const handle = await openPicture();
+    fireEvent.keyDown(handle, { keyCode: DOWN });
+    expect(first.style.filter).toBe("brightness(100%) contrast(95%) saturate(100%)");
+    const second = el("video");
+    rerender(
+      <App>
+        <MediaExtras media={second} popupHost={host} />
+      </App>,
+    );
+    await waitFor(() => expect(second.style.filter).toBe("brightness(100%) contrast(95%) saturate(100%)"));
+    expect(second.style.objectFit).toBe("contain");
+    expect(first.style.filter).toBe("");
+    expect(first.style.objectFit).toBe("");
+  });
+
+  it("keeps the choice under the signed-in person's own key", async () => {
+    session.set({ user: { id: "usr_pic" } } as unknown as Session);
+    const m = el("video");
+    draw(m);
+    const handle = await openPicture();
+    fireEvent.keyDown(handle, { keyCode: UP });
+    expect(window.localStorage.getItem("selfcloud.picture.usr_pic")).not.toBeNull();
+    expect(window.localStorage.getItem("selfcloud.picture.visitor")).toBeNull();
+    expect(m.style.filter).toBe("brightness(105%) contrast(100%) saturate(100%)");
+  });
+});
+
+describe("the Audio track submenu", () => {
+  interface Track {
+    label: string;
+    language: string;
+    enabled: boolean;
+  }
+
+  function withTracks(m: HTMLMediaElement, list: Track[]) {
+    Object.defineProperty(m, "audioTracks", { value: list, configurable: true, writable: true });
+    return list;
+  }
+
+  const track = (over: Partial<Track> = {}): Track => ({ label: "", language: "", enabled: false, ...over });
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("stays hidden without audioTracks and with one track", async () => {
+    const none = draw(el("video"));
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Audio track" })).toBeNull();
+    none.unmount();
+
+    const one = el("video");
+    withTracks(one, [track({ label: "English", enabled: true })]);
+    draw(one);
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Audio track" })).toBeNull();
+  });
+
+  it("shows the labels, else the language, else Track n, with the enabled one checked", async () => {
+    const m = el("video");
+    withTracks(m, [track({ label: "English", language: "en", enabled: true }), track({ language: "fr" }), track()]);
+    draw(m);
+    await openMenu();
+    await openSub("Audio track");
+    expect((await screen.findByRole("menuitemradio", { name: "English" })).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "fr" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("menuitemradio", { name: "Track 3" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("picking a track enables it and disables the others", async () => {
+    const m = el("video");
+    const list = withTracks(m, [track({ label: "English", enabled: true }), track({ label: "French" })]);
+    draw(m);
+    await openMenu();
+    await openSub("Audio track");
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "French" }));
+    expect(list[0].enabled).toBe(false);
+    expect(list[1].enabled).toBe(true);
+    await openMenu();
+    await openSub("Audio track");
+    expect((await screen.findByRole("menuitemradio", { name: "French" })).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "English" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("re-reads the tracks on loadedmetadata", async () => {
+    const m = el("video");
+    withTracks(m, [track({ label: "Only", enabled: true })]);
+    draw(m);
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Audio track" })).toBeNull();
+    withTracks(m, [track({ label: "One", enabled: true }), track({ label: "Two" })]);
+    act(() => {
+      m.dispatchEvent(new Event("loadedmetadata"));
+    });
+    await openSub("Audio track");
+    expect(await screen.findByRole("menuitemradio", { name: "Two" })).toBeTruthy();
+  });
+
+  it("keeps nothing between files: a new element reads its own tracks", async () => {
+    const first = el("video");
+    withTracks(first, [track({ label: "A", enabled: true }), track({ label: "B" })]);
+    const one = draw(first);
+    await openMenu();
+    await openSub("Audio track");
+    await screen.findByRole("menuitemradio", { name: "B" });
+    one.unmount();
+
+    const second = el("video");
+    withTracks(second, [track({ label: "C" }), track({ label: "D", enabled: true })]);
+    draw(second);
+    await openMenu();
+    await openSub("Audio track");
+    expect((await screen.findByRole("menuitemradio", { name: "D" })).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("menuitemradio", { name: "A" })).toBeNull();
+    expect(Object.keys(window.localStorage).filter((k) => k.toLowerCase().includes("audio"))).toEqual([]);
   });
 });
