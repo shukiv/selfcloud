@@ -145,6 +145,10 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const [createBusy, setCreateBusy] = useState(false);
   const createInFlight = useRef(false);
   const [addOpen, setAddOpen] = useState(false);
+  // Add files waits for its replace and the detail's re-read: while they run the button is off and another pick sends
+  // nothing, so a second Add cannot build on the old entries and drop the first batch.
+  const [addBusy, setAddBusy] = useState(false);
+  const addInFlight = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -207,9 +211,17 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const selectedList = lists?.find((l) => l.id === selected);
 
   useEffect(() => {
+    // The re-read landing is what frees Add files: the replace alone is not enough, the detail must hold the new entries.
+    const doneAdd = () => {
+      if (addInFlight.current) {
+        addInFlight.current = false;
+        setAddBusy(false);
+      }
+    };
     if (isContinue) {
       setDetail(null);
       setDetailErr(null);
+      doneAdd();
       return;
     }
     let live = true;
@@ -218,9 +230,12 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         if (!live) return;
         setDetail(d);
         setDetailErr(null);
+        doneAdd();
       },
       (err) => {
-        if (live) setDetailErr(err);
+        if (!live) return;
+        setDetailErr(err);
+        doneAdd();
       },
     );
     return () => {
@@ -355,10 +370,13 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   };
 
   // Add files sets the playlist to its entries then the chosen files, in the order they were checked, leaving out a file the
-  // playlist already holds, in one request, and re-reads the detail.
+  // playlist already holds, in one request, and re-reads the detail. A second Add waits: while the replace and its re-read
+  // run, another pick returns at once, so it cannot send the old entries again and drop the first batch.
   const addFiles = (nodes: Node[]) => {
     setAddOpen(false);
-    if (detail === null) return;
+    if (detail === null || addInFlight.current) return;
+    addInFlight.current = true;
+    setAddBusy(true);
     const seen = new Set<string>();
     const ids: string[] = [];
     for (const e of detail.entries) {
@@ -375,7 +393,11 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     }
     replaceEntries(selected, ids).then(
       () => setDetailTick((n) => n + 1),
-      () => message.error(mt("files.playlists.failed")),
+      () => {
+        message.error(mt("files.playlists.failed"));
+        addInFlight.current = false;
+        setAddBusy(false);
+      },
     );
   };
 
@@ -606,7 +628,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
               <IconButton
                 label={t("media.pl.addFiles")}
                 tip={atCap ? t("media.pl.full") : undefined}
-                disabled={detail === null || atCap}
+                disabled={detail === null || atCap || addBusy}
                 onClick={() => setAddOpen(true)}
                 icon={<FilePlus size={16} aria-hidden="true" focusable="false" />}
               />
