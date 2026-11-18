@@ -466,7 +466,7 @@ describe("a subtitle file from the drive", () => {
   });
 
   it("a file over the cap is decoded with the truncated flag, its first bytes only", async () => {
-    read.mockResolvedValue(new Response(DRIVE_VTT + "x".repeat(MAX_SUBTITLE_BYTES), { status: 206 }));
+    read.mockResolvedValue(new Response(DRIVE_VTT + "\n" + "x".repeat(MAX_SUBTITLE_BYTES), { status: 206 }));
     renderPlayer(<MediaPlayer kind="video" name="clip.webm" link={LINK} mint={mint} onFail={() => {}} driveSubtitles={drive} />);
     await openPicker();
     pick(driveNode("big.vtt", MAX_SUBTITLE_BYTES + 100));

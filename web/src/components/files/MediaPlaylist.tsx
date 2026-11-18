@@ -34,7 +34,7 @@ import { getQueueControl, setQueueControl } from "../../lib/files/queueControl";
 import type { Node } from "../../lib/files/types";
 import type { SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
-import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
+import MediaPlayer, { type DriveSubtitles, type Link, type MediaFailure } from "./MediaPlayer";
 import MediaQueue, { type MediaQueueProps } from "./MediaQueue";
 import MediaPlaylists from "./MediaPlaylists";
 import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
@@ -106,6 +106,9 @@ export interface MediaPlaylistProps {
   saveOf?: (node: Node, position: number, duration: number) => void;
   // subtitlesOf reads the subtitle tracks of a video; a failure gives none. Audio files are never asked.
   subtitlesOf?: (node: Node) => Promise<SubtitleTrack[]>;
+  // driveSubtitles, when given, lets the player's Subtitles menu choose a subtitle file from the drive. A share page
+  // gives none, so its menu is unchanged.
+  driveSubtitles?: DriveSubtitles;
   // onElement is given the player's element as it comes and goes, and onNav the playlist's Previous and Next, so the owner
   // of a session can play through them from outside the viewer.
   onElement?: (el: HTMLMediaElement | null) => void;
@@ -149,6 +152,7 @@ export default function MediaPlaylist({
   resumeOf,
   saveOf,
   subtitlesOf,
+  driveSubtitles,
   onPress,
   onElement,
   onNav,
@@ -714,6 +718,7 @@ export default function MediaPlaylist({
               resume={current.resume}
               tracks={current.tracks}
               subtitleKey={currentNode.id}
+              driveSubtitles={driveSubtitles}
               onPress={onPress}
               onSave={saveRef.current ? (pos, dur) => saveRef.current?.(currentNode, pos, dur) : undefined}
               onElement={giveElement}

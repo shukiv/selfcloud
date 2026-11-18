@@ -34,7 +34,7 @@ import { isPopupTarget, refusedPlay } from "../../lib/files/mediaKeys";
 import { formatTime, clamp } from "../../lib/files/mediaKeys";
 import { placeBox, playerBox } from "../../lib/files/playerBox";
 import { bindMediaSession, setPlaybackState } from "../../lib/files/mediaSession";
-import { readTracks, type SubtitleTrack } from "../../lib/files/subtitles";
+import { MAX_SUBTITLE_BYTES, readTracks, type SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
 import type { Node } from "../../lib/files/types";
 import { currentLang, useT } from "../../lib/i18n";
@@ -209,6 +209,11 @@ export default function MediaDock() {
       saveOf={(n: Node, position: number, duration: number) => saveSession(n, position, duration, snap.key)}
       onPress={setPress}
       subtitlesOf={subtitlesSession}
+      driveSubtitles={
+        sess
+          ? { spaces, startAt: node?.folder_id, read: (n: Node) => inlineRange(n.id, "bytes=0-" + (MAX_SUBTITLE_BYTES - 1)) }
+          : undefined
+      }
       onElement={setMedia}
       onNav={(nav: PlaybackNav) => setNav(nav)}
       active={placement !== "mini"}

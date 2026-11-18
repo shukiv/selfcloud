@@ -96,12 +96,14 @@ interface Props {
   needPress?: boolean;
   onNeedPress?: (v: boolean) => void;
   // subtitles is the video's Subtitles menu: the tracks' labels, which one shows (-1 for none) and the pick; a file from
-  // this device; the timing offset of every cue; and the person's cue size. Every video has the menu, audio none.
+  // this device; a file from the drive (onChoose, when the player is given one); the timing offset of every cue; and the
+  // person's cue size. Every video has the menu, audio none.
   subtitles?: {
     labels: string[];
     active: number;
     onPick: (i: number) => void;
     onLoad: (file: File) => void;
+    onChoose?: () => void;
     offset: number;
     onOffset: (next: number) => void;
     size: SubtitleSize;
@@ -403,8 +405,9 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     <IconButton className="media-btn" label={label} pressed={extra.pressed} disabled={extra.disabled} onClick={onClick} icon={icon} popupHost={popupHost} />
   );
 
-  // The Subtitles menu: Off, then the tracks (beside files first, then the device's), the shown one checked; a file from
-  // this device; the timing offset; and the cue size. The check mark keeps every label on one edge, checked or not.
+  // The Subtitles menu: Off, then the tracks (beside files first, then the device's and the drive's), the shown one
+  // checked; a file from this device; a file from the drive (when onChoose is given); the timing offset; and the cue
+  // size. The check mark keeps every label on one edge, checked or not.
   const sub = subtitles;
   const subLabel = (text: string, checked: boolean) => (
     <span className="media-subs-label">
@@ -425,6 +428,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     sub.labels.forEach((label, i) => subItems.push(subRadio(`track-${i}`, label, sub.active === i)));
     subItems.push({ type: "divider" });
     subItems.push({ key: "load", label: t("files.media.subtitlesLoad") });
+    if (sub.onChoose) subItems.push({ key: "choose", label: t("files.media.subtitlesChoose") });
     subItems.push({ type: "divider" });
     subItems.push({
       key: "timing",
@@ -452,6 +456,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     if (key === "off") sub.onPick(-1);
     else if (key.startsWith("track-")) sub.onPick(Number(key.slice(6)));
     else if (key === "load") fileInput.current?.click();
+    else if (key === "choose") sub.onChoose?.();
     else if (key === "earlier") sub.onOffset(sub.offset - 0.1);
     else if (key === "later") sub.onOffset(sub.offset + 0.1);
     else if (key === "reset") sub.onOffset(0);

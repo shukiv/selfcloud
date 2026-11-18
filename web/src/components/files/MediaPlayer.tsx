@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Gate, NO_RENEWALS, PROGRESS_SECONDS, afterProgress, mediaVerdict, takeRenewal, type Renewals } from "../../lib/files/media";
 import { clamp, refusedPlay } from "../../lib/files/mediaKeys";
 import { LATE_START_S, SaveClock, startAt as placeToStart, type Resume } from "../../lib/files/resume";
@@ -11,6 +11,10 @@ import { session, sessionChanged } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import MediaControls, { type Nav } from "./MediaControls";
 import type { Marks } from "../../lib/files/bookmarks";
+import type { FolderAccess, Node } from "../../lib/files/types";
+
+// The drive's file picker is a lazy chunk of its own, so the player's first load never carries it (decision 227).
+const PickFiles = lazy(() => import("./PickFiles"));
 
 // MediaPlayer plays one video or audio file from a signed link. The link ends at a fixed time, and the server refuses
 // every request for it after that, so a seek or a resume past the end fails. Then the player asks for a new link and
@@ -71,6 +75,15 @@ function shiftTrack(tt: TextTrack, off: number): void {
   for (let i = 0; i < cues.length; i++) shiftCue(cues[i], off);
 }
 
+// DriveSubtitles is the drive a video's subtitles may be chosen from: the spaces the picker offers, the space it opens
+// at (the video's own), and read, which asks for a file's first bytes. The player reads the chosen file itself; nothing
+// is uploaded or saved, and the track lasts while this video is open, as a device file's does.
+export interface DriveSubtitles {
+  spaces: FolderAccess[];
+  startAt?: string;
+  read: (n: Node) => Promise<Response>;
+}
+
 interface Props {
   kind: "video" | "audio";
   name: string;
@@ -105,6 +118,9 @@ interface Props {
   // subtitleKey is the video file's node id: the timing offset is kept under it in this browser, so the same file opens
   // with the offset it was left at. Without it the offset lasts for this viewing only.
   subtitleKey?: string;
+  // driveSubtitles, when given, adds Choose from my files… to the Subtitles menu: the picker chooses a .srt or .vtt from
+  // the drive, and the player reads it as it reads a device file. A share page and audio are given none.
+  driveSubtitles?: DriveSubtitles;
   // active says the viewer shows the player, so its keys are read. A player kept on the page for audio alone is not active.
   active?: boolean;
   // keysInBox says the player sits in the session's box on the Media page, so a key aimed outside the box is the page's.
@@ -139,6 +155,7 @@ export default function MediaPlayer({
   onElement,
   tracks,
   subtitleKey,
+  driveSubtitles,
   active = true,
   keysInBox = false,
   art,
@@ -201,16 +218,17 @@ export default function MediaPlayer({
   // subs are the subtitle tracks the element has, and which one is shown (-1 for none).
   const textTracks = useRef<TextTrack[]>([]);
   const [subs, setSubs] = useState<{ labels: string[]; active: number }>({ labels: [], active: -1 });
-  // loaded are the tracks read from this device for this viewing: they are never sent to the server, and they go when
-  // the player does.
+  // loaded are the tracks read from this device or the drive for this viewing: their text is never sent to the server,
+  // and they go when the player does.
   const loaded = useRef<{ label: string; tt: TextTrack }[]>([]);
-  // offset is the timing shift of every cue of this video, and size the person's cue size. subsNote says a device file
-  // held no cues.
+  // offset is the timing shift of every cue of this video, and size the person's cue size. subsNote says a loaded file
+  // held no cues. pickOpen says the drive's picker is on screen.
   const [offset, setOffset] = useState(0);
   const offsetRef = useRef(0);
   const userId = useStoreSelect(session, (s) => s?.user.id ?? null);
   const [size, setSize] = useState<SubtitleSize>("m");
   const [subsNote, setSubsNote] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
 
   // The offset is the file's own, read once for it; a player handed another file's key reads that one's.
   useEffect(() => {
@@ -491,9 +509,28 @@ export default function MediaPlayer({
     writePref(`selfcloud.subtitleSize.${userId ?? "visitor"}`, s);
   };
 
+  // addLoadedTrack is the shared tail of a loaded subtitle file (from this device or the drive): with cues it becomes a
+  // track named after the file and shown at once; with none, the note under the bar says so and nothing is added. It
+  // lasts while this video is open.
+  const addLoadedTrack = (name: string, cues: Cue[]) => {
+    const media = el.current;
+    if (!media) return;
+    if (cues.length === 0) {
+      setSubsNote(true);
+      return;
+    }
+    const tt = media.addTextTrack("subtitles", name);
+    addCues(tt, cues);
+    tt.mode = "disabled";
+    loaded.current.push({ label: name, tt });
+    textTracks.current.push(tt);
+    const i = textTracks.current.length - 1;
+    setSubs((s) => ({ labels: [...s.labels, name], active: i }));
+    pickTrack(i);
+  };
+
   // loadFile reads a subtitle file from this device, in the browser only: no request of any kind carries the file or its
-  // text. Only its first MAX_SUBTITLE_BYTES are read. With cues it becomes a track named after the file and shown at
-  // once; with none, the note under the bar says so and nothing is added. It lasts while this video is open.
+  // text. Only its first MAX_SUBTITLE_BYTES are read.
   const loadFile = async (file: File) => {
     const media = el.current;
     if (!media || kind !== "video" || typeof window.VTTCue === "undefined") return;
@@ -505,18 +542,33 @@ export default function MediaPlayer({
     } catch {
       // A file that cannot be read gives no track; the note says none were found.
     }
-    if (cues.length === 0) {
-      setSubsNote(true);
-      return;
+    addLoadedTrack(file.name, cues);
+  };
+
+  // pickDriveSubtitle reads the subtitle file the picker chose from the drive, through the read the owner gave (a byte
+  // range of the file's first MAX_SUBTITLE_BYTES). An answer of 200 or 206 gives its bytes, decoded and parsed as a
+  // device file's; no cues, another status or a failed read gives the note. Nothing is uploaded or saved. The session
+  // guard (decision 222) sends no read once the session has changed, and drops an answer that arrives after it has.
+  const pickDriveSubtitle = async (node: Node) => {
+    setPickOpen(false);
+    const media = el.current;
+    if (!media || kind !== "video" || typeof window.VTTCue === "undefined" || !driveSubtitles) return;
+    if (stale()) return;
+    setSubsNote(false);
+    let cues: Cue[] = [];
+    try {
+      const res = await driveSubtitles.read(node);
+      if (stale()) return;
+      if (res.status === 200 || res.status === 206) {
+        const all = new Uint8Array(await res.arrayBuffer());
+        const bytes = all.length > MAX_SUBTITLE_BYTES ? all.subarray(0, MAX_SUBTITLE_BYTES) : all;
+        cues = parseCues(decodeSubtitle(bytes, currentLang(), node.size > MAX_SUBTITLE_BYTES));
+      }
+    } catch {
+      // A read that fails gives no track; the note says none were found.
     }
-    const tt = media.addTextTrack("subtitles", file.name);
-    addCues(tt, cues);
-    tt.mode = "disabled";
-    loaded.current.push({ label: file.name, tt });
-    textTracks.current.push(tt);
-    const i = textTracks.current.length - 1;
-    setSubs((s) => ({ labels: [...s.labels, file.name], active: i }));
-    pickTrack(i);
+    if (stale()) return;
+    addLoadedTrack(node.name, cues);
   };
 
   const handlers = {
@@ -552,7 +604,16 @@ export default function MediaPlayer({
         onNeedPress={setNeedPress}
         subtitles={
           kind === "video"
-            ? { ...subs, onPick: pickTrack, onLoad: (f: File) => void loadFile(f), offset, onOffset: setOffsetTo, size, onSize: pickSize }
+            ? {
+                ...subs,
+                onPick: pickTrack,
+                onLoad: (f: File) => void loadFile(f),
+                onChoose: driveSubtitles ? () => setPickOpen(true) : undefined,
+                offset,
+                onOffset: setOffsetTo,
+                size,
+                onSize: pickSize,
+              }
             : undefined
         }
         active={active}
@@ -564,6 +625,22 @@ export default function MediaPlayer({
         <p role="status" className="media-subs-note" data-testid="media-subs-none">
           {t("files.media.subtitlesNone")}
         </p>
+      )}
+      {kind === "video" && driveSubtitles && pickOpen && (
+        <Suspense fallback={null}>
+          <PickFiles
+            title={t("files.media.subtitlesChooseTitle")}
+            action={t("files.media.subtitlesChooseUse")}
+            spaces={driveSubtitles.spaces}
+            startAt={driveSubtitles.startAt}
+            accept={(n: Node) => /\.(srt|vtt)$/i.test(n.name)}
+            onPick={(nodes) => {
+              const n = nodes[0];
+              if (n) void pickDriveSubtitle(n);
+            }}
+            onClose={() => setPickOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );
