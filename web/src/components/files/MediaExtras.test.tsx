@@ -575,3 +575,115 @@ describe("the Audio track submenu", () => {
     expect(Object.keys(window.localStorage).filter((k) => k.toLowerCase().includes("audio"))).toEqual([]);
   });
 });
+
+describe("the Save frame item", () => {
+  // The canvas the capture draws on is stubbed, as lib/files/frame.test.ts stubs it: jsdom draws nothing. The blob
+  // the stub gives is the one the save must receive.
+  const PNG = new Blob(["png"], { type: "image/png" });
+  const proto = HTMLCanvasElement.prototype;
+  let kept: { getContext?: PropertyDescriptor; toBlob?: PropertyDescriptor } = {};
+
+  function stubCanvas(opts: { draw?: () => void; blob?: Blob | null } = {}) {
+    const drawImage = vi.fn(() => opts.draw?.());
+    Object.defineProperty(proto, "getContext", {
+      configurable: true,
+      value(this: HTMLCanvasElement, kind: string) {
+        return kind === "2d" ? ({ drawImage } as unknown as CanvasRenderingContext2D) : null;
+      },
+    });
+    Object.defineProperty(proto, "toBlob", {
+      configurable: true,
+      value(_cb: BlobCallback, _type?: string) {
+        _cb(opts.blob === undefined ? PNG : opts.blob);
+      },
+    });
+  }
+
+  beforeEach(() => {
+    kept = {
+      getContext: Object.getOwnPropertyDescriptor(proto, "getContext"),
+      toBlob: Object.getOwnPropertyDescriptor(proto, "toBlob"),
+    };
+  });
+
+  afterEach(() => {
+    for (const k of ["getContext", "toBlob"] as const) {
+      const d = kept[k];
+      if (d) Object.defineProperty(proto, k, d);
+      else delete (proto as unknown as Record<string, unknown>)[k];
+    }
+  });
+
+  function videoEl(over: { ready?: number; at?: number } = {}): HTMLVideoElement {
+    const m = el("video") as HTMLVideoElement;
+    Object.defineProperty(m, "videoWidth", { value: 160, configurable: true });
+    Object.defineProperty(m, "videoHeight", { value: 120, configurable: true });
+    Object.defineProperty(m, "readyState", { value: over.ready ?? 4, configurable: true });
+    at(m, over.at ?? 1.2);
+    return m;
+  }
+
+  function drawFrames(m: HTMLMediaElement, fr?: { save: (blob: Blob, seconds: number) => void }) {
+    return render(
+      <App>
+        <MediaExtras media={m} popupHost={host} frames={fr} />
+      </App>,
+    );
+  }
+
+  it("shows Save frame on a video only, and only when frames is given", async () => {
+    const audio = drawFrames(el("audio"), { save: vi.fn() });
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+    audio.unmount();
+
+    const plain = drawFrames(videoEl());
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+    plain.unmount();
+
+    drawFrames(videoEl(), { save: vi.fn() });
+    await openMenu();
+    expect(await screen.findByRole("menuitem", { name: "Save frame" })).toBeTruthy();
+  });
+
+  it("a click captures the frame at the place on screen and saves the blob with that time", async () => {
+    stubCanvas();
+    const save = vi.fn();
+    drawFrames(videoEl({ at: 1.2 }), { save });
+    await openMenu();
+    await pick("Save frame");
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalledWith(PNG, 1.2);
+    expect(document.querySelector("canvas")).toBeNull();
+  });
+
+  it("a video with no picture yet says its own note and saves nothing", async () => {
+    stubCanvas();
+    const save = vi.fn();
+    drawFrames(videoEl({ ready: 1 }), { save });
+    await openMenu();
+    await pick("Save frame");
+    expect(await screen.findByText("The video has no picture to save yet. Let it play a moment and try again.")).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("a canvas the browser will not read says its own note and saves nothing", async () => {
+    stubCanvas({ draw: () => { throw new DOMException("The canvas is tainted.", "SecurityError"); } });
+    const save = vi.fn();
+    const tainted = drawFrames(videoEl(), { save });
+    await openMenu();
+    await pick("Save frame");
+    expect(await screen.findByText("This video's picture cannot be read, so its frame cannot be saved.")).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
+    tainted.unmount();
+
+    stubCanvas({ blob: null });
+    const saveNull = vi.fn();
+    drawFrames(videoEl(), { save: saveNull });
+    await openMenu();
+    await pick("Save frame");
+    expect(await screen.findByText("This video's picture cannot be read, so its frame cannot be saved.")).toBeTruthy();
+    expect(saveNull).not.toHaveBeenCalled();
+  });
+});

@@ -4,11 +4,14 @@
 // person stopped at, the subtitles, and the end of the session on a sign-out or a stop.
 
 import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { App } from "antd";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
 import { attachPage, closeViewer, getPlayback, showViewer, startPlayback, stopPlayback, subscribePlayback } from "../../lib/files/playback";
 import { Pager } from "../../lib/files/pager";
 import { session, type Session } from "../../lib/session";
+import { folders } from "../../lib/files/folders";
+import { manager } from "../../lib/files/uploads";
 import type { Node } from "../../lib/files/types";
 import MediaHost from "./MediaHost";
 
@@ -680,5 +683,121 @@ describe("the Media page hosts the session", () => {
     expect(getPlayback().viewerOpen).toBe(false);
     expect(await screen.findByTestId("media-mini")).toBeTruthy();
     expect(document.querySelector("audio")).toBe(audio);
+  });
+});
+
+// The More menu's Save frame (decision 231): the signed-in person's own My files only. An impersonated session, a
+// signed-out one and a person without a personal space get no item; the save queues the PNG on the shared upload
+// manager at the top of My files, under the file's own name and the place on screen.
+describe("the Save frame item's place and gating", () => {
+  const personal = { id: "fld_mine", name: "My files", kind: "personal", access: "write", role: "manager", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true } as never;
+  const proto = HTMLCanvasElement.prototype;
+  let kept: { getContext?: PropertyDescriptor; toBlob?: PropertyDescriptor } = {};
+
+  beforeEach(() => {
+    kept = {
+      getContext: Object.getOwnPropertyDescriptor(proto, "getContext"),
+      toBlob: Object.getOwnPropertyDescriptor(proto, "toBlob"),
+    };
+    folders.set([]);
+  });
+
+  afterEach(() => {
+    for (const k of ["getContext", "toBlob"] as const) {
+      const d = kept[k];
+      if (d) Object.defineProperty(proto, k, d);
+      else delete (proto as unknown as Record<string, unknown>)[k];
+    }
+    session.set(null);
+    folders.set([]);
+  });
+
+  // stubCanvas gives the capture a canvas that draws nothing and keeps a PNG, as lib/files/frame.test.ts does.
+  function stubCanvas() {
+    const drawImage = vi.fn();
+    Object.defineProperty(proto, "getContext", {
+      configurable: true,
+      value(this: HTMLCanvasElement, kind: string) {
+        return kind === "2d" ? ({ drawImage } as unknown as CanvasRenderingContext2D) : null;
+      },
+    });
+    Object.defineProperty(proto, "toBlob", {
+      configurable: true,
+      value(cb: BlobCallback, _type?: string) {
+        cb(new Blob(["png"], { type: "image/png" }));
+      },
+    });
+  }
+
+  async function openVideo(): Promise<HTMLVideoElement> {
+    const v = file("clip.mp4", "video/mp4");
+    render(
+      <App>
+        <MediaHost />
+      </App>,
+    );
+    act(() => startPlayback({ start: v, folder: folderOf([v]) }));
+    const video = await element("video");
+    fireEvent.loadedMetadata(video);
+    return video;
+  }
+
+  async function openMore() {
+    fireEvent.click(await screen.findByRole("button", { name: "More options" }));
+    return screen.findByText("A-B loop");
+  }
+
+  it("offers Save frame on a video to a signed-in person with a My files space", async () => {
+    session.set(who("usr_frame"));
+    folders.set([personal]);
+    await openVideo();
+    await openMore();
+    expect(await screen.findByRole("menuitem", { name: "Save frame" })).toBeTruthy();
+  });
+
+  it("offers no Save frame while impersonating", async () => {
+    session.set({ ...who("usr_frame"), impersonation: { endsAt: "2026-12-01T00:00:00Z" } } as Session);
+    folders.set([personal]);
+    await openVideo();
+    await openMore();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+  });
+
+  it("offers no Save frame when signed out", async () => {
+    session.set(null);
+    folders.set([personal]);
+    await openVideo();
+    await openMore();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+  });
+
+  it("offers no Save frame without a My files space", async () => {
+    session.set(who("usr_frame"));
+    folders.set([{ id: "fld_team", name: "Team", kind: "team", access: "write", role: "manager", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true } as never]);
+    await openVideo();
+    await openMore();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+  });
+
+  it("queues the frame on the shared upload manager at the top of My files, and says so", async () => {
+    session.set(who("usr_frame"));
+    folders.set([personal]);
+    stubCanvas();
+    const add = vi.spyOn(manager, "add").mockImplementation(() => {});
+    const video = await openVideo();
+    Object.defineProperty(video, "videoWidth", { value: 160, configurable: true });
+    Object.defineProperty(video, "videoHeight", { value: 120, configurable: true });
+    Object.defineProperty(video, "readyState", { value: 4, configurable: true });
+    Object.defineProperty(video, "currentTime", { value: 1.2, writable: true, configurable: true });
+    await openMore();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Save frame" }));
+    await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+    const queued = add.mock.calls[0][0];
+    expect(queued).toHaveLength(1);
+    expect(queued[0].file.name).toBe("clip 0-01.png");
+    expect(queued[0].file.type).toBe("image/png");
+    expect(queued[0].target).toEqual({ folder: "fld_mine" });
+    expect(await screen.findByText("Saving clip 0-01.png to My files")).toBeTruthy();
+    expect(document.querySelector("canvas")).toBeNull();
   });
 });
