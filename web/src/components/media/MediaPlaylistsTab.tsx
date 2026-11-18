@@ -3,13 +3,15 @@
 // The Media page's Playlists tab: the person's saved playlists and the automatic Continue watching list, side by side on a
 // desktop and stacked on a phone. The left table lists Continue watching first (its Automatic tag and first-page count) then
 // the saved ones; the address's list= picks the detail. The detail plays its available rows through the page's one session,
-// shows the place and the time left for Continue watching, and edits a saved playlist (rename, delete, move, remove) only on
-// the person's action. An unavailable entry is italic, tagged, and never played. Only Continue watching is automatic here:
-// Recently added would need a newest-first search, and New playlist or Add files a file picker, so they stay out.
+// shows the place and the time left for Continue watching, and edits a saved playlist (rename, delete, move, remove, add
+// files) only on the person's action. An unavailable entry is italic, tagged, and never played. New playlist names an empty
+// playlist through the queue save's name rules; Add files opens the lazy file picker on My files and adds the chosen media in
+// the order they were checked, without duplicating an entry. Only Continue watching is automatic here: Recently added would
+// need a newest-first search, so it stays out.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, App, Button, Grid, Input, Modal, Popconfirm, Skeleton, Tag } from "antd";
-import { History, ListMusic, Play, Shuffle } from "lucide-react";
+import { FilePlus, History, ListMusic, ListPlus, Play, Shuffle } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { locationOf } from "../../lib/drive/location";
 import { useLocationSpaces } from "../../lib/drive/spaces";
@@ -21,12 +23,14 @@ import { formatTime } from "../../lib/files/mediaKeys";
 import { Pager } from "../../lib/files/pager";
 import { getPlayback, startPlayback, subscribePlayback } from "../../lib/files/playback";
 import {
+  createPlaylist,
   deletePlaylist,
   getPlaylist,
   listPlaylists,
   removeEntry,
   renamePlaylist,
   reorderEntries,
+  replaceEntries,
   type PlaylistDetail,
   type PlaylistSummary,
 } from "../../lib/files/playlists";
@@ -41,10 +45,21 @@ import { useCoarsePointer } from "../../lib/pointer";
 import { session, sessionKey } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import Icon from "../files/Icon";
+import IconButton from "../IconButton";
 import Listing, { type ListColumn, type ListEmpty, type ListMenuEntry } from "../files/Listing";
+
+// The file picker is a lazy chunk of its own, so it is not in the tab's first load.
+const PickFiles = lazy(() => import("../files/PickFiles"));
 
 // NAME_MAX is the longest a playlist's name may be, as the queue's save and rename dialogs keep it.
 const NAME_MAX = 120;
+// ENTRIES_MAX is the most files a playlist holds, as the server keeps it; Add files offers the room left.
+const ENTRIES_MAX = 500;
+// mediaAccept keeps the audio and video files alone: a directory, a shortcut or any other kind is not a playlist's file.
+const mediaAccept = (n: Node) => {
+  const k = kindOf(n);
+  return k === "audio" || k === "video";
+};
 // PAGE is how many Continue watching rows one ask reads; the left count says 50+ while a next page is there.
 const PAGE = 50;
 // CONTINUE is the automatic list's place in the address's list=, and the default when it names nothing the person has.
@@ -123,6 +138,13 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
+
+  // New playlist: the name dialog, and the one create on its way. Add files: the lazy picker's open state.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const createInFlight = useRef(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -307,6 +329,56 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     );
   };
 
+  // New playlist makes an empty playlist with the name the dialog keeps, once, and opens it. A second press while the create
+  // runs makes no second playlist; a refusal leaves the dialog for a retry.
+  const openCreate = () => {
+    setCreateName("");
+    setCreateOpen(true);
+  };
+  const saveCreate = async () => {
+    const trimmed = createName.trim();
+    if (trimmed.length === 0 || trimmed.length > NAME_MAX) return;
+    if (createInFlight.current) return;
+    createInFlight.current = true;
+    setCreateBusy(true);
+    try {
+      const made = await createPlaylist(trimmed, []);
+      setCreateOpen(false);
+      setListsTick((n) => n + 1);
+      select(made.id);
+    } catch {
+      message.error(mt("files.playlists.failed"));
+    } finally {
+      createInFlight.current = false;
+      setCreateBusy(false);
+    }
+  };
+
+  // Add files sets the playlist to its entries then the chosen files, in the order they were checked, leaving out a file the
+  // playlist already holds, in one request, and re-reads the detail.
+  const addFiles = (nodes: Node[]) => {
+    setAddOpen(false);
+    if (detail === null) return;
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const e of detail.entries) {
+      if (!seen.has(e.node_id)) {
+        seen.add(e.node_id);
+        ids.push(e.node_id);
+      }
+    }
+    for (const n of nodes) {
+      if (!seen.has(n.id)) {
+        seen.add(n.id);
+        ids.push(n.id);
+      }
+    }
+    replaceEntries(selected, ids).then(
+      () => setDetailTick((n) => n + 1),
+      () => message.error(mt("files.playlists.failed")),
+    );
+  };
+
   const loadMore = () => {
     if (playedCursor === null || playedLoading) return;
     void loadPlayed(false, playedCursor);
@@ -316,6 +388,10 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const detailName = isContinue ? t("media.pl.continue") : (detail?.name ?? selectedList?.name ?? "");
   const kind = isContinue ? t("media.pl.kindAutomatic") : t("media.pl.kindSaved");
   const rowCount = detailRows.length;
+  // The detail's entry count drives Add files: the room left for the picker, and the cap that turns the button off.
+  const entryCount = detail?.entry_count ?? selectedList?.entry_count ?? 0;
+  const atCap = entryCount >= ENTRIES_MAX;
+  const personalId = spaces.find((s) => s.kind === "personal")?.id;
 
   const rowName = (r: DetailRow) => r.node?.name ?? "";
   const menu = (r: DetailRow): ListMenuEntry[] => {
@@ -492,6 +568,14 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   return (
     <div className={`media-pl-layout${phone ? " media-pl-layout--phone" : ""}`} data-testid="media-pl-layout">
       <div className="media-pl-list">
+        <header className="media-queue-head">
+          <h3 className="media-queue-title">
+            <ListMusic size={16} aria-hidden="true" focusable="false" /> {t("media.pl.yourPlaylists")}
+          </h3>
+          <div className="media-queue-actions">
+            <IconButton label={t("media.pl.newPlaylist")} disabled={createBusy} onClick={openCreate} icon={<ListPlus size={18} aria-hidden="true" focusable="false" />} />
+          </div>
+        </header>
         <Listing<LeftRow>
           label={t("media.pl.yourPlaylists")}
           items={leftRows}
@@ -518,6 +602,15 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             <Button icon={<Shuffle size={16} aria-hidden="true" focusable="false" />} disabled={availableNodes.length === 0} onClick={shuffleAll}>
               {t("media.pl.shufflePlay")}
             </Button>
+            {!isContinue && (
+              <IconButton
+                label={t("media.pl.addFiles")}
+                tip={atCap ? t("media.pl.full") : undefined}
+                disabled={detail === null || atCap}
+                onClick={() => setAddOpen(true)}
+                icon={<FilePlus size={16} aria-hidden="true" focusable="false" />}
+              />
+            )}
             {!isContinue && (
               <Button onClick={openRename} disabled={detail === null}>
                 {mt("files.playlists.rename")}
@@ -567,6 +660,40 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         </label>
         <p className="pl-hint">{mt("files.playlists.nameHint", { count: NAME_MAX })}</p>
       </Modal>
+
+      <Modal
+        open={createOpen}
+        title={t("media.pl.newPlaylist")}
+        okText={t("media.pl.create")}
+        cancelText={mt("files.playlists.cancel")}
+        okButtonProps={{ disabled: createName.trim().length === 0 || createName.trim().length > NAME_MAX, loading: createBusy }}
+        onOk={() => void saveCreate()}
+        onCancel={() => setCreateOpen(false)}
+        maskClosable={false}
+        destroyOnClose
+      >
+        <label className="pl-field">
+          <span>{mt("files.playlists.nameLabel")}</span>
+          <Input value={createName} maxLength={NAME_MAX} onChange={(e) => setCreateName(e.target.value)} onPressEnter={() => void saveCreate()} />
+        </label>
+        <p className="pl-hint">{mt("files.playlists.nameHint", { count: NAME_MAX })}</p>
+      </Modal>
+
+      {addOpen && !isContinue && (
+        <Suspense fallback={null}>
+          <PickFiles
+            title={t("media.pl.addTitle", { name: detailName })}
+            action={t("media.pl.add")}
+            spaces={spaces}
+            startAt={personalId}
+            accept={mediaAccept}
+            multiple
+            max={ENTRIES_MAX - entryCount}
+            onPick={addFiles}
+            onClose={() => setAddOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
