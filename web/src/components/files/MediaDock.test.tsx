@@ -729,8 +729,8 @@ describe("the Save frame item's place and gating", () => {
     });
   }
 
-  async function openVideo(): Promise<HTMLVideoElement> {
-    const v = file("clip.mp4", "video/mp4");
+  async function openVideo(node: Node = file("clip.mp4", "video/mp4")): Promise<HTMLVideoElement> {
+    const v = node;
     render(
       <App>
         <MediaHost />
@@ -775,6 +775,14 @@ describe("the Save frame item's place and gating", () => {
     session.set(who("usr_frame"));
     folders.set([{ id: "fld_team", name: "Team", kind: "team", access: "write", role: "manager", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true } as never]);
     await openVideo();
+    await openMore();
+    expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
+  });
+
+  it("offers no Save frame for a file the person may not download", async () => {
+    session.set(who("usr_frame"));
+    folders.set([personal]);
+    await openVideo({ ...file("clip.mp4", "video/mp4"), no_download: true, role: "viewer" } as Node);
     await openMore();
     expect(screen.queryByRole("menuitem", { name: "Save frame" })).toBeNull();
   });
