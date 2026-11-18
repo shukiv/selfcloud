@@ -1413,7 +1413,7 @@ async function main() {
     await signIn(page, OWNER);
     await section('owner-shared', () => owner.sharedWithOwnerChecks(page, h, mine), { as: 'owner' });
     await section('owner-group', () => owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE }), { as: 'owner' });
-    await section('owner-p1', () => owner.p1OwnerChecks(page, h, { MEMBER }), { as: 'owner' });
+    await section('owner-p1', () => owner.p1OwnerChecks(page, h, { base, accountID, accountKey, memberID, MEMBER }), { as: 'owner' });
     await section('p3-owner', () => p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID }), { as: 'owner' });
     await section('p4-owner', () => p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID }), { as: 'owner' });
     await section('tl3', () => tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null }), { as: 'owner' });

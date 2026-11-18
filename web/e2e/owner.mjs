@@ -215,9 +215,29 @@ export async function p1Setup(h, base, accountKey, memberID, randomBytes) {
   await h.rawPut(base, `/api/v1/folders/${mine.id}/files?path=%2Fp1-ledger.bin`, accountKey, randomBytes(1_000_000), 'application/octet-stream');
 }
 
+// formatBytesEn repeats formatBytes(bytes, "en") of web/src/lib/files/format.ts, which node cannot import here: it is
+// TypeScript and pulls in the interface's i18n. English reads left to right, so the size is the plain Intl unit format
+// (the isolate branch of formatBytes is for right-to-left languages only).
+const SIZE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'];
+function formatBytesEn(bytes) {
+  let v = Math.max(0, Number.isFinite(bytes) ? bytes : 0);
+  let i = 0;
+  while (v >= 1000 && i < SIZE_UNITS.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  const digits = i === 0 ? 0 : v < 10 ? 1 : 0;
+  return new Intl.NumberFormat('en', {
+    style: 'unit',
+    unit: SIZE_UNITS[i],
+    unitDisplay: i === 0 ? 'long' : 'short',
+    maximumFractionDigits: digits,
+  }).format(v);
+}
+
 // p1OwnerChecks: the owner sets the member's own limit in the person dialog, to 0.01 GB (10 MB). Then Manage > Storage
 // shows the member's total, and no file name from its My files.
-export async function p1OwnerChecks(page, h, { MEMBER }) {
+export async function p1OwnerChecks(page, h, { base, accountID, accountKey, memberID, MEMBER }) {
   await h.navigateTo(page, '/manage/people');
   await page.waitFor(`location.pathname === '/manage/people' && document.querySelector('main').textContent.includes(${q(MEMBER.name)})`);
   // A row of People opens the person by a click on it: its name is no longer a Details button.
@@ -240,7 +260,19 @@ export async function p1OwnerChecks(page, h, { MEMBER }) {
     15000,
   );
   const row = await page.evaluate(`(() => { const t = document.getElementById('people-storage'); const r = [...t.querySelectorAll('tr, li')].find((x) => x.textContent.includes(${q(MEMBER.name)})); return r ? r.textContent : ''; })()`);
-  h.check(row.includes('1 MB') && row.includes('10 MB'), `Manage > Storage shows the member's total and limit (${row.replace(/\s+/g, ' ').trim()})`);
+  // The member's total is read from the same answer the page reads (accountStorage of web/src/lib/storage/api.ts, a page
+  // of people at a time), as the owner through the account key, so the check compares the real figure, not a substring
+  // of it. The page shows used plus reserved, as heldBytes of web/src/lib/storage/logic.ts sums them.
+  let person = null;
+  let cursor = '';
+  do {
+    const answer = await h.api(base, 'GET', `/api/v1/accounts/${accountID}/storage?users_limit=50${cursor ? `&users_cursor=${encodeURIComponent(cursor)}` : ''}`, accountKey);
+    person = (answer.users ?? []).find((u) => u.id === memberID) ?? null;
+    cursor = answer.users_next_cursor ?? '';
+  } while (!person && cursor);
+  if (!person) throw new Error('the member is not in the account storage listing');
+  const total = formatBytesEn(Math.max(0, person.used_bytes) + Math.max(0, person.reserved_bytes));
+  h.check(row.includes(total) && row.includes('10 MB'), `Manage > Storage shows the member's total (${total}) and limit (10 MB)`);
   const content = await page.evaluate(`document.querySelector('main').textContent`);
   h.check(!content.includes('p1-ledger.bin'), "Manage > Storage shows no file name from the member's My files");
 }
