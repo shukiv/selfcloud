@@ -6,20 +6,46 @@
 // shows the place and time left for Continue watching, and edits a saved playlist (rename, delete, move, remove) only on the
 // person's action. An unavailable entry is italic, tagged, and never played. The API is replaced at the fetch boundary.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
+import { folders } from "../../lib/files/folders";
 import { getPlayback, stopPlayback } from "../../lib/files/playback";
 import { setQueueControl } from "../../lib/files/queueControl";
 import { resetTags } from "../../lib/files/tags";
+import type { FolderAccess, Node } from "../../lib/files/types";
 import { session, type Session } from "../../lib/session";
 import { expectEmptyTable } from "../../test/emptyTable";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import { desktopViewport, phoneViewport } from "../../test/viewport";
 import MediaPlaylistsTab from "./MediaPlaylistsTab";
+
+// The picker is a lazy chunk of its own; here its props are what the tab passes, and its pick is called by hand.
+const pick = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+vi.mock("../files/PickFiles", async () => {
+  const { createElement } = await import("react");
+  return {
+    default: (p: Record<string, unknown>) => {
+      pick.props = p;
+      return createElement("div", { "data-testid": "pick-mock" });
+    },
+  };
+});
+
+interface PickProps {
+  title: string;
+  action: string;
+  spaces: FolderAccess[];
+  startAt?: string;
+  accept: (n: Node) => boolean;
+  multiple?: boolean;
+  max?: number;
+  onPick: (nodes: Node[]) => void;
+  onClose: () => void;
+}
 
 const PLAYLISTS = "/api/v1/playlists";
 const PLAYED = "/api/v1/media/played";
@@ -479,5 +505,181 @@ describe("the Playlists tab's failures and layout", () => {
     renderTab();
     const layout = await screen.findByTestId("media-pl-layout");
     await waitFor(() => expect(layout.className).not.toContain("media-pl-layout--phone"));
+  });
+});
+
+describe("the Playlists tab's New playlist", () => {
+  it("the name dialog keeps the queue save's name rules", async () => {
+    stubFetch(answers({ lists: [] }));
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "New playlist" }));
+    const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
+    expect(input.maxLength).toBe(120);
+    const create = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(create.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "Road trip" } });
+    expect(create.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: "x".repeat(121) } });
+    expect(create.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "x".repeat(120) } });
+    expect(create.disabled).toBe(false);
+  });
+
+  it("Create makes the playlist with no files, once, and opens it", async () => {
+    let created = false;
+    const { calls } = stubFetch((c) => {
+      if (c.url === PLAYLISTS && c.method === "POST") {
+        created = true;
+        return { status: 201, body: summary("pls_new", "Road trip", 0) };
+      }
+      if (c.url === PLAYLISTS && c.method === "GET") {
+        return { status: 200, body: { items: created ? [summary("pls_new", "Road trip", 0)] : [] } };
+      }
+      return answers({ details: { pls_new: detailOf("pls_new", "Road trip", []) } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "New playlist" }));
+    const input = await screen.findByLabelText("Name");
+    fireEvent.change(input, { target: { value: "  Road trip  " } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+    await waitFor(() => {
+      const posts = calls.filter((c) => c.method === "POST" && c.url === PLAYLISTS);
+      expect(posts.length).toBe(1);
+      expect(posts[0]!.body).toEqual({ name: "Road trip", nodes: [] });
+    });
+    await waitFor(() => expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists&list=pls_new"));
+    expect(await screen.findByRole("heading", { name: "Road trip" })).toBeTruthy();
+    expect(await screen.findByText("This playlist is empty")).toBeTruthy();
+  });
+
+  it("a second Enter while the create runs makes no second playlist, and the button waits", async () => {
+    let gate!: () => void;
+    const held = new Promise<void>((res) => (gate = res));
+    const { calls } = stubFetch(async (c) => {
+      if (c.url === PLAYLISTS && c.method === "POST") {
+        await held;
+        return { status: 201, body: summary("pls_new", "Road trip", 0) };
+      }
+      if (c.url === PLAYLISTS && c.method === "GET") {
+        return { status: 200, body: { items: [summary("pls_new", "Road trip", 0)] } };
+      }
+      return answers({ details: { pls_new: detailOf("pls_new", "Road trip", []) } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "New playlist" }));
+    const input = await screen.findByLabelText("Name");
+    fireEvent.change(input, { target: { value: "Road trip" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.url === PLAYLISTS).length).toBe(1));
+    expect((screen.getByRole("button", { name: "New playlist" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      gate();
+    });
+    await waitFor(() => expect((screen.getByRole("button", { name: "New playlist" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls.filter((c) => c.method === "POST" && c.url === PLAYLISTS).length).toBe(1);
+  });
+
+  it("a 409 shows the tab's error and the dialog stays for a retry", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.url === PLAYLISTS && c.method === "POST") return fail(409, "conflict", { reason: "limit", limit: 100 });
+      return answers({ lists: [] })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "New playlist" }));
+    const input = await screen.findByLabelText("Name");
+    fireEvent.change(input, { target: { value: "Road trip" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByText("That did not work. Try again.")).toBeTruthy();
+    expect(screen.getByLabelText("Name")).toBeTruthy();
+    expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists");
+    expect(calls.filter((c) => c.method === "POST" && c.url === PLAYLISTS).length).toBe(1);
+  });
+});
+
+describe("the Playlists tab's Add files", () => {
+  const personal: FolderAccess = {
+    id: "fld_mine",
+    name: "My space",
+    kind: "personal",
+    access: "write",
+    role: "manager",
+    members_only: false,
+    sharing_managers_only: false,
+    no_download_for_viewers: false,
+    allow_links: false,
+  };
+  beforeEach(() => {
+    folders.set([personal]);
+  });
+
+  it("opens the picker on the personal space, with the media accept and the room left", async () => {
+    const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0), entry(song("nod_a2", "b.mp3"), 1)]);
+    stubFetch(answers({ lists: [summary("pls_a", "Evening", 2)], details: { pls_a: d } }));
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    expect(p.title).toBe("Add files to Evening");
+    expect(p.action).toBe("Add");
+    expect(p.multiple).toBe(true);
+    expect(p.max).toBe(498);
+    expect(p.startAt).toBe("fld_mine");
+    expect(p.spaces.map((s) => s.id)).toContain("fld_mine");
+    expect(p.accept(song("nod_x", "x.mp3") as unknown as Node)).toBe(true);
+    expect(p.accept(clip("nod_y", "y.webm") as unknown as Node)).toBe(true);
+    expect(p.accept(file("nod_z", "z.txt", "text/plain") as unknown as Node)).toBe(false);
+    expect(p.accept({ ...file("nod_d", "d", "text/plain"), kind: "dir" } as unknown as Node)).toBe(false);
+    expect(p.accept({ ...file("nod_s", "s", "audio/mpeg"), kind: "shortcut" } as unknown as Node)).toBe(false);
+  });
+
+  it("Continue watching has no Add files", async () => {
+    stubFetch(answers({ playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)] }));
+    renderTab();
+    await screen.findByRole("region", { name: "Continue watching" });
+    expect(screen.queryByRole("button", { name: "Add files" })).toBeNull();
+  });
+
+  it("the pick sends one replaceEntries, old IDs then new, skips the ones already there, and re-reads", async () => {
+    const d = detailOf("pls_a", "Evening", [entry(clip("nod_a1", "a.webm"), 0), entry(song("nod_a2", "b.mp3"), 1)]);
+    const { calls } = stubFetch(answers({ lists: [summary("pls_a", "Evening", 2)], details: { pls_a: d } }));
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    const before = calls.filter((c) => c.method === "GET" && c.url === `${PLAYLISTS}/pls_a`).length;
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    act(() => {
+      p.onPick([song("nod_a2", "b.mp3") as unknown as Node, clip("nod_b1", "c.webm") as unknown as Node, song("nod_b2", "d.mp3") as unknown as Node]);
+    });
+    await waitFor(() => {
+      const puts = calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`);
+      expect(puts.length).toBe(1);
+      expect(puts[0]!.body).toEqual({ nodes: ["nod_a1", "nod_a2", "nod_b1", "nod_b2"] });
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url === `${PLAYLISTS}/pls_a`).length).toBe(before + 1));
+    expect(screen.queryByTestId("pick-mock")).toBeNull();
+  });
+
+  it("the 500 cap disables Add files and its tooltip says why", async () => {
+    const entries = Array.from({ length: 500 }, (_, i) => goneEntry(`nod_g${i}`, i));
+    stubFetch(answers({ lists: [summary("pls_a", "Evening", 500)], details: { pls_a: detailOf("pls_a", "Evening", entries) } }));
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    await waitFor(() => expect(document.querySelector(".media-pl-summary")?.textContent?.startsWith("500")).toBe(true));
+    const add = screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.pointerEnter(add.parentElement as HTMLElement, { pointerType: "mouse" });
+    await waitFor(() => {
+      const tip = document.querySelector('[role="tooltip"]');
+      expect(tip?.textContent).toBe("A playlist holds at most 500 files");
+    });
   });
 });
