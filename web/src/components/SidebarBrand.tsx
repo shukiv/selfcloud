@@ -17,9 +17,9 @@ const LOGO_RATIO = 398 / 1731.65;
 // wordmark (every installation with no logo file, decision 126), the installation's logo, or, only from a server that sends neither,
 // its name as text. The wordmark and the tile logo fill the block's width (decision 193); an uploaded logo keeps its aspect at the
 // start edge, at most 42 px high (decision 221; flex mirrors the edge in Hebrew and Arabic). The block reserves the height of the
-// picture the background will draw at its content width, so nothing moves when the brand arrives. Folded to the rail, it is the
-// uploaded icon, the picture the favicon is drawn from (decision 221), else the logo kept in its own shape, else the SelfCloud mark
-// for every name (decision 119), with the rail's own edges and centring unchanged.
+// picture the background will draw at its content width, so nothing moves when the brand arrives. Folded to the rail, the
+// artwork keeps its mark (decision 221), else the uploaded icon, the picture the favicon is drawn from, else the logo kept in
+// its own shape, else the SelfCloud mark for every name (decision 119), with the rail's own edges and centring unchanged.
 // The name of a custom installation is not drawn in the rail: it has no picture to fold to, so the mark stands in for it. Nothing
 // is drawn until the brand is loaded.
 export default function SidebarBrand({ collapsed, coarse, text, background, inline, edge, width }: { collapsed: boolean; coarse: boolean; text: string; background: string; inline: number; edge: number; width: number }) {
@@ -40,14 +40,18 @@ export default function SidebarBrand({ collapsed, coarse, text, background, inli
   if (!loaded) {
     figure = null;
   } else if (collapsed) {
-    // The rail shows the icon at 28 by 28, kept in shape; else the logo in a box at most 40 wide and 28 high, never stretched;
-    // else the mark, the artwork's at 32 and a name with no picture at 28 (decision 221).
-    figure = icon ? (
+    // The rail keeps the artwork's mark first (decision 221, review): an installation with no logo of its own folds to the mark
+    // at 32 even with an icon, so the wordmark expanded and the mark folded stay the artwork's pair. Else the icon at 28 by 28
+    // kept in shape; else the logo in a box at most 40 wide and 28 high, never stretched; else the mark for a name with no
+    // picture at 28 (decision 119).
+    figure = b.artwork ? (
+      mark(b.name, 32, text)
+    ) : icon ? (
       <img src={icon} alt={b.name} width={28} height={28} style={{ objectFit: "contain", display: "block" }} />
     ) : logo ? (
       <img src={logo} alt={b.name} style={{ maxWidth: 40, maxHeight: 28, objectFit: "contain", width: "auto", height: "auto", display: "block" }} />
     ) : (
-      mark(b.name, b.artwork ? 32 : 28, text)
+      mark(b.name, 28, text)
     );
   } else if (b.artwork) {
     figure = <img src={wordmarkReads ? "/brand/wordmark.svg" : "/brand/logo"} alt={b.name} style={{ width: "100%", height: "auto", display: "block" }} />;
