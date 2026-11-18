@@ -31,6 +31,9 @@ export interface Brand {
   name: string;
   accent: string;
   logo_url: string | null;
+  // icon_url is the favicon's path when the installation has an icon picture, which the folded rail shows (decision 221);
+  // null or absent when it has none. The app icon never sets it (decision 220).
+  icon_url?: string | null;
   // artwork is true when the installation shows the SelfCloud artwork (decision 109): its logo is then the artwork at logo_url.
   artwork?: boolean;
   palette?: { light?: TokenWire; dark?: TokenWire };
@@ -109,8 +112,9 @@ export function accentPlan(accent: string): { light: boolean; dark: boolean } {
   };
 }
 
-// safeLogo keeps a logo URL only when the page may put it in an image: the same-origin path the server sends (a single
-// slash, no backslash), an http(s) URL, or a PNG, JPEG, GIF, WebP or SVG data URL. Anything else gives no logo.
+// safeLogo keeps a picture URL only when the page may put it in an image: the same-origin path the server sends (a single
+// slash, no backslash), an http(s) URL, or a PNG, JPEG, GIF, WebP or SVG data URL. Anything else gives no picture. The logo
+// and the icon (decision 221) both go through it.
 export function safeLogo(url: string | null | undefined): string | null {
   if (typeof url !== 'string' || url === '') return null;
   if (/^\/(?![/\\])[^\\\s]*$/.test(url)) return url;
@@ -175,6 +179,7 @@ export interface ResolvedBrand {
   name: string;
   accent: string;
   logo_url: string | null;
+  icon_url: string | null;
   artwork: boolean;
   light: Palette;
   dark: Palette;
@@ -239,6 +244,7 @@ export function resolveBrand(b: Brand): ResolvedBrand {
     name: b.name,
     accent,
     logo_url: safeLogo(b.logo_url),
+    icon_url: safeLogo(b.icon_url),
     artwork: b.artwork === true,
     light,
     dark,

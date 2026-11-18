@@ -13,7 +13,7 @@ import { getInfo } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { useAdminTextState } from "../../lib/manage/adminText";
 import { refreshBrand } from "../../lib/auth";
-import { changeSettings, getSettings, logoHash, type SettingsAnswer, type SettingsChange } from "../../lib/settings/api";
+import { changeSettings, getSettings, iconHash, logoHash, type SettingsAnswer, type SettingsChange } from "../../lib/settings/api";
 import { fieldKeys, SECTIONS, type SectionId, type SectionSpec } from "../../lib/settings/fields";
 import { draftOf, isChanged, refusal, sectionChange, withoutSent, type Draft, type Edits } from "../../lib/settings/form";
 import NotFoundPage from "../NotFoundPage";
@@ -216,7 +216,7 @@ function SettingsView() {
         qc.setQueryData(settingsKey, next);
         setEdits((cur) => withoutSent(cur, sent, keys));
         // The page's own sidebar, title and colours follow a change of the brand at once.
-        if (keys.some((k) => k.startsWith("ui.brand."))) void refreshBrand(logoHash(next));
+        if (keys.some((k) => k.startsWith("ui.brand."))) void refreshBrand(logoHash(next), iconHash(next));
         setNotice(section.id, { kind: "saved" });
         // What the rest of the page reads from the server follows the change: the answer is re-read, and so is About's.
         void qc.invalidateQueries({ queryKey: settingsKey });
@@ -246,7 +246,7 @@ function SettingsView() {
   const picturesChanged = async (next: SettingsAnswer) => {
     await qc.cancelQueries({ queryKey: settingsKey });
     qc.setQueryData(settingsKey, next);
-    void refreshBrand(logoHash(next));
+    void refreshBrand(logoHash(next), iconHash(next));
   };
   const common = (s: SectionSpec) => ({
     section: s,

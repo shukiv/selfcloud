@@ -101,12 +101,15 @@ type infoLimits struct {
 	MaxChunkSize int64 `json:"max_chunk_size"`
 }
 
-// infoBrand is the installation's look. The logo is a URL, never the file's path on the host.
+// infoBrand is the installation's look. The logo and the icon are URLs, never the file's path on the host.
 // Palette and Sidebar carry only the tokens the installation sets; the rest are the defaults.
 type infoBrand struct {
 	Name    string  `json:"name"`
 	Accent  string  `json:"accent"`
 	LogoURL *string `json:"logo_url"`
+	// IconURL is the favicon's path when the installation has an icon picture, the config file's or an upload's, which the
+	// favicon is drawn from (decisions 119 and 221); null otherwise. The app icon never sets it (decision 220).
+	IconURL *string `json:"icon_url"`
 	// Artwork is true when the installation shows the SelfCloud artwork, which is whenever it has no logo, from the file or an
 	// upload (decisions 109, 126 and 141).
 	Artwork bool         `json:"artwork"`
@@ -182,10 +185,12 @@ func (s *Server) features() []string {
 
 // brandInfo describes the brand in use (decision 141). The logo URL is set only for a logo of the installation's own, the file's
 // or an upload, so a client that reads it as "has a custom logo" is right; the artwork, which shows when there is none, is named
-// by artwork instead (decisions 109 and 126).
+// by artwork instead (decisions 109 and 126). The icon URL is the favicon's path when an icon picture is in use, which the
+// favicon is drawn from (decisions 119 and 221); the app icon never sets it (decision 220).
 func (s *Server) brandInfo() infoBrand {
 	brand := s.settings().UI.Brand
-	logo := s.pics.Load().logo.img
+	pics := s.pics.Load()
+	logo := pics.logo.img
 	b := infoBrand{
 		Name:    brand.Name,
 		Accent:  brand.Accent,
@@ -196,6 +201,10 @@ func (s *Server) brandInfo() infoBrand {
 	if logo != nil {
 		u := logoPath
 		b.LogoURL = &u
+	}
+	if pics.icon.img != nil {
+		u := web.FaviconPath
+		b.IconURL = &u
 	}
 	return b
 }

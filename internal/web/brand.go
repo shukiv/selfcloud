@@ -21,8 +21,9 @@ import (
 var brandFS embed.FS
 
 const (
-	// faviconPath is the browser's icon, built from the brand (decision 109).
-	faviconPath = "/favicon.svg"
+	// FaviconPath is the browser's icon, built from the brand (decision 109). The brand answer names it as the icon's URL
+	// when the installation has an icon picture (decision 221).
+	FaviconPath = "/favicon.svg"
 	// wordmarkPath is the SelfCloud wordmark with no background, for the sidebar's top.
 	wordmarkPath = "/brand/wordmark.svg"
 	// markPath is the mark alone, for every name. The rail shows it as a mask.
@@ -231,7 +232,7 @@ func faviconSVG(b brandInfo) []byte {
 // brandSVGs are the SVG files the server answers for a brand, by path. The favicon is the one the rule chose (decision 119).
 func brandSVGs(b brandInfo, favicon brandSVG) map[string]brandSVG {
 	out := map[string]brandSVG{
-		faviconPath: favicon,
+		FaviconPath: favicon,
 		markPath:    {body: brandFile("selfcloud-mark.svg"), policy: svgPolicy},
 	}
 	// The wordmark is the SelfCloud artwork's; an installation with its own logo shows that instead, so it has none (decision 126).
@@ -243,5 +244,5 @@ func brandSVGs(b brandInfo, favicon brandSVG) map[string]brandSVG {
 
 // isBrandSVGPath reports whether p is one of the SVG files of the brand.
 func isBrandSVGPath(p string) bool {
-	return p == faviconPath || p == markPath || p == wordmarkPath
+	return p == FaviconPath || p == markPath || p == wordmarkPath
 }

@@ -58,16 +58,19 @@ export async function loadInfo(): Promise<Info> {
 let brandReads = 0;
 
 // refreshBrand reads the brand again and applies it, so a change made on the Settings page shows in this page's own sidebar and title
-// at once. logoHash is the logo's hash when one is in use: it stamps the logo's address, so a new logo is fetched again and the same
-// one is not, on every refresh. A failed read leaves the brand as it is.
-export async function refreshBrand(logoHash?: string): Promise<void> {
+// at once. logoHash and iconHash are the hashes of the logo and the icon when they are in use: each stamps its picture's address, so
+// a new picture is fetched again and the same one is not, on every refresh (decision 221 for the icon). A failed read leaves the brand
+// as it is.
+export async function refreshBrand(logoHash?: string, iconHash?: string): Promise<void> {
   const mine = ++brandReads;
   try {
     const { brand } = await loadInfo();
     if (brand === null || mine !== brandReads) return;
     const url = brand.logo_url;
     const stamped = logoHash && url && url.startsWith('/') ? `${url}${url.includes('?') ? '&' : '?'}v=${logoHash}` : url;
-    applyBrand({ ...brand, logo_url: stamped });
+    const icon = brand.icon_url;
+    const stampedIcon = iconHash && icon && icon.startsWith('/') ? `${icon}${icon.includes('?') ? '&' : '?'}v=${iconHash}` : icon;
+    applyBrand({ ...brand, logo_url: stamped, icon_url: stampedIcon });
   } catch {
     // The page keeps the brand it has.
   }

@@ -112,7 +112,7 @@ func TestCustomNameShowsTheMark(t *testing.T) {
 // both on the accent; a repeat with the ETag gets 304.
 func TestFaviconFollowsTheBrand(t *testing.T) {
 	art := artworkHandler(t, "#0F766E")
-	rec := get(t, art, http.MethodGet, faviconPath)
+	rec := get(t, art, http.MethodGet, FaviconPath)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -130,14 +130,14 @@ func TestFaviconFollowsTheBrand(t *testing.T) {
 	if etag == "" {
 		t.Fatal("no ETag")
 	}
-	req := httptest.NewRequest(http.MethodGet, faviconPath, nil)
+	req := httptest.NewRequest(http.MethodGet, FaviconPath, nil)
 	req.Header.Set("If-None-Match", etag)
 	again := httptest.NewRecorder()
 	art.ServeHTTP(again, req)
 	if again.Code != http.StatusNotModified {
 		t.Errorf("repeat with the ETag: %d, want 304", again.Code)
 	}
-	custom := get(t, pwaHandler(t, "Acme", "#0F766E"), http.MethodGet, faviconPath).Body.String()
+	custom := get(t, pwaHandler(t, "Acme", "#0F766E"), http.MethodGet, FaviconPath).Body.String()
 	if strings.Contains(custom, "<circle") || !strings.Contains(custom, "M 252.24") {
 		t.Errorf("the custom favicon is not the mark: %.120s", custom)
 	}

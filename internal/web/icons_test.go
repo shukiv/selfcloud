@@ -121,7 +121,7 @@ func iconImage(t *testing.T, h *Handler, path string) image.Image {
 // favicon fetches /favicon.svg as text.
 func favicon(t *testing.T, h *Handler) string {
 	t.Helper()
-	return get(t, h, http.MethodGet, faviconPath).Body.String()
+	return get(t, h, http.MethodGet, FaviconPath).Body.String()
 }
 
 // wrappedPNG returns the PNG a favicon wraps, and fails when the favicon is not the wrapper of a PNG.
@@ -455,7 +455,7 @@ func TestFaviconWrapsAPNG(t *testing.T) {
 		}
 	}
 	h := brandHandler(t, "Acme Drive", pngFile(encodePNG(t, img)), nil)
-	rec := get(t, h, http.MethodGet, faviconPath)
+	rec := get(t, h, http.MethodGet, FaviconPath)
 	body := rec.Body.String()
 
 	d := xml.NewDecoder(strings.NewReader(body))
@@ -504,7 +504,7 @@ func TestFaviconWrapsALogoPNGWithItsAspect(t *testing.T) {
 // TestFaviconPolicyForSVGIsUnchanged: an SVG file served as the favicon has the SVG policy, with no image directive.
 func TestFaviconPolicyForSVGIsUnchanged(t *testing.T) {
 	h := brandHandler(t, "Acme Drive", svgFile(iconSVG), nil)
-	if got := get(t, h, http.MethodGet, faviconPath).Header().Get("Content-Security-Policy"); got != svgOnlyPolicy {
+	if got := get(t, h, http.MethodGet, FaviconPath).Header().Get("Content-Security-Policy"); got != svgOnlyPolicy {
 		t.Errorf("the SVG favicon's policy is %q, want %q", got, svgOnlyPolicy)
 	}
 }

@@ -14,9 +14,10 @@
 //     with a trailing slash lands on Settings.
 //  8. Branding (decision 152): the name and the accent, which the e2e config file writes, are read-only and marked; a sidebar
 //     colour is picked (the preview follows, the page's sidebar does not), saved, and read again after a reload; a logo is
-//     uploaded, drawn in the preview and the sidebar, and removed; a file that is not a picture is refused in the page's own
-//     words for a logo; an app icon is uploaded, draws the app icons while the favicon keeps the icon file's, refuses an SVG
-//     in the page's own words, and is removed, the icons byte for byte as before; no page error or policy violation.
+//     uploaded, drawn in the preview and the sidebar at the start edge (decision 221), and removed; a file that is not a picture
+//     is refused in the page's own words for a logo; an app icon is uploaded, draws the app icons while the favicon and the
+//     folded rail keep the icon file's (decision 221), refuses an SVG in the page's own words, and is removed, the icons byte
+//     for byte as before; no page error or policy violation.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -115,6 +116,18 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
     })()`);
     check(shown.w > 0 && shown.src.includes('/brand/logo?v='), `the preview draws the uploaded logo (${shown.src}, ${shown.w} px wide)`);
     check(/^\/brand\/logo\?v=/.test(shown.side ?? ''), `the page's own sidebar draws the uploaded logo at once (${shown.side})`);
+    // Decision 221 replaces decision 193's centring: the uploaded logo sits at the start edge of the brand's block (the end edge
+    // in Hebrew and Arabic), not centred. The logo is narrower than the block, so the edge it starts at is a real measurement.
+    const atEdge = await page.evaluate(`(() => {
+      const block = document.querySelector('[data-testid="sidebar-brand"]');
+      const img = block?.querySelector('img');
+      if (!block || !img) return null;
+      const b = block.getBoundingClientRect();
+      const r = img.getBoundingClientRect();
+      const rtl = document.documentElement.dir === 'rtl';
+      return { gap: Math.abs(rtl ? b.right - r.right : r.left - b.left), width: r.width, blockWidth: b.width };
+    })()`);
+    check(atEdge !== null && atEdge.gap <= 0.5 && atEdge.width < atEdge.blockWidth, `the uploaded logo sits at the start edge, not centred (${JSON.stringify(atEdge)})`);
     await h.clickOn(page, '[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]');
     await page.waitFor(`!document.querySelector('[data-picture="ui.brand.logo"] button[aria-label="Remove logo"]')`, 15000);
     check((await pictureState(h, base, adminKey, 'logo')).state === 'none', 'Remove puts the logo back to none');
@@ -162,6 +175,23 @@ async function brandingChecks(h, { page, base, adminKey, refused }) {
     check(faviconAfter === faviconBefore, 'the favicon keeps the icon file while the app icon is set');
     await page.waitFor(`[...document.querySelectorAll('[data-preview="icons"] img')].some((i) => i.src.includes('/brand/icon-512.png?v=${held.sha256}'))`, 10000);
     check(true, 'the preview draws the app tiles from the app icon');
+    // The folded rail draws the icon, the picture the favicon is drawn from, at 28 px kept in shape — never the app icon
+    // (decisions 119, 220 and 221). The rail's saved choice is put back afterwards.
+    const railWas = await page.evaluate(`window.localStorage.getItem('selfcloud.navRail')`);
+    await h.clickOn(page, '[data-testid="rail-toggle"]');
+    await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="sidebar-brand"] img')`, 15000);
+    const railBrand = await page.evaluate(`(() => {
+      const img = document.querySelector('.ant-layout-sider-collapsed [data-testid="sidebar-brand"] img');
+      const r = img.getBoundingClientRect();
+      return { src: img.getAttribute('src'), alt: img.getAttribute('alt'), w: Math.round(r.width), h: Math.round(r.height), fit: getComputedStyle(img).objectFit };
+    })()`);
+    check(
+      /^\/favicon\.svg/.test(railBrand.src ?? '') && railBrand.alt === 'E2E Drive' && railBrand.w === 28 && railBrand.h === 28 && railBrand.fit === 'contain',
+      `the folded rail draws the icon at 28 px, not the app icon (${JSON.stringify(railBrand)})`,
+    );
+    await h.clickOn(page, '[data-testid="rail-toggle"]');
+    await page.waitFor(`!document.querySelector('.ant-layout-sider-collapsed')`, 15000);
+    await page.evaluate(railWas === null ? `window.localStorage.removeItem('selfcloud.navRail')` : `window.localStorage.setItem('selfcloud.navRail', ${q(railWas)})`);
     // An SVG is refused in the page's own words before any request: the app icon is a PNG only.
     const svgFile = join(appDir, 'app.svg');
     writeFileSync(svgFile, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
