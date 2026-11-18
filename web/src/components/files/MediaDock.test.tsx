@@ -739,7 +739,7 @@ describe("the Save frame item's place and gating", () => {
     act(() => startPlayback({ start: v, folder: folderOf([v]) }));
     const video = await element("video");
     fireEvent.loadedMetadata(video);
-    return video;
+    return video as HTMLVideoElement;
   }
 
   async function openMore() {

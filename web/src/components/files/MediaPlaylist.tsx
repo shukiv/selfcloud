@@ -43,6 +43,7 @@ import MediaArt from "./MediaArt";
 import MediaPhone from "./MediaPhone";
 import { useBookmarks } from "./useBookmarks";
 import type { BookmarkApi } from "../../lib/files/bookmarks";
+import type { Frames } from "../../lib/files/frame";
 
 // The Media page's queue is a table (mp1b). It is lazy, so the viewer's drawer and the first load never load Listing for
 // it; the drawer keeps the panel (MediaQueue).
@@ -137,6 +138,10 @@ export interface MediaPlaylistProps {
   // bookmarks, when the signed-in person may keep bookmarks (decision 218), gives the player its marks and its lazy list.
   // A share page and an impersonated session get none.
   bookmarks?: BookmarkApi;
+  // frames, when the signed-in person may keep a frame in their own My files (decision 231), gives the player's More
+  // menu its Save frame item on a video. A share page, an impersonated session and a person without a personal space
+  // get none; the phone album page is audio only and never draws it.
+  frames?: Frames;
 }
 
 export default function MediaPlaylist({
@@ -164,6 +169,7 @@ export default function MediaPlaylist({
   onDownload,
   onSource,
   bookmarks,
+  frames,
 }: MediaPlaylistProps) {
   const { t } = useT();
   const palette = usePaletteOrLight();
@@ -728,6 +734,7 @@ export default function MediaPlaylist({
               art={kind === "audio" ? <MediaArt node={currentNode} /> : undefined}
               phone={phone}
               marks={marks}
+              frames={frames}
             />
           ) : null}
           {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}

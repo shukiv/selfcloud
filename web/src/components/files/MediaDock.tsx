@@ -2,12 +2,14 @@
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { Alert, ConfigProvider, Slider, theme } from "antd";
+import { Alert, App, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, Share2, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
 import IconButton from "../IconButton";
 import { addBookmark, deleteBookmark, getResume, inlineRange, listBookmarks, listSubtitles, putResume, relabelBookmark } from "../../lib/files/api";
 import type { BookmarkApi } from "../../lib/files/bookmarks";
+import { frameName, type Frames } from "../../lib/files/frame";
+import { manager } from "../../lib/files/uploads";
 import { session } from "../../lib/session";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
@@ -106,6 +108,7 @@ export default function MediaDock() {
   const snap = useSyncExternalStore(subscribePlayback, getPlayback, getPlayback);
   const sess = useStore(session);
   const { t } = useT();
+  const { message } = App.useApp();
   const [pos, setPos] = useState<{ position: number; total: string }>({ position: 0, total: "0" });
   const [refused, setRefused] = useState<string | null>(null);
   // toggleSlot is the header's place for the playlist button (set while the viewer is open, see the header).
@@ -131,6 +134,21 @@ export default function MediaDock() {
   const mt = useMT();
   const spaces = [...useStore(folders), ...useStore(hiddenFolders)];
   const space = node ? (spaces.find((f) => f.id === node.folder_id) ?? null) : null;
+  // The frame save (decision 231) goes to the top of the person's own My files alone: the personal space the sidebar's
+  // My files link finds. An impersonated session and a person without a personal space get no save, so the More menu
+  // draws no Save frame for them. The PNG joins the shared upload queue, so the tray shows it and the name-conflict
+  // question applies as to any upload.
+  const personal = spaces.find((f) => f.kind === "personal") ?? null;
+  const frames: Frames | undefined =
+    sess && !sess.impersonation && personal
+      ? {
+          save: (blob: Blob, seconds: number) => {
+            const name = frameName(node?.name ?? "", seconds);
+            manager.add([{ file: new File([blob], name, { type: "image/png" }), target: { folder: personal.id } }]);
+            message.success(t("files.media.frameSaving", { name }));
+          },
+        }
+      : undefined;
   const canShare = node ? shareCap({ role: node.role, editorsCanShare: node.editors_can_share, managersOnly: space?.sharing_managers_only ?? false }) !== null : false;
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -224,6 +242,7 @@ export default function MediaDock() {
       onDownload={canDownload ? () => void download() : undefined}
       onSource={setSourceName}
       bookmarks={sess && !sess.impersonation ? sessionBookmarks : undefined}
+      frames={frames}
     />
   ) : null;
 

@@ -12,6 +12,7 @@ import { usePaletteOrLight } from "../../theme/theme";
 import { playerBox } from "../../lib/files/playerBox";
 import type { SubtitleSize } from "./MediaPlayer";
 import type { Marks } from "../../lib/files/bookmarks";
+import type { Frames } from "../../lib/files/frame";
 import {
   HIDE_MS,
   SPEEDS,
@@ -121,9 +122,12 @@ interface Props {
   // marks, when the signed-in person may keep bookmarks (decision 218), draws a tick per bookmark on the seek bar and gives
   // the More menu its Add a bookmark and Bookmarks items. A share link and an impersonated session get none.
   marks?: Marks;
+  // frames, when the signed-in person may keep a frame in their own My files (decision 231), gives the More menu its
+  // Save frame item on a video. A share link, an impersonated session and a person without a personal space get none.
+  frames?: Frames;
 }
 
-export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false, phone = false, marks }: Props) {
+export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true, keysInBox = false, phone = false, marks, frames }: Props) {
   const { t } = useT();
   const p = usePaletteOrLight();
   const [snap, setSnap] = useState<Snap>(EMPTY);
@@ -619,7 +623,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
           }}
         />
 
-        <MediaExtras media={m} popupHost={popupHost} marks={marks} />
+        <MediaExtras media={m} popupHost={popupHost} marks={marks} frames={frames} />
 
         {kind === "video" &&
           typeof document !== "undefined" &&

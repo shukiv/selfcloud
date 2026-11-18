@@ -51,7 +51,7 @@ describe("frameName", () => {
     // 255 less the 12 bytes of " 1-02-05.png" leaves 243: 60 emoji of four bytes each; the 61st would not fit.
     expect([...base]).toHaveLength(60);
     expect(base).toBe("🎬".repeat(60));
-    // No lone surrogate is left: every pair is whole.
+    // No lone surrogate remains; every pair is whole.
     expect(/[\uD800-\uDFFF]/.test(base.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ""))).toBe(false);
   });
 

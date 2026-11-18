@@ -10,6 +10,7 @@ import { useMT } from "../../lib/media/i18n";
 import { formatTime } from "../../lib/files/mediaKeys";
 import { getSleep, setSleep, subscribeSleep, type SleepChoice } from "../../lib/files/sleepTimer";
 import { DEFAULT_PICTURE, pictureStyle, readPicture, writePicture, type Picture } from "../../lib/files/picture";
+import { captureFrame, FrameError, type Frames } from "../../lib/files/frame";
 import { session } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import type { Marks } from "../../lib/files/bookmarks";
@@ -20,13 +21,18 @@ import type { Marks } from "../../lib/files/bookmarks";
 // element while a timed choice keeps counting). The popup opens in the bar's popupHost, so it shows in full screen.
 // A video also gains Picture (its fit and the three percentages, kept per person in lib/files/picture.ts) and, when
 // the element exposes more than one audio track, the Audio track submenu. The picture outlives the element; the
-// tracks belong to the file on screen and nothing of them is kept for the next one. Audio is never styled.
+// tracks belong to the file on screen and nothing of them is kept for the next one. Audio is never styled. A video
+// with frames (decision 231) also gains Save frame, which keeps the picture on screen as a PNG in the person's own
+// My files through the shared upload queue.
 
 interface Props {
   media: HTMLMediaElement | null;
   popupHost: () => HTMLElement;
   // marks, when the person may keep bookmarks (decision 218), adds Add a bookmark and Bookmarks (n) to the menu.
   marks?: Marks;
+  // frames, when the signed-in person may keep a frame in their own My files (decision 231), adds Save frame to the
+  // menu on a video. A share page, an impersonated session and a person without a personal space get none.
+  frames?: Frames;
 }
 
 // MIN_LOOP is the shortest A-B loop accepted: half a second.
@@ -69,7 +75,7 @@ function audioListOf(media: HTMLMediaElement | null): ArrayLike<ElAudioTrack> | 
   return (media as MediaWithTracks).audioTracks ?? null;
 }
 
-export default function MediaExtras({ media, popupHost, marks }: Props) {
+export default function MediaExtras({ media, popupHost, marks, frames }: Props) {
   const { t } = useT();
   const mt = useMT();
   const { message } = App.useApp();
@@ -194,6 +200,21 @@ export default function MediaExtras({ media, popupHost, marks }: Props) {
     setTracks((prev) => prev.map((tr, i) => ({ ...tr, enabled: i === idx })));
   };
 
+  // saveFrame captures the picture on screen at the place the person is at and hands it to the dock's save, which
+  // queues it as an upload. A capture the browser refuses says its own reason; nothing is saved.
+  const saveFrame = async () => {
+    if (!media || media.tagName !== "VIDEO" || !frames) return;
+    const seconds = media.currentTime;
+    try {
+      const blob = await captureFrame(media as HTMLVideoElement);
+      frames.save(blob, seconds);
+    } catch (err) {
+      if (err instanceof FrameError) {
+        message.error(t(err.reason === "not_ready" ? "files.media.frameNotReady" : "files.media.frameUnreadable"));
+      }
+    }
+  };
+
   const onMenuClick: MenuProps["onClick"] = ({ key }) => {
     if (key === "loop-a") setA();
     else if (key === "loop-b") setB();
@@ -201,6 +222,7 @@ export default function MediaExtras({ media, popupHost, marks }: Props) {
     else if (key === "bookmark-add") marks?.add();
     else if (key === "bookmarks") marks?.openList();
     else if (key === "picture") setPicOpen(true);
+    else if (key === "frame") void saveFrame();
     else if (key.startsWith("audio-")) pickTrack(key);
     else if (key in SLEEP_KEYS) setSleep(SLEEP_KEYS[key]);
   };
@@ -247,6 +269,7 @@ export default function MediaExtras({ media, popupHost, marks }: Props) {
       ],
     },
     ...(isVideo ? [{ key: "picture", label: t("files.media.picture") }] : []),
+    ...(isVideo && frames ? [{ key: "frame", label: t("files.media.frame") }] : []),
     ...(tracks.length > 0
       ? [
           {

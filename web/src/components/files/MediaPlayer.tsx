@@ -11,6 +11,7 @@ import { session, sessionChanged } from "../../lib/session";
 import { useStoreSelect } from "../../lib/store";
 import MediaControls, { type Nav } from "./MediaControls";
 import type { Marks } from "../../lib/files/bookmarks";
+import type { Frames } from "../../lib/files/frame";
 import type { FolderAccess, Node } from "../../lib/files/types";
 
 // The drive's file picker is a lazy chunk of its own, so the player's first load never carries it (decision 227).
@@ -131,6 +132,9 @@ interface Props {
   phone?: boolean;
   // marks, when the person may keep bookmarks (decision 218), gives the bar its ticks and its More-menu items.
   marks?: Marks;
+  // frames, when the person may keep a frame in their own My files (decision 231), gives the More menu its Save frame
+  // item on a video. A share page and an impersonated session get none.
+  frames?: Frames;
 }
 
 // STALL_MS is how long a player may wait for data while playing before it asks for a new link. Some browsers report a
@@ -161,6 +165,7 @@ export default function MediaPlayer({
   art,
   phone = false,
   marks,
+  frames,
 }: Props) {
   const { t } = useT();
   const el = useRef<HTMLMediaElement | null>(null);
@@ -620,6 +625,7 @@ export default function MediaPlayer({
         keysInBox={keysInBox}
         phone={phone}
         marks={marks}
+        frames={frames}
       />
       {kind === "video" && subsNote && (
         <p role="status" className="media-subs-note" data-testid="media-subs-none">

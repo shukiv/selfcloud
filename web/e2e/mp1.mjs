@@ -477,6 +477,81 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `!document.querySelector('video')`, 10000, 'the session ends');
     });
 
+    // The More menu's Save frame: the picture on screen at 1.2 s goes to the top of the owner's My files as a PNG,
+    // named for the file and the place, through the shared upload queue as any upload. The checks read the owner's
+    // used bytes first, judge the saved frame through the API (its PNG signature and its IHDR size against the
+    // video's own), and delete it for good in a finally, so the used bytes are as the step found them.
+    await step("the More menu's Save frame keeps the picture on screen in My files", async () => {
+      const pngName = 'mp1-clip 0-01.png';
+      // The owner's personal folder and used bytes, through the account key as the section's other reads.
+      const storage = await api(base, 'GET', `/api/v1/accounts/${accountID}/storage?users_limit=50`, accountKey);
+      const ownerUser = (storage.users ?? []).find((u) => u.email === OWNER.email);
+      check(!!ownerUser, 'the owner is in the account storage listing');
+      const spaces = await api(base, 'GET', '/api/v1/folders', accountKey);
+      const pf = (spaces.items ?? []).find((f) => f.kind === 'personal' && f.owner_user_id === ownerUser.id)?.id ?? null;
+      check(!!pf, 'the owner has a personal folder');
+      const rootOf = () => api(base, 'GET', `/api/v1/folders/${pf}/children?path=%2F&limit=200`, accountKey);
+      // A frame an earlier run of this step left is this step's own to remove: the name is fixed by the place.
+      const leftover = ((await rootOf()).items ?? []).find((n) => n.name === pngName);
+      if (leftover) {
+        await api(base, 'DELETE', `/api/v1/nodes/${leftover.id}`, accountKey).catch(() => {});
+        await api(base, 'DELETE', `/api/v1/trash/${leftover.id}`, accountKey).catch(() => {});
+      }
+      const usedBefore = ownerUser.used_bytes;
+      check(typeof usedBefore === 'number', `the owner's used bytes are read (${usedBefore})`);
+      let frameId = null;
+      let failed = false;
+      try {
+        await openFolder(page, folderURL, 'mp1-clip.webm');
+        await dblClick(page, await rowPoint(page, 'mp1-clip.webm'));
+        await until(page, viewerShown, 15000, 'the viewer opens');
+        await playing(page);
+        // The page takes the session from the open viewer: closing the viewer would end a video's session.
+        await h.clickNav(page, 'Media');
+        await until(page, `!!document.querySelector('[data-testid="media-page-stage"] video')`, 15000, 'the video on the page');
+        // The place is exact: paused at 1.2 s, so the floored name carries 0-01.
+        await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 1.2; return true; })()`);
+        await until(page, `(() => { const v = ${MEDIA}; return !!v && Math.abs(v.currentTime - 1.2) < 0.05 && v.readyState >= 2; })()`, 5000, 'the place at 1.2 s');
+        const dims = await page.evaluate(`(() => { const v = ${MEDIA}; return { w: v.videoWidth, h: v.videoHeight }; })()`);
+        await openMore(page);
+        await pickMore(page, 'Save frame');
+        // The frame reaches the top of My files through the shared upload queue; the API listing is the judge.
+        const deadline = Date.now() + 30000;
+        for (;;) {
+          const found = ((await rootOf()).items ?? []).find((n) => n.name === pngName);
+          if (found) { frameId = found.id; break; }
+          if (Date.now() > deadline) throw new Error(`${pngName} did not reach the top of My files in 30 seconds`);
+          await sleep(500);
+        }
+        check(true, `${pngName} is at the top of the owner's My files`);
+        const res = await fetch(base + `/api/v1/nodes/${frameId}/content`, { headers: { Authorization: `Bearer ${accountKey}` } });
+        if (!res.ok) throw new Error(`the frame's content read: ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        check(signature.every((b, i) => bytes[i] === b), 'the saved frame carries the PNG signature');
+        const ihdr = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const w = ihdr.getUint32(16);
+        const hh = ihdr.getUint32(20);
+        check(w === dims.w && hh === dims.h, `the frame's IHDR size is the video's (${w}x${hh} of ${dims.w}x${dims.h})`);
+      } catch (err) {
+        failed = true;
+        throw err;
+      } finally {
+        // The frame goes to the trash and then out of it for good, as mp2b cleans up, so the owner's used bytes
+        // come down even when a check failed mid-step.
+        if (frameId !== null) {
+          await api(base, 'DELETE', `/api/v1/nodes/${frameId}`, accountKey).catch(() => {});
+          await api(base, 'DELETE', `/api/v1/trash/${frameId}`, accountKey).catch(() => {});
+        }
+        const after = await api(base, 'GET', `/api/v1/accounts/${accountID}/storage?users_limit=50`, accountKey).catch(() => null);
+        const usedAfter = (after?.users ?? []).find((u) => u.email === OWNER.email)?.used_bytes ?? null;
+        if (failed) console.log(`INFO the owner's used bytes: ${usedBefore} before, ${usedAfter} after the failed checks`);
+        else check(usedAfter === usedBefore, `the owner's used bytes are as the step found them (${usedBefore} before, ${usedAfter} after)`);
+      }
+      await stopOnPage(page);
+      await until(page, `!document.querySelector('video')`, 10000, 'the session ends');
+    });
+
     await step('the Media page fits a phone with no sideways scroll', async () => {
       await openFolder(page, folderURL, 'mp1-one.ogg');
       await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
