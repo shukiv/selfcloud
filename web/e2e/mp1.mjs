@@ -211,6 +211,8 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
   const signOut = () => h.signOut(page);
   // The shared run's interface settings and listing view, put back when the checks end.
   const kept = await page.evaluate(`(() => ({ lang: localStorage.getItem('selfcloud.lang'), theme: localStorage.getItem('selfcloud.theme'), files: localStorage.getItem('selfcloud.files') }))()`);
+  // The picture choices the person already kept, put back the same way: the Picture step writes its own.
+  const keptPicture = await page.evaluate(`Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('selfcloud.picture.')).map((k) => [k, localStorage.getItem(k)]))`);
   // The fixtures: a folder of the owner's own with two audio files, one of them played and marked.
   const folder = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'MP1 media' })).id;
   const tone = await readFile(join(media, 'tone.ogg'));
@@ -428,6 +430,53 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
     });
 
+    // The More menu's Picture: Brightness to 120 styles the video at once, the choice survives a reload and a fresh
+    // open of the same video, and Reset returns the filter to none. The fixture video is the one these checks already
+    // uploaded; nothing new is left in the owner's space, and the kept choice is put back at the end.
+    await step("the More menu's Picture keeps the video's look across a reload", async () => {
+      const brightness = `[role="slider"][aria-label="Brightness"]`;
+      const panelButton = (name) => `[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === ${q(name)})`;
+      const openPanel = async () => {
+        await openMore(page);
+        await pickMore(page, 'Picture…');
+        await until(page, `!!document.querySelector(${q(brightness)})`, 5000, 'the Picture panel');
+      };
+      const filterOf = `(() => { const v = ${MEDIA}; return v ? getComputedStyle(v).filter : null; })()`;
+      await openFolder(page, folderURL, 'mp1-clip.webm');
+      await dblClick(page, await rowPoint(page, 'mp1-clip.webm'));
+      await until(page, viewerShown, 15000, 'the viewer opens');
+      await playing(page);
+      // The page takes the session from the open viewer: closing the viewer would end a video's session.
+      await h.clickNav(page, 'Media');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] video')`, 15000, 'the video on the page');
+      await openPanel();
+      // Four steps of 5 up from 100: the handle takes the arrow keys, as antd's sliders do. Each press is its own task,
+      // so the slider's re-render lands between them and the next press reads the new value.
+      for (let i = 0; i < 4; i++) {
+        await page.evaluate(`(() => { const h = document.querySelector(${q(brightness)}); h.focus(); h.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', keyCode: 38, bubbles: true })); return true; })()`);
+      }
+      await until(page, `(${filterOf} || '').includes('brightness(1.2)')`, 5000, 'the video at brightness 1.2');
+      check(await page.evaluate(`(${filterOf} || '').includes('brightness(1.2)')`), `the video's filter carries brightness(1.2) (${await page.evaluate(filterOf)})`);
+      await page.evaluate(`${panelButton('Close')}.click()`);
+      // A reload and a fresh open of the same video: the kept choice styles the new element.
+      await page.goto(base + '/');
+      await openFolder(page, folderURL, 'mp1-clip.webm');
+      await dblClick(page, await rowPoint(page, 'mp1-clip.webm'));
+      await until(page, viewerShown, 15000, 'the viewer opens again');
+      await playing(page);
+      await h.clickNav(page, 'Media');
+      await until(page, `!!document.querySelector('[data-testid="media-page-stage"] video')`, 15000, 'the video on the page again');
+      await until(page, `(${filterOf} || '').includes('brightness(1.2)')`, 5000, 'the kept brightness on the new element');
+      check(await page.evaluate(`(${filterOf} || '').includes('brightness(1.2)')`), 'the kept brightness survives the reload');
+      await openPanel();
+      await page.evaluate(`${panelButton('Reset')}.click()`);
+      await until(page, `${filterOf} === 'none'`, 5000, 'the filter back to none');
+      check(await page.evaluate(`${filterOf} === 'none'`), 'Reset returns the filter to none');
+      await page.evaluate(`${panelButton('Close')}.click()`);
+      await stopOnPage(page);
+      await until(page, `!document.querySelector('video')`, 10000, 'the session ends');
+    });
+
     await step('the Media page fits a phone with no sideways scroll', async () => {
       await openFolder(page, folderURL, 'mp1-one.ogg');
       await dblClick(page, await rowPoint(page, 'mp1-one.ogg'));
@@ -450,6 +499,7 @@ export async function mp1Checks(h, { page, base, accountKey, accountID }) {
     await setPhone(page, false);
     const restore = [['selfcloud.lang', kept.lang], ['selfcloud.theme', kept.theme], ['selfcloud.files', kept.files]];
     await page.evaluate(`(() => { for (const [k, v] of ${q(restore)}) { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } return true; })()`);
+    await page.evaluate(`(() => { for (const k of Object.keys(localStorage).filter((x) => x.startsWith('selfcloud.picture.'))) localStorage.removeItem(k); for (const [k, v] of Object.entries(${q(keptPicture)})) localStorage.setItem(k, v); return true; })()`);
   }
   // The phone size was just left: a fresh load of the shell lets the account menu open at the desktop size.
   await page.goto(base + '/');

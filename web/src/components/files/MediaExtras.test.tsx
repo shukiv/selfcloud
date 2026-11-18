@@ -453,7 +453,8 @@ describe("the Picture panel", () => {
   it("a new element takes the kept values, and the old one is left plain", async () => {
     const first = el("video");
     const { rerender } = draw(first);
-    const handle = await openPicture();
+    await openPicture();
+    const handle = await screen.findByRole("slider", { name: "Contrast" });
     fireEvent.keyDown(handle, { keyCode: DOWN });
     expect(first.style.filter).toBe("brightness(100%) contrast(95%) saturate(100%)");
     const second = el("video");

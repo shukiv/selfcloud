@@ -1192,6 +1192,24 @@ video.media-cue-s::cue {
 video.media-cue-l::cue {
   font-size: 130%;
 }
+/* The Picture panel of the More menu: each row names its control and shows its value in percent; the fit choice spans
+   the row, and the sliders keep a compact margin of their own. */
+.media-picture-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block: 12px 4px;
+}
+.media-picture-row:first-child {
+  margin-block-start: 0;
+}
+.media-picture-value {
+  font-variant-numeric: tabular-nums;
+}
+.media-picture-slider.ant-slider {
+  margin-block: 4px 8px;
+}
 /* The mini player: one bar docked at the bottom of the shell while audio plays after the viewer closed. Its colours come from
    the sidebar (inline), and its controls read left to right in every language (dir on the bar). */
 .media-mini {
