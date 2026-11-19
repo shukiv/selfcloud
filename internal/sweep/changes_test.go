@@ -73,8 +73,9 @@ func countChanges(t *testing.T, path, nodeID string) int {
 	return n
 }
 
-// TestChangesRetentionRemovesOnlyPastTheLimit: with a 30-day limit a row 40 days old goes, one exactly at the limit
-// stays, and a young row stays; the count is logged and the mark rises.
+// TestChangesRetentionRemovesOnlyPastTheLimit: with a 30-day limit the old prefix goes (the root's row and the 40-day
+// node's), the walk stops at the first young row, and a row exactly at the limit stays; the count is logged and the
+// mark rises to the last aged seq.
 func TestChangesRetentionRemovesOnlyPastTheLimit(t *testing.T) {
 	ctx := context.Background()
 	st, blobs, acc, path := openAuditStore(t)
@@ -84,6 +85,9 @@ func TestChangesRetentionRemovesOnlyPastTheLimit(t *testing.T) {
 	insertChangesNode(t, st, acc, fld, root, "nod_old")
 	insertChangesNode(t, st, acc, fld, root, "nod_young")
 	insertChangesNode(t, st, acc, fld, root, "nod_at")
+	// The old rows form the prefix the walk takes: the root's row and nod_old's. nod_at sits behind the young
+	// nod_young, so the walk stops before it even though its time is at the limit.
+	ageChange(t, path, root, now.Add(-40*day))
 	ageChange(t, path, "nod_old", now.Add(-40*day))
 	ageChange(t, path, "nod_at", now.Add(-30*day))
 
@@ -94,19 +98,22 @@ func TestChangesRetentionRemovesOnlyPastTheLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ChangesPruned != 1 {
-		t.Errorf("pruned %d rows, want 1", res.ChangesPruned)
+	if res.ChangesPruned != 2 {
+		t.Errorf("pruned %d rows, want 2 (the old prefix)", res.ChangesPruned)
 	}
 	for nodeID, want := range map[string]int{"nod_old": 0, "nod_young": 1, "nod_at": 1} {
 		if got := countChanges(t, path, nodeID); got != want {
 			t.Errorf("%s: %d rows left, want %d", nodeID, got, want)
 		}
 	}
+	if got := countChanges(t, path, root); got != 0 {
+		t.Errorf("the root's old row survived: %d left", got)
+	}
 	mark, err := st.NodeChangesMark(ctx)
 	if err != nil || mark <= 0 {
 		t.Errorf("mark = %d, %v; want it raised above 0", mark, err)
 	}
-	if !strings.Contains(logs.String(), "changes journal pruned") || !strings.Contains(logs.String(), "removed=1") {
+	if !strings.Contains(logs.String(), "changes journal pruned") || !strings.Contains(logs.String(), "removed=2") {
 		t.Errorf("the count was not logged at info; log:\n%s", logs.String())
 	}
 }
@@ -132,7 +139,8 @@ func TestChangesRetentionZeroKeepsEverything(t *testing.T) {
 	}
 }
 
-// TestChangesRetentionPrunesDeletedAccount: a deleted account's rows go even while young, since no account holds them.
+// TestChangesRetentionPrunesDeletedAccount: a deleted account's rows go even while young, since no account holds
+// them, and the mark stays where it was: nobody can read that feed, so no cursor needs resetting.
 func TestChangesRetentionPrunesDeletedAccount(t *testing.T) {
 	ctx := context.Background()
 	st, blobs, acc, path := openAuditStore(t)
@@ -166,6 +174,9 @@ func TestChangesRetentionPrunesDeletedAccount(t *testing.T) {
 	}
 	if got := countChanges(t, path, "nod_gone"); got != 0 {
 		t.Errorf("the deleted account's row survived: %d left", got)
+	}
+	if mark, err := st.NodeChangesMark(ctx); err != nil || mark != 0 {
+		t.Errorf("mark = %d, %v; want 0, untouched by the gone-account prune", mark, err)
 	}
 	_ = acc
 }

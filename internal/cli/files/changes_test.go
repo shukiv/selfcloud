@@ -184,14 +184,23 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// TestChangesFollowStopsOnInterrupt: --follow long-polls with wait=60, prints each page, and ends cleanly when its
-// context is cancelled, as Interrupt does. The third poll holds until the interrupt, as a wait with no change does.
+// TestChangesFollowStopsOnInterrupt: --follow long-polls with wait=25 (under the client's 30 s header timeout), prints
+// each page, and ends cleanly when its context is cancelled, as Interrupt does. The third poll holds until the
+// interrupt, as a wait with no change does. Pages that carry changes never sleep between them.
 func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 	isolate(t, testAccountKey)
 	ctx, cancel := context.WithCancel(context.Background())
-	saved := followContext
+	saved, savedSleep := followContext, followSleep
 	followContext = func() (context.Context, context.CancelFunc) { return ctx, cancel }
-	t.Cleanup(func() { followContext = saved; cancel() })
+	var sleepMu sync.Mutex
+	var sleeps []time.Duration
+	followSleep = func(c context.Context, d time.Duration) error {
+		sleepMu.Lock()
+		sleeps = append(sleeps, d)
+		sleepMu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { followContext, followSleep = saved, savedSleep; cancel() })
 
 	var mu sync.Mutex
 	changesCalls := 0
@@ -243,15 +252,118 @@ func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 	if !strings.Contains(out.String(), "cursor c1_c") {
 		t.Errorf("the last cursor was not printed: %q", out.String())
 	}
-	// Every follow read carried wait=60, and at least the two pages were read.
+	// Every follow read carried wait=25, and at least the two pages were read.
 	mu.Lock()
 	defer mu.Unlock()
 	if changesCalls < 2 {
 		t.Errorf("changes calls = %d, want at least 2", changesCalls)
 	}
 	for _, w := range waits {
-		if w != "60" {
-			t.Errorf("a follow read carried wait=%q, want 60", w)
+		if w != "25" {
+			t.Errorf("a follow read carried wait=%q, want 25", w)
 		}
+	}
+	sleepMu.Lock()
+	defer sleepMu.Unlock()
+	if len(sleeps) != 0 {
+		t.Errorf("pages with changes slept between them: %v", sleeps)
+	}
+}
+
+// TestChangesFollowEmptyPageBacksOff: a page that comes back empty well before the wait makes the follow sleep before
+// asking again (5 s without a Retry-After), so an answering-at-once server is not polled in a tight loop.
+func TestChangesFollowEmptyPageBacksOff(t *testing.T) {
+	isolate(t, testAccountKey)
+	ctx, cancel := context.WithCancel(context.Background())
+	saved, savedSleep := followContext, followSleep
+	followContext = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+	var mu sync.Mutex
+	var sleeps []time.Duration
+	followSleep = func(c context.Context, d time.Duration) error {
+		mu.Lock()
+		sleeps = append(sleeps, d)
+		n := len(sleeps)
+		mu.Unlock()
+		if n >= 2 {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	t.Cleanup(func() { followContext, followSleep = saved, savedSleep; cancel() })
+
+	f := newFake(t)
+	f.on("GET", "/api/v1/changes/start", reply{status: http.StatusOK, body: `{"cursor":"c1_a"}`})
+	f.on("GET", "/api/v1/changes", changesReply("c1_a", false))
+	res := f.run(Changes, "--space", testFolder, "--follow")
+	wantCode(t, res, 0)
+	f.wantCalls(
+		"GET /api/v1/changes/start?space="+testFolder,
+		"GET /api/v1/changes?cursor=c1_a&limit=200&space="+testFolder+"&wait=25",
+		"GET /api/v1/changes?cursor=c1_a&limit=200&space="+testFolder+"&wait=25",
+	)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sleeps) != 2 || sleeps[0] != 5*time.Second || sleeps[1] != 5*time.Second {
+		t.Errorf("the empty pages slept %v, want two 5 s backoffs", sleeps)
+	}
+}
+
+// TestChangesFollowHonoursRetryAfter: an empty page's Retry-After is the backoff the follow sleeps; without one it
+// falls back to 5 s.
+func TestChangesFollowHonoursRetryAfter(t *testing.T) {
+	isolate(t, testAccountKey)
+	ctx, cancel := context.WithCancel(context.Background())
+	saved, savedSleep := followContext, followSleep
+	followContext = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+	var mu sync.Mutex
+	var sleeps []time.Duration
+	followSleep = func(c context.Context, d time.Duration) error {
+		mu.Lock()
+		sleeps = append(sleeps, d)
+		n := len(sleeps)
+		mu.Unlock()
+		if n >= 2 {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	t.Cleanup(func() { followContext, followSleep = saved, savedSleep; cancel() })
+
+	var callMu sync.Mutex
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/changes/start":
+			_, _ = io.WriteString(w, `{"cursor":"c1_a"}`)
+		case "/api/v1/changes":
+			callMu.Lock()
+			calls++
+			n := calls
+			callMu.Unlock()
+			if n == 1 {
+				w.Header().Set("Retry-After", "7")
+			}
+			_, _ = io.WriteString(w, jsonOf(map[string]any{
+				"changes": []map[string]any{}, "cursor": "c1_a", "has_more": false}))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	var out, errOut lockedBuffer
+	done := make(chan int, 1)
+	go func() { done <- Changes([]string{"--space", testFolder, "--follow", "--url", srv.URL}, &out, &errOut) }()
+	code := <-done
+	if code != 0 {
+		t.Fatalf("exit %d, want 0; stderr %q", code, errOut.String())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sleeps) != 2 || sleeps[0] != 7*time.Second || sleeps[1] != 5*time.Second {
+		t.Errorf("the empty pages slept %v, want the 7 s Retry-After then the 5 s default", sleeps)
 	}
 }

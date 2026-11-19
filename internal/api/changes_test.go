@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -82,28 +83,25 @@ func entryOf(out changesJSON, nodeID string) *changeEntryJSON {
 	return nil
 }
 
-// cursorSpaceAndSeq decodes a cursor's feed ID and seq, tolerating either base64url padding.
-func cursorSpaceAndSeq(t *testing.T, tok string) (string, int64) {
+// cursorSeq opens a cursor on the server, as a request does, and returns the seq it names. A cursor that does not
+// open for the feed fails the test.
+func cursorSeq(t *testing.T, s *Server, feed, tok string) int64 {
 	t.Helper()
-	if !strings.HasPrefix(tok, "c1_") {
-		t.Fatalf("cursor %q has no c1_ prefix", tok)
-	}
-	body := strings.TrimPrefix(tok, "c1_")
-	b, err := base64.RawURLEncoding.DecodeString(body)
+	seq, err := s.openChangesCursor(feed, tok)
 	if err != nil {
-		b, err = base64.URLEncoding.DecodeString(body)
-		if err != nil {
-			t.Fatalf("cursor body %q: %v", body, err)
-		}
+		t.Fatalf("cursor %q does not open for %s: %v", tok, feed, err)
 	}
-	var pl struct {
-		S string `json:"s"`
-		Q int64  `json:"q"`
+	return seq
+}
+
+// sealCursor makes a cursor naming the feed and seq, as the server does.
+func sealCursor(t *testing.T, s *Server, feed string, seq int64) string {
+	t.Helper()
+	tok, err := s.sealChangesCursor(feed, seq)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal(b, &pl); err != nil {
-		t.Fatalf("cursor payload %q: %v", b, err)
-	}
-	return pl.S, pl.Q
+	return tok
 }
 
 // TestChangesStartThenFeed: start gives a cursor at the journal's head; a write after it shows up once, with the node
@@ -112,16 +110,13 @@ func TestChangesStartThenFeed(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
-	space, seq := cursorSpaceAndSeq(t, cur)
-	if space != fx.fld.ID {
-		t.Errorf("cursor names space %q, want %q", space, fx.fld.ID)
-	}
-	maxSeq, err := fx.s.store.NodeChangesMaxSeq(context.Background())
+	seq := cursorSeq(t, fx.s, fx.fld.ID, cur)
+	head, err := fx.s.store.NodeChangesHead(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seq != maxSeq {
-		t.Errorf("start seq = %d, want the head %d", seq, maxSeq)
+	if seq != head {
+		t.Errorf("start seq = %d, want the head %d", seq, head)
 	}
 
 	n := putNode(t, fx.s, fx.key, fx.fld.ID, "/a/b/new.txt", "hello")
@@ -293,7 +288,7 @@ func TestChangesPaging(t *testing.T) {
 	}
 	// A file leaves two journal rows (its insert and the update that lands its content), so the page count follows the
 	// raw rows, not the nodes: ceil(rows / limit).
-	_, startSeq := cursorSpaceAndSeq(t, cur0)
+	startSeq := cursorSeq(t, fx.s, fx.fld.ID, cur0)
 	rows, err := fx.s.store.NodeChangesAfter(context.Background(), fx.acc.ID, fx.fld.ID, startSeq, 10000)
 	if err != nil {
 		t.Fatal(err)
@@ -303,8 +298,17 @@ func TestChangesPaging(t *testing.T) {
 	}
 }
 
-// TestChangesCursorOfAnotherFeed: a cursor of one space is refused on another, a garbage cursor is refused, and an
-// account cursor is refused on a space feed.
+// wantGoneReset checks a 410 gone answer with reason reset.
+func wantGoneReset(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	e := wantError(t, rec, 410, apierr.Gone)
+	if e.Details["reason"] != "reset" {
+		t.Errorf("gone reason = %v, want reset", e.Details["reason"])
+	}
+}
+
+// TestChangesCursorOfAnotherFeed: a cursor sealed for one feed does not open for another, and neither does a garbage
+// cursor: both are gone with reason reset, telling the client to start again. A missing cursor is a bad request.
 func TestChangesCursorOfAnotherFeed(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
@@ -312,14 +316,90 @@ func TestChangesCursorOfAnotherFeed(t *testing.T) {
 	curA := startCursor(t, fx.s, fx.key, fx.fld.ID)
 
 	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {other.ID}, "cursor": {curA}})
-	wantError(t, rec, 400, apierr.InvalidRequest)
+	wantGoneReset(t, rec)
 
 	rec = feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {"not-a-cursor"}})
-	wantError(t, rec, 400, apierr.InvalidRequest)
+	wantGoneReset(t, rec)
 
 	acctCur := startCursor(t, fx.s, fx.key, "")
 	rec = feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {acctCur}})
+	wantGoneReset(t, rec)
+
+	rec = feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}})
 	wantError(t, rec, 400, apierr.InvalidRequest)
+}
+
+// TestChangesCursorHidesTheCounter: the token body is sealed, not readable: it carries no feed id or seq in the
+// clear, and two cursors naming the same feed and seq differ, so one tenant cannot read another's write volume.
+func TestChangesCursorHidesTheCounter(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	seq := cursorSeq(t, fx.s, fx.fld.ID, cur)
+	body := strings.TrimPrefix(cur, "c1_")
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		t.Fatalf("cursor body %q: %v", body, err)
+	}
+	if strings.Contains(string(raw), fx.fld.ID) || strings.Contains(string(raw), fmt.Sprintf(`"q":%d`, seq)) {
+		t.Errorf("the cursor body carries the feed or the seq in the clear: %q", raw)
+	}
+	var pl map[string]any
+	if err := json.Unmarshal(raw, &pl); err == nil {
+		t.Errorf("the cursor body is plain JSON: %q", raw)
+	}
+	again := sealCursor(t, fx.s, fx.fld.ID, seq)
+	if again == cur {
+		t.Error("two cursors of the same feed and seq are identical; the seal carries no nonce")
+	}
+	if got := cursorSeq(t, fx.s, fx.fld.ID, again); got != seq {
+		t.Errorf("the second cursor names seq %d, want %d", got, seq)
+	}
+}
+
+// TestChangesCursorAfterKeyRotation: a rotated links key leaves every old cursor unable to open; the answer is gone
+// with reason reset, and a fresh start reads again.
+func TestChangesCursorAfterKeyRotation(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/rot.txt", "x")
+	fx.s.links.current = bytes.Repeat([]byte{9}, 32)
+	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {cur}})
+	wantGoneReset(t, rec)
+	cur2 := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	out := feed(t, fx.s, fx.key, fx.fld.ID, cur2)
+	if len(out.Changes) != 0 {
+		t.Errorf("a fresh start after the rotation reads %+v, want empty", out.Changes)
+	}
+}
+
+// TestChangesCursorNotBoundToTheCaller: a cursor opens for any caller of the same feed, since the feed itself is
+// access-checked: another member with root reach, and a delegated token acting as the first member, both read it.
+func TestChangesCursorNotBoundToTheCaller(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "viewer")
+	fx.setPerm(t, root, fx.bob.ID, "viewer")
+	rec := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/changes/start?space="+fx.fld.ID, nil)
+	wantStatus(t, rec, 200)
+	cur := decode[changesStartJSON](t, rec).Cursor
+	n := putNode(t, fx.s, fx.key, fx.fld.ID, "/shared.txt", "x")
+
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}}
+	rec = callSession(t, fx.s, fx.bobSess, "GET", "/api/v1/changes?"+q.Encode(), nil)
+	wantStatus(t, rec, 200)
+	if entryOf(decode[changesJSON](t, rec), n.ID) == nil {
+		t.Error("the other member's read of the same cursor missed the change")
+	}
+
+	annTok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID}, "user": fx.ann.ID})
+	rec = feedCall(t, fx.s, annTok, q)
+	wantStatus(t, rec, 200)
+	if entryOf(decode[changesJSON](t, rec), n.ID) == nil {
+		t.Error("the delegated token's read of the same cursor missed the change")
+	}
 }
 
 // TestChangesBelowMarkIsGone: a cursor whose seq fell below the prune mark is refused with gone and reason reset.
@@ -333,9 +413,160 @@ func TestChangesBelowMarkIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {cur}})
-	e := wantError(t, rec, 410, apierr.Gone)
-	if e.Details["reason"] != "reset" {
-		t.Errorf("gone reason = %v, want reset", e.Details["reason"])
+	wantGoneReset(t, rec)
+}
+
+// TestChangesStartAfterFullPrune: when every row has aged out, a fresh start still answers a cursor at the head,
+// and reading after it is an empty page, not gone: the head never lowers with the rows.
+func TestChangesStartAfterFullPrune(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/aged.txt", "x")
+	for {
+		n, err := fx.s.store.PruneNodeChanges(context.Background(), time.Now().Add(time.Hour), 10000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	// The old cursor fell below the mark.
+	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {cur}})
+	wantGoneReset(t, rec)
+	// A fresh start names the head, at the mark, and reads an empty page.
+	cur2 := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	if cursorSeq(t, fx.s, fx.fld.ID, cur2) == 0 {
+		t.Error("start after a full prune names seq 0, want the head the journal keeps")
+	}
+	out := feed(t, fx.s, fx.key, fx.fld.ID, cur2)
+	if len(out.Changes) != 0 || out.Cursor != cur2 {
+		t.Errorf("read after the fresh start = %+v, want empty with the same cursor", out)
+	}
+}
+
+// TestChangesCursorAboveHeadIsGone: a cursor naming a seq above the head (as one kept across a restore from an
+// older backup) is refused with gone and reason reset, not served an empty page.
+func TestChangesCursorAboveHeadIsGone(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	seq := cursorSeq(t, fx.s, fx.fld.ID, cur)
+	future := sealCursor(t, fx.s, fx.fld.ID, seq+10)
+	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {future}})
+	wantGoneReset(t, rec)
+}
+
+// TestChangesPruneBetweenMarkAndRows: a prune that lands between the mark read and the row read cannot make the
+// feed skip rows silently: both are read in one snapshot, so the rows the cursor still names are reported.
+func TestChangesPruneBetweenMarkAndRows(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	n := putNode(t, fx.s, fx.key, fx.fld.ID, "/hook.txt", "x")
+	fx.s.changesPruneHook = func() {
+		if _, err := fx.s.store.PruneNodeChanges(context.Background(), time.Now().Add(time.Hour), 10000); err != nil {
+			t.Error(err)
+		}
+	}
+	out := feed(t, fx.s, fx.key, fx.fld.ID, cur)
+	e := entryOf(out, n.ID)
+	if e == nil || e.Removed {
+		t.Fatalf("the prune between the mark and the rows skipped the change: %+v", out)
+	}
+}
+
+// TestChangesGoneAccountPruneKeepsTheFeed: pruning a deleted account's young rows leaves the mark where it was, so
+// another account's cursor keeps reading its own changes.
+func TestChangesGoneAccountPruneKeepsTheFeed(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	n := putNode(t, fx.s, fx.key, fx.fld.ID, "/live.txt", "x")
+	ctx := context.Background()
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		if err := tx.InsertAccount(ctx, &store.Account{ID: "acc_gone", Name: "Gone", Status: store.AccountActive,
+			CreatedAt: store.Now(), UpdatedAt: store.Now()}); err != nil {
+			return err
+		}
+		if err := tx.InsertFolder(ctx, &store.Folder{ID: "fld_gone", AccountID: "acc_gone", Name: "G", NameKey: "g",
+			CreatedAt: store.Now(), UpdatedAt: store.Now()}, "test"); err != nil {
+			return err
+		}
+		root, err := tx.RootNode(ctx, "acc_gone", "fld_gone")
+		if err != nil {
+			return err
+		}
+		return tx.InsertNode(ctx, &store.Node{ID: "nod_gone", AccountID: "acc_gone", FolderID: "fld_gone",
+			ParentID: root.ID, Name: "g.txt", NameKey: "g.txt", Kind: store.KindFile, Size: 1, ETag: "e",
+			CreatedAt: store.Now(), ModifiedAt: store.Now()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		return tx.DeleteAccount(ctx, "acc_gone")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A cutoff in the past ages nothing out; only the gone account's rows go.
+	if _, err := fx.s.store.PruneNodeChanges(ctx, time.Now().Add(-time.Hour), 1000); err != nil {
+		t.Fatal(err)
+	}
+	if mark, err := fx.s.store.NodeChangesMark(ctx); err != nil || mark != 0 {
+		t.Fatalf("mark = %d, %v; want 0 after a gone-account prune", mark, err)
+	}
+	out := feed(t, fx.s, fx.key, fx.fld.ID, cur)
+	if entryOf(out, n.ID) == nil {
+		t.Fatalf("the live account's feed lost its change: %+v", out)
+	}
+}
+
+// TestChangesAccountCursorAdvancesPastStaged: the account feed skips staged rows but its cursor advances past them,
+// so the publish's new rows are read after it; a cursor stuck before the staged rows would read them never.
+func TestChangesAccountCursorAdvancesPastStaged(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	ctx := context.Background()
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		if err := tx.CreateStagingFolder(ctx, fx.acc.ID, "fld_st", "nod_st_root", store.Now()); err != nil {
+			return err
+		}
+		n := &store.Node{ID: "nod_st_file", AccountID: fx.acc.ID, FolderID: "fld_st", ParentID: "nod_st_root",
+			Name: "s.txt", NameKey: "s.txt", Kind: store.KindFile, Size: 1, ETag: "e", CreatedAt: store.Now(), ModifiedAt: store.Now()}
+		return tx.InsertNodeNoIndex(ctx, n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cur := startCursor(t, fx.s, fx.key, "")
+	startSeq := cursorSeq(t, fx.s, fx.acc.ID, cur)
+	raw, err := fx.s.store.NodeChangesAfter(ctx, fx.acc.ID, "", startSeq, 1000)
+	if err != nil || len(raw) == 0 {
+		t.Fatalf("staged rows after the start = %d, %v; want some", len(raw), err)
+	}
+	lastRaw := raw[len(raw)-1].Seq
+	out := feed(t, fx.s, fx.key, "", cur)
+	if len(out.Changes) != 0 {
+		t.Fatalf("staged rows reached the account feed: %+v", out.Changes)
+	}
+	if out.Cursor == cur {
+		t.Fatal("the cursor did not advance past the staged rows")
+	}
+	if got := cursorSeq(t, fx.s, fx.acc.ID, out.Cursor); got != lastRaw {
+		t.Fatalf("cursor seq = %d, want the last raw row %d", got, lastRaw)
+	}
+	// The publish writes new rows, which the advanced cursor reads.
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		if err := tx.MoveStagedTree(ctx, fx.acc.ID, "fld_st", fx.fld.ID, store.Now()); err != nil {
+			return err
+		}
+		return tx.DropStaging(ctx, fx.acc.ID, "fld_st", "nod_st_root")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out = feed(t, fx.s, fx.key, "", out.Cursor)
+	if entryOf(out, "nod_st_file") == nil {
+		t.Fatalf("the published node never reached the account feed: %+v", out)
 	}
 }
 
@@ -458,8 +689,8 @@ func waitServer(t *testing.T, s *Server) *httptest.Server {
 	return srv
 }
 
-// waitGET reads the feed over real HTTP with a context, returning the body and the elapsed time.
-func waitGET(t *testing.T, srv *httptest.Server, cred string, q url.Values, ctx context.Context) (changesJSON, time.Duration) {
+// waitGET reads the feed over real HTTP with a context, returning the body, the elapsed time and the answer headers.
+func waitGET(t *testing.T, srv *httptest.Server, cred string, q url.Values, ctx context.Context) (changesJSON, time.Duration, http.Header) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/v1/changes?"+q.Encode(), nil)
 	if err != nil {
@@ -484,7 +715,7 @@ func waitGET(t *testing.T, srv *httptest.Server, cred string, q url.Values, ctx 
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatal(err)
 	}
-	return out, elapsed
+	return out, elapsed, resp.Header
 }
 
 // TestChangesWaitAnswersOnCommit: a held wait answers soon after a write commits, with the new entry.
@@ -506,7 +737,7 @@ func TestChangesWaitAnswersOnCommit(t *testing.T) {
 		committed <- time.Now()
 	}()
 	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"10"}}
-	out, _ := waitGET(t, srv, fx.key, q, context.Background())
+	out, _, _ := waitGET(t, srv, fx.key, q, context.Background())
 	at := <-committed
 	if entryOf(out, "nod_wait") == nil {
 		t.Fatalf("wait answer = %+v, want the new node", out)
@@ -523,7 +754,7 @@ func TestChangesWaitTimesOut(t *testing.T) {
 	srv := waitServer(t, fx.s)
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
 	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"1"}}
-	out, elapsed := waitGET(t, srv, fx.key, q, context.Background())
+	out, elapsed, _ := waitGET(t, srv, fx.key, q, context.Background())
 	if elapsed < time.Second || elapsed > 3*time.Second {
 		t.Errorf("wait elapsed %v, want about a second", elapsed)
 	}
@@ -587,12 +818,15 @@ func TestChangesWaitFifthCallerReturnsAtOnce(t *testing.T) {
 		dones = append(dones, d)
 	}
 	time.Sleep(500 * time.Millisecond) // let the four register
-	out, elapsed := waitGET(t, srv, fx.key, q, context.Background())
+	out, elapsed, hdr := waitGET(t, srv, fx.key, q, context.Background())
 	if elapsed > time.Second {
 		t.Errorf("the fifth wait took %v, want an immediate answer", elapsed)
 	}
 	if len(out.Changes) != 0 {
 		t.Errorf("the fifth wait = %+v, want empty", out)
+	}
+	if hdr.Get("Retry-After") != "5" {
+		t.Errorf("the refused wait carries Retry-After %q, want 5", hdr.Get("Retry-After"))
 	}
 	for _, c := range cancels {
 		c()
@@ -612,12 +846,172 @@ func TestChangesWaitGlobalCap(t *testing.T) {
 	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"60"}}
 	cancel, done := heldWait(t, srv, fx.key, q)
 	time.Sleep(500 * time.Millisecond)
-	_, elapsed := waitGET(t, srv, fx.key, q, context.Background())
+	_, elapsed, hdr := waitGET(t, srv, fx.key, q, context.Background())
 	if elapsed > time.Second {
 		t.Errorf("the over-cap wait took %v, want an immediate answer", elapsed)
 	}
+	if hdr.Get("Retry-After") != "5" {
+		t.Errorf("the refused wait carries Retry-After %q, want 5", hdr.Get("Retry-After"))
+	}
 	cancel()
 	<-done
+}
+
+// TestChangesWaitMaxWaitersZero: with max_waiters 0 every wait answers at once, with Retry-After 5.
+func TestChangesWaitMaxWaitersZero(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	fx.s.cfg.Changes.MaxWaiters = 0
+	srv := waitServer(t, fx.s)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"60"}}
+	out, elapsed, hdr := waitGET(t, srv, fx.key, q, context.Background())
+	if elapsed > time.Second {
+		t.Errorf("the wait took %v with max_waiters 0, want an immediate answer", elapsed)
+	}
+	if len(out.Changes) != 0 {
+		t.Errorf("the wait = %+v, want empty", out)
+	}
+	if hdr.Get("Retry-After") != "5" {
+		t.Errorf("the refused wait carries Retry-After %q, want 5", hdr.Get("Retry-After"))
+	}
+}
+
+// TestChangesWaitFirstWakeAfterIdle: the 250 ms throttle is computed after the wake, so the first wake after a long
+// idle answers at once, not a quarter second later.
+func TestChangesWaitFirstWakeAfterIdle(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	srv := waitServer(t, fx.s)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	committed := make(chan time.Time, 1)
+	go func() {
+		time.Sleep(600 * time.Millisecond) // idle well past the throttle
+		n := &store.Node{ID: "nod_idle", AccountID: fx.acc.ID, FolderID: fx.fld.ID, ParentID: fx.rootOf(t, fx.fld.ID),
+			Name: "i.txt", NameKey: "i.txt", Kind: store.KindFile, Size: 1, ETag: "e", CreatedAt: store.Now(), ModifiedAt: store.Now()}
+		if err := fx.s.store.Write(context.Background(), func(tx *store.Tx) error {
+			return tx.InsertNodeNoIndex(context.Background(), n)
+		}); err != nil {
+			t.Error(err)
+		}
+		committed <- time.Now()
+	}()
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"10"}}
+	out, _, _ := waitGET(t, srv, fx.key, q, context.Background())
+	at := <-committed
+	if entryOf(out, "nod_idle") == nil {
+		t.Fatalf("wait answer = %+v, want the new node", out)
+	}
+	if latency := time.Since(at); latency > 200*time.Millisecond {
+		t.Errorf("the first wake after the idle took %v to answer, want at once (under 200 ms)", latency)
+	}
+}
+
+// TestChangesWaitThrottleNeverPastDeadline: a wake late in the wait never holds the answer past the deadline: the
+// throttle sleep is capped at it. A write to another space wakes the wait without giving it rows.
+func TestChangesWaitThrottleNeverPastDeadline(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Elsewhere")
+	srv := waitServer(t, fx.s)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	stop := make(chan struct{})
+	go func() {
+		// One wake late in the wait, then silence: the answer must still come at the deadline.
+		time.Sleep(1900 * time.Millisecond)
+		n := &store.Node{ID: "nod_late", AccountID: fx.acc.ID, FolderID: other.ID, ParentID: fx.rootOf(t, other.ID),
+			Name: "l.txt", NameKey: "l.txt", Kind: store.KindFile, Size: 1, ETag: "e", CreatedAt: store.Now(), ModifiedAt: store.Now()}
+		if err := fx.s.store.Write(context.Background(), func(tx *store.Tx) error {
+			return tx.InsertNodeNoIndex(context.Background(), n)
+		}); err != nil {
+			t.Error(err)
+		}
+		close(stop)
+	}()
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"2"}}
+	out, elapsed, _ := waitGET(t, srv, fx.key, q, context.Background())
+	<-stop
+	if elapsed < 2*time.Second || elapsed > 2100*time.Millisecond {
+		t.Errorf("wait elapsed %v, want the 2 s deadline, not past it", elapsed)
+	}
+	if len(out.Changes) != 0 || out.Cursor != cur {
+		t.Errorf("deadline answer = %+v, want empty with the same cursor", out)
+	}
+}
+
+// TestChangesWaitKeyIsTheUserBehindAToken: end users behind one integration key each hold their own four waits:
+// two users' tokens hold eight at once, and each user's fifth answers at once while the other's waits stay held.
+func TestChangesWaitKeyIsTheUserBehindAToken(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "viewer")
+	fx.setPerm(t, root, fx.bob.ID, "viewer")
+	annTok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID}, "user": fx.ann.ID})
+	bobTok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID}, "user": fx.bob.ID})
+	srv := waitServer(t, fx.s)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"60"}}
+	var cancels []context.CancelFunc
+	var dones []chan time.Duration
+	for i := 0; i < 4; i++ {
+		c, d := heldWait(t, srv, annTok, q)
+		cancels = append(cancels, c)
+		dones = append(dones, d)
+		c, d = heldWait(t, srv, bobTok, q)
+		cancels = append(cancels, c)
+		dones = append(dones, d)
+	}
+	time.Sleep(500 * time.Millisecond) // let the eight register
+	for _, tok := range []string{annTok, bobTok} {
+		out, elapsed, hdr := waitGET(t, srv, tok, q, context.Background())
+		if elapsed > time.Second || len(out.Changes) != 0 {
+			t.Errorf("a user's fifth wait took %v with %+v, want an immediate empty answer", elapsed, out)
+		}
+		if hdr.Get("Retry-After") != "5" {
+			t.Errorf("the refused wait carries Retry-After %q, want 5", hdr.Get("Retry-After"))
+		}
+	}
+	for _, c := range cancels {
+		c()
+	}
+	for i, d := range dones {
+		if elapsed := <-d; elapsed < 400*time.Millisecond {
+			t.Errorf("wait %d was refused after %v though its user held fewer than four", i, elapsed)
+		}
+	}
+}
+
+// TestChangesWaitKeyOfAnAccountKeyToken: a token acting as the account key keeps the key's own wait key: the bare
+// key's four waits refuse the token's fifth.
+func TestChangesWaitKeyOfAnAccountKeyToken(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	keyTok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID}})
+	srv := waitServer(t, fx.s)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"60"}}
+	var cancels []context.CancelFunc
+	var dones []chan time.Duration
+	for i := 0; i < 4; i++ {
+		c, d := heldWait(t, srv, fx.key, q)
+		cancels = append(cancels, c)
+		dones = append(dones, d)
+	}
+	time.Sleep(500 * time.Millisecond)
+	_, elapsed, hdr := waitGET(t, srv, keyTok, q, context.Background())
+	if elapsed > time.Second {
+		t.Errorf("the token's wait took %v, want an immediate answer behind the key's four", elapsed)
+	}
+	if hdr.Get("Retry-After") != "5" {
+		t.Errorf("the refused wait carries Retry-After %q, want 5", hdr.Get("Retry-After"))
+	}
+	for _, c := range cancels {
+		c()
+	}
+	for _, d := range dones {
+		<-d
+	}
 }
 
 // TestChangesWaitEndsOnShutdown: a held wait ends when the server begins shutting down, not at the shutdown deadline.
