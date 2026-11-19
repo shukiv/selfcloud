@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -241,6 +242,75 @@ func TestPlaylistImportOutsideFromRoot(t *testing.T) {
 	}
 	if names := m3uEntryNames(got.Playlist); strings.Join(names, ",") != "song.mp3" {
 		t.Errorf("entries = %v", names)
+	}
+}
+
+// TestPlaylistImportClimbNeedsTheFilesFolder: a person who reaches only the playlist file (a file share) learns nothing
+// from a climb. "../x.mp3" is not_found whether the file sits at the space root or in a subfolder, so the answer does not
+// say whether the file's folder is a root: the climb includes the file's own folder, which a file-only grant does not reach.
+func TestPlaylistImportClimbNeedsTheFilesFolder(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{"root", "/list.m3u8"},
+		{"subfolder", "/Sub/list.m3u8"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fx := newSharingFixture(t)
+			putNode(t, fx.s, fx.key, fx.fld.ID, "/x.mp3", "x")
+			if tc.path == "/Sub/list.m3u8" {
+				mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Sub")
+			}
+			list := putNode(t, fx.s, fx.key, fx.fld.ID, tc.path, "../x.mp3\n")
+			// ann reaches only the playlist file, not the folder it sits in.
+			fx.setPerm(t, list.ID, fx.ann.ID, "viewer")
+			rec := plImportCall(t, fx, fx.annSess, list.ID)
+			wantStatus(t, rec, 201)
+			got := decode[m3uImportAnswer](t, rec)
+			if got.Playlist.EntryCount != 0 {
+				t.Fatalf("entries = %d, want none", got.Playlist.EntryCount)
+			}
+			if len(got.Skipped) != 1 || got.Skipped[0] != (m3uSkip{1, "not_found"}) || got.SkippedTotal != 1 {
+				t.Fatalf("skipped = %+v, total %d, want line 1 not_found", got.Skipped, got.SkippedTotal)
+			}
+		})
+	}
+}
+
+// TestPlaylistImportRecheckUnderToken: the write's re-check honours the token's own confinement, as the read does. A
+// principal confined to folder A keeps an entry still in A and skips one moved out of A as not_found. The route itself
+// refuses delegated tokens (playlistCaller), so this covers the re-check directly, as defence in depth.
+func TestPlaylistImportRecheckUnderToken(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "contributor")
+	a := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Alpha")
+	b := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Beta")
+	inA := putNode(t, fx.s, fx.key, fx.fld.ID, "/Alpha/here.mp3", "h")
+	moved := putNode(t, fx.s, fx.key, fx.fld.ID, "/Alpha/gone.mp3", "g")
+	wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+moved.ID+"/move", fx.key, map[string]any{"parent": b.ID}), 200)
+	p := &auth.Principal{Kind: auth.KindUser, ID: fx.ann.ID, AccountID: fx.acc.ID, UserID: fx.ann.ID,
+		Token: &auth.TokenScope{Folders: []string{fx.fld.ID}, Node: a.ID, Write: true, Audience: "api"}}
+	kept := []importKept{{line: 1, node: inA.ID}, {line: 2, node: moved.ID}}
+	var hold []importKept
+	var skips []playlistImportSkip
+	err := fx.s.store.Read(context.Background(), func(q store.Querier) error {
+		var err error
+		hold, skips, err = importRecheck(context.Background(), q, p, kept)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hold) != 1 || hold[0] != (importKept{1, inA.ID}) {
+		t.Fatalf("hold = %+v, want the entry still in A", hold)
+	}
+	if len(skips) != 1 || skips[0] != (playlistImportSkip{2, "not_found"}) {
+		t.Fatalf("skips = %+v, want line 2 not_found for the entry moved out of A", skips)
 	}
 }
 

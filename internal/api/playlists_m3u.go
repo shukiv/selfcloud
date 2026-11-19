@@ -129,19 +129,12 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 		}
 		// The write re-checks the reach of the kept entries on the state it sees, as addableIn does; one batch serves
 		// them all. An entry the caller no longer reaches is skipped, never a refusal of the import.
-		ids := make([]string, len(kept))
-		for i, k := range kept {
-			ids[i] = k.node
-		}
-		roles, err := reachRolesIn(ctx, tx.Querier(), p, ids, "")
+		hold, more, err := importRecheck(ctx, tx.Querier(), p, kept)
 		if err != nil {
 			return err
 		}
-		for _, k := range kept {
-			if roles[k.node] == "" {
-				skips = append(skips, playlistImportSkip{Line: k.line, Reason: "not_found"})
-				continue
-			}
+		skips = append(skips, more...)
+		for _, k := range hold {
 			entries = append(entries, store.PlaylistEntry{ID: id.New("ple"), PlaylistID: pl.ID, NodeID: k.node, Position: len(entries)})
 		}
 		if err := tx.InsertPlaylist(ctx, pl, at); err != nil {
@@ -171,6 +164,30 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 	}
 	writeJSON(w, http.StatusCreated, playlistImportOut{Playlist: view, Skipped: skips, SkippedTotal: skippedTotal})
 	return nil
+}
+
+// importRecheck re-checks the reach of the kept entries on the state the write sees, in one batch, and returns the
+// entries that still hold and a not_found skip for each that does not. An entry the caller no longer reaches is skipped,
+// never a refusal of the import.
+func importRecheck(ctx context.Context, q store.Querier, p *auth.Principal, kept []importKept) ([]importKept, []playlistImportSkip, error) {
+	ids := make([]string, len(kept))
+	for i, k := range kept {
+		ids[i] = k.node
+	}
+	roles, err := reachRolesIn(ctx, q, p, ids, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	hold := make([]importKept, 0, len(kept))
+	var skips []playlistImportSkip
+	for _, k := range kept {
+		if roles[k.node] == "" {
+			skips = append(skips, playlistImportSkip{Line: k.line, Reason: "not_found"})
+			continue
+		}
+		hold = append(hold, k)
+	}
+	return hold, skips, nil
 }
 
 // readPlaylistFile reads a playlist file's bytes through its blob, bounded by the node's size (checked against the cap
