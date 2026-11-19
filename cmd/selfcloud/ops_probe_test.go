@@ -48,6 +48,12 @@ func (p *fileProbe) newHook() (hook, secret string) {
 func (p *fileProbe) failedDelivery(hook string) string {
 	p.t.Helper()
 	p.do("webhook", "test", "--account", p.acc, hook)
+	return p.giveUpDelivery(hook)
+}
+
+// giveUpDelivery claims the endpoint's test delivery and records it given up, so it is failed, and returns its id.
+func (p *fileProbe) giveUpDelivery(hook string) string {
+	p.t.Helper()
 	ctx := context.Background()
 	jobs, err := p.st.ClaimWebhookJobs(ctx, time.Now().Add(time.Minute), time.Minute, 5, hook)
 	if err != nil || len(jobs) != 1 {
@@ -164,6 +170,44 @@ func TestWebhookCommandsRoundTripOnTheRealServer(t *testing.T) {
 	p.do("webhook", "rm", "--account", p.acc, hook, "--yes")
 	if code := run([]string{"webhook", "show", "--account", p.acc, hook, "--url", p.url}, &out, &errOut); code != 4 {
 		t.Fatalf("a removed webhook: exit %d", code)
+	}
+}
+
+// TestGiveUpDeliveryTakesADeliveryTheWorkerHolds: the probe's give-up takes the delivery even when the server's webhook
+// worker has claimed it under its lease, and the worker's own outcome afterwards, with its old lease, changes nothing.
+func TestGiveUpDeliveryTakesADeliveryTheWorkerHolds(t *testing.T) {
+	isolateRemote(t)
+	p := newFileProbe(t)
+	h, _ := p.newHook()
+	p.do("webhook", "test", "--account", p.acc, h)
+	ctx := context.Background()
+	jobs, err := p.st.ClaimWebhookJobs(ctx, time.Now(), 2*time.Minute, 5, h)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("claim as the worker: %v, %d jobs", err, len(jobs))
+	}
+	j := jobs[0]
+	id := p.giveUpDelivery(h)
+	if id != j.DeliveryID {
+		t.Fatalf("give-up returned %q, want the worker's delivery %q", id, j.DeliveryID)
+	}
+	d, err := p.st.WebhookDelivery(ctx, p.acc, h, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.State != "failed" {
+		t.Fatalf("state %q, want failed", d.State)
+	}
+	if err := p.st.RecordWebhookOutcome(ctx, store.WebhookOutcome{DeliveryID: j.DeliveryID, AccountID: j.AccountID,
+		EndpointID: j.EndpointID, URL: j.URL, At: time.Now(), Err: "connect", NextAt: time.Now().Add(time.Minute),
+		Lease: j.Lease}); err != nil {
+		t.Fatal(err)
+	}
+	d, err = p.st.WebhookDelivery(ctx, p.acc, h, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.State != "failed" {
+		t.Fatalf("after the worker's outcome: state %q, want failed", d.State)
 	}
 }
 
