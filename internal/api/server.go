@@ -163,7 +163,14 @@ type Server struct {
 	// bg holds mail sent after a response has gone out, so Serve can wait for it.
 	bg       sync.WaitGroup
 	draining atomic.Bool
-	handler  http.Handler
+	// changesStop closes when Serve begins to drain, so a changes long poll ends at once rather than holding the
+	// shutdown for its full wait (decision 235).
+	changesStop chan struct{}
+	// changesMu guards the long polls held: changesWaiters counts them per caller, changesWaiting in total.
+	changesMu      sync.Mutex
+	changesWaiters map[string]int
+	changesWaiting int
+	handler        http.Handler
 	// copySyncNodes is the largest copy made in the request; see syncCopyNodes.
 	copySyncNodes int
 	// copyYield is how long a chunked copy runs before it yields its turn to the queue (copyBatches). A test lowers it.
@@ -381,6 +388,8 @@ func New(opts Options) (*Server, error) {
 		limitClock:      time.Now,
 		deviceSlots:     make(chan struct{}, deviceConfirmSlots),
 		confirmBusy:     map[string]bool{},
+		changesStop:     make(chan struct{}),
+		changesWaiters:  map[string]int{},
 		sessionClock:    time.Now,
 		cfg:             cfg,
 		snap:            snap,
@@ -488,6 +497,8 @@ func New(opts Options) (*Server, error) {
 			"access.list": newLimiter(60),
 			// Searches, per caller: each one reads up to the scan budget and checks access to every candidate.
 			"search": newLimiter(cfg.Search.RatePerMinute),
+			// The changes feed, per caller: a start or a page read (decision 235). A long poll holds one call.
+			"changes": newLimiter(120),
 			// Searches, per account: every user and token of an account has its own limit above, so a tenant with many users
 			// would multiply it. The account's total is ten times one caller's.
 			"search.account": newLimiter(cfg.Search.RatePerMinute * 10),
@@ -861,6 +872,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: notifyUnsubPath, handle: s.handleUnsubscribeForm, secretPath: true, imp: impAllow},
 		{method: http.MethodPost, path: notifyUnsubPath, handle: s.handleUnsubscribe, secretPath: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/changes/start", handle: s.handleChangesStart, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/changes", handle: s.handleChanges, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true, imp: impRefuse, noDevice: true},
@@ -1084,8 +1097,9 @@ func (s *Server) sweepOptions() sweep.Options {
 			return sweep.Retention{Trash: c.Trash.Retention.D(), VersionCount: c.Versions.MaxCount,
 				VersionAge: c.Versions.MaxAge.D()}
 		},
-		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
-		Derived:        s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log}
+		AuditRetention:   time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
+		ChangesRetention: s.cfg.Changes.Retention.D(),
+		Derived:          s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log}
 }
 
 // Serve serves the API on ln, and metrics on mln when it is not nil, until ctx is cancelled.
@@ -1163,6 +1177,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	case serveErr = <-errc:
 	}
 	s.draining.Store(true)
+	close(s.changesStop)
 	stopJobs() // an interrupted job is run again on the next start
 	defer func() {
 		<-jobsDone

@@ -79,6 +79,7 @@ type Config struct {
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
 	Audit     AuditConfig     `yaml:"audit"`
+	Changes   ChangesConfig   `yaml:"changes"`
 	Versions  VersionsConfig  `yaml:"versions"`
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
@@ -342,6 +343,17 @@ type AuditConfig struct {
 	// deleted by the sweep, for good. Zero keeps every entry for ever. An operator with legal retention duties must set
 	// this period to what the law requires.
 	RetentionDays int `yaml:"retention_days"`
+}
+
+// ChangesConfig controls the changes feed (slice cf1, decision 235): the journal a client reads to learn what changed
+// in a space since a token, and the long polls that wait for the next change.
+type ChangesConfig struct {
+	// Retention is how long a journal row is kept. The sweep removes rows older than this, and rows whose account is
+	// gone, and raises the mark a cursor below which is refused with gone. It may not be shorter than an hour.
+	Retention Duration `yaml:"retention"`
+	// MaxWaiters is the most long polls the server holds at once across all callers. A wait beyond it answers at once.
+	// Zero answers every wait at once. A caller holds at most four waits of its own regardless.
+	MaxWaiters int `yaml:"max_waiters"`
 }
 
 // DerivedDir is the directory the derived files are kept in: derived.dir, or data_dir/derived when that is empty. The
@@ -859,6 +871,7 @@ func Defaults() *Config {
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
 		Audit:    AuditConfig{RetentionDays: 365},
+		Changes:  ChangesConfig{Retention: Duration(720 * time.Hour), MaxWaiters: 1000},
 		Versions: VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
 		Links:    LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Tokens:   TokensConfig{MaxTTL: Duration(time.Hour)},
@@ -1041,6 +1054,12 @@ func (c *Config) Validate() error {
 	// Past this many days the retention would overflow a time.Duration (about 270 years).
 	if c.Audit.RetentionDays > 100_000 {
 		bad("audit.retention_days is more than 100,000 days")
+	}
+	if c.Changes.Retention.D() < time.Hour {
+		bad("changes.retention must be at least 1h")
+	}
+	if c.Changes.MaxWaiters < 0 {
+		bad("changes.max_waiters is negative; use 0 to answer every wait at once")
 	}
 	if c.Versions.MaxCount < 0 {
 		bad("versions.max_count is negative; use 0 for no count limit")

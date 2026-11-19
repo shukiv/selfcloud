@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // changesReply is a feed answer with the given cursor, has_more and entries.
@@ -165,8 +166,26 @@ func TestChangesBadFlags(t *testing.T) {
 	}
 }
 
+// lockedBuffer is a bytes.Buffer safe to read while the command writes it, so the test can watch the output.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 // TestChangesFollowStopsOnInterrupt: --follow long-polls with wait=60, prints each page, and ends cleanly when its
-// context is cancelled, as Interrupt does.
+// context is cancelled, as Interrupt does. The third poll holds until the interrupt, as a wait with no change does.
 func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 	isolate(t, testAccountKey)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,6 +195,7 @@ func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 
 	var mu sync.Mutex
 	changesCalls := 0
+	var waits []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -185,15 +205,18 @@ func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 			mu.Lock()
 			changesCalls++
 			n := changesCalls
+			waits = append(waits, r.URL.Query().Get("wait"))
 			mu.Unlock()
-			if n == 1 {
+			switch n {
+			case 1:
 				_, _ = io.WriteString(w, jsonOf(map[string]any{
 					"changes": []map[string]any{liveEntry(testNode, "one.txt", false)}, "cursor": "c1_b", "has_more": false}))
-			} else {
+			case 2:
 				_, _ = io.WriteString(w, jsonOf(map[string]any{
 					"changes": []map[string]any{liveEntry(testOther, "two.txt", false)}, "cursor": "c1_c", "has_more": false}))
-				// The second page is the last the test serves; interrupt the follow as a signal would.
-				cancel()
+			default:
+				// A long poll with no change holds until the follow is interrupted.
+				<-r.Context().Done()
 			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -201,8 +224,16 @@ func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	var out, errOut strings.Builder
-	code := Changes([]string{"--space", testFolder, "--follow", "--url", srv.URL}, &out, &errOut)
+	var out, errOut lockedBuffer
+	done := make(chan int, 1)
+	go func() { done <- Changes([]string{"--space", testFolder, "--follow", "--url", srv.URL}, &out, &errOut) }()
+	// Interrupt once the second page is printed, as a signal arriving between polls would.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), "cursor c1_c") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	code := <-done
 	if code != 0 {
 		t.Fatalf("exit %d, want 0; stdout %q stderr %q", code, out.String(), errOut.String())
 	}
@@ -212,10 +243,15 @@ func TestChangesFollowStopsOnInterrupt(t *testing.T) {
 	if !strings.Contains(out.String(), "cursor c1_c") {
 		t.Errorf("the last cursor was not printed: %q", out.String())
 	}
-	// The follow reads carried wait=60.
+	// Every follow read carried wait=60, and at least the two pages were read.
 	mu.Lock()
 	defer mu.Unlock()
-	if changesCalls != 2 {
-		t.Errorf("changes calls = %d, want 2", changesCalls)
+	if changesCalls < 2 {
+		t.Errorf("changes calls = %d, want at least 2", changesCalls)
+	}
+	for _, w := range waits {
+		if w != "60" {
+			t.Errorf("a follow read carried wait=%q, want 60", w)
+		}
 	}
 }

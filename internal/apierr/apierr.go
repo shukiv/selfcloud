@@ -34,6 +34,9 @@ const (
 	Locked               Code = "locked"
 	UploadExpired        Code = "upload_expired"
 	LinkExpired          Code = "link_expired"
+	// Gone refuses a changes cursor whose seq fell below the prune mark (slice cf1, decision 235). The journal no
+	// longer holds the rows the cursor names, so the client must start again. It is a 410 with reason reset.
+	Gone                 Code = "gone"
 	UnsupportedMedia     Code = "unsupported_media_type"
 	TooManyUploads       Code = "too_many_uploads"
 	PreconditionFailed   Code = "precondition_failed"
@@ -83,6 +86,7 @@ var statuses = map[Code]int{
 	Locked:               http.StatusConflict,
 	UploadExpired:        http.StatusGone,
 	LinkExpired:          http.StatusGone,
+	Gone:                 http.StatusGone,
 	UnsupportedMedia:     http.StatusUnsupportedMediaType,
 	EncryptedArchive:     http.StatusUnsupportedMediaType,
 	TooManyUploads:       http.StatusTooManyRequests,

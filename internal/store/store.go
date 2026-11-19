@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
@@ -43,6 +44,9 @@ type Store struct {
 	log *slog.Logger
 	// clock is the time locks read; nil means Now. See SetClock.
 	clock func() time.Time
+	// writeMu guards writeSubs, the watchers a committed write signals (node_changes.go).
+	writeMu   sync.Mutex
+	writeSubs map[chan struct{}]struct{}
 }
 
 // Options configure Open.
@@ -189,6 +193,7 @@ func (s *Store) write(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: commit: %w", err)
 	}
+	s.notifyWrites()
 	return nil
 }
 

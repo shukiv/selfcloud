@@ -595,6 +595,11 @@ var remoteCommands = []remoteCommand{
 		help: `  recent [--all] [--type TYPE] [--modified-after TIME] [--modified-before TIME]
                                  the nodes the person viewed or edited last, newest first
 `, run: files.Recent},
+	{name: "changes", route: "GET /api/v1/changes/start", more: []string{"GET /api/v1/changes"},
+		help: `  changes [--space FOLDER] [--cursor TOKEN] [--limit N] [--follow]
+                                 what changed in a space (or the whole account) since a cursor; --follow waits for
+                                 each next change until interrupted
+`, run: files.Changes},
 	{name: "comment ls", route: "GET /api/v1/nodes/{nod}/comments",
 		help: `  comment ls NODE [--all] [--replies CMT]
                                  a node's comments, newest first, or one comment's replies

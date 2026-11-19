@@ -62,8 +62,8 @@ func TestNodeChangesInsertRenameContent(t *testing.T) {
 	s := newChangesFixture(t)
 	ctx := context.Background()
 	base := int64(0)
-	if rows := changesAfter(t, s, "fld_c1", base); len(rows) != 5 {
-		t.Fatalf("the fixture's own inserts left %d rows, want 5 (roots included)", len(rows))
+	if rows := changesAfter(t, s, "fld_c1", base); len(rows) != 4 {
+		t.Fatalf("the fixture's own inserts left %d rows in fld_c1, want 4 (its root and three nodes)", len(rows))
 	}
 	last := changesAfter(t, s, "fld_c1", 0)
 	base = last[len(last)-1].Seq
@@ -337,14 +337,20 @@ func TestNodeChangesCopyPublish(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Before the publish, the destination's feed holds nothing of the copy.
+	// Before the publish, the destination's feed holds none of the copies: the staging inserts went to the staging
+	// folder, and the copies carry derived ids, not the source ids already in the destination.
+	published := []string{fx.job.RootID}
+	for _, src := range []string{"nod_s1", "nod_s2", "nod_sub", "nod_s3"} {
+		published = append(published, fx.job.DerivedNodeID(src))
+	}
 	rows, err := fx.s.NodeChangesAfter(ctx, "acc_a", "fld_a", 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range rows {
-		if r.NodeID == "nod_copy" || r.NodeID == "nod_s1" {
-			t.Errorf("staged node %s reached the destination feed before the publish", r.NodeID)
+	beforeIDs := changeNodeIDs(rows)
+	for _, id := range published {
+		if slices.Contains(beforeIDs, id) {
+			t.Errorf("staged node %s reached the destination feed before the publish", id)
 		}
 	}
 	if err := fx.s.Write(ctx, func(tx *Tx) error {
@@ -361,7 +367,7 @@ func TestNodeChangesCopyPublish(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := changeNodeIDs(rows)
-	for _, want := range []string{"nod_copy", "nod_s1", "nod_s2", "nod_sub", "nod_s3"} {
+	for _, want := range published {
 		if !slices.Contains(ids, want) {
 			t.Errorf("the publish left no row for %s; rows %v", want, ids)
 		}
@@ -454,8 +460,8 @@ func TestNodeChangesReads(t *testing.T) {
 	s := newChangesFixture(t)
 	ctx := context.Background()
 	rows := changesAfter(t, s, "fld_c1", 0)
-	if len(rows) != 5 {
-		t.Fatalf("fixture rows = %d, want 5", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("fixture rows = %d, want 4", len(rows))
 	}
 	for i := 1; i < len(rows); i++ {
 		if rows[i].Seq <= rows[i-1].Seq {
@@ -522,8 +528,10 @@ func TestPruneNodeChanges(t *testing.T) {
 	if err := exec(s, `DELETE FROM accounts WHERE id = 'acc_g'`); err != nil {
 		t.Fatal(err)
 	}
+	// The deleted account's node leaves two rows: its insert, and the delete the account's cascade fires. The mark
+	// rises to the higher of them.
 	var goneSeq int64
-	if err := s.r.QueryRowContext(ctx, `SELECT seq FROM node_changes WHERE node_id = 'nod_gr'`).Scan(&goneSeq); err != nil {
+	if err := s.r.QueryRowContext(ctx, `SELECT MAX(seq) FROM node_changes WHERE node_id = 'nod_gr'`).Scan(&goneSeq); err != nil {
 		t.Fatal(err)
 	}
 	young, err := s.NodeChangesMaxSeq(ctx)

@@ -1252,6 +1252,39 @@ selfcloud unstar nod_…
 
 The server lets only a browser session clear the recent list or read notifications, so neither is a command here.
 
+## Changes
+
+`changes` reports what changed in a space, or the whole account, since a cursor (decision 235). It takes an account key,
+or a signed-in person's token for a space they reach; an installation admin and a link visitor are refused.
+
+| Command | What it does |
+|---|---|
+| `changes [--space FOLDER] [--cursor TOKEN] [--limit N] [--follow]` | the changes since a cursor, oldest first; `--follow` keeps reading until interrupted |
+
+Without `--cursor` the command first asks the server for a starting cursor at the feed's head, then reads one page after
+it. `--space FOLDER` (a `fld_` id) reads that space's feed and needs reach on the folder's root; without it the command
+reads the account's whole feed, which only a bare account key may read (a person's token or a delegated token is refused
+without a space). `--limit` is the most changes one page carries, 1 to 1000, default 200.
+
+Each change prints `ID`, `STATE` and `NAME`: `STATE` is `removed` when the node is gone, trashed, below a trashed folder,
+or has left the space (then there is no name), `relist` when a restore brought a folder back whose children's own rows did
+not change, and `changed` otherwise. The page ends with a `cursor TOKEN` line; pass it back as `--cursor` to read on.
+`--json` prints the API's own document (`changes`, `cursor`, `has_more`) instead.
+
+`--follow` keeps reading, waiting up to 60 seconds for each next change, and prints every page as it lands, until
+interrupted (Ctrl-C). A cursor that fell below the server's prune mark is refused with `gone`: the command prints the
+server's message plainly, in plain and `--json` output alike, and exits 1, so the client starts again with a fresh cursor.
+
+Exit codes follow the errors: 2 for a usage error (a bad limit, a malformed space, a stray argument), 3 when the server
+refuses, 4 for an unknown space, and 1 for a `gone` cursor.
+
+```
+selfcloud changes --space fld_…
+selfcloud changes --space fld_… --cursor c1_… --limit 50
+selfcloud changes --follow
+selfcloud changes --json
+```
+
 ## Comments and activity
 
 A node is named by its id. Comments and the activity trail belong to the account's people: `comment ls` and `activity`

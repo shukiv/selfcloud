@@ -152,8 +152,9 @@ func TestChangesRetentionPrunesDeletedAccount(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := countChanges(t, path, "nod_gone"); got != 1 {
-		t.Fatalf("the deleted account's row was already gone: %d", got)
+	// The node leaves two rows: its insert and the delete the account's cascade fires. Both stay until the prune.
+	if got := countChanges(t, path, "nod_gone"); got != 2 {
+		t.Fatalf("the deleted account's rows: %d, want 2 before the prune", got)
 	}
 	sw := New(Options{Store: st, Blobs: blobs, ChangesRetention: 30 * 24 * time.Hour})
 	res, err := sw.Once(ctx, now)

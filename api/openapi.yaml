@@ -112,6 +112,10 @@ tags:
     description: |
       Typed label fields the account owner defines, and one value per field on each node. Every reader
       of a node sees its values; a restricted field is seen and set only by a manager of the node.
+  - name: Changes
+    description: |
+      The changes feed (slice cf1, decision 235): what changed in a space, or the whole account, since a
+      cursor. A client starts at the feed's head and reads forward, optionally waiting for the next change.
 
 paths:
   /healthz:
@@ -6216,6 +6220,78 @@ paths:
       responses:
         "204": { description: Removed. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/changes/start:
+    get:
+      tags: [Changes]
+      operationId: startChanges
+      summary: Start a changes cursor at the feed's head
+      description: |
+        Answers a cursor naming the journal's current head, the point a client reads changes after. With
+        `space`, the cursor is for that space's feed and the caller must reach the folder's root; a staged,
+        missing or unreachable folder is `not_found`. Without `space`, the cursor is for the account's whole
+        feed, which only the bare account key may read: a session, a delegated token, or a token acting as
+        its user is refused with `invalid_request`. An installation admin is `forbidden`, and a link
+        visitor's credential is refused. Each caller is rate limited.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: space
+          in: query
+          description: The folder (fld_...) whose feed to start. Without it, the account's whole feed (account key only).
+          schema: { type: string }
+      responses:
+        "200":
+          description: The starting cursor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangesStart" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/changes:
+    get:
+      tags: [Changes]
+      operationId: listChanges
+      summary: Read what changed since a cursor
+      description: |
+        Reads the journal after `cursor`, oldest first, folding the rows to one entry per node ordered by the
+        node's latest row. An entry carries the node as `GET /nodes/{nod}` answers it while it is live, and
+        `removed` with no node once it is gone, trashed, below a trashed folder, or (in a space feed) has left
+        the space. `relist` marks a restore whose children's own rows did not change, so the client re-lists
+        the folder. The cursor advances to the last raw row read; `has_more` says rows remain after it.
+
+        `cursor` must name the feed the request reads (the space, or the account); a cursor of another feed,
+        or one that cannot be decoded, is `invalid_request`. A cursor whose seq fell below the prune mark is
+        `gone` with `details.reason` `reset`: start again. The space and account feeds are reached as for
+        `/changes/start`.
+
+        With `wait` above 0 the read holds until a write commits, the wait elapses, the client goes, or the
+        server begins to shut down, re-reading at most every 250 ms; it answers empty at the deadline with the
+        cursor unchanged. A caller holds at most four waits at once, and the server holds at most
+        `changes.max_waiters` in total; a wait beyond either cap answers at once. Each caller is rate limited.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: space
+          in: query
+          description: The folder (fld_...) whose feed to read. Without it, the account's whole feed (account key only).
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: true
+          description: The cursor to read after, from `/changes/start` or a previous page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: The most changes one page carries.
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+        - name: wait
+          in: query
+          description: Seconds to wait for the next change before answering empty (0 answers at once).
+          schema: { type: integer, minimum: 0, maximum: 60, default: 0 }
+      responses:
+        "200":
+          description: The changes since the cursor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangesFeed" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/directory:
     get:
       tags: [Permissions]
@@ -7673,6 +7749,39 @@ components:
           items: { $ref: "#/components/schemas/RecentItem" }
         next_cursor: { type: string }
 
+    ChangesStart:
+      type: object
+      required: [cursor]
+      properties:
+        cursor: { type: string, description: The starting cursor, naming the feed and the journal's head. }
+
+    ChangeEntry:
+      type: object
+      required: [node_id, removed, relist]
+      properties:
+        node_id: { type: string, description: The node the change concerns. }
+        removed:
+          type: boolean
+          description: True when the node is gone, trashed, below a trashed folder, or has left the space; then `node` is absent.
+        relist:
+          type: boolean
+          description: True when a restore brought the node back and its children's own rows did not change; re-list the folder.
+        node:
+          description: The node as `GET /nodes/{nod}` answers it, while it is live. Absent when `removed`.
+          allOf:
+            - $ref: "#/components/schemas/Node"
+
+    ChangesFeed:
+      type: object
+      required: [changes, cursor, has_more]
+      properties:
+        changes:
+          type: array
+          description: One entry per node, ordered by the node's latest row. Never null.
+          items: { $ref: "#/components/schemas/ChangeEntry" }
+        cursor: { type: string, description: The cursor after the last raw row read; unchanged when the page is empty. }
+        has_more: { type: boolean, description: True when rows remain after the cursor. }
+
     PlayedItem:
       description: A media file in the caller's played list, with the place they stopped at.
       allOf:
@@ -8804,6 +8913,7 @@ components:
         | locked | 409 | Locked by an office editor. |
         | upload_expired | 410 | The upload expired; start again. |
         | link_expired | 410 | The signed link's time has run out; ask for a new one. |
+        | gone | 410 | A changes cursor fell below the prune mark, so the journal no longer holds the rows it names; start again. `details.reason` is `reset`. |
         | unsupported_media_type | 415 | A tus piece must be application/offset+octet-stream. |
         | encrypted_archive | 415 | An archive whose entries are encrypted cannot be read. No route answers it yet. |
         | too_many_uploads | 429 | The caller, the account or the drop link holds the most unfinished uploads it may; `details.scope` (`caller`, `account`, `link`) says which. |
@@ -8838,6 +8948,7 @@ components:
         - locked
         - upload_expired
         - link_expired
+        - gone
         - unsupported_media_type
         - encrypted_archive
         - too_many_uploads

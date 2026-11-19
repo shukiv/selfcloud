@@ -287,6 +287,8 @@ route	GET /api/v1/accounts/{acc}/webhooks/{hook}	webhook show	cli10	built in cli
 route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	webhook deliveries	cli10	built in cli10
 route	GET /api/v1/admins	admin ls	cli9a3	built in cli9a3
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
+route	GET /api/v1/changes	changes	cf1	built in cf1
+route	GET /api/v1/changes/start	changes	cf1	built in cf1
 route	GET /api/v1/directory	people find	cli11e	built in cli11e
 route	GET /api/v1/folders	whoami	cli4	whoami reads it (decision 125); folder ls --mine (cli8) lists the same route
 route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5

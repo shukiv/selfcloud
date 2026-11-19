@@ -187,7 +187,7 @@ func TestChangesRemoved(t *testing.T) {
 
 	// Trashed.
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
-	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.sib.ID, fx.key, nil), 200)
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.sib.ID, fx.key, nil), 204)
 	out := feed(t, fx.s, fx.key, fx.fld.ID, cur)
 	e := entryOf(out, fx.sib.ID)
 	if e == nil || !e.Removed || e.Node != nil {
@@ -196,16 +196,18 @@ func TestChangesRemoved(t *testing.T) {
 
 	// Purged from the trash.
 	cur = startCursor(t, fx.s, fx.key, fx.fld.ID)
-	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/trash/"+fx.sib.ID, fx.key, nil), 200)
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/trash/"+fx.sib.ID, fx.key, nil), 204)
 	out = feed(t, fx.s, fx.key, fx.fld.ID, cur)
 	e = entryOf(out, fx.sib.ID)
 	if e == nil || !e.Removed || e.Node != nil {
 		t.Fatalf("purged entry = %+v, want removed with no node", e)
 	}
 
-	// A child of a trashed folder is removed too, though its own row did not change.
+	// A child whose own row changed is reported removed once an ancestor is trashed, though the child was not trashed
+	// itself. (A child with no row of its own is not listed: the folder's removal stands for the subtree.)
 	cur = startCursor(t, fx.s, fx.key, fx.fld.ID)
-	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.b.ID, fx.key, nil), 200)
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/nodes/"+fx.deep.ID, fx.key, map[string]any{"name": "renamed.txt"}), 200)
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.b.ID, fx.key, nil), 204)
 	out = feed(t, fx.s, fx.key, fx.fld.ID, cur)
 	for _, id := range []string{fx.b.ID, fx.deep.ID} {
 		e = entryOf(out, id)
@@ -214,19 +216,21 @@ func TestChangesRemoved(t *testing.T) {
 		}
 	}
 
-	// A node moved to another folder leaves the space, and the destination's feed reports it live.
+	// A node moved to another folder leaves the space, and the destination's feed reports it live. A fresh node is used
+	// because the folder trashed above holds the fixture's deep file.
 	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Elsewhere")
+	mover := putNode(t, fx.s, fx.key, fx.fld.ID, "/mover.txt", "x")
 	destCur := startCursor(t, fx.s, fx.key, other.ID)
 	cur = startCursor(t, fx.s, fx.key, fx.fld.ID)
-	wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+fx.deep.ID+"/move", fx.key,
+	wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+mover.ID+"/move", fx.key,
 		map[string]any{"folder": other.ID}), 200)
 	out = feed(t, fx.s, fx.key, fx.fld.ID, cur)
-	e = entryOf(out, fx.deep.ID)
+	e = entryOf(out, mover.ID)
 	if e == nil || !e.Removed || e.Node != nil {
 		t.Fatalf("moved-out entry = %+v, want removed with no node", e)
 	}
 	out = feed(t, fx.s, fx.key, other.ID, destCur)
-	e = entryOf(out, fx.deep.ID)
+	e = entryOf(out, mover.ID)
 	if e == nil || e.Removed || e.Node == nil {
 		t.Fatalf("destination entry = %+v, want the node live", e)
 	}
@@ -236,7 +240,7 @@ func TestChangesRemoved(t *testing.T) {
 func TestChangesRelistOnRestore(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
-	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.b.ID, fx.key, nil), 200)
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.b.ID, fx.key, nil), 204)
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
 	wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/restore", fx.key, nil), 200)
 	out := feed(t, fx.s, fx.key, fx.fld.ID, cur)
@@ -251,6 +255,7 @@ func TestChangesPaging(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	cur0 := cur
 	var ids []string
 	for i := 0; i < 5; i++ {
 		n := putNode(t, fx.s, fx.key, fx.fld.ID, fmt.Sprintf("/page%d.txt", i), "x")
@@ -286,8 +291,15 @@ func TestChangesPaging(t *testing.T) {
 			t.Errorf("node %s never reported", id)
 		}
 	}
-	if pages != 3 {
-		t.Errorf("pages = %d, want 3 (2+2+1)", pages)
+	// A file leaves two journal rows (its insert and the update that lands its content), so the page count follows the
+	// raw rows, not the nodes: ceil(rows / limit).
+	_, startSeq := cursorSpaceAndSeq(t, cur0)
+	rows, err := fx.s.store.NodeChangesAfter(context.Background(), fx.acc.ID, fx.fld.ID, startSeq, 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantPages := (len(rows) + 1) / 2; pages != wantPages {
+		t.Errorf("pages = %d, want %d for %d raw rows at limit 2", pages, wantPages, len(rows))
 	}
 }
 

@@ -52,6 +52,9 @@ type Options struct {
 	RetentionNow func() Retention
 	// AuditRetention is audit.retention_days as a duration: an audit entry older than this is removed. Zero keeps every entry.
 	AuditRetention time.Duration
+	// ChangesRetention is changes.retention as a duration: a changes journal row older than this is removed, and rows
+	// whose account is gone (slice cf1, decision 235). Zero keeps every row.
+	ChangesRetention time.Duration
 	// ImportRetention is imports.job_retention_days as a duration: the record of a finished import older than this is
 	// removed. The files it imported stay. Zero keeps every record.
 	ImportRetention time.Duration
@@ -114,12 +117,16 @@ type Sweeper struct {
 	retentionNow func() Retention
 	// auditRetention is how long an audit entry is kept; auditPruned is when the entries were last pruned (audit.go).
 	auditRetention time.Duration
+	// changesRetention is how long a changes journal row is kept; changesPruned is when the rows were last pruned
+	// (changes.go).
+	changesRetention time.Duration
 	// importRetention is how long the record of a finished import is kept (imports.job_retention_days, decision 92).
 	importRetention time.Duration
 	// importPausedExpiry is how long an import may stay paused (imports.paused_expiry_days, decision 92).
 	importPausedExpiry time.Duration
 	importEnder        store.ImportEnder
 	auditPruned        time.Time
+	changesPruned      time.Time
 	derived            *derived.Cache
 	zips               *derived.ZipFiles
 	// searchChecked is when the search rows were last checked; see searchCheckEvery.
@@ -150,6 +157,7 @@ func New(o Options) *Sweeper {
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
 		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, retentionNow: o.RetentionNow,
 		auditRetention:     o.AuditRetention,
+		changesRetention:   o.ChangesRetention,
 		importRetention:    o.ImportRetention,
 		importPausedExpiry: o.ImportPausedExpiry,
 		importEnder:        o.ImportEnder,
@@ -206,6 +214,8 @@ type Result struct {
 	ZipsAbandoned int
 	// AuditPruned is the audit entries past audit.retention_days, removed (decision 48).
 	AuditPruned int64
+	// ChangesPruned is the changes journal rows past changes.retention, or whose account is gone, removed (decision 235).
+	ChangesPruned int64
 	// ImportsPruned is the records of finished imports past imports.job_retention_days, removed (decision 92).
 	ImportsPruned int64
 	// ImportsExpired is the paused imports past imports.paused_expiry_days that were cancelled (decision 92).
@@ -366,6 +376,10 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	// The audit log is pruned hourly. A failure is counted and logged, and the steps after it still run.
 	if err := w.pruneAudit(ctx, now, &res); err != nil {
 		w.log.Error("audit retention", "error", err)
+		res.Failed++
+	}
+	if err := w.pruneChanges(ctx, now, &res); err != nil {
+		w.log.Error("changes retention", "error", err)
 		res.Failed++
 	}
 	// The records of finished imports are pruned with the same rule: a failure is counted and logged.
