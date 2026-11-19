@@ -1294,9 +1294,12 @@ every token on those routes.
 
 `search` finds nodes by name, or by their text with `--in content`. A query is optional when a filter is given. Filters are
 `--kind` (`file`, `dir` or `shortcut`), `--type` (a file group, `folder` or `shortcut`), `--ext` (repeatable, or joined with
-commas), `--modified-after` and `--modified-before` (RFC 3339 times), `--size-min` and `--size-max` (sizes with units such
-as `64MiB`), `--label FIELD:VALUE` (up to four) and `--scope NODE` (one directory and what is below it). `--limit` is 1 to 50
-and `--all` follows the cursor.
+commas), `--modified-after` and `--modified-before` (RFC 3339 times), `--created-after` and `--created-before` (RFC 3339
+times, the item's created time), `--size-min` and `--size-max` (sizes with units such as `64MiB`), `--label FIELD:VALUE`
+(up to four), `--scope NODE` (one directory and what is below it), `--starred` (the signed-in person's starred items) and
+`--shared` (the items shared with the signed-in person, by the Shared with me page's rules). `--newest` reads the results
+newest first by created time; it takes no query, and needs a filter beside it. `--starred` and `--shared` need a signed-in
+person: an account key is refused. `--limit` is 1 to 50 and `--all` follows the cursor.
 
 | Command | What it does |
 |---|---|
@@ -1325,6 +1328,9 @@ when only some nodes did.
 selfcloud search invoice --type pdf --modified-after 2026-11-01T00:00:00Z
 selfcloud search "quarterly report" --in content --all
 selfcloud search --label lbf_…:open --scope nod_…
+selfcloud search --newest --type image
+selfcloud search --starred --created-after 2026-11-01T00:00:00Z
+selfcloud search --shared
 selfcloud people find ada --kind user
 selfcloud tag ls nod_… nod_…
 
