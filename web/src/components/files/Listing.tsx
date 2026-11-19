@@ -1514,7 +1514,10 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         key: nameCol.key,
         ...nameHead,
         title: selectable ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}>
+          // The span aligns to the top of the header's line box, not its middle: a middle alignment against the font's
+          // fractional x-height gives the line box a fractional height, and the list's last row ends below the window.
+          // Top alignment keeps the line box whole pixels; the mark keeps its middle within the span (alignItems).
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "top" }}>
             <HeadMark state={allPicked ? "all" : anyPicked ? "some" : "none"} onSelectAll={(checked) => (checked ? sel.selectAll() : sel.clear())} />
             {nameHead.title}
           </span>
@@ -1723,10 +1726,13 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         key: "name",
         ...nameHead,
         // The select-all mark sits before the label on every pointer. A visitor has none (pb1).
+        // The span aligns to the top of the header's line box, not its middle: a middle alignment against the font's
+        // fractional x-height gives the line box a fractional height, and the list's last row ends below the window.
+        // Top alignment keeps the line box whole pixels; the mark keeps its middle within the span (alignItems).
         title: visitor ? (
           nameHead.title
         ) : (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "top" }}>
             {selectAllBox}
             {nameHead.title}
           </span>

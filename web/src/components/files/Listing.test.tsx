@@ -704,6 +704,19 @@ describe("the selection marks (the checkbox swap is gone)", () => {
     expect(screen.getByRole("checkbox", { name: "Select all" }).closest("thead")).not.toBeNull();
   });
 
+  // A middle alignment of the header's title line against the font's fractional x-height gives the line box a fractional
+  // height, and the windowed list's last row ends below the window (vr1). Top alignment keeps the header whole pixels, the
+  // mark still centred within the line. jsdom lays nothing out, so the alignment is the contract here; the e2e measures it.
+  it("the header's title line aligns to the top of the line box, on a mouse and on a finger", () => {
+    for (const coarse of [false, true]) {
+      withPointer(coarse);
+      const { unmount } = render(<Listing {...props()} />);
+      const line = screen.getByRole("checkbox", { name: "Select all" }).parentElement as HTMLElement;
+      expect(line.style.verticalAlign).toBe("top");
+      unmount();
+    }
+  });
+
   it("the badge is drawn only on a selected row, on its icon, and says nothing to a screen reader", () => {
     withPointer(false);
     const { rerender } = render(<Listing {...props()} />);
@@ -1050,6 +1063,13 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(all().getAttribute("aria-checked")).toBe("true");
     fireEvent.click(all());
     expect(all().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("a selectable preset list's header title line aligns to the top of the line box, as the files list's does", () => {
+    viewport(1200);
+    render(<Listing {...itemProps({ selectable: true })} />);
+    const line = screen.getByRole("checkbox", { name: "Select all" }).parentElement as HTMLElement;
+    expect(line.style.verticalAlign).toBe("top");
   });
 
   it("a selectable preset list on a finger: a long press toggles the row, and a tap while something is selected toggles too", () => {
