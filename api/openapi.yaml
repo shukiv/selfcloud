@@ -5758,8 +5758,10 @@ paths:
         `\` becomes `/`, empty and `.` segments drop, a name followed by `..` cancels as text so only
         leading `..` climb to an ancestor, and each name goes through the name rules to its key. A line
         of more than 64 segments is `not_found`. Every folder the path climbs to or goes down through
-        must be reached by the caller, and the target must be reached and a file; the playlist file's own
-        folder is not reach-checked, so a file-only grant still resolves a direct child. A line is
+        must be reached by the caller, and the target must be reached and a file. A direct child (no
+        climb) does not reach-check the playlist file's own folder, so a file-only grant still resolves a
+        direct child; a line with leading `..` climbs through that folder too, which must then be reached,
+        so a file-only grant cannot learn from `outside` vs `not_found` whether the folder is a space root. A line is
         skipped, with its 1-based line number, for one reason: `url` (a scheme's `://`, `file:` included),
         `absolute` (a leading `/` or `\`, or a drive letter), `outside` (the climb passes the space's root
         and every ancestor it climbed through is reached), `not_found` (a segment does not resolve, a

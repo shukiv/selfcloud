@@ -166,15 +166,21 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// importRecheck re-checks the reach of the kept entries on the state the write sees, in one batch, and returns the
-// entries that still hold and a not_found skip for each that does not. An entry the caller no longer reaches is skipped,
-// never a refusal of the import.
+// importRecheck re-checks the reach of the kept entries on the state the write sees, in one batch, under the same within
+// the read used (a delegated token's node confinement), and returns the entries that still hold and a not_found skip for
+// each that does not. An entry the caller no longer reaches, or that moved out of the token's scope, is skipped, never a
+// refusal of the import. The route refuses delegated tokens (playlistCaller); this keeps the write's reach in step with
+// the read's as defence in depth.
 func importRecheck(ctx context.Context, q store.Querier, p *auth.Principal, kept []importKept) ([]importKept, []playlistImportSkip, error) {
+	within := ""
+	if p.Token != nil {
+		within = p.Token.Node
+	}
 	ids := make([]string, len(kept))
 	for i, k := range kept {
 		ids[i] = k.node
 	}
-	roles, err := reachRolesIn(ctx, q, p, ids, "")
+	roles, err := reachRolesIn(ctx, q, p, ids, within)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -336,6 +342,12 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 		down := stack[ups:]
 		cur := parent
 		var climbed []string
+		if ups > 0 {
+			// The climb starts at the playlist file's own folder, which must be reached too: a file-only grant reaches
+			// the file but not its folder, so the answer must not say (through outside vs not_found) whether that folder
+			// is a space root.
+			climbed = append(climbed, parent.ID)
+		}
 		for i := 0; i < ups; i++ {
 			if cur.IsRoot() {
 				return importResolved{climbed: climbed, passedRoot: true}, nil
@@ -515,9 +527,6 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 	if !id.Valid("pls", pid) {
 		return playlistNotFound()
 	}
-	if err := s.rateLimit(playlistWriteRate, p.UserID); err != nil {
-		return err
-	}
 	var in playlistExportIn
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -527,10 +536,14 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	// The name is cleaned before any byte is written or any write rate charged: a name the rules refuse stops here.
+	// The name is cleaned and checked before any byte is written or any write rate charged: a name the rules refuse
+	// stops here, spending nothing.
 	base := playlistExportBaseName(pl.Name)
 	cleanBase, _, err := names.Clean(truncateBytes(base, maxNameBytes-len(playlistExportExt)))
 	if err != nil {
+		return err
+	}
+	if err := s.rateLimit(playlistWriteRate, p.UserID); err != nil {
 		return err
 	}
 	fld, err := requireNodeRole(ctx, s.store, p, in.FolderID, store.RoleContributor)
