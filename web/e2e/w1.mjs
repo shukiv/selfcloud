@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The file browser's slice w1 checks: a folder of more than thirty files, with the mouse and the keyboard sent through
-// the browser's own input events. The toolbar holds the selection actions, a right-click (and a long press on a finger)
-// opens the item's menu, Ctrl+C, X and V cut, copy and paste within the tab, Backspace and Alt+Up go up a folder, a viewer
-// is refused a paste, a menu at the window's edge stays on the window, the upload tray folds itself, and Hebrew and phone
-// width work too. With SELFCLOUD_W1_SHOTS set to a folder, the run also saves the pictures for the slice.
+// the browser's own input events. The toolbar holds the selection actions, a right-click opens the item's menu (on a finger
+// a long press selects the row, and the row's ⋮ button opens the menu), Ctrl+C, X and V cut, copy and paste within the tab,
+// Backspace and Alt+Up go up a folder, a viewer is refused a paste, a menu at the window's edge stays on the window, the
+// upload tray folds itself, and Hebrew and phone width work too. With SELFCLOUD_W1_SHOTS set to a folder, the run also saves
+// the pictures for the slice.
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SUBMENU_OF, hoverMenuTitle } from './menu.mjs';
@@ -23,6 +24,7 @@ import {
   setLanguage,
   setPhone,
   setTheme,
+  tap,
 } from './media.mjs';
 
 const MENU = '.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu';
@@ -65,7 +67,8 @@ async function rightClick(page, { x, y }) {
   await sleepMs(300);
 }
 
-// longPress is a finger held on a point for longer than the menu's wait, then lifted.
+// longPress is a finger held on a point for longer than the listing's long-press time, then lifted. The row is selected at
+// the hold, and the tap that ends it opens nothing (decision 233).
 async function longPress(page, { x, y }) {
   await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
   await sleepMs(800);
@@ -88,6 +91,28 @@ async function pointOf(page, selector, block = 'nearest') {
 
 // rowPoint is the centre of an item's row or tile, with the item scrolled to the end of the window: the lowest visible rows.
 const rowPoint = (page, nameText) => pointOf(page, itemSel(nameText), 'end');
+
+// morePointOf is the centre of an item's ⋮ button, scrolled into view as asked. The button is sought within the item found:
+// itemSel is a list (a row or a tile), and a button appended to the list binds to its last selector only, so the row itself
+// would match first and the tap would land on the row, not on its button.
+async function morePointOf(page, nameText, block = 'center') {
+  const p = await page.evaluate(`(() => {
+    const b = document.querySelector(${q(itemSel(nameText))})?.querySelector('button[aria-haspopup="menu"]');
+    if (!b) return null;
+    b.scrollIntoView({ block: ${q(block)} });
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  if (!p) throw new Error(`no ⋮ button for ${nameText}`);
+  return p;
+}
+
+// answerInstallCard answers the phone's install card (decision 179): it is not part of these checks, and the fixed card over
+// the listing's bottom covers a bottom row's ⋮ button. The key keeps it from showing again; the click takes away one drawn.
+async function answerInstallCard(page) {
+  await page.evaluate(`(() => { window.localStorage.setItem('selfcloud.installPrompt', JSON.stringify({ at: Date.now(), forever: false })); const c = document.querySelector('[data-testid="install-prompt"]'); if (c) c.querySelector('button')?.click(); })()`).catch(() => undefined);
+  await page.waitFor(`!document.querySelector('[data-testid="install-prompt"]')`, 5000).catch(() => undefined);
+}
 
 // menuItems is the text of the items of the open right-click menu.
 // menuItems reads the labels of the open menu (decision 70: a submenu's entries are read when it is open, by hoverMenuTitle).
@@ -236,6 +261,8 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     console.log(`DIAG open ${view} listed after ${Date.now() - started} ms`);
     await setView(page, view);
     await clearSelection(page);
+    // The install card is answered on every fresh load, as the media checks do: it can appear after a delay, over a row's ⋮.
+    await answerInstallCard(page);
   };
 
   // ---- 1. the lowest visible rows: a double click opens the row under the pointer, with a selection and without ----
@@ -497,7 +524,10 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     try {
       await open('List');
-      await longPress(page, await rowPoint(page, 'f40.txt'));
+      // The menu opens from the row's ⋮ button: on a finger a long press selects the row and opens no menu (decision 233).
+      // The card is answered again right before the tap: it can appear after a delay, over this bottom row's button.
+      await answerInstallCard(page);
+      await tap(page, await morePointOf(page, 'f40.txt', 'end'));
       await menuPlaced(page);
       const box = await menuBox(page);
       check(box && box.left >= 0 && box.top >= 0 && box.right <= box.width && box.bottom <= box.height, `the phone's row menu stays on the 360 px window (${JSON.stringify(box)})`);
@@ -582,14 +612,14 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     check(clear.rowBottom <= clear.trayTop + 0.5, `the last row sits above the folded tray (row bottom ${clear.rowBottom}, tray top ${clear.trayTop})`);
   });
 
-  // ---- 12. a long press on a phone opens the item's menu, and opens nothing ----
-  await step('a long press on a phone opens the item menu, and opens nothing', async () => {
+  // ---- 12. a long press on a phone selects the row and opens nothing; the row's ⋮ button opens the item's menu ----
+  await step('a long press on a phone selects the row and opens nothing, and the ⋮ button opens the item menu', async () => {
     // The row is aimed at its centre: at the window's bottom edge a phone's folded upload tray sits over it.
     await setPhone(page, true);
     try {
       await open('List');
       const at = await pointOf(page, itemSel('f06.txt'), 'center');
-      // Diagnostics for a touch that opens nothing: the events the row gets, and what the point hits.
+      // Diagnostics for a touch that selects nothing: the events the row gets, and what the point hits.
       await page.evaluate(`(() => { window.__w1 = []; for (const n of ['pointerdown', 'pointerup', 'pointercancel', 'contextmenu', 'click']) document.addEventListener(n, (e) => window.__w1.push(n + ':' + (e.target && (e.target.getAttribute && e.target.getAttribute('data-id')) || e.target.tagName)), true); })()`);
       const hit = await page.evaluate(`(() => { const el = document.elementFromPoint(${at.x}, ${at.y}); return el ? el.tagName + ' ' + (el.getAttribute('data-id') || el.className || '') : 'nothing'; })()`);
       // While the finger is held, the menu, the row's selection and any preview are sampled every 100 ms.
@@ -602,13 +632,30 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       await hold;
       const events = await page.evaluate(`JSON.stringify(window.__w1 ?? null)`);
       const seen = `events ${events}; menu/selected/preview per 100 ms: ${samples.join(' ')}`;
-      await page.waitFor(`!!document.querySelector(${q('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu')})`, 5000).catch(() => {
-        throw new Error(`no menu after a long press; point hits ${hit}; events ${seen}`);
+      await page.waitFor(`document.querySelector('[role="row"][aria-label="f06.txt"]')?.getAttribute('aria-selected') === 'true'`, 5000).catch(() => {
+        throw new Error(`a long press did not select the row; point hits ${hit}; ${seen}`);
+      });
+      check(await page.evaluate(`!!document.querySelector('[role="row"][aria-label="f06.txt"] .check-badge')`), `a long press selects the row and draws the badge on its icon (${seen})`);
+      check(await page.evaluate(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`), 'a long press opens no menu');
+      check(await page.evaluate(`!document.querySelector('[data-testid="preview"]')`), 'a long press opens no preview');
+      // A second long press clears the selection. The point is read again: the selection panel takes the toolbar's row, and the rows move.
+      await longPress(page, await pointOf(page, itemSel('f06.txt'), 'center'));
+      await page.waitFor(`document.querySelector('[role="row"][aria-label="f06.txt"]')?.getAttribute('aria-selected') === 'false'`, 5000).catch(async () => {
+        throw new Error(`a second long press did not clear the selection; events ${await page.evaluate(`JSON.stringify(window.__w1 ?? null)`)}`);
+      });
+      check(await page.evaluate(`!document.querySelector('[role="row"][aria-label="f06.txt"] .check-badge') && !document.querySelector('[data-testid="selection-panel"]')`), 'a second long press clears the row, its badge and the selection panel');
+      // The row's ⋮ button opens the item's menu, with the entries the long press used to offer. The card is answered again
+      // right before the tap: it can appear after a delay, over the listing.
+      await answerInstallCard(page);
+      const more = await morePointOf(page, 'f06.txt', 'center');
+      await tap(page, more);
+      await page.waitFor(`!!document.querySelector(${q('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu')})`, 5000).catch(async () => {
+        const hitNow = await page.evaluate(`(() => { const el = document.elementFromPoint(${more.x}, ${more.y}); return el ? el.tagName + ' ' + (el.getAttribute('data-id') || el.className || '') : 'nothing'; })()`);
+        throw new Error(`no menu after a tap on the row's ⋮; point hits ${hitNow}; ${seen}`);
       });
       await menuPlaced(page);
       const items = await menuItems(page);
-      check(items.includes('Organize') && items.includes('Share'), `a long press offers the item's menu (${items.join(' / ')})`);
-      check(await page.evaluate(`!document.querySelector('[data-testid="preview"]')`), 'a long press opens no preview');
+      check(items.includes('Organize') && items.includes('Share'), `the ⋮ button offers the item's menu (${items.join(' / ')})`);
       await press(page, 'Escape');
       await clearSelection(page);
     } finally {
@@ -963,10 +1010,13 @@ async function shots(page, { folderURL, dir }) {
         await click(page, await rowPoint(page, 'f05.txt'));
         await sleepMs(400);
         await save(`toolbar-${tag}.png`);
-        // The right-click menu: a right-click on a row (a long press on a phone).
+        // The right-click menu: a right-click on a row (the row's ⋮ button on a phone).
         await clearSelection(page);
         if (width === 'desktop') await rightClick(page, await rowPoint(page, 'f06.txt'));
-        else await longPress(page, await rowPoint(page, 'f06.txt'));
+        else {
+          await answerInstallCard(page);
+          await tap(page, await morePointOf(page, 'f06.txt', 'center'));
+        }
         await page.waitFor(`!!document.querySelector(${q(MENU)})`, 5000).catch(() => undefined);
         await sleepMs(300);
         await save(`menu-${tag}.png`);
