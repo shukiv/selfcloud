@@ -3,6 +3,8 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -16,14 +18,14 @@ import (
 // davOn turns the WebDAV feature on for a test server.
 func davOn(c *config.Config) { c.Dav.Enabled = true }
 
-// apwItem is the shape of one app password in a list or a create answer (without the secret).
+// apwItem is the shape of one app password in a list or a create answer (without the secret). A revoked app
+// password is deleted, so the list never holds an ended one and there is no revocation time to carry.
 type apwItem struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
 	Access     string     `json:"access"`
 	Prefix     string     `json:"prefix"`
 	CreatedAt  time.Time  `json:"created_at"`
-	RevokedAt  *time.Time `json:"revoked_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
@@ -67,9 +69,6 @@ func TestAppPasswordCreateListRevoke(t *testing.T) {
 	if created.Prefix == "" || !strings.HasPrefix(created.Secret, created.Prefix) || created.Prefix == created.Secret {
 		t.Errorf("prefix = %q is not a safe start of the secret", created.Prefix)
 	}
-	if created.RevokedAt != nil {
-		t.Error("a new app password is already revoked")
-	}
 
 	// The list shows the item but never the secret.
 	rec := callSession(t, s, sess, "GET", apwPath, nil)
@@ -82,15 +81,50 @@ func TestAppPasswordCreateListRevoke(t *testing.T) {
 		t.Error("the list leaks the secret")
 	}
 
-	// Revoke, then the item is marked revoked and the secret is gone from any later create.
+	// Revoke deletes the row: the list is empty afterwards, and revoking the gone id is not found.
 	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 204)
 	rec = callSession(t, s, sess, "GET", apwPath, nil)
 	list = decode[listResponse[apwItem]](t, rec)
-	if len(list.Items) != 1 || list.Items[0].RevokedAt == nil {
-		t.Fatalf("after revoke, list = %+v", list.Items)
+	if len(list.Items) != 0 {
+		t.Fatalf("after revoke the row is still listed: %+v", list.Items)
 	}
-	// Revoking again keeps the first revocation (idempotent), still 204.
-	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 204)
+	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 404)
+}
+
+func TestAppPasswordCreateAnswerShape(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, davOn)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+
+	rec := callSession(t, s, sess, "POST", apwPath, map[string]any{"name": "laptop", "access": "read"})
+	wantStatus(t, rec, 201)
+	// The create answer wraps the item under "app_password" and shows the secret once beside it.
+	var w struct {
+		AppPassword apwItem `json:"app_password"`
+		Secret      string  `json:"secret"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &w); err != nil {
+		t.Fatal(err)
+	}
+	if w.AppPassword.ID == "" || w.AppPassword.Name != "laptop" || w.AppPassword.Access != "read" {
+		t.Errorf("app_password = %+v, want the created item under the app_password key", w.AppPassword)
+	}
+	if !strings.HasPrefix(w.Secret, "scp_") || !strings.Contains(w.Secret, w.AppPassword.ID) {
+		t.Errorf("secret = %q, want scp_<id>_<random> beside the item", w.Secret)
+	}
+}
+
+func TestAppPasswordRefusesAdmin(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, davOn)
+	admin := adminKey(t, s)
+	_, sess := newAdminUser(t, s, admin, "admin@example.com")
+	// An installation admin signed in as a user has no account of its own; the routes refuse it with 403, not a 500.
+	wantStatus(t, callSession(t, s, sess, "GET", apwPath, nil), 403)
+	wantStatus(t, callSession(t, s, sess, "POST", apwPath, map[string]any{"name": "x"}), 403)
+	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/apw_00000000000000000000000000", nil), 403)
 }
 
 func TestAppPasswordRoutesAreSessionOnly(t *testing.T) {
@@ -218,22 +252,28 @@ func TestAppPasswordOtherUsersItemIsNotFound(t *testing.T) {
 	wantStatus(t, callSession(t, s, annSess, "DELETE", apwPath+"/apw_00000000000000000000000000", nil), 404)
 }
 
-func TestAppPasswordRoutesOffWhenDavDisabled(t *testing.T) {
+func TestAppPasswordOnlyCreateOffWhenDavDisabled(t *testing.T) {
 	t.Parallel()
-	s := newAuthServer(t, &mail.Recorder{}) // dav.enabled stays false
+	s := newAuthServer(t, &mail.Recorder{}, davOn)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	created := makeAppPassword(t, s, sess, "mount", "read")
 
-	for _, rec := range []*httptest.ResponseRecorder{
-		callSession(t, s, sess, "GET", apwPath, nil),
-		callSession(t, s, sess, "POST", apwPath, map[string]any{"name": "x"}),
-		callSession(t, s, sess, "DELETE", apwPath+"/apw_00000000000000000000000000", nil),
-	} {
-		e := wantError(t, rec, 404, apierr.NotFound)
-		if !strings.Contains(e.Message, "WebDAV is turned off") {
-			t.Errorf("message = %q, want it to say WebDAV is turned off", e.Message)
-		}
+	// Turn the mount off. Making a new app password is refused, but a leaked one can always be listed and revoked.
+	wantStatus(t, patchSettings(t, s, admin, map[string]any{"dav.enabled": false}), 200)
+	e := wantError(t, callSession(t, s, sess, "POST", apwPath, map[string]any{"name": "x"}), 404, apierr.NotFound)
+	if !strings.Contains(e.Message, "WebDAV is turned off") {
+		t.Errorf("message = %q, want it to say WebDAV is turned off", e.Message)
+	}
+	list := decode[listResponse[apwItem]](t, callSession(t, s, sess, "GET", apwPath, nil))
+	if len(list.Items) != 1 || list.Items[0].ID != created.ID {
+		t.Fatalf("list while off = %+v, want the existing item", list.Items)
+	}
+	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 204)
+	list = decode[listResponse[apwItem]](t, callSession(t, s, sess, "GET", apwPath, nil))
+	if len(list.Items) != 0 {
+		t.Fatalf("list after revoke while off = %+v, want empty", list.Items)
 	}
 }
 
@@ -294,4 +334,119 @@ func TestAppPasswordAuditIsPrivate(t *testing.T) {
 	if !found {
 		t.Error("the account key does not see the app_password.create entry")
 	}
+}
+
+// apwEventFix is an account with one member who holds a working mount app password, on an https server so Basic
+// is accepted from any address.
+type apwEventFix struct {
+	s      *Server
+	admin  string
+	acc    accountJSON
+	key    string
+	u      userResponse
+	sess   testSession
+	secret string
+}
+
+func newApwEventFix(t *testing.T) *apwEventFix {
+	t.Helper()
+	s := davServer(t)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	u, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	secret := makeAppPassword(t, s, sess, "mount", "read").Secret
+	return &apwEventFix{s: s, admin: admin, acc: acc, key: key, u: u, sess: sess, secret: secret}
+}
+
+func (fx *apwEventFix) mount(t *testing.T) *httptest.ResponseRecorder {
+	t.Helper()
+	return davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"})
+}
+
+// apwHeld reads the member's app passwords straight from the store, so the check holds even when the event ended
+// the session that would list them.
+func apwHeld(t *testing.T, s *Server, accID, userID string) int {
+	t.Helper()
+	list, err := s.store.AppPasswords(context.Background(), accID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(list)
+}
+
+// An app password ends with the password it was made under: a reset, a change, an admin's set, and the revocation of
+// the person's tokens or sessions each delete it in the same transaction, so a stolen or replaced password does not
+// leave a working mount credential behind.
+func TestAppPasswordEndsWithEachPasswordAndSessionEvent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("password reset", func(t *testing.T) {
+		t.Parallel()
+		fx := newApwEventFix(t)
+		wantStatus(t, fx.mount(t), 207)
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/auth/password/forgot", "",
+			map[string]any{"email": fx.u.Email}), 202)
+		fx.s.bg.Wait()
+		msgs := fx.s.mailer.(*mail.Recorder).Messages()
+		if len(msgs) == 0 {
+			t.Fatal("no reset mail")
+		}
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/auth/password/reset", "",
+			map[string]any{"token": tokenFromMail(t, msgs[len(msgs)-1]), "password": "a new passphrase here"}), 200)
+		wantStatus(t, fx.mount(t), 401)
+		if n := apwHeld(t, fx.s, fx.acc.ID, fx.u.ID); n != 0 {
+			t.Errorf("after reset the member still holds %d app passwords", n)
+		}
+	})
+
+	t.Run("password change", func(t *testing.T) {
+		t.Parallel()
+		fx := newApwEventFix(t)
+		wantStatus(t, fx.mount(t), 207)
+		wantStatus(t, callSession(t, fx.s, fx.sess, "POST", "/api/v1/me/password",
+			map[string]any{"current_password": testPassword, "new_password": "a new passphrase here"}), 204)
+		wantStatus(t, fx.mount(t), 401)
+		if n := apwHeld(t, fx.s, fx.acc.ID, fx.u.ID); n != 0 {
+			t.Errorf("after change the member still holds %d app passwords", n)
+		}
+	})
+
+	t.Run("admin sets the password", func(t *testing.T) {
+		t.Parallel()
+		fx := newImpFix(t, true, davOn, func(c *config.Config) { c.PublicURL = "https://drive.example.com" })
+		secret := makeAppPassword(t, fx.s, fx.memSess, "mount", "read").Secret
+		mount := func() *httptest.ResponseRecorder {
+			return davBasic(t, fx.s, fx.member.Email, "PROPFIND", "/dav/", secret, "", map[string]string{"Depth": "0"})
+		}
+		wantStatus(t, mount(), 207)
+		wantStatus(t, callSession(t, fx.s, fx.adminSess, "POST",
+			"/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.member.ID+"/password",
+			map[string]any{"password": "a new passphrase here", "admin_password": testPassword}), 204)
+		wantStatus(t, mount(), 401)
+		if n := apwHeld(t, fx.s, fx.acc.ID, fx.member.ID); n != 0 {
+			t.Errorf("after an admin set the member still holds %d app passwords", n)
+		}
+	})
+
+	t.Run("tokens revoked", func(t *testing.T) {
+		t.Parallel()
+		fx := newApwEventFix(t)
+		wantStatus(t, fx.mount(t), 207)
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.u.ID+"/tokens/revoke", fx.key, nil), 200)
+		wantStatus(t, fx.mount(t), 401)
+		if n := apwHeld(t, fx.s, fx.acc.ID, fx.u.ID); n != 0 {
+			t.Errorf("after token revoke the member still holds %d app passwords", n)
+		}
+	})
+
+	t.Run("sessions ended", func(t *testing.T) {
+		t.Parallel()
+		fx := newApwEventFix(t)
+		wantStatus(t, fx.mount(t), 207)
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.u.ID+"/sessions/end", fx.key, nil), 200)
+		wantStatus(t, fx.mount(t), 401)
+		if n := apwHeld(t, fx.s, fx.acc.ID, fx.u.ID); n != 0 {
+			t.Errorf("after sessions end the member still holds %d app passwords", n)
+		}
+	})
 }

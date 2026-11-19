@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,6 +107,48 @@ func TestParsePropfindTooLarge(t *testing.T) {
 	_, err := ParsePropfind(httptest.NewRecorder(), propfindRequest(body))
 	if !errors.Is(err, ErrBodyTooLarge) {
 		t.Errorf("err = %v, want ErrBodyTooLarge", err)
+	}
+}
+
+func TestParsePropfindDedup(t *testing.T) {
+	t.Parallel()
+	// A client that asks for one property twice gets it once: the names are de-duplicated.
+	body := `<D:propfind xmlns:D="DAV:"><D:prop>` +
+		`<D:displayname/><D:displayname/><D:getcontentlength/><D:displayname/>` +
+		`</D:prop></D:propfind>`
+	pf, err := ParsePropfind(httptest.NewRecorder(), propfindRequest(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pf.Props) != 2 {
+		t.Fatalf("Props = %v, want displayname and getcontentlength once each", pf.Props)
+	}
+}
+
+func TestParsePropfindTooManyProps(t *testing.T) {
+	t.Parallel()
+	// At most 64 distinct properties are answered; more is refused, so a body cannot ask for an unbounded set.
+	var b strings.Builder
+	b.WriteString(`<D:propfind xmlns:D="DAV:"><D:prop>`)
+	for i := 0; i < 64; i++ {
+		fmt.Fprintf(&b, "<D:p%d/>", i)
+	}
+	b.WriteString(`</D:prop></D:propfind>`)
+	pf, err := ParsePropfind(httptest.NewRecorder(), propfindRequest(b.String()))
+	if err != nil {
+		t.Fatalf("64 properties refused: %v", err)
+	}
+	if len(pf.Props) != 64 {
+		t.Fatalf("len(Props) = %d, want 64", len(pf.Props))
+	}
+	var b2 strings.Builder
+	b2.WriteString(`<D:propfind xmlns:D="DAV:"><D:prop>`)
+	for i := 0; i < 65; i++ {
+		fmt.Fprintf(&b2, "<D:p%d/>", i)
+	}
+	b2.WriteString(`</D:prop></D:propfind>`)
+	if _, err := ParsePropfind(httptest.NewRecorder(), propfindRequest(b2.String())); err == nil {
+		t.Error("65 properties were accepted; want a refusal")
 	}
 }
 
@@ -244,6 +287,34 @@ func TestWriteMultistatusEmptyResourceType(t *testing.T) {
 	}
 	if _, ok := rt.kid("collection"); ok {
 		t.Error("a file's resourcetype must not hold a collection")
+	}
+}
+
+func TestWriteMultistatusNamespaceEscaped(t *testing.T) {
+	t.Parallel()
+	// A foreign namespace URI is an XML attribute value: an ampersand or a quote in it is escaped as XML, not
+	// Go-quoted, so the answer stays valid XML and the namespace round-trips.
+	const ns = `urn:test&a"b`
+	ms := Multistatus{Responses: []Response{{
+		Href: "/dav/f.txt",
+		Propstats: []Propstat{{Status: StatusOK, Props: []Property{
+			{Name: xml.Name{Space: ns, Local: "custom"}, Value: "v"},
+		}}},
+	}}}
+	var buf bytes.Buffer
+	if err := WriteMultistatus(&buf, ms); err != nil {
+		t.Fatal(err)
+	}
+	root := decodeXML(t, buf.Bytes())
+	resp, _ := root.kid("response")
+	ps, _ := resp.kid("propstat")
+	prop, _ := ps.kid("prop")
+	custom, ok := prop.kid("custom")
+	if !ok {
+		t.Fatalf("no custom property:\n%s", buf.String())
+	}
+	if custom.XMLName.Space != ns {
+		t.Errorf("namespace = %q, want %q", custom.XMLName.Space, ns)
 	}
 }
 

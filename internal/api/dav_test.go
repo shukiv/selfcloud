@@ -3,14 +3,19 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/xml"
+	"fmt"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // davServer is a test server with the WebDAV mount on and an https public_url, so Basic credentials
@@ -45,12 +50,12 @@ func newDavFix(t *testing.T, mutate ...func(*config.Config)) *davFix {
 	return &davFix{s: s, admin: admin, acc: acc, key: key, u: u, sess: sess, secret: created.Secret}
 }
 
-// davBasic sends a request with the app password as a Basic credential. The username is ignored by
-// the mount; the password is the app password.
-func davBasic(t *testing.T, s *Server, method, path, secret, body string, hdr map[string]string) *httptest.ResponseRecorder {
+// davBasic sends a request with the app password as a Basic credential. The user name is the email
+// of the person the app password belongs to; the mount checks it against the row's user.
+func davBasic(t *testing.T, s *Server, user, method, path, secret, body string, hdr map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("user:"+secret)))
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+secret)))
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
@@ -156,7 +161,7 @@ func TestDAVOffAnswersNotFound(t *testing.T) {
 func TestDAVOptions(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
-	rec := davBasic(t, fx.s, "OPTIONS", "/dav/", fx.secret, "", nil)
+	rec := davBasic(t, fx.s, fx.u.Email, "OPTIONS", "/dav/", fx.secret, "", nil)
 	wantStatus(t, rec, 200)
 	if got := rec.Header().Get("DAV"); got != "1" {
 		t.Errorf("DAV = %q, want 1", got)
@@ -180,13 +185,13 @@ func TestDAVAuthFailures(t *testing.T) {
 		t.Errorf("WWW-Authenticate = %q, want a Basic challenge", ch)
 	}
 	// A wrong secret, and the real password, are refused.
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", "scp_wrong", "", map[string]string{"Depth": "0"}), 401)
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", testPassword, "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", "scp_wrong", "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", testPassword, "", map[string]string{"Depth": "0"}), 401)
 	// Keys are not mount credentials.
 	wantStatus(t, rawCall(t, fx.s, "PROPFIND", "/dav/", fx.key, "", map[string]string{"Depth": "0"}), 401)
 	wantStatus(t, rawCall(t, fx.s, "PROPFIND", "/dav/", fx.admin, "", map[string]string{"Depth": "0"}), 401)
 	// A valid secret works.
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 207)
 }
 
 func TestDAVRevokedAndDeadCredentials(t *testing.T) {
@@ -195,26 +200,26 @@ func TestDAVRevokedAndDeadCredentials(t *testing.T) {
 	// Revoke the app password; its secret stops working.
 	list := decode[listResponse[apwItem]](t, callSession(t, fx.s, fx.sess, "GET", apwPath, nil))
 	wantStatus(t, callSession(t, fx.s, fx.sess, "DELETE", apwPath+"/"+list.Items[0].ID, nil), 204)
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 401)
 
 	// A disabled user's app password is refused.
 	fx2 := newDavFix(t)
 	wantStatus(t, call(t, fx2.s, "PATCH", "/api/v1/accounts/"+fx2.acc.ID+"/users/"+fx2.u.ID, fx2.key,
 		map[string]any{"status": "disabled"}), 200)
-	wantStatus(t, davBasic(t, fx2.s, "PROPFIND", "/dav/", fx2.secret, "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx2.s, fx2.u.Email, "PROPFIND", "/dav/", fx2.secret, "", map[string]string{"Depth": "0"}), 401)
 
 	// A suspended account's app password is refused.
 	fx3 := newDavFix(t)
 	wantStatus(t, call(t, fx3.s, "PATCH", "/api/v1/accounts/"+fx3.acc.ID, fx3.admin,
 		map[string]any{"status": "suspended"}), 200)
-	wantStatus(t, davBasic(t, fx3.s, "PROPFIND", "/dav/", fx3.secret, "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx3.s, fx3.u.Email, "PROPFIND", "/dav/", fx3.secret, "", map[string]string{"Depth": "0"}), 401)
 }
 
 func TestDAVMustChangeRefused(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
 	setMustChange(t, fx.s, fx.acc.ID, fx.u.ID, true)
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 401)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 401)
 }
 
 func TestDAVBasicNeedsHTTPSOrLoopback(t *testing.T) {
@@ -227,7 +232,7 @@ func TestDAVBasicNeedsHTTPSOrLoopback(t *testing.T) {
 	secret := makeAppPassword(t, s, sess, "mount", "read").Secret
 
 	req := httptest.NewRequest("PROPFIND", "/dav/", strings.NewReader(""))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("user:"+secret)))
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("ann@example.com:"+secret)))
 	req.Header.Set("Depth", "0")
 	req.RemoteAddr = "203.0.113.9:4000" // non-loopback
 	rec := httptest.NewRecorder()
@@ -259,9 +264,9 @@ func TestDAVAuthFailedRateLimit(t *testing.T) {
 	hdr := map[string]string{"Depth": "0"}
 	// Thirty failed sign-ins spend the per-address budget; the thirty-first is refused with 429.
 	for i := 0; i < 30; i++ {
-		wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", "scp_wrong", "", hdr), 401)
+		wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", "scp_wrong", "", hdr), 401)
 	}
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", "scp_wrong", "", hdr), 429)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", "scp_wrong", "", hdr), 429)
 	// The person's web sign-in budget is untouched: a correct login still works.
 	wantStatus(t, login(t, fx.s, "ann@example.com", testPassword, ""), 200)
 }
@@ -270,7 +275,7 @@ func TestDAVPropfindRoot(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
 	// Depth 0: only the root.
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}))
 	hrefs := davHrefs(ms)
 	if len(hrefs) != 1 || hrefs[0] != "/dav/" {
 		t.Fatalf("Depth 0 hrefs = %v, want [/dav/]", hrefs)
@@ -279,7 +284,7 @@ func TestDAVPropfindRoot(t *testing.T) {
 		t.Errorf("root displayname = %q, want Selfcloud", name)
 	}
 	// Depth 1: the root and its top-level entries (My files and Shared with me at least).
-	ms = davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms = davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	hrefs = davHrefs(ms)
 	var hasMyFiles, hasShared bool
 	for _, h := range hrefs {
@@ -303,7 +308,7 @@ func TestDAVDepthRefused(t *testing.T) {
 		if depth != "" {
 			hdr["Depth"] = depth
 		}
-		rec := davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", hdr)
+		rec := davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", hdr)
 		wantStatus(t, rec, 403)
 		var e davEl
 		if err := xml.Unmarshal(rec.Body.Bytes(), &e); err != nil {
@@ -319,7 +324,7 @@ func TestDAVPropfindBodyTooLarge(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
 	body := `<D:propfind xmlns:D="DAV:"><D:prop>` + strings.Repeat("<D:x/>", 70000) + `</D:prop></D:propfind>`
-	rec := davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, body, map[string]string{"Depth": "0"})
+	rec := davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, body, map[string]string{"Depth": "0"})
 	wantStatus(t, rec, 413)
 }
 
@@ -330,7 +335,7 @@ func TestDAVFilePropertiesAndDownload(t *testing.T) {
 	nodeOf(t, writeFile(t, fx.s, fx.key, pf.ID, "hello.txt", "hello world"))
 
 	href := "/dav/My%20files/hello.txt"
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", href, fx.secret, "", map[string]string{"Depth": "0"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", href, fx.secret, "", map[string]string{"Depth": "0"}))
 	if got, ok := davProp(t, ms, href, "getcontentlength"); !ok || got != "11" {
 		t.Errorf("getcontentlength = %q, want 11", got)
 	}
@@ -359,7 +364,7 @@ func TestDAVFilePropertiesAndDownload(t *testing.T) {
 	}
 
 	// GET returns the bytes as an attachment; HEAD returns no body.
-	rec := davBasic(t, fx.s, "GET", href, fx.secret, "", nil)
+	rec := davBasic(t, fx.s, fx.u.Email, "GET", href, fx.secret, "", nil)
 	wantStatus(t, rec, 200)
 	if rec.Body.String() != "hello world" {
 		t.Errorf("GET body = %q", rec.Body.String())
@@ -373,7 +378,7 @@ func TestDAVFilePropertiesAndDownload(t *testing.T) {
 	if rec.Header().Get("ETag") == "" {
 		t.Error("no ETag on GET")
 	}
-	rec = davBasic(t, fx.s, "HEAD", href, fx.secret, "", nil)
+	rec = davBasic(t, fx.s, fx.u.Email, "HEAD", href, fx.secret, "", nil)
 	wantStatus(t, rec, 200)
 	if rec.Body.Len() != 0 {
 		t.Errorf("HEAD has a body: %q", rec.Body.String())
@@ -389,7 +394,7 @@ func TestDAVPropByNameAndPropname(t *testing.T) {
 
 	// A known and an unknown property: a 200 propstat and a 404 propstat.
 	body := `<D:propfind xmlns:D="DAV:"><D:prop><D:displayname/><D:bogus/></D:prop></D:propfind>`
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", href, fx.secret, body, map[string]string{"Depth": "0"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", href, fx.secret, body, map[string]string{"Depth": "0"}))
 	var ok200, ok404 bool
 	for _, r := range ms.all("response") {
 		for _, ps := range r.all("propstat") {
@@ -413,7 +418,7 @@ func TestDAVPropByNameAndPropname(t *testing.T) {
 
 	// propname lists the applicable property names with empty values.
 	body = `<D:propfind xmlns:D="DAV:"><D:propname/></D:propfind>`
-	ms = davMultistatus(t, davBasic(t, fx.s, "PROPFIND", href, fx.secret, body, map[string]string{"Depth": "0"}))
+	ms = davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", href, fx.secret, body, map[string]string{"Depth": "0"}))
 	if _, ok := davProp(t, ms, href, "displayname"); !ok {
 		t.Error("propname does not list displayname")
 	}
@@ -435,7 +440,7 @@ func TestDAVMethodNotAllowed(t *testing.T) {
 		{"MOVE", "/dav/"},
 		{"LOCK", "/dav/"},
 	} {
-		rec := davBasic(t, fx.s, c.method, c.path, fx.secret, "", nil)
+		rec := davBasic(t, fx.s, fx.u.Email, c.method, c.path, fx.secret, "", nil)
 		wantStatus(t, rec, 405)
 		if allow := rec.Header().Get("Allow"); !strings.Contains(allow, "PROPFIND") {
 			t.Errorf("%s %s: Allow = %q", c.method, c.path, allow)
@@ -446,10 +451,10 @@ func TestDAVMethodNotAllowed(t *testing.T) {
 func TestDAVNotFoundAndUnreachable(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
-	wantStatus(t, davBasic(t, fx.s, "GET", "/dav/My%20files/nope.txt", fx.secret, "", nil), 404)
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/No%20such%20space/", fx.secret, "", map[string]string{"Depth": "0"}), 404)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", "/dav/My%20files/nope.txt", fx.secret, "", nil), 404)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/No%20such%20space/", fx.secret, "", map[string]string{"Depth": "0"}), 404)
 	// A dot segment does not escape the mount.
-	wantStatus(t, davBasic(t, fx.s, "GET", "/dav/My%20files/..%2F..%2Fetc", fx.secret, "", nil), 404)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", "/dav/My%20files/..%2F..%2Fetc", fx.secret, "", nil), 404)
 }
 
 func TestDAVNoDownloadRule(t *testing.T) {
@@ -461,13 +466,13 @@ func TestDAVNoDownloadRule(t *testing.T) {
 
 	href := "/dav/My%20files/secret.txt"
 	// The write app password caps at editor, which may download.
-	wantStatus(t, davBasic(t, fx.s, "GET", href, fx.secret, "", nil), 200)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", href, fx.secret, "", nil), 200)
 	// A read app password caps at viewer, which the no-download rule refuses.
 	readSecret := makeAppPassword(t, fx.s, fx.sess, "read mount", "read").Secret
-	rec := davBasic(t, fx.s, "GET", href, readSecret, "", nil)
+	rec := davBasic(t, fx.s, fx.u.Email, "GET", href, readSecret, "", nil)
 	wantStatus(t, rec, 403)
 	// PROPFIND still lists the file's metadata for the reader.
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", href, readSecret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", href, readSecret, "", map[string]string{"Depth": "0"}), 207)
 }
 
 func TestDAVTeamSpaceAndQuota(t *testing.T) {
@@ -479,7 +484,7 @@ func TestDAVTeamSpaceAndQuota(t *testing.T) {
 		map[string]any{"level": "read"}), 200)
 	writeFile(t, fx.s, fx.key, fld.ID, "q.txt", "quarterly")
 
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	var spaceHref string
 	for _, h := range davHrefs(ms) {
 		if strings.Contains(h, "Reports") {
@@ -494,7 +499,7 @@ func TestDAVTeamSpaceAndQuota(t *testing.T) {
 		t.Error("the space root has no quota-used-bytes")
 	}
 	// Its child is reachable by path.
-	wantStatus(t, davBasic(t, fx.s, "GET", spaceHref+"q.txt", fx.secret, "", nil), 200)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", spaceHref+"q.txt", fx.secret, "", nil), 200)
 }
 
 func TestDAVSharedWithMe(t *testing.T) {
@@ -507,7 +512,7 @@ func TestDAVSharedWithMe(t *testing.T) {
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+node.ID+"/permissions/"+fx.u.ID, fx.key,
 		map[string]any{"role": "viewer"}), 200)
 
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
 	var found bool
 	for _, h := range davHrefs(ms) {
 		if strings.Contains(h, "shared.txt") {
@@ -526,7 +531,7 @@ func TestDAVSameNameSuffix(t *testing.T) {
 	fld := newFolder(t, fx.s, fx.key, fx.acc.ID, "My files")
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
 		map[string]any{"level": "read"}), 200)
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	var base, suffixed bool
 	for _, r := range ms.all("response") {
 		for _, ps := range r.all("propstat") {
@@ -554,7 +559,7 @@ func TestDAVHiddenSpaceExcluded(t *testing.T) {
 		map[string]any{"level": "read"}), 200)
 	// Ann hides the space.
 	wantStatus(t, callSession(t, fx.s, fx.sess, "PUT", "/api/v1/folders/"+fld.ID+"/hidden", nil), 204)
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	for _, h := range davHrefs(ms) {
 		if strings.Contains(h, "Hidden") {
 			t.Errorf("the hidden space is listed: %v", davHrefs(ms))
@@ -571,13 +576,13 @@ func TestDAVShortcutNotListedOrReachable(t *testing.T) {
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+pf.RootNodeID+"/shortcuts", fx.key,
 		map[string]any{"name": "link.txt", "target": target.ID})
 	wantStatus(t, rec, 201)
-	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/My%20files/", fx.secret, "", map[string]string{"Depth": "1"}))
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/My%20files/", fx.secret, "", map[string]string{"Depth": "1"}))
 	for _, h := range davHrefs(ms) {
 		if strings.Contains(h, "link.txt") {
 			t.Errorf("the shortcut is listed: %v", davHrefs(ms))
 		}
 	}
-	wantStatus(t, davBasic(t, fx.s, "GET", "/dav/My%20files/link.txt", fx.secret, "", nil), 404)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", "/dav/My%20files/link.txt", fx.secret, "", nil), 404)
 }
 
 func TestDAVTokenFolderScope(t *testing.T) {
@@ -609,15 +614,15 @@ func TestDAVReadRateLimit(t *testing.T) {
 	// Shrink the read budget so the test spends it quickly; the handler must charge it per request.
 	fx.s.limits["dav.read"] = newLimiter(3)
 	for i := 0; i < 3; i++ {
-		wantStatus(t, davBasic(t, fx.s, "OPTIONS", "/dav/", fx.secret, "", nil), 200)
+		wantStatus(t, davBasic(t, fx.s, fx.u.Email, "OPTIONS", "/dav/", fx.secret, "", nil), 200)
 	}
-	wantStatus(t, davBasic(t, fx.s, "OPTIONS", "/dav/", fx.secret, "", nil), 429)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "OPTIONS", "/dav/", fx.secret, "", nil), 429)
 }
 
 func TestDAVLastUsedTouched(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
-	wantStatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "0"}), 207)
 	list := decode[listResponse[apwItem]](t, callSession(t, fx.s, fx.sess, "GET", apwPath, nil))
 	if len(list.Items) != 1 || list.Items[0].LastUsedAt == nil {
 		t.Fatalf("last_used_at was not recorded: %+v", list.Items)
@@ -649,4 +654,384 @@ func TestAppPasswordSecretRefusedOnAPI(t *testing.T) {
 	fx := newDavFix(t)
 	// The mount credential is not an API credential.
 	wantStatus(t, rawCall(t, fx.s, "GET", "/api/v1/me", fx.secret, "", nil), 401)
+}
+
+func TestDAVBasicEmailRules(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	hdr := map[string]string{"Depth": "0"}
+	// The right email and secret sign in.
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", hdr), 207)
+	// An email that differs only in case is the same key.
+	wantStatus(t, davBasic(t, fx.s, "ANN@EXAMPLE.COM", "PROPFIND", "/dav/", fx.secret, "", hdr), 207)
+	// Another email of the same account is refused, even with the right secret.
+	wantStatus(t, davBasic(t, fx.s, "bob@example.com", "PROPFIND", "/dav/", fx.secret, "", hdr), 401)
+	// A wrong secret with the right email is refused.
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", "scp_wrong", "", hdr), 401)
+}
+
+func TestDAVChallengeCharset(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	rec := rawCall(t, fx.s, "PROPFIND", "/dav/", "", "", map[string]string{"Depth": "0"})
+	wantStatus(t, rec, 401)
+	if got := rec.Header().Get("WWW-Authenticate"); got != `Basic realm="Selfcloud", charset="UTF-8"` {
+		t.Errorf("WWW-Authenticate = %q, want the realm with a UTF-8 charset", got)
+	}
+}
+
+func TestDAVAnonymousNotRateLimited(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	// Windows and Finder probe anonymously first: forty probes from one address all get the challenge, never a
+	// rate limit, because a request with no credential is not a failed sign-in.
+	for i := 0; i < 40; i++ {
+		wantStatus(t, rawCall(t, fx.s, "PROPFIND", "/dav/", "", "", map[string]string{"Depth": "0"}), 401)
+	}
+}
+
+func TestDAVPropfindTooManyProps(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	var b strings.Builder
+	b.WriteString(`<D:propfind xmlns:D="DAV:"><D:prop>`)
+	for i := 0; i < 65; i++ {
+		fmt.Fprintf(&b, "<D:p%d/>", i)
+	}
+	b.WriteString(`</D:prop></D:propfind>`)
+	rec := davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, b.String(), map[string]string{"Depth": "0"})
+	wantStatus(t, rec, 400)
+}
+
+func TestDAVDepthOneChildLimit(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	pf := personalFolderOf(t, fx.s, fx.sess)
+	// More children than a Depth 1 listing may hold: insert them straight into the store.
+	ctx := context.Background()
+	err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		for i := 0; i < 10001; i++ {
+			name := fmt.Sprintf("child %d", i)
+			if err := tx.InsertNodeNoIndex(ctx, &store.Node{
+				ID: id.New("nod"), AccountID: fx.acc.ID, FolderID: pf.ID, ParentID: pf.RootNodeID,
+				Name: name, NameKey: name, Kind: store.KindDir, CreatedAt: store.Now(), ModifiedAt: store.Now(),
+				CreatedBy: fx.u.ID,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/My%20files/", fx.secret, "", map[string]string{"Depth": "1"})
+	wantStatus(t, rec, 403)
+	if !strings.Contains(rec.Body.String(), "narrower") {
+		t.Errorf("the refusal should point to a narrower folder: %q", rec.Body.String())
+	}
+}
+
+func TestDAVDirNoGetetag(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	pf := personalFolderOf(t, fx.s, fx.sess)
+	mkdirs(t, fx.s, fx.key, pf.ID, "/sub")
+	href := "/dav/My%20files/sub/"
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", href, fx.secret, "", map[string]string{"Depth": "0"}))
+	if _, ok := davProp(t, ms, href, "getetag"); ok {
+		t.Error("a directory carries getetag; only files do")
+	}
+	// A file still carries it.
+	writeFile(t, fx.s, fx.key, pf.ID, "f.txt", "x")
+	fhref := "/dav/My%20files/f.txt"
+	ms = davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", fhref, fx.secret, "", map[string]string{"Depth": "0"}))
+	if _, ok := davProp(t, ms, fhref, "getetag"); !ok {
+		t.Error("a file has no getetag")
+	}
+}
+
+func TestDAVGetCountsView(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	pf := personalFolderOf(t, fx.s, fx.sess)
+	node := nodeOf(t, writeFile(t, fx.s, fx.key, pf.ID, "viewed.txt", "bytes"))
+	href := "/dav/My%20files/viewed.txt"
+	// HEAD is not a view.
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "HEAD", href, fx.secret, "", nil), 200)
+	flushViews(t, fx.s)
+	if recentHas(t, fx.s, fx.sess, node.ID) {
+		t.Error("HEAD counted as a view")
+	}
+	// GET is a view, as the content route counts it.
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "GET", href, fx.secret, "", nil), 200)
+	flushViews(t, fx.s)
+	if !recentHas(t, fx.s, fx.sess, node.ID) {
+		t.Error("GET did not count as a view")
+	}
+}
+
+func recentHas(t *testing.T, s *Server, sess testSession, nodeID string) bool {
+	t.Helper()
+	rec := callSession(t, s, sess, "GET", "/api/v1/recent", nil)
+	wantStatus(t, rec, 200)
+	for _, it := range decode[listResponse[recentItem]](t, rec).Items {
+		if it.ID == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDAVQuotaAvailable(t *testing.T) {
+	t.Parallel()
+	s := davServer(t)
+	admin := adminKey(t, s)
+	acc, key := newQuotaAccount(t, s, admin, "Acme", 1000)
+	u, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	secret := makeAppPassword(t, s, sess, "mount", "read").Secret
+	// A team space Ann reaches, empty; her own limit is generous, so the account quota is the binding one.
+	fld := newFolder(t, s, key, acc.ID, "Team")
+	wantStatus(t, call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/folders/"+fld.ID+"/grants/"+u.ID, key,
+		map[string]any{"level": "read"}), 200)
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+acc.ID+"/users/"+u.ID, key,
+		map[string]any{"quota_bytes": 5000}), 200)
+	// The only data is in My files.
+	pf := personalFolderOf(t, s, sess)
+	writeFile(t, s, key, pf.ID, "data.txt", strings.Repeat("x", 100))
+
+	ms := davMultistatus(t, davBasic(t, s, u.Email, "PROPFIND", "/dav/", secret, "", map[string]string{"Depth": "1"}))
+	myHref := "/dav/My%20files/"
+	used, ok := davProp(t, ms, myHref, "quota-used-bytes")
+	if !ok {
+		t.Fatal("no quota-used-bytes on My files")
+	}
+	usedN, err := strconv.ParseInt(used, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The account's remaining quota is the limit minus the account's used; the only data is My files.
+	want := strconv.FormatInt(1000-usedN, 10)
+	if got, ok := davProp(t, ms, "/dav/Team/", "quota-available-bytes"); !ok || got != want {
+		t.Errorf("team quota-available-bytes = %q, want the account's left %q", got, want)
+	}
+	if got, ok := davProp(t, ms, myHref, "quota-available-bytes"); !ok || got != want {
+		t.Errorf("My files quota-available-bytes = %q, want the smaller of the two lefts %q", got, want)
+	}
+}
+
+func TestDAVQuotaAvailableOmittedWhenUnlimited(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t) // the account and the person are both unlimited
+	fld := newFolder(t, fx.s, fx.key, fx.acc.ID, "Team")
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
+		map[string]any{"level": "read"}), 200)
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	if _, ok := davProp(t, ms, "/dav/Team/", "quota-available-bytes"); ok {
+		t.Error("an unlimited team space carries quota-available-bytes")
+	}
+	if _, ok := davProp(t, ms, "/dav/My%20files/", "quota-available-bytes"); ok {
+		t.Error("unlimited My files carries quota-available-bytes")
+	}
+}
+
+// davNamed returns each response's href paired with its displayname.
+func davNamed(ms davEl) map[string]string {
+	out := map[string]string{}
+	for _, r := range ms.all("response") {
+		h, _ := r.find("href")
+		for _, ps := range r.all("propstat") {
+			p, _ := ps.find("prop")
+			if dn, ok := p.find("displayname"); ok {
+				out[h.Text] = dn.Text
+			}
+		}
+	}
+	return out
+}
+
+// davHrefNamed returns the href of the response whose displayname is name.
+func davHrefNamed(ms davEl, name string) string {
+	for h, n := range davNamed(ms) {
+		if n == name {
+			return h
+		}
+	}
+	return ""
+}
+
+func TestDAVSpaceNameCaseClash(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	// A team space whose name differs from the personal folder's display name only in case shares its cleaned key.
+	fld := newFolder(t, fx.s, fx.key, fx.acc.ID, "my files")
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
+		map[string]any{"level": "read"}), 200)
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	base := davHrefNamed(ms, "My files")
+	suffixed := davHrefNamed(ms, "my files (2)")
+	if base == "" || suffixed == "" {
+		t.Fatalf("case-clashing spaces not disambiguated by key: %v", davNamed(ms))
+	}
+	// Both stay reachable, each as its own space.
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", base, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", suffixed, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+}
+
+func TestDAVSharedWithMeNameClash(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	// A team space named like the virtual shared space, in another case, takes part in the clash rule: the virtual
+	// space keeps its name and the team space gets the suffix.
+	fld := newFolder(t, fx.s, fx.key, fx.acc.ID, "shared with me")
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
+		map[string]any{"level": "read"}), 200)
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
+	virtual := davHrefNamed(ms, "Shared with me")
+	suffixed := davHrefNamed(ms, "shared with me (2)")
+	if virtual == "" || suffixed == "" {
+		t.Fatalf("the virtual shared space did not take part in the clash: %v", davNamed(ms))
+	}
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", virtual, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", suffixed, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+}
+
+// shareWith grants ann a role on a node, as the account key.
+func shareWith(t *testing.T, fx *davFix, nodeID, role string) {
+	t.Helper()
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+nodeID+"/permissions/"+fx.u.ID, fx.key,
+		map[string]any{"role": role}), 200)
+}
+
+func TestDAVSharedRootSameNameSuffix(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	_, bobSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "bob@example.com")
+	bobPf := personalFolderOf(t, fx.s, bobSess)
+	// Two shared roots whose names differ only in case share a cleaned key; both stay reachable, one suffixed.
+	a := mkdirs(t, fx.s, fx.key, bobPf.ID, "/a/Sales")
+	b := mkdirs(t, fx.s, fx.key, bobPf.ID, "/b/sales")
+	shareWith(t, fx, a.ID, "viewer")
+	shareWith(t, fx, b.ID, "viewer")
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	var base, suffixed string
+	for h, n := range davNamed(ms) {
+		switch n {
+		case "Sales", "sales":
+			base = h
+		case "Sales (2)", "sales (2)":
+			suffixed = h
+		}
+	}
+	if base == "" || suffixed == "" {
+		t.Fatalf("same-key shared roots not disambiguated: %v", davNamed(ms))
+	}
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", base, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", suffixed, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+}
+
+func TestDAVSharedRootLongNameSuffix(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	_, bobSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "bob@example.com")
+	bobPf := personalFolderOf(t, fx.s, bobSess)
+	// Two shared roots with the same 255-byte name: the suffix must cut the base to fit, not overflow the name limit.
+	long := strings.Repeat("a", 255)
+	a := mkdirs(t, fx.s, fx.key, bobPf.ID, "/a/"+long)
+	b := mkdirs(t, fx.s, fx.key, bobPf.ID, "/b/"+long)
+	shareWith(t, fx, a.ID, "viewer")
+	shareWith(t, fx, b.ID, "viewer")
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	var baseHref, suffixedHref, suffixedName string
+	for h, n := range davNamed(ms) {
+		if n == long {
+			baseHref = h
+		}
+		if strings.HasSuffix(n, " (2)") {
+			suffixedHref, suffixedName = h, n
+		}
+	}
+	if baseHref == "" || suffixedHref == "" {
+		t.Fatalf("long same-key shared roots not disambiguated: %v", davNamed(ms))
+	}
+	if len(suffixedName) > 255 {
+		t.Errorf("the suffixed name is %d bytes, over the 255-byte limit", len(suffixedName))
+	}
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", baseHref, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", suffixedHref, fx.secret, "", map[string]string{"Depth": "0"}), 207)
+}
+
+func TestDAVSharedTrashedAbsent(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	_, bobSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "bob@example.com")
+	bobPf := personalFolderOf(t, fx.s, bobSess)
+	dir := mkdirs(t, fx.s, fx.key, bobPf.ID, "/share")
+	shareWith(t, fx, dir.ID, "viewer")
+	// Listed while live.
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	if davHrefNamed(ms, "share") == "" {
+		t.Fatalf("the live shared folder is not listed: %v", davNamed(ms))
+	}
+	// The owner trashes it: it leaves Shared with me and is gone by path.
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+dir.ID, fx.key, nil), 204)
+	ms = davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	if davHrefNamed(ms, "share") != "" {
+		t.Errorf("the trashed shared folder is still listed: %v", davNamed(ms))
+	}
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/share/", fx.secret, "", map[string]string{"Depth": "0"}), 404)
+}
+
+func TestDAVSharedTrashedSameName(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	_, bobSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "bob@example.com")
+	bobPf := personalFolderOf(t, fx.s, bobSess)
+	// Two shared folders of one name; trashing one must not hide the live one.
+	live := mkdirs(t, fx.s, fx.key, bobPf.ID, "/a/dup")
+	dead := mkdirs(t, fx.s, fx.key, bobPf.ID, "/b/dup")
+	shareWith(t, fx, live.ID, "viewer")
+	shareWith(t, fx, dead.ID, "viewer")
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+dead.ID, fx.key, nil), 204)
+	ms := davMultistatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/", fx.secret, "", map[string]string{"Depth": "1"}))
+	n := 0
+	for _, r := range ms.all("response") {
+		for _, ps := range r.all("propstat") {
+			p, _ := ps.find("prop")
+			if dn, ok := p.find("displayname"); ok && dn.Text == "dup" {
+				n++
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want exactly the one live 'dup', got %d: %v", n, davHrefs(ms))
+	}
+	wantStatus(t, davBasic(t, fx.s, fx.u.Email, "PROPFIND", "/dav/Shared%20with%20me/dup/", fx.secret, "", map[string]string{"Depth": "0"}), 207)
+}
+
+func TestDAVSharedTokenScope(t *testing.T) {
+	t.Parallel()
+	fx := newDavFix(t)
+	_, bobSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "bob@example.com")
+	bobPf := personalFolderOf(t, fx.s, bobSess)
+	inScope := mkdirs(t, fx.s, fx.key, bobPf.ID, "/in")
+	outScope := mkdirs(t, fx.s, fx.key, bobPf.ID, "/out")
+	shareWith(t, fx, inScope.ID, "viewer")
+	shareWith(t, fx, outScope.ID, "viewer")
+	// A token confined to one shared directory lists only what that scope reaches.
+	tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"user": fx.u.ID, "all": true, "node": inScope.ID})
+	ms := davMultistatus(t, rawCall(t, fx.s, "PROPFIND", "/dav/Shared%20with%20me/", tok, "", map[string]string{"Depth": "1"}))
+	names := davNamed(ms)
+	var hasIn, hasOut bool
+	for _, n := range names {
+		if n == "in" {
+			hasIn = true
+		}
+		if n == "out" {
+			hasOut = true
+		}
+	}
+	if !hasIn || hasOut {
+		t.Errorf("node-scoped token: in=%v out=%v; want only the scoped directory: %v", hasIn, hasOut, names)
+	}
 }
