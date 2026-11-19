@@ -148,6 +148,10 @@ export const SECTIONS: SectionSpec[] = [
         ],
       },
       {
+        title: "settings.group.dav",
+        fields: [{ key: "dav.enabled", type: "bool" }],
+      },
+      {
         title: "settings.group.admin",
         fields: [{ key: "admin.tenant_access", type: "bool" }],
       },
