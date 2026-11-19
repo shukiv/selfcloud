@@ -1452,9 +1452,14 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       return { title: <span style={{ fontWeight: 500 }}>{c.title}</span>, onHeaderCell: () => (c.ariaSort ? { "aria-sort": c.ariaSort } : {}) };
     };
 
-    // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
-    // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
-    const mark = (r: T) => <PresetMark id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} renderIcon={q.icon ? () => q.icon!(r) : undefined} pick={PH.pick} />;
+    // A mouse's mark covers the icon's box: the icon is drawn here, fresh on every pass so it always follows its item, and the
+    // memoised mark (a transparent button holding the badge) covers it (decision 128). A finger keeps the plain icon and the badge.
+    const mark = (r: T) => (
+      <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
+        {q.icon && <span className="row-icon">{q.icon(r)}</span>}
+        <PresetMark id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} />
+      </span>
+    );
     const nameCell = (r: T) => {
       // The phone's second line is one wrapping row of inline items (mob4): each non-empty cell is a span, and the dot between
       // two items is the stylesheet's (.row-second-item + .row-second-item::before), so no text node holds a separator and an

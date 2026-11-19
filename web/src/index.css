@@ -2000,6 +2000,16 @@ tr[data-drop-state="refused"] > td {
   }
 }
 
+/* The marks are plain buttons, so they carry their own keyboard focus ring (the header's select-all mark is a tab stop): the same
+   2 px primary outline the tree's rows and the lightbox's buttons use, offset so it rings the mark without covering it. */
+.files-list .head-mark:focus-visible,
+.item-list .head-mark:focus-visible,
+.files-list .row-mark:focus-visible,
+.item-list .row-mark:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
 /* The file page fills the room under the header, whatever else sits above it, so its section can reach the window's bottom. */
 #main:has(> .files-layout) {
   display: flex;

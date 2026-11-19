@@ -8,7 +8,7 @@ import Listing, { type ItemListingProps, type ListAction } from "./Listing";
 import { desktopViewport } from "../../test/viewport";
 
 // buttons counts the renders of each icon button by its label, and checks the renders of each row's mark by its name. The mark is
-// a memoised component that draws the row's icon inside its own pass, so the icon's render counts the same pass (decision 128).
+// a memoised component (the icon is drawn outside it, fresh on every pass), so its render counts only the row's own pass (decision 128).
 const buttons = vi.hoisted(() => ({} as Record<string, number>));
 const checks = vi.hoisted(() => ({} as Record<string, number>));
 vi.mock("../IconButton", async (orig) => {
@@ -19,6 +19,17 @@ vi.mock("../IconButton", async (orig) => {
       buttons[p.label] = (buttons[p.label] ?? 0) + 1;
       return createElement(real.default, p);
     },
+  };
+});
+vi.mock("./PresetMark", async (orig) => {
+  const real = await orig<typeof import("./PresetMark")>();
+  const { createElement, memo } = await import("react");
+  return {
+    ...real,
+    default: memo((p: Parameters<typeof real.default>[0]) => {
+      checks[p.name] = (checks[p.name] ?? 0) + 1;
+      return createElement(real.default, p);
+    }, real.presetMarkEqual),
   };
 });
 
@@ -57,10 +68,7 @@ function props(over: Over = {}): ItemListingProps<Row> {
     rowLabel: (r) => r.name,
     columns,
     selectable: true,
-    icon: (r) => {
-      checks[r.name] = (checks[r.name] ?? 0) + 1;
-      return <span data-icon={r.id} />;
-    },
+    icon: (r) => <span data-icon={r.id} />,
     actions: actionsOf(),
     menu: (r) => [{ key: "info", label: `Info ${r.name}`, onSelect: () => undefined }],
     empty: { title: "Nothing here" },
