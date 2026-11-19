@@ -52,10 +52,13 @@ func (p *fileProbe) failedDelivery(hook string) string {
 }
 
 // giveUpDelivery claims the endpoint's test delivery and records it given up, so it is failed, and returns its id.
+// The claim looks an hour ahead, past the two-minute lease the server's webhook worker holds and past the backoff of
+// its first retry, so it takes the delivery whichever way the worker left it. The worker's later outcome names a lease
+// that has ended, and RecordWebhookOutcome matches on the lease, so it changes nothing.
 func (p *fileProbe) giveUpDelivery(hook string) string {
 	p.t.Helper()
 	ctx := context.Background()
-	jobs, err := p.st.ClaimWebhookJobs(ctx, time.Now().Add(time.Minute), time.Minute, 5, hook)
+	jobs, err := p.st.ClaimWebhookJobs(ctx, time.Now().Add(time.Hour), time.Minute, 5, hook)
 	if err != nil || len(jobs) != 1 {
 		p.t.Fatalf("claim the test delivery: %v, %d jobs", err, len(jobs))
 	}
