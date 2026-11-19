@@ -44,7 +44,7 @@ func followRetryAfter(h string) time.Duration {
 	return 5 * time.Second
 }
 
-// changesFeed is the feed's answer: the folded changes, the cursor after the last raw row read, and whether rows remain.
+// changesFeed is the feed's answer: the folded changes, the cursor to read after next, and whether rows remain.
 type changesFeed struct {
 	Changes []changesEntry `json:"changes"`
 	Cursor  string         `json:"cursor"`

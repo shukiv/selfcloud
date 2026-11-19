@@ -106,9 +106,11 @@ func NodeChangesAfterIn(ctx context.Context, q Querier, accountID, folderID stri
 // never lowers, so the head survives a prune of every row and a restore answers for the seqs the backup names.
 const nodeChangesCounterSQL = "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'node_changes'), 0)"
 
-// journalCounter reads the counter on q. Before the first autoincrement insert the sqlite_sequence table does not
-// exist yet, and the counter is zero; no other error of this fixed query is swallowed.
-func journalCounter(ctx context.Context, q Querier) (int64, error) {
+// JournalCounterIn reads the journal's autoincrement counter on q, the querier of one snapshot. Before the first
+// autoincrement insert the sqlite_sequence table does not exist yet, and the counter is zero; no other error of this
+// fixed query is swallowed. SQLite has one writer, so every row with seq at or below the counter a snapshot sees is
+// committed and visible in it.
+func JournalCounterIn(ctx context.Context, q Querier) (int64, error) {
 	var seq int64
 	err := q.QueryRowContext(ctx, nodeChangesCounterSQL).Scan(&seq)
 	if err != nil && sqliteCode(err) == sqlite3.SQLITE_ERROR && strings.Contains(err.Error(), "sqlite_sequence") {
@@ -122,7 +124,7 @@ func journalCounter(ctx context.Context, q Querier) (int64, error) {
 func (s *Store) NodeChangesHead(ctx context.Context) (int64, error) {
 	var head int64
 	err := s.Read(ctx, func(q Querier) error {
-		counter, err := journalCounter(ctx, q)
+		counter, err := JournalCounterIn(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -179,38 +181,49 @@ func (s *Store) PruneNodeChanges(ctx context.Context, before time.Time, batch in
 	return gone + aged, nil
 }
 
-// pruneNodeChangesGone removes up to batch rows whose account no longer exists, without touching the mark. The
-// distinct accounts come from the account index alone (a covering read), and each gone account's rows go through
-// that index, bounded by the batch budget left.
+// nodeChangesGoneAccountsSQL skip-scans the account index from one account id to the next (each MIN seeks the index,
+// never the table) and keeps the ids no account holds any more. The read runs outside the writer: the sweep calls it
+// every pass, and a full scan of the journal inside a write would hold the single writer.
+const nodeChangesGoneAccountsSQL = `WITH RECURSIVE a(id) AS (
+		SELECT (SELECT MIN(account_id) FROM node_changes)
+		UNION ALL
+		SELECT (SELECT MIN(account_id) FROM node_changes WHERE account_id > a.id) FROM a WHERE a.id IS NOT NULL
+	) SELECT id FROM a WHERE id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.id = a.id)`
+
+// pruneNodeChangesGone removes up to batch rows whose account no longer exists, without touching the mark. The gone
+// accounts are found by a read outside the writer, skip-scanning the account index; each gone account's rows then go
+// through that index in their own short write, bounded by the batch budget left.
 func (s *Store) pruneNodeChangesGone(ctx context.Context, batch int) (int64, error) {
-	var n int64
-	err := s.write(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT DISTINCT account_id FROM node_changes")
+	var gone []string
+	if err := s.Read(ctx, func(q Querier) error {
+		rows, err := q.QueryContext(ctx, nodeChangesGoneAccountsSQL)
 		if err != nil {
 			return err
 		}
-		var accounts []string
+		defer rows.Close()
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
-				rows.Close()
 				return err
 			}
-			accounts = append(accounts, id)
+			gone = append(gone, id)
 		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
+		return rows.Err()
+	}); err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, id := range gone {
+		if n >= int64(batch) {
+			break
 		}
-		rows.Close()
-		for _, id := range accounts {
-			if n >= int64(batch) {
-				break
-			}
+		var removed int64
+		if err := s.write(ctx, func(tx *sql.Tx) error {
+			// The account may have come back since the read; its rows are then no longer gone.
 			var one int
 			err := tx.QueryRowContext(ctx, "SELECT 1 FROM accounts WHERE id = ?", id).Scan(&one)
 			if err == nil {
-				continue
+				return nil
 			}
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err
@@ -221,15 +234,14 @@ func (s *Store) pruneNodeChangesGone(ctx context.Context, batch int) (int64, err
 			if err != nil {
 				return err
 			}
-			removed, err := res.RowsAffected()
-			if err != nil {
-				return err
-			}
-			n += removed
+			removed, err = res.RowsAffected()
+			return err
+		}); err != nil {
+			return n, err
 		}
-		return nil
-	})
-	return n, err
+		n += removed
+	}
+	return n, nil
 }
 
 // pruneNodeChangesAge removes one batch of the old prefix and raises the mark to the last seq removed, in one write.

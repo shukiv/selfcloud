@@ -115,8 +115,9 @@ type changeEntry struct {
 	Node    *nodeJSON `json:"node,omitempty"`
 }
 
-// changesResponse is a page of the feed. Changes is never null; Cursor names the last raw row read, and HasMore says
-// rows remain after it.
+// changesResponse is a page of the feed. Changes is never null; a complete page's Cursor names the snapshot's head
+// (the last raw row read or the journal counter, whichever is higher), a page with more rows names the last raw row
+// read, and HasMore says rows remain after it.
 type changesResponse struct {
 	Changes []changeEntry `json:"changes"`
 	Cursor  string        `json:"cursor"`
@@ -264,7 +265,8 @@ func (s *Server) releaseChangesWaiter(key string) {
 
 // changesWaitLoop reads the feed, and while it is empty and a wait is held, waits for a write to commit, the deadline,
 // the client to go, or the server to drain. It re-reads at most every changesReadEvery, and answers empty at the
-// deadline with the cursor unchanged. A wait refused a slot answers at once with Retry-After.
+// deadline with the cursor of its last read, which names the head. A wait refused a slot answers at once with
+// Retry-After.
 func (s *Server) changesWaitLoop(w http.ResponseWriter, r *http.Request, p *auth.Principal, feed, space string,
 	after int64, limit int, wait time.Duration, curTok string) error {
 	ctx := r.Context()
@@ -331,18 +333,24 @@ func (s *Server) changesWaitLoop(w http.ResponseWriter, r *http.Request, p *auth
 	}
 }
 
-// readChanges reads the mark and limit+1 journal rows after seq in one snapshot, so a prune landing between them cannot
-// make the feed skip rows silently. It folds the rows to one entry per node ordered by the node's latest row, skipping
-// the staged rows of the account feed, and decorates the live nodes as a stat does. The cursor advances to the last raw
-// row read (staged included); with no rows it is the cursor the caller passed, unchanged.
+// readChanges reads the mark, the journal counter and limit+1 journal rows after seq in one snapshot, so a prune
+// landing between them cannot make the feed skip rows silently. It folds the rows to one entry per node ordered by
+// the node's latest row, skipping the staged rows of the account feed, and decorates the live nodes as a stat does.
+// A complete page's cursor names the snapshot's head (the last raw row read or the counter, whichever is higher);
+// with rows remaining it names the last raw row read (staged included). An empty page whose head is above the
+// caller's seq answers a new cursor at the head, and the caller's own token otherwise.
 func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space string, after int64, limit int,
 	curTok string) (changesResponse, error) {
 	ctx := r.Context()
-	var mark int64
+	var mark, counter int64
 	var rows []store.NodeChange
 	if err := s.store.Read(ctx, func(q store.Querier) error {
 		var err error
 		mark, err = store.NodeChangesMarkIn(ctx, q)
+		if err != nil {
+			return err
+		}
+		counter, err = store.JournalCounterIn(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -362,14 +370,29 @@ func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space str
 		rows = rows[:limit]
 	}
 	out := changesResponse{Changes: []changeEntry{}, Cursor: curTok, HasMore: hasMore}
+	// SQLite has one writer, so every row with seq at or below the counter this snapshot saw is committed and
+	// visible in it: "no rows of this feed after the counter" is exact. A complete page therefore moves the cursor
+	// to the head, and a quiet feed keeps following it instead of holding an old seq that an age prune of other
+	// feeds' rows would leave below the mark.
+	curSeq := counter
+	if len(rows) > 0 {
+		last := rows[len(rows)-1].Seq
+		if hasMore {
+			curSeq = last
+		} else if last > curSeq {
+			curSeq = last
+		}
+	}
+	if len(rows) > 0 || curSeq > after {
+		cur, err := s.sealChangesCursor(feed, curSeq)
+		if err != nil {
+			return changesResponse{}, err
+		}
+		out.Cursor = cur
+	}
 	if len(rows) == 0 {
 		return out, nil
 	}
-	cur, err := s.sealChangesCursor(feed, rows[len(rows)-1].Seq)
-	if err != nil {
-		return changesResponse{}, err
-	}
-	out.Cursor = cur
 
 	type fold struct {
 		seq    int64

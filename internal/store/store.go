@@ -189,14 +189,14 @@ func (s *Store) write(ctx context.Context, fn func(tx *sql.Tx) error) error {
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // a no-op after Commit
-	headBefore, err := journalCounter(ctx, tx)
+	headBefore, err := JournalCounterIn(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("store: journal head: %w", err)
 	}
 	if err := fn(tx); err != nil {
 		return err
 	}
-	headAfter, err := journalCounter(ctx, tx)
+	headAfter, err := JournalCounterIn(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("store: journal head: %w", err)
 	}
