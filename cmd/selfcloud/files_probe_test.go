@@ -188,6 +188,8 @@ func valueOf(t *testing.T, out, key string) string {
 // nodes are made first, through the same commands and outside the recording.
 var fileProbes = map[string]func(p *fileProbe) []string{
 	"ls": func(p *fileProbe) []string { return []string{"--folder", p.folder, "/"} },
+	// changes reads a space feed with the account key: start, then one page after the cursor.
+	"changes": func(p *fileProbe) []string { return []string{"--space", p.folder} },
 	"stat": func(p *fileProbe) []string {
 		return []string{p.touch("/stat.txt")}
 	},
