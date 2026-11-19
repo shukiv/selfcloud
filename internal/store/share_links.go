@@ -539,7 +539,13 @@ func (s *Store) AccountShareLinks(ctx context.Context, accountID string, now tim
 // NodePathNames returns the names from the folder's root down to nodeID, the root left out: a path of names. A node
 // with no path above the root returns nil.
 func (s *Store) NodePathNames(ctx context.Context, accountID, nodeID string) ([]string, error) {
-	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE up(id, parent, name, depth) AS (
+	return NodePathNamesIn(ctx, s.r, accountID, nodeID)
+}
+
+// NodePathNamesIn is NodePathNames on the given querier, so a read snapshot builds its paths in the same state as its
+// other reads.
+func NodePathNamesIn(ctx context.Context, q Querier, accountID, nodeID string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `WITH RECURSIVE up(id, parent, name, depth) AS (
 			SELECT id, parent_id, name, 0 FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
 			SELECT p.id, p.parent_id, p.name, up.depth + 1 FROM nodes p JOIN up ON p.id = up.parent WHERE p.account_id = ?

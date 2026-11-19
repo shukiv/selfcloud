@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -25,6 +27,8 @@ const (
 	maxPlaylistFileBytes = 1 << 20
 	// maxImportSkips is how many skipped lines the import answer names; skipped_total holds the whole count.
 	maxImportSkips = 100
+	// maxImportSegments is the most segments one path line may hold; a longer line is not_found, so the walk is bounded.
+	maxImportSegments = 64
 	// playlistExportExt is the extension an export gives its file, and playlistExportMime its type.
 	playlistExportExt  = ".m3u8"
 	playlistExportMime = "audio/x-mpegurl"
@@ -51,9 +55,11 @@ type playlistImportOut struct {
 
 // handleImportPlaylist reads an .m3u or .m3u8 file of the drive and makes a playlist of the files its paths name, in
 // file order, resolved from the playlist file's own folder. A line that names no file the caller reaches is skipped
-// with its reason, never a refusal of the whole import; the reasons answer alike for every cause they cover, so the
-// answer does not say which one it is. The playlist counts against maxPlaylistsPerUser as a create does, and the
-// create is audited privately to the user, with counts and the via only.
+// with its reason, never a refusal of the whole import; the reasons answer alike for every cause they cover, and the
+// skips are reported in line order, so the answer does not say which cause it is nor whether a hidden file exists.
+// The paths are resolved in one read snapshot, off the writer; the write only re-checks the reach of the kept entries.
+// The playlist counts against maxPlaylistsPerUser as a create does, and the create is audited privately to the user,
+// with counts and the via only.
 func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if err := playlistCaller(p); err != nil {
@@ -97,11 +103,20 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	ctx := r.Context()
+	// The paths are resolved in one read snapshot, so the lookups never hold the single writer.
+	var kept []importKept
+	var skips []playlistImportSkip
+	err = s.store.Read(ctx, func(q store.Querier) error {
+		var err error
+		kept, skips, err = resolveImportPaths(ctx, q, p, file.ParentID, text)
+		return err
+	})
+	if err != nil {
+		return err
+	}
 	at := store.Now()
 	pl := store.Playlist{ID: id.New("pls"), AccountID: p.AccountID, UserID: p.UserID, Name: name, CreatedAt: at, UpdatedAt: at}
-	skipped := make([]playlistImportSkip, 0)
-	skippedTotal := 0
-	entries := make([]store.PlaylistEntry, 0)
+	entries := make([]store.PlaylistEntry, 0, len(kept))
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		n, err := tx.CountPlaylists(ctx, p.UserID)
@@ -112,82 +127,22 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 			return apierr.Newf(apierr.Conflict, "you may keep at most %d playlists; delete some first", maxPlaylistsPerUser).
 				With("reason", "limit").With("limit", maxPlaylistsPerUser)
 		}
-		skip := func(line int, reason string) {
-			skippedTotal++
-			if len(skipped) < maxImportSkips {
-				skipped = append(skipped, playlistImportSkip{Line: line, Reason: reason})
-			}
-		}
-		parent, err := tx.Node(ctx, p.AccountID, file.ParentID)
-		if err != nil {
-			return err
-		}
-		type candidate struct {
-			line int
-			node string
-		}
-		var candidates []candidate
-		for i, raw := range strings.Split(text, "\n") {
-			line := strings.TrimSuffix(raw, "\r")
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			switch {
-			case m3uURL(line):
-				skip(i+1, "url")
-				continue
-			case m3uAbsolute(line):
-				skip(i+1, "absolute")
-				continue
-			}
-			nodeID, reason, err := resolveM3UPath(ctx, tx, p.AccountID, parent, line)
-			if err != nil {
-				return err
-			}
-			if reason != "" {
-				skip(i+1, reason)
-				continue
-			}
-			candidates = append(candidates, candidate{line: i + 1, node: nodeID})
-		}
-		// The reach of every resolved file is checked as addableIn checks it, on the state this write sees, but per
-		// entry: a file the caller does not reach is skipped, never a refusal of the import.
-		ids := make([]string, len(candidates))
-		for i, c := range candidates {
-			ids[i] = c.node
+		// The write re-checks the reach of the kept entries on the state it sees, as addableIn does; one batch serves
+		// them all. An entry the caller no longer reaches is skipped, never a refusal of the import.
+		ids := make([]string, len(kept))
+		for i, k := range kept {
+			ids[i] = k.node
 		}
 		roles, err := reachRolesIn(ctx, tx.Querier(), p, ids, "")
 		if err != nil {
 			return err
 		}
-		seen := make(map[string]bool, len(candidates))
-		for _, c := range candidates {
-			if roles[c.node] == "" {
-				skip(c.line, "not_found")
+		for _, k := range kept {
+			if roles[k.node] == "" {
+				skips = append(skips, playlistImportSkip{Line: k.line, Reason: "not_found"})
 				continue
 			}
-			node, err := tx.Node(ctx, p.AccountID, c.node)
-			if errors.Is(err, store.ErrNotFound) {
-				skip(c.line, "not_found")
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if node.Kind != store.KindFile {
-				skip(c.line, "not_found")
-				continue
-			}
-			if seen[c.node] {
-				skip(c.line, "duplicate")
-				continue
-			}
-			if len(entries) >= maxPlaylistEntries {
-				skip(c.line, "limit")
-				continue
-			}
-			seen[c.node] = true
-			entries = append(entries, store.PlaylistEntry{ID: id.New("ple"), PlaylistID: pl.ID, NodeID: c.node, Position: len(entries)})
+			entries = append(entries, store.PlaylistEntry{ID: id.New("ple"), PlaylistID: pl.ID, NodeID: k.node, Position: len(entries)})
 		}
 		if err := tx.InsertPlaylist(ctx, pl, at); err != nil {
 			return err
@@ -199,16 +154,22 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 			pl.EntryCount = len(entries)
 		}
 		return s.playlistAudit(ctx, tx, r, p, p.AccountID, "playlist.create", pl.ID,
-			map[string]any{"via": "import", "count": len(entries), "skipped": skippedTotal})
+			map[string]any{"via": "import", "count": len(entries), "skipped": len(skips)})
 	})
 	if err != nil {
 		return err
+	}
+	// The skips are reported in line order, capped at the first maxImportSkips; the total is exact.
+	sort.SliceStable(skips, func(i, j int) bool { return skips[i].Line < skips[j].Line })
+	skippedTotal := len(skips)
+	if len(skips) > maxImportSkips {
+		skips = skips[:maxImportSkips]
 	}
 	view, err := s.playlistView(ctx, p, pl, entries)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, playlistImportOut{Playlist: view, Skipped: skipped, SkippedTotal: skippedTotal})
+	writeJSON(w, http.StatusCreated, playlistImportOut{Playlist: view, Skipped: skips, SkippedTotal: skippedTotal})
 	return nil
 }
 
@@ -256,41 +217,241 @@ func m3uAbsolute(line string) bool {
 		((line[0] >= 'a' && line[0] <= 'z') || (line[0] >= 'A' && line[0] <= 'Z'))
 }
 
-// resolveM3UPath walks one path line from the playlist file's own parent folder: \ becomes /, empty and . segments are
-// dropped, .. goes to the parent, and each name goes through names.Clean to its key and Child. It returns the node the
-// path names, or the reason the line is skipped: outside when .. would go above the space's root, not_found when a
-// segment does not resolve. A name the rules refuse does not resolve either.
-func resolveM3UPath(ctx context.Context, tx *store.Tx, accountID string, parent *store.Node, line string) (string, string, error) {
-	cur := parent
-	for _, seg := range strings.Split(strings.ReplaceAll(line, "\\", "/"), "/") {
-		switch seg {
-		case "", ".":
-			continue
-		case "..":
-			if cur.IsRoot() {
-				return "", "outside", nil
-			}
-			up, err := tx.Node(ctx, accountID, cur.ParentID)
-			if err != nil {
-				return "", "", err
-			}
-			cur = up
-		default:
-			_, key, err := names.Clean(seg)
-			if err != nil {
-				return "", "not_found", nil
-			}
-			child, err := tx.Child(ctx, accountID, cur.ID, key)
-			if errors.Is(err, store.ErrNotFound) {
-				return "", "not_found", nil
-			}
-			if err != nil {
-				return "", "", err
-			}
-			cur = child
-		}
+// importKept is one path line an import keeps: its 1-based line number and the file it names.
+type importKept struct {
+	line int
+	node string
+}
+
+// importResolved is one path line resolved as text and structure, before reach is read. climbed holds the ancestors
+// the leading .. steps reach, descended the folders the names go down through, and nodeID/nodeKind the target. missing
+// is set when a segment does not resolve (or the line has more than maxImportSegments segments); passedRoot when the
+// climb goes above the space's root. The reach of climbed, descended and nodeID decides the rest.
+type importResolved struct {
+	nodeID     string
+	nodeKind   string
+	climbed    []string
+	descended  []string
+	passedRoot bool
+	missing    bool
+}
+
+// resolveImportPaths resolves every path line of the file in one read snapshot, off the writer, and returns the kept
+// entries in line order and the skipped lines (uncapped, in line order). name/.. pairs fold as text so only leading ..
+// steps climb; every folder a path climbs to or goes down through must be reached, read in one batch per path and
+// cached, so a repeated path costs no further query. Once maxPlaylistEntries entries are kept, later path lines are
+// limit without a lookup. A line is skipped not_found for a segment that does not resolve, a folder or file the caller
+// does not reach, a folder or shortcut target alike; outside only when every ancestor climbed is reached and the climb
+// passes the space's root. The reasons answer alike for every cause they cover, so the answer does not say whether a
+// hidden file exists.
+func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal, parentID, text string) ([]importKept, []playlistImportSkip, error) {
+	parent, err := store.NodeIn(ctx, q, p.AccountID, parentID)
+	if err != nil {
+		return nil, nil, storeErr(err)
 	}
-	return cur.ID, "", nil
+	within := ""
+	if p.Token != nil {
+		within = p.Token.Node
+	}
+	nodes := map[string]*store.Node{parent.ID: parent}
+	children := map[string]*store.Node{}
+	paths := map[string]importResolved{}
+	reach := map[string]string{}
+	node := func(id string) (*store.Node, error) {
+		if n, ok := nodes[id]; ok {
+			return n, nil
+		}
+		n, err := store.NodeIn(ctx, q, p.AccountID, id)
+		if errors.Is(err, store.ErrNotFound) {
+			nodes[id] = nil
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		nodes[id] = n
+		return n, nil
+	}
+	child := func(parentID, key string) (*store.Node, error) {
+		k := parentID + "\x00" + key
+		if n, ok := children[k]; ok {
+			return n, nil
+		}
+		n, err := store.ChildIn(ctx, q, p.AccountID, parentID, key)
+		if errors.Is(err, store.ErrNotFound) {
+			children[k] = nil
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		children[k] = n
+		return n, nil
+	}
+	// resolve folds the line as text and walks it: the leading .. climb the parent chain, the names go down through
+	// Child. It reads structure only; reach is decided afterwards, in one batch per path.
+	resolve := func(line string) (importResolved, error) {
+		var segs []string
+		for _, s := range strings.Split(strings.ReplaceAll(line, "\\", "/"), "/") {
+			if s != "" && s != "." {
+				segs = append(segs, s)
+			}
+		}
+		if len(segs) > maxImportSegments {
+			return importResolved{missing: true}, nil
+		}
+		var stack []string
+		for _, s := range segs {
+			if s == ".." {
+				if len(stack) > 0 && stack[len(stack)-1] != ".." {
+					stack = stack[:len(stack)-1]
+				} else {
+					stack = append(stack, "..")
+				}
+			} else {
+				stack = append(stack, s)
+			}
+		}
+		ups := 0
+		for ups < len(stack) && stack[ups] == ".." {
+			ups++
+		}
+		down := stack[ups:]
+		cur := parent
+		var climbed []string
+		for i := 0; i < ups; i++ {
+			if cur.IsRoot() {
+				return importResolved{climbed: climbed, passedRoot: true}, nil
+			}
+			up, err := node(cur.ParentID)
+			if err != nil {
+				return importResolved{}, err
+			}
+			if up == nil {
+				return importResolved{missing: true}, nil
+			}
+			climbed = append(climbed, up.ID)
+			cur = up
+		}
+		var descended []string
+		for i, nm := range down {
+			_, key, err := names.Clean(nm)
+			if err != nil {
+				return importResolved{missing: true}, nil
+			}
+			c, err := child(cur.ID, key)
+			if err != nil {
+				return importResolved{}, err
+			}
+			if c == nil {
+				return importResolved{missing: true}, nil
+			}
+			if i == len(down)-1 {
+				return importResolved{nodeID: c.ID, nodeKind: c.Kind, climbed: climbed, descended: descended}, nil
+			}
+			if c.Kind != store.KindDir {
+				return importResolved{missing: true}, nil
+			}
+			descended = append(descended, c.ID)
+			cur = c
+		}
+		// No name follows the climb: the line names cur itself, a folder, which is not a file.
+		return importResolved{nodeID: cur.ID, nodeKind: cur.Kind, climbed: climbed, descended: descended}, nil
+	}
+	// reachFor reads the reach of every node a resolved path names in one batch, caching the result (a node the caller
+	// does not reach is cached as the empty role, so a repeated path costs no further query).
+	reachFor := func(res importResolved) error {
+		ids := make([]string, 0, len(res.climbed)+len(res.descended)+1)
+		ids = append(ids, res.climbed...)
+		ids = append(ids, res.descended...)
+		if res.nodeID != "" {
+			ids = append(ids, res.nodeID)
+		}
+		var ask []string
+		for _, id := range ids {
+			if _, ok := reach[id]; !ok {
+				ask = append(ask, id)
+			}
+		}
+		if len(ask) == 0 {
+			return nil
+		}
+		roles, err := reachRolesIn(ctx, q, p, ask, within)
+		if err != nil {
+			return err
+		}
+		for _, id := range ask {
+			reach[id] = roles[id]
+		}
+		return nil
+	}
+	reason := func(res importResolved) string {
+		if res.missing {
+			return "not_found"
+		}
+		for _, id := range res.climbed {
+			if reach[id] == "" {
+				return "not_found"
+			}
+		}
+		if res.passedRoot {
+			return "outside"
+		}
+		for _, id := range res.descended {
+			if reach[id] == "" {
+				return "not_found"
+			}
+		}
+		if reach[res.nodeID] == "" || res.nodeKind != store.KindFile {
+			return "not_found"
+		}
+		return ""
+	}
+	var kept []importKept
+	skips := make([]playlistImportSkip, 0)
+	seen := make(map[string]bool)
+	for i, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSuffix(raw, "\r")
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		switch {
+		case m3uURL(line):
+			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "url"})
+			continue
+		case m3uAbsolute(line):
+			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "absolute"})
+			continue
+		}
+		// Once the playlist is full, a later path line is limit without a lookup.
+		if len(kept) >= maxPlaylistEntries {
+			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "limit"})
+			continue
+		}
+		res, ok := paths[line]
+		if !ok {
+			var err error
+			res, err = resolve(line)
+			if err != nil {
+				return nil, nil, err
+			}
+			paths[line] = res
+		}
+		if err := reachFor(res); err != nil {
+			return nil, nil, err
+		}
+		if r := reason(res); r != "" {
+			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: r})
+			continue
+		}
+		if seen[res.nodeID] {
+			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "duplicate"})
+			continue
+		}
+		seen[res.nodeID] = true
+		kept = append(kept, importKept{line: i + 1, node: res.nodeID})
+	}
+	return kept, skips, nil
 }
 
 // playlistImportName is the playlist's name from the file's: without its extension, cut to maxPlaylistNameRunes
@@ -349,6 +510,12 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
+	// The name is cleaned before any byte is written or any write rate charged: a name the rules refuse stops here.
+	base := playlistExportBaseName(pl.Name)
+	cleanBase, _, err := names.Clean(truncateBytes(base, maxNameBytes-len(playlistExportExt)))
+	if err != nil {
+		return err
+	}
 	fld, err := requireNodeRole(ctx, s.store, p, in.FolderID, store.RoleContributor)
 	if err != nil {
 		return err
@@ -356,7 +523,7 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 	if fld.Kind != store.KindDir {
 		return apierr.New(apierr.InvalidRequest, "folder_id must be a folder")
 	}
-	content, leftOut, err := s.playlistExportContent(ctx, p, entries, fld)
+	content, leftOut, spaceID, parentID, err := s.playlistExportContent(ctx, p, entries, fld)
 	if err != nil {
 		return err
 	}
@@ -375,7 +542,12 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 		if fld.Kind != store.KindDir {
 			return apierr.New(apierr.InvalidRequest, "folder_id must be a folder")
 		}
-		name, key, err := playlistExportName(ctx, tx, p.AccountID, fld.ID, pl.Name)
+		// The content was built for the folder's place in one read snapshot; if its space or parent changed since,
+		// the paths would name the wrong place, so the export is refused rather than written there.
+		if fld.FolderID != spaceID || fld.ParentID != parentID {
+			return apierr.New(apierr.Conflict, "the folder moved while the export was being written").With("reason", "moved")
+		}
+		name, key, err := playlistExportName(ctx, tx, p.AccountID, fld.ID, cleanBase)
 		if err != nil {
 			return err
 		}
@@ -412,124 +584,170 @@ func (s *Server) handleExportPlaylist(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// playlistExportContent builds the .m3u8 text: #EXTM3U, then for each entry in order that the caller reaches now, that
-// is a file in the target's space, and whose path names only folders the caller reaches, #EXTINF:-1 with the file's
-// name and the path relative to the target folder. Every other entry is left out and counted. The reach of the entries
-// and of every folder a path names is read in one batch each for the whole playlist, the way placeNames reads reach.
-func (s *Server) playlistExportContent(ctx context.Context, p *auth.Principal, entries []store.PlaylistEntry, target *store.Node) (string, int, error) {
-	ids := make([]string, len(entries))
-	for i, e := range entries {
-		ids[i] = e.NodeID
+// playlistExportContent builds the .m3u8 text in one read snapshot: #EXTM3U, then for each entry in order that the
+// caller reaches now, that is a file in the target's space, and whose path names only folders the caller reaches,
+// #EXTINF:-1 with the file's name and the path relative to the target folder. Every other entry is left out and
+// counted. The reach of the entries and of every folder a path names is read in one batch each for the whole playlist,
+// the way placeNames reads reach. It returns the target's space and parent as this snapshot sees them, so the write can
+// refuse if the folder moved since.
+func (s *Server) playlistExportContent(ctx context.Context, p *auth.Principal, entries []store.PlaylistEntry, target *store.Node) (string, int, string, string, error) {
+	var content string
+	var leftOut int
+	var spaceID, parentID string
+	within := ""
+	if p.Token != nil {
+		within = p.Token.Node
 	}
-	roles, err := reachRoles(ctx, s.store, p, ids)
-	if err != nil {
-		return "", 0, err
-	}
-	nodes, err := s.store.NodesByID(ctx, p.AccountID, ids)
-	if err != nil {
-		return "", 0, err
-	}
-	targetPath, err := s.store.NodePathNames(ctx, p.AccountID, target.ID)
-	if err != nil {
-		return "", 0, err
-	}
-	type candidate struct {
-		node *store.Node
-		rel  string   // the path as written
-		need int      // how many folders the path names
-		cur  string   // the walk's place, from the file's parent up
-		down []string // the named folders' IDs, nearest first
-		ok   bool     // the walk found every node on the way
-	}
-	var cands []candidate
-	leftOut := 0
-	for _, e := range entries {
-		n, role := nodes[e.NodeID], roles[e.NodeID]
-		if n == nil || role == "" || n.Kind != store.KindFile || n.FolderID != target.FolderID {
-			leftOut++
-			continue
-		}
-		parentPath, err := s.store.NodePathNames(ctx, p.AccountID, n.ParentID)
+	err := s.store.Read(ctx, func(q store.Querier) error {
+		tgt, err := store.NodeIn(ctx, q, p.AccountID, target.ID)
 		if err != nil {
-			return "", 0, err
+			return storeErr(err)
 		}
-		common := 0
-		for common < len(targetPath) && common < len(parentPath) && targetPath[common] == parentPath[common] {
-			common++
+		if tgt == nil {
+			return nodeNotFound()
 		}
-		parts := make([]string, 0, len(targetPath)-common+len(parentPath)-common+1)
-		for i := common; i < len(targetPath); i++ {
-			parts = append(parts, "..")
+		spaceID, parentID = tgt.FolderID, tgt.ParentID
+		ids := make([]string, len(entries))
+		for i, e := range entries {
+			ids[i] = e.NodeID
 		}
-		parts = append(parts, parentPath[common:]...)
-		parts = append(parts, n.Name)
-		rel := strings.Join(parts, "/")
-		if strings.HasPrefix(rel, "#") {
-			rel = "./" + rel
-		}
-		cands = append(cands, candidate{node: n, rel: rel, need: len(parentPath) - common, cur: n.ParentID, ok: true})
-	}
-	// The folders a path names are the nearest steps of the walk up from the file's parent, to the common ancestor
-	// (the .. steps name nothing). One node read serves every candidate at a level, however long the playlist.
-	for level := 0; ; level++ {
-		at := make([]string, 0, len(cands))
-		for _, c := range cands {
-			if c.ok && level < c.need {
-				at = append(at, c.cur)
-			}
-		}
-		if len(at) == 0 {
-			break
-		}
-		ups, err := s.store.NodesByID(ctx, p.AccountID, at)
+		roles, err := reachRolesIn(ctx, q, p, ids, within)
 		if err != nil {
-			return "", 0, err
+			return err
 		}
-		for i := range cands {
-			c := &cands[i]
-			if !c.ok || level >= c.need {
+		nodes, err := store.NodesIn(ctx, q, p.AccountID, ids)
+		if err != nil {
+			return storeErr(err)
+		}
+		targetPath, err := store.NodePathNamesIn(ctx, q, p.AccountID, tgt.ID)
+		if err != nil {
+			return storeErr(err)
+		}
+		type candidate struct {
+			node *store.Node
+			rel  string   // the path as written
+			need int      // how many folders the path names
+			cur  string   // the walk's place, from the file's parent up
+			down []string // the named folders' IDs, nearest first
+			ok   bool     // the walk found every node on the way
+		}
+		var cands []candidate
+		for _, e := range entries {
+			n, role := nodes[e.NodeID], roles[e.NodeID]
+			if n == nil || role == "" || n.Kind != store.KindFile || n.FolderID != tgt.FolderID {
+				leftOut++
 				continue
 			}
-			n := ups[c.cur]
-			if n == nil {
-				c.ok = false
-				continue
+			parentPath, err := store.NodePathNamesIn(ctx, q, p.AccountID, n.ParentID)
+			if err != nil {
+				return storeErr(err)
 			}
-			c.down = append(c.down, n.ID)
-			c.cur = n.ParentID
+			common := 0
+			for common < len(targetPath) && common < len(parentPath) && targetPath[common] == parentPath[common] {
+				common++
+			}
+			parts := make([]string, 0, len(targetPath)-common+len(parentPath)-common+1)
+			for i := common; i < len(targetPath); i++ {
+				parts = append(parts, "..")
+			}
+			parts = append(parts, parentPath[common:]...)
+			parts = append(parts, n.Name)
+			rel := strings.Join(parts, "/")
+			// A path that would read back as a comment, a url or an absolute path gets ./ in front, so an import
+			// resolves it as the relative path it is.
+			if strings.HasPrefix(rel, "#") || m3uURL(rel) || m3uAbsolute(rel) {
+				rel = "./" + rel
+			}
+			cands = append(cands, candidate{node: n, rel: rel, need: len(parentPath) - common, cur: n.ParentID, ok: true})
 		}
-	}
-	folderIDs := make([]string, 0)
-	for _, c := range cands {
-		folderIDs = append(folderIDs, c.down...)
-	}
-	folderRoles, err := reachRoles(ctx, s.store, p, folderIDs)
-	if err != nil {
-		return "", 0, err
-	}
-	var b strings.Builder
-	b.WriteString("#EXTM3U\n")
-	for _, c := range cands {
-		reached := c.ok
-		for _, id := range c.down {
-			if folderRoles[id] == "" {
-				reached = false
+		// The folders a path names are the nearest steps of the walk up from the file's parent, to the common ancestor
+		// (the .. steps name nothing). One node read serves every candidate at a level, however long the playlist.
+		for level := 0; ; level++ {
+			at := make([]string, 0, len(cands))
+			for _, c := range cands {
+				if c.ok && level < c.need {
+					at = append(at, c.cur)
+				}
+			}
+			if len(at) == 0 {
 				break
 			}
+			ups, err := store.NodesIn(ctx, q, p.AccountID, at)
+			if err != nil {
+				return storeErr(err)
+			}
+			for i := range cands {
+				c := &cands[i]
+				if !c.ok || level >= c.need {
+					continue
+				}
+				n := ups[c.cur]
+				if n == nil {
+					c.ok = false
+					continue
+				}
+				c.down = append(c.down, n.ID)
+				c.cur = n.ParentID
+			}
 		}
-		if !reached {
-			leftOut++
-			continue
+		folderIDs := make([]string, 0)
+		for _, c := range cands {
+			folderIDs = append(folderIDs, c.down...)
 		}
-		b.WriteString("#EXTINF:-1," + c.node.Name + "\n")
-		b.WriteString(c.rel + "\n")
+		folderRoles, err := reachRolesIn(ctx, q, p, folderIDs, within)
+		if err != nil {
+			return err
+		}
+		var b strings.Builder
+		b.WriteString("#EXTM3U\n")
+		for _, c := range cands {
+			reached := c.ok
+			for _, id := range c.down {
+				if folderRoles[id] == "" {
+					reached = false
+					break
+				}
+			}
+			if !reached {
+				leftOut++
+				continue
+			}
+			b.WriteString("#EXTINF:-1," + c.node.Name + "\n")
+			b.WriteString(c.rel + "\n")
+		}
+		content = b.String()
+		return nil
+	})
+	if err != nil {
+		return "", 0, "", "", err
 	}
-	return b.String(), leftOut, nil
+	return content, leftOut, spaceID, parentID, nil
 }
 
-// playlistExportName is the export file's name: the playlist's name with .m3u8, through names.Clean (cut to the name
-// byte cap as Save As cuts), and the first free " (n)" when a sibling holds it, numbered from 2 as the owner's wording
-// says, the way saveAsFreeName picks. Decided inside the write, on the state it sees.
+// playlistExportBaseName cleans the playlist's name into a file name's base before any byte is written: / and \ become
+// -, invisible and format characters are dropped, and a name that leaves nothing becomes Playlist. names.Clean then
+// checks the result; a name it still refuses stops the export before any byte or write rate.
+func playlistExportBaseName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r == '/' || r == '\\':
+			b.WriteRune('-')
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r):
+			// invisible and format characters are dropped
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "Playlist"
+	}
+	return b.String()
+}
+
+// playlistExportName is the export file's name: the cleaned base name (playlistExportBaseName) with .m3u8, through
+// names.Clean (cut to the name byte cap as Save As cuts), and the first free " (n)" when a sibling holds it, numbered
+// from 2 as the owner's wording says, the way saveAsFreeName picks. Decided inside the write, on the state it sees.
 func playlistExportName(ctx context.Context, tx *store.Tx, accountID, parentID, name string) (string, string, error) {
 	clean, key, err := names.Clean(truncateBytes(name, maxNameBytes-len(playlistExportExt)) + playlistExportExt)
 	if err != nil {

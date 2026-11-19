@@ -86,11 +86,11 @@ func m3uEntryNames(pl playlistDetailJSON) []string {
 func TestPlaylistImportReadsTheFile(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
-	music := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music")
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music")
 	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music/sub")
-	other := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Other")
-	fx.setPerm(t, music.ID, fx.ann.ID, "viewer")
-	fx.setPerm(t, other.ID, fx.ann.ID, "viewer")
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Other")
+	// The walk from Music up to the root and down into Other climbs through the root, so ann must reach it.
+	fx.setPerm(t, fx.rootOf(t, fx.fld.ID), fx.ann.ID, "viewer")
 	song := putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/song.mp3", "s")
 	a := putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/sub/a.mp3", "a")
 	b := putNode(t, fx.s, fx.key, fx.fld.ID, "/Other/b.mp3", "b")

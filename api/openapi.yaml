@@ -5755,13 +5755,18 @@ paths:
         commenter with `download_restricted`, as a download is refused. A UTF-8 BOM is dropped; text
         that is not valid UTF-8 reads as Latin-1. Lines split on `\n` with a trailing `\r` dropped;
         blank lines and lines starting with `#` are skipped silently. Every other line is a path:
-        `\` becomes `/`, empty and `.` segments drop, `..` goes to the parent, each name through the
-        name rules to its key. A line is skipped, with its 1-based line number, for one reason: `url`
-        (a scheme's `://`, `file:` included), `absolute` (a leading `/` or `\`, or a drive letter),
-        `outside` (`..` above the space's root), `not_found` (a segment does not resolve, the caller
-        does not reach the file, or it is a folder or shortcut — one reason for all, so the answer
-        never tells which), `duplicate` (a file already taken earlier in this import), `limit` (past
-        500 entries). A skipped line never refuses the import. The playlist is named from the file
+        `\` becomes `/`, empty and `.` segments drop, a name followed by `..` cancels as text so only
+        leading `..` climb to an ancestor, and each name goes through the name rules to its key. A line
+        of more than 64 segments is `not_found`. Every folder the path climbs to or goes down through
+        must be reached by the caller, and the target must be reached and a file; the playlist file's own
+        folder is not reach-checked, so a file-only grant still resolves a direct child. A line is
+        skipped, with its 1-based line number, for one reason: `url` (a scheme's `://`, `file:` included),
+        `absolute` (a leading `/` or `\`, or a drive letter), `outside` (the climb passes the space's root
+        and every ancestor it climbed through is reached), `not_found` (a segment does not resolve, a
+        climbed or descended step or the file is not reached, or it is a folder or shortcut — one reason
+        for all, so the answer never tells which), `duplicate` (a file already taken earlier in this
+        import), `limit` (past 500 entries, without a lookup). The skipped lines come back in line order.
+        A skipped line never refuses the import. The playlist is named from the file
         without its extension, cut to 120 characters (the whole file name if that leaves nothing),
         and counts against the 100 a user may hold (`conflict`, reason `limit`). The create is audited,
         privately to the user, with counts and the via only. Charged per caller (`playlist.write`,
@@ -5791,7 +5796,7 @@ paths:
                   skipped:
                     type: array
                     maxItems: 100
-                    description: The first 100 skipped lines at most; `skipped_total` holds the whole count. Never null.
+                    description: The first 100 skipped lines at most, in line order; `skipped_total` holds the whole count. Never null.
                     items:
                       type: object
                       required: [line, reason]
@@ -5811,22 +5816,28 @@ paths:
       operationId: exportPlaylist
       summary: Export a playlist into a folder as an .m3u8 file
       description: |
-        Writes the caller's playlist into `folder_id` as `<playlist name>.m3u8` (decision 237), the
-        way Save As makes a file: a taken name takes the first free ` (n)`, numbered from 2, decided
-        inside the write. The target must be a folder where the caller may add a file (contributor or
-        more), else the usual `not_found` or `forbidden`; a file or shortcut is `invalid_request`
-        ("folder_id must be a folder"). The content is UTF-8 with `\n` line ends and no BOM: `#EXTM3U`,
-        then for each entry in order that the caller reaches now, that is a file in the target's space,
-        and whose written path names only folders the caller reaches, `#EXTINF:-1,<file name>` and the
-        path relative to the target folder (one `..` per target level below the common ancestor, then
-        the names down, then the file name; a path starting with `#` gets `./` in front). Every other
-        entry is left out and counted in `left_out`, so the file never names a folder or file outside
-        the caller's reach or the target's space. The bytes are reserved against the disk and the
-        quota before any lands (`quota_exceeded` or the disk refusal otherwise, with no blob left
-        behind); the new file is audited as `node.create` with via `playlist_export`. Charged per
-        caller (`playlist.write`, 60 a minute, and the one-request write rate). A playlist of another
-        user, and one that does not exist, are `not_found` with the same body. A delegated token, an
-        account key, an impersonated session and a link visitor are refused, as on every playlist route.
+        Writes the caller's playlist into `folder_id` as an `.m3u8` file (decision 237), the way Save As
+        makes a file: a taken name takes the first free ` (n)`, numbered from 2, decided inside the write.
+        The base name is cleaned before any byte is written or any write rate charged: `/` and `\` become
+        `-`, invisible, format and separator characters are dropped, and a name that leaves nothing becomes
+        `Playlist`; a name the name rules still refuse (`.`, `..`, a leading or trailing space) is
+        `invalid_name` with no blob left behind. The target must be a folder where the caller may add a
+        file (contributor or more), else the usual `not_found` or `forbidden`; a file or shortcut is
+        `invalid_request` ("folder_id must be a folder"). The content is UTF-8 with `\n` line ends and no
+        BOM: `#EXTM3U`, then for each entry in order that the caller reaches now, that is a file in the
+        target's space, and whose written path names only folders the caller reaches, `#EXTINF:-1,<file
+        name>` and the path relative to the target folder (one `..` per target level below the common
+        ancestor, then the names down, then the file name; a path that would read back as a comment
+        (leading `#`), a url or an absolute path gets `./` in front). Every other entry is left out and
+        counted in `left_out`, so the file never names a folder or file outside the caller's reach or the
+        target's space. The content is built in one read snapshot; if the folder's space or parent changed
+        since, the write is refused with `409 conflict` (reason `moved`) and no blob left behind. The bytes
+        are reserved against the disk and the quota before any lands (`quota_exceeded` or the disk refusal
+        otherwise, with no blob left behind); the new file is audited as `node.create` with via
+        `playlist_export`. Charged per caller (`playlist.write`, 60 a minute, and the one-request write
+        rate). A playlist of another user, and one that does not exist, are `not_found` with the same body.
+        A delegated token, an account key, an impersonated session and a link visitor are refused, as on
+        every playlist route.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true

@@ -148,6 +148,12 @@ func (tx *Tx) Node(ctx context.Context, accountID, id string) (*Node, error) {
 	return getNode(ctx, tx.q, accountID, id)
 }
 
+// NodeIn returns a node of accountID by ID, read on q, so a read snapshot resolves nodes in the same state as its
+// other reads. ErrNotFound if there is none.
+func NodeIn(ctx context.Context, q Querier, accountID, id string) (*Node, error) {
+	return getNode(ctx, q, accountID, id)
+}
+
 // RootNode returns the root of a folder of accountID.
 func (s *Store) RootNode(ctx context.Context, accountID, folderID string) (*Node, error) {
 	return scanNode(s.r.QueryRowContext(ctx, nodeSelect+
@@ -162,13 +168,23 @@ func (tx *Tx) RootNode(ctx context.Context, accountID, folderID string) (*Node, 
 
 // Child returns the child of parentID whose name key is key. ErrNotFound if there is none.
 func (s *Store) Child(ctx context.Context, accountID, parentID, key string) (*Node, error) {
-	return scanNode(s.r.QueryRowContext(ctx, nodeSelect+
-		" WHERE n.account_id = ? AND n.parent_id = ? AND n.name_key = ?", accountID, parentID, key))
+	return childIn(ctx, s.r, accountID, parentID, key)
 }
 
 // Child returns the child of parentID whose name key is key, inside the transaction.
 func (tx *Tx) Child(ctx context.Context, accountID, parentID, key string) (*Node, error) {
-	return scanNode(tx.q.QueryRowContext(ctx, nodeSelect+
+	return childIn(ctx, tx.q, accountID, parentID, key)
+}
+
+// ChildIn returns the child of parentID whose name key is key, read on q, so a read snapshot resolves a path in the
+// same state as its other reads. ErrNotFound if there is none.
+func ChildIn(ctx context.Context, q Querier, accountID, parentID, key string) (*Node, error) {
+	return childIn(ctx, q, accountID, parentID, key)
+}
+
+// childIn reads one child by name key from either a pool or a transaction.
+func childIn(ctx context.Context, q querier, accountID, parentID, key string) (*Node, error) {
+	return scanNode(q.QueryRowContext(ctx, nodeSelect+
 		" WHERE n.account_id = ? AND n.parent_id = ? AND n.name_key = ?", accountID, parentID, key))
 }
 
