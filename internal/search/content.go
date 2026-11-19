@@ -109,6 +109,7 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 		b.WriteString(" AND n.size <= ?")
 		args = append(args, r.SizeMax)
 	}
+	args = r.nodeFilters(&b, args)
 	for _, t := range r.ordinaryLabels() {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM node_labels nl WHERE nl.node_id = n.id AND nl.field_id = ? AND " +
 			t.clause() + ")")

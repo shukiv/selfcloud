@@ -17,7 +17,7 @@ func noRanges(r Request) Request {
 // argument, never as text; the group keeps the rows to files.
 func TestCandidateSQLFiltersByGroup(t *testing.T) {
 	r := noRanges(Request{AccountID: "acc_a", Group: "pdf"})
-	sqlText, args, err := r.candidateSQL(0, 10)
+	sqlText, args, err := r.candidateSQL(Pos{}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestCandidateSQLFiltersByGroup(t *testing.T) {
 // TestCandidateSQLWithoutGroupHasNoGroupClause: a request with no group, the search before ff1, reads no group column.
 func TestCandidateSQLWithoutGroupHasNoGroupClause(t *testing.T) {
 	r := noRanges(Request{AccountID: "acc_a"})
-	sqlText, _, err := r.candidateSQL(0, 10)
+	sqlText, _, err := r.candidateSQL(Pos{}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

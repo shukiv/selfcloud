@@ -152,10 +152,12 @@ var ErrSourceChanged = errors.New("source_changed: the source changed during the
 // without versions (a copy carries no versions). It is the copy's reservation. SubtreeTotals counts trashed nodes and
 // versions too, which a copy does not make, so a copy could be refused for quota it does not need.
 func (s *Store) CopyableTotals(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
+	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
+	// draw the planner into a scan of the account's nodes per level.
 	err = s.r.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ? AND trashed_at IS NULL
 		UNION ALL
-		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
+		SELECT c.id FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	SELECT COUNT(*), COALESCE(SUM(n.size), 0) FROM sub JOIN nodes n ON n.id = sub.nid
 	WHERE n.account_id = ? AND n.kind = 'file'`, accountID, id, accountID, accountID).Scan(&files, &bytes)
@@ -166,10 +168,12 @@ func (s *Store) CopyableTotals(ctx context.Context, accountID, id string) (files
 // consistent view of the tree. It returns at most limit+1 rows, so a caller compares the count with its limit. The
 // rows come in depth order, then by ID, so a parent always comes before its children.
 func (s *Store) SubtreeRows(ctx context.Context, accountID, id string, limit int) ([]SubtreeRow, error) {
+	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
+	// draw the planner into a scan of the account's nodes per level.
 	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE sub(nid, pid, depth) AS (
 		SELECT id, COALESCE(parent_id, ''), 0 FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id, COALESCE(c.parent_id, ''), sub.depth + 1 FROM nodes c JOIN sub ON c.parent_id = sub.nid
+		SELECT c.id, COALESCE(c.parent_id, ''), sub.depth + 1 FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid
 		WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	SELECT nid, pid, depth FROM sub ORDER BY depth, nid LIMIT ?`,

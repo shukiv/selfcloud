@@ -26,8 +26,8 @@ func Search(args []string, stdout, stderr io.Writer) int {
 	set := conn.NewFlagSet("search")
 	var g conn.Global
 	g.Register(set)
-	var in, kind, typ, after, before, sizeMin, sizeMax, scope string
-	var all bool
+	var in, kind, typ, after, before, createdAfter, createdBefore, sizeMin, sizeMax, scope string
+	var all, newest, starred, shared bool
 	var limit int
 	var exts, labels []string
 	set.StringVar(&in, "in", "", "search the `field`: name (default) or content")
@@ -39,6 +39,11 @@ func Search(args []string, stdout, stderr io.Writer) int {
 	})
 	set.StringVar(&after, "modified-after", "", "only items modified at or after this RFC 3339 `time`")
 	set.StringVar(&before, "modified-before", "", "only items modified before this RFC 3339 `time`")
+	set.StringVar(&createdAfter, "created-after", "", "only items created at or after this RFC 3339 `time`")
+	set.StringVar(&createdBefore, "created-before", "", "only items created before this RFC 3339 `time`")
+	set.BoolVar(&newest, "newest", false, "order the results newest first; a filter, no query")
+	set.BoolVar(&starred, "starred", false, "only the signed-in person's starred items")
+	set.BoolVar(&shared, "shared", false, "only items shared with the signed-in person")
 	set.StringVar(&sizeMin, "size-min", "", "only files of at least this `size`, such as 64MiB")
 	set.StringVar(&sizeMax, "size-max", "", "only files of at most this `size`, such as 2GiB")
 	set.Func("label", "only a label value, as `field_id:value`; repeat up to 4 times", func(v string) error {
@@ -131,6 +136,29 @@ func Search(args []string, stdout, stderr io.Writer) int {
 		}
 		query.Set("modified_before", ms)
 	}
+	if createdAfter != "" {
+		ms, err := epochMilli(createdAfter)
+		if err != nil {
+			return fail(stderr, g, err)
+		}
+		query.Set("created_after", ms)
+	}
+	if createdBefore != "" {
+		ms, err := epochMilli(createdBefore)
+		if err != nil {
+			return fail(stderr, g, err)
+		}
+		query.Set("created_before", ms)
+	}
+	if newest {
+		query.Set("order", "newest")
+	}
+	if starred {
+		query.Set("starred", "true")
+	}
+	if shared {
+		query.Set("shared", "true")
+	}
 	if sizeMin != "" {
 		n, err := searchSize("--size-min", sizeMin)
 		if err != nil {
@@ -199,8 +227,8 @@ func Search(args []string, stdout, stderr io.Writer) int {
 
 // searchHasFilter reports whether the query names a filter, so that a search may run without a query.
 func searchHasFilter(q url.Values) bool {
-	for _, key := range []string{"kind", "type", "ext", "modified_after", "modified_before", "size_min", "size_max",
-		"label", "scope"} {
+	for _, key := range []string{"kind", "type", "ext", "modified_after", "modified_before", "created_after",
+		"created_before", "starred", "shared", "size_min", "size_max", "label", "scope"} {
 		if q.Get(key) != "" {
 			return true
 		}

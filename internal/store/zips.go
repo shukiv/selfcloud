@@ -224,10 +224,12 @@ func (tx *Tx) DeleteFailedZips(ctx context.Context, cutoff time.Time, limit int)
 // own budget, rather than using the rows. The root's own trash state is the caller's to check: a trashed root has no
 // children here.
 func (s *Store) ZipTree(ctx context.Context, accountID, rootID string, limit int) ([]*Node, error) {
+	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
+	// draw the planner into a scan of the account's nodes per level.
 	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
+		SELECT c.id FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	`+nodeSelect+` JOIN sub ON sub.nid = n.id WHERE n.account_id = ? LIMIT ?`, accountID, rootID, accountID, accountID, limit)
 	if err != nil {

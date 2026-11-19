@@ -45,10 +45,10 @@ func searchCursorAAD(p *auth.Principal, req *search.Request) []byte {
 }
 
 // searchCursorSize is the plaintext of a cursor: the position of a name search is one row ID (8 bytes); a content search
-// reads two, the content row and the node's rowid (16 bytes). The request's fingerprint is additional data, so a cursor of
-// one kind does not open for the other.
+// and the newest order read two, the content row or created time and the node's rowid (16 bytes). The request's
+// fingerprint is additional data, so a cursor of one kind or order does not open for another.
 func searchCursorSize(req *search.Request) int {
-	if req.In == search.InContent {
+	if req.In == search.InContent || req.Order == search.OrderNewest {
 		return 16
 	}
 	return 8

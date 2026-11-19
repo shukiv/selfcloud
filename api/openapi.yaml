@@ -400,6 +400,13 @@ paths:
         Only nodes the caller reaches are returned, and a restricted label matches only for a manager of the node.
         An account key reaches every node of its account; a token, including one minted by an account key, sees only its
         folders and node scope. A share-link visitor is refused.
+        `created_after` and `created_before` bound the created time as the modified bounds do (after inclusive, before
+        exclusive, the range running forward). `order=newest` reads a filter-only name search by created time, newest
+        first; it needs no `q` and no `in=content`, and is not a filter by itself. `starred=true` keeps only the caller's
+        starred items, and `shared=true` only the items shared with the caller, by the Shared with me page's exclusions
+        (not the caller's own personal space, not a space whose root the caller or one of their groups holds a live grant
+        on, and no team space for an owner); items below a shared folder count. Both need a user: an account key or a
+        token of one is refused (`forbidden`), and a user's delegated token is confined to its folders.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 200 }, description: "Terms, separated by spaces. At most 8 terms, each at most 64 bytes, each at least 2 characters. Optional when a filter is given." }
@@ -409,6 +416,11 @@ paths:
         - { name: ext, in: query, required: false, schema: { type: string }, description: "Comma-separated extensions without dots, at most 8." }
         - { name: modified_after, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, inclusive." }
         - { name: modified_before, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, exclusive." }
+        - { name: created_after, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, inclusive. With created_before, the range must run forward (invalid_request otherwise)." }
+        - { name: created_before, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, exclusive." }
+        - { name: order, in: query, required: false, schema: { type: string, enum: [newest] }, description: "newest reads a filter-only name search by created time, newest first. It needs no q and no in=content (invalid_request otherwise), and is not a filter by itself." }
+        - { name: starred, in: query, required: false, schema: { type: string, enum: ["true"] }, description: "true keeps only the caller's starred items. A user only: an account key or a token of one is forbidden." }
+        - { name: shared, in: query, required: false, schema: { type: string, enum: ["true"] }, description: "true keeps only the items shared with the caller, by the Shared with me page's exclusions. A user only: an account key or a token of one is forbidden." }
         - { name: size_min, in: query, required: false, schema: { type: integer, minimum: 0 } }
         - { name: size_max, in: query, required: false, schema: { type: integer, minimum: 0 } }
         - { name: label, in: query, required: false, schema: { type: string }, description: "field_id:value, repeatable, at most 4. A text value is a prefix (case-sensitive); a number or a date is a value or low..high; a user or a choice is its ID." }
@@ -427,7 +439,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "403":
-          description: A share-link visitor (link_route).
+          description: A share-link visitor (link_route), or starred or shared asked by a caller with no user of its own (forbidden).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

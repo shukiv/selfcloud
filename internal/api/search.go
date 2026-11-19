@@ -61,10 +61,15 @@ type searchParams struct {
 	exts    []string
 	mFrom   int64
 	mTo     int64
+	cFrom   int64
+	cTo     int64
 	sMin    int64
 	sMax    int64
 	labels  [][2]string // field ID, raw value
 	scope   string
+	order   string // "" (the search row order) or search.OrderNewest
+	starred bool
+	shared  bool
 	limit   int
 	cursor  string
 	inNamed bool
@@ -115,6 +120,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 			return apierr.New(apierr.InvalidRequest, "in=content finds files only: kind must be file")
 		}
 	}
+	if ps.order == search.OrderNewest && (len(terms) > 0 || ps.in == search.InContent) {
+		return apierr.New(apierr.InvalidRequest, "order=newest needs no q")
+	}
+	if ps.starred || ps.shared {
+		// Stars and shared items belong to a user, as on the starred and shared pages: an account key and a token of
+		// one have no user of their own, and are refused. A user's delegated token passes, confined to its folders.
+		if err := userCaller(p, "starred or shared items"); err != nil {
+			return err
+		}
+	}
 	if err := s.rateLimit("search", string(p.Kind)+":"+p.ID); err != nil {
 		return err
 	}
@@ -128,7 +143,20 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 
 	req := &search.Request{AccountID: p.AccountID, In: ps.in, Terms: terms, Kind: ps.kind, Group: ps.group, Exts: ps.exts,
 		ModifiedFrom: ps.mFrom, ModifiedTo: ps.mTo, SizeMin: ps.sMin, SizeMax: ps.sMax,
-		LabelFilters: ps.labels, ScopeID: ps.scope, Limit: ps.limit}
+		LabelFilters: ps.labels, ScopeID: ps.scope, Limit: ps.limit,
+		Order: ps.order, Starred: ps.starred, Shared: ps.shared}
+	if ps.cFrom >= 0 {
+		req.CreatedFrom = &ps.cFrom
+	}
+	if ps.cTo >= 0 {
+		req.CreatedTo = &ps.cTo
+	}
+	if ps.starred || ps.shared {
+		req.Person = p.UserID
+	}
+	if ps.shared {
+		req.PersonOwner = p.Role == auth.RoleOwner
+	}
 	var out listResponse[searchHit]
 	err = s.store.Read(ctx, func(q store.Querier) error {
 		// The label tests are read in the snapshot first. The cursor is opened after them, against the request as it was
@@ -436,7 +464,7 @@ func splitRange(v string) (string, string, error) {
 // later, when the account's fields are read.
 func parseSearchParams(v url.Values) (searchParams, error) {
 	ps := searchParams{q: v.Get("q"), limit: searchDefaultLimit, cursor: v.Get("cursor"), mFrom: -1, mTo: -1,
-		sMin: -1, sMax: -1}
+		cFrom: -1, cTo: -1, sMin: -1, sMax: -1}
 	switch in := v.Get("in"); in {
 	case "", "name":
 	case "content":
@@ -495,11 +523,40 @@ func parseSearchParams(v url.Values) (searchParams, error) {
 	if ps.mFrom >= 0 && ps.mTo >= 0 && ps.mFrom >= ps.mTo {
 		return ps, apierr.New(apierr.InvalidRequest, "modified_after must be before modified_before")
 	}
+	if ps.cFrom, err = optionalMillis(v, "created_after"); err != nil {
+		return ps, err
+	}
+	if ps.cTo, err = optionalMillis(v, "created_before"); err != nil {
+		return ps, err
+	}
+	if ps.cFrom >= 0 && ps.cTo >= 0 && ps.cFrom >= ps.cTo {
+		return ps, apierr.New(apierr.InvalidRequest, "created_after must be before created_before")
+	}
 	if ps.sMin, err = optionalMillis(v, "size_min"); err != nil {
 		return ps, err
 	}
 	if ps.sMax, err = optionalMillis(v, "size_max"); err != nil {
 		return ps, err
+	}
+	switch o := v.Get("order"); o {
+	case "", search.OrderNewest:
+		ps.order = o
+	default:
+		return ps, apierr.New(apierr.InvalidRequest, "order must be newest")
+	}
+	switch st := v.Get("starred"); st {
+	case "":
+	case "true":
+		ps.starred = true
+	default:
+		return ps, apierr.New(apierr.InvalidRequest, "starred must be true")
+	}
+	switch sh := v.Get("shared"); sh {
+	case "":
+	case "true":
+		ps.shared = true
+	default:
+		return ps, apierr.New(apierr.InvalidRequest, "shared must be true")
 	}
 	for _, raw := range v["label"] {
 		field, value, ok := strings.Cut(raw, ":")
@@ -540,10 +597,11 @@ func optionalMillis(v url.Values, key string) (int64, error) {
 	return n, nil
 }
 
-// hasFilter reports whether the request names any filter, so that it may run without a query.
+// hasFilter reports whether the request names any filter, so that it may run without a query. The order alone is not a
+// filter: it only says how the matches of a query or a filter are read.
 func (ps searchParams) hasFilter() bool {
-	return ps.kind != "" || ps.group != "" || len(ps.exts) > 0 || ps.mFrom >= 0 || ps.mTo >= 0 || ps.sMin >= 0 || ps.sMax >= 0 ||
-		len(ps.labels) > 0 || ps.scope != ""
+	return ps.kind != "" || ps.group != "" || len(ps.exts) > 0 || ps.mFrom >= 0 || ps.mTo >= 0 || ps.cFrom >= 0 || ps.cTo >= 0 ||
+		ps.sMin >= 0 || ps.sMax >= 0 || len(ps.labels) > 0 || ps.scope != "" || ps.starred || ps.shared
 }
 
 // Retry bounds of the search job. A failed batch waits searchRetryBase, and each further failure in a row doubles the

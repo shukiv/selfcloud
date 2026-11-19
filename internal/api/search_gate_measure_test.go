@@ -43,7 +43,7 @@ func TestMeasureNameSearchUnreadable(t *testing.T) {
 
 	req := &search.Request{AccountID: fx.acc.ID, Terms: []string{"budget"}, ModifiedFrom: -1, ModifiedTo: -1,
 		SizeMin: -1, SizeMax: -1, Limit: 25}
-	query, args, err := req.NameSQL(0, 100)
+	query, args, err := req.NameSQL(search.Pos{}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

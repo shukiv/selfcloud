@@ -283,10 +283,12 @@ func nullableString(s sql.NullString) *string {
 // not folders). The walk stops at limit nodes, so a huge tree costs limit rows and no more, and the count of a tree
 // over the limit is limit. Trashed nodes below the root are left out, as Subtree leaves them out.
 func (tx *Tx) countSubtree(ctx context.Context, accountID, rootID string, limit int) (nodes, files int, err error) {
+	// The recursive step is pinned to nodes_child: with the created index present (0061), the planner otherwise
+	// reaches the children through it and scans the account's nodes once per level of the tree.
 	err = tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid, kind) AS (
 			SELECT id, kind FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
-			SELECT c.id, c.kind FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
+			SELECT c.id, c.kind FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
 			LIMIT ?
 		)
 		SELECT COUNT(*), COALESCE(SUM(kind <> 'dir'), 0) FROM sub`,

@@ -214,10 +214,12 @@ func (s *Store) Children(ctx context.Context, accountID, parentID string, p Page
 // copies can be made in this order. Trashed descendants are left out: a copy never carries what was
 // deleted. The node itself is included whatever its trash state, since the caller has checked it.
 func (tx *Tx) Subtree(ctx context.Context, accountID, id string) ([]*Node, error) {
+	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
+	// draw the planner into a scan of the account's nodes per level.
 	rows, err := tx.q.QueryContext(ctx, `WITH RECURSIVE sub(nid, depth) AS (
 		SELECT id, 0 FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id, sub.depth + 1 FROM nodes c JOIN sub ON c.parent_id = sub.nid
+		SELECT c.id, sub.depth + 1 FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid
 		WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	`+nodeSelect+` JOIN sub ON sub.nid = n.id
@@ -270,10 +272,12 @@ func subtreeFiles(ctx context.Context, q interface {
 // limit. The copy size check asks only whether the count passes its limit.
 func (s *Store) SubtreeSize(ctx context.Context, accountID, id string, limit int) (int, error) {
 	var n int
+	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
+	// draw the planner into a scan of the account's nodes per level.
 	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
+		SELECT c.id FROM nodes c INDEXED BY nodes_child JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	SELECT nid FROM sub LIMIT ?)`, accountID, id, accountID, limit).Scan(&n)
 	return n, err

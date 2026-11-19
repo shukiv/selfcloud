@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -213,8 +214,9 @@ func (t LabelTest) clause() string {
 	}
 }
 
-// Pos is a point in a candidate read. A name search reads its rows in A alone (the search row's ID). A content search
-// reads in (A, B): the content row's ID, then the node's rowid, since one text can belong to several nodes.
+// Pos is a point in a candidate read. A name search reads its rows in A alone (the search row's ID); the newest order
+// reads (A, B) as the created time and the node's rowid. A content search reads (A, B): the content row's ID, then the
+// node's rowid, since one text can belong to several nodes.
 type Pos struct{ A, B int64 }
 
 // Request is a parsed search, ready to read. Terms are folded; a request with no terms is a filter-only search.
@@ -233,6 +235,20 @@ type Request struct {
 	ModifiedFrom, ModifiedTo int64
 	// SizeMin and SizeMax bound the size in bytes, both inclusive. -1 is none.
 	SizeMin, SizeMax int64
+	// CreatedFrom and CreatedTo bound the created time in unix milliseconds: From inclusive, To exclusive. nil is none.
+	// They are omitted from the fingerprint when unset, so a search without them keeps its fingerprint.
+	CreatedFrom, CreatedTo *int64 `json:",omitempty"`
+	// Order is "" (the search row order) or OrderNewest: created time, newest first, for a name search with no terms.
+	// It is omitted from the fingerprint when empty.
+	Order string `json:",omitempty"`
+	// Starred keeps only the caller's starred nodes; Shared keeps only the items shared with the caller, by the Shared
+	// with me page's exclusions. Both are omitted from the fingerprint when false.
+	Starred bool `json:",omitempty"`
+	Shared  bool `json:",omitempty"`
+	// Person is the caller's user ID, set only when Starred or Shared. PersonOwner is set only when Shared and the
+	// caller's role is the account's owner.
+	Person      string `json:",omitempty"`
+	PersonOwner bool   `json:",omitempty"`
 	// LabelFilters are the label filters as the caller typed them: field ID and raw value. They are part of the
 	// fingerprint, so a cursor is bound to the values it was made for.
 	LabelFilters [][2]string
@@ -246,6 +262,9 @@ type Request struct {
 
 // InContent is the value of Request.In for a search over the extracted text of files.
 const InContent = "content"
+
+// OrderNewest is the value of Request.Order for a name search with no terms, read by created time, newest first.
+const OrderNewest = "newest"
 
 // Candidate is one row read from the index. A name candidate has RowID (its search row) and NodeID. A content candidate
 // has TextID (its content row, which the snippet reads) and RowID, the node's rowid, and NodeID.
@@ -267,11 +286,12 @@ func (r *Request) ordinaryLabels() []LabelTest {
 	return out
 }
 
-// candidateSQL builds the candidate read after rowid after, at most limit rows. Every value is an argument.
-func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
+// candidateSQL builds the candidate read after the position after, at most limit rows. Every value is an argument.
+func (r *Request) candidateSQL(after Pos, limit int) (string, []any, error) {
 	var args []any
 	var b strings.Builder
-	if len(r.Terms) > 0 {
+	switch {
+	case len(r.Terms) > 0:
 		idx := Choose(r.Terms)
 		table := "search_words"
 		if idx == Substring {
@@ -287,12 +307,25 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		b.WriteString("SELECT sn.id, sn.node_id FROM " + table + " CROSS JOIN search_names sn ON sn.id = " + table + ".rowid")
 		b.WriteString(" JOIN nodes n ON n.id = sn.node_id JOIN folders f ON f.id = n.folder_id")
 		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND " + table + ".rowid > ? AND f.staged = 0 AND n.trashed_at IS NULL")
-		args = append(args, match, r.AccountID, after)
-	} else {
+		args = append(args, match, r.AccountID, after.A)
+	case r.Order == OrderNewest:
+		// The newest order pins nodes as the outer loop, the way contentSQL pins its full-text table: the created index
+		// gives the account's nodes in created order, and its rowid tail breaks ties, so a reverse scan is the order the
+		// query asks for and no page sorts the account. The position is the created time and the node's rowid; the bound
+		// keeps the seek inside the index (no bare OR), as contentSQL's position does.
+		b.WriteString("SELECT sn.id, sn.node_id, n.created_at, n.rowid FROM nodes n INDEXED BY nodes_created")
+		b.WriteString(" CROSS JOIN search_names sn ON sn.node_id = n.id JOIN folders f ON f.id = n.folder_id")
+		b.WriteString(" WHERE n.account_id = ? AND n.trashed_at IS NULL AND f.staged = 0")
+		args = append(args, r.AccountID)
+		if after.A != 0 || after.B != 0 {
+			b.WriteString(" AND n.created_at <= ? AND (n.created_at < ? OR n.rowid < ?)")
+			args = append(args, after.A, after.A, after.B)
+		}
+	default:
 		b.WriteString("SELECT sn.id, sn.node_id FROM search_names sn JOIN nodes n ON n.id = sn.node_id")
 		b.WriteString(" JOIN folders f ON f.id = n.folder_id")
 		b.WriteString(" WHERE sn.account_id = ? AND sn.id > ? AND f.staged = 0 AND n.trashed_at IS NULL")
-		args = append(args, r.AccountID, after)
+		args = append(args, r.AccountID, after.A)
 	}
 	if r.Kind != "" {
 		b.WriteString(" AND sn.kind = ?")
@@ -326,6 +359,7 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		b.WriteString(" AND n.size <= ?")
 		args = append(args, r.SizeMax)
 	}
+	args = r.nodeFilters(&b, args)
 	for _, t := range r.ordinaryLabels() {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM node_labels nl WHERE nl.node_id = sn.node_id AND nl.field_id = ? AND " +
 			t.clause() + ")")
@@ -334,8 +368,13 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 	}
 	// A match yields its rows in rowid order, which is sn.id, so a term search needs no ORDER BY. With one, SQLite sorts
 	// every match after the position before it returns the first batch: a batch then costs all the matches that follow
-	// it. Without it the batch stops after its limit (the plan test checks there is no sort).
-	if len(r.Terms) == 0 {
+	// it. Without it the batch stops after its limit (the plan test checks there is no sort). The newest order's ORDER BY
+	// is the reverse created-index scan itself, so it sorts nothing either.
+	switch {
+	case len(r.Terms) > 0:
+	case r.Order == OrderNewest:
+		b.WriteString(" ORDER BY n.created_at DESC, n.rowid DESC")
+	default:
 		b.WriteString(" ORDER BY sn.id")
 	}
 	b.WriteString(" LIMIT ?")
@@ -343,18 +382,54 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 	return b.String(), args, nil
 }
 
+// nodeFilters writes the created bounds and the caller's starred and shared rules onto the node n and its folder f,
+// appending their arguments. Every value is an argument. The shared rule is the Shared with me page's own three
+// exclusions (store SharedNodesFiltered): not the caller's own personal space; not a space whose ROOT the caller or one
+// of their groups holds a live grant on; and no team space at all for an owner. Items below a shared folder count: the
+// root rule looks at the space's root only. The reach check that follows keeps only what the caller reaches.
+func (r *Request) nodeFilters(b *strings.Builder, args []any) []any {
+	if r.CreatedFrom != nil {
+		b.WriteString(" AND n.created_at >= ?")
+		args = append(args, *r.CreatedFrom)
+	}
+	if r.CreatedTo != nil {
+		b.WriteString(" AND n.created_at < ?")
+		args = append(args, *r.CreatedTo)
+	}
+	if r.Starred {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM stars sr WHERE sr.user_id = ? AND sr.node_id = n.id)")
+		args = append(args, r.Person)
+	}
+	if r.Shared {
+		b.WriteString(" AND NOT (f.kind = 'personal' AND f.owner_user_id = ?)")
+		b.WriteString(` AND NOT EXISTS (SELECT 1 FROM permissions rp JOIN nodes rn ON rn.id = rp.node_id
+			WHERE rn.folder_id = n.folder_id AND rn.parent_id IS NULL AND rp.account_id = n.account_id
+			AND ((rp.subject_kind = 'user' AND rp.subject_id = ?)
+				OR (rp.subject_kind = 'group' AND rp.subject_id IN (
+					SELECT gm.group_id FROM group_members gm JOIN groups g ON g.id = gm.group_id
+					WHERE gm.user_id = ? AND g.account_id = n.account_id)))
+			AND (rp.expires_at IS NULL OR rp.expires_at > ?))`)
+		args = append(args, r.Person, r.Person, r.Person, time.Now().UnixMilli())
+		if r.PersonOwner {
+			b.WriteString(" AND f.kind <> 'team'")
+		}
+	}
+	return args
+}
+
 // NameSQL returns the name candidate query and its arguments, for the plan test that checks it uses the indexes.
-func (r *Request) NameSQL(after int64, limit int) (string, []any, error) {
+func (r *Request) NameSQL(after Pos, limit int) (string, []any, error) {
 	return r.candidateSQL(after, limit)
 }
 
 // Candidates reads up to limit candidates after the position after, in order, on q. The reach check is not made here.
-// A name search orders by search row; a content search orders by content row, then by node (contentSQL).
+// A name search orders by search row, or by created time and node rowid for the newest order; a content search orders
+// by content row, then by node (contentSQL).
 func (r *Request) Candidates(ctx context.Context, q store.Querier, after Pos, limit int) ([]Candidate, error) {
 	if r.In == InContent {
 		return r.contentCandidates(ctx, q, after, limit)
 	}
-	query, args, err := r.candidateSQL(after.A, limit)
+	query, args, err := r.candidateSQL(after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -363,13 +438,22 @@ func (r *Request) Candidates(ctx context.Context, q store.Querier, after Pos, li
 		return nil, err
 	}
 	defer rows.Close()
+	newest := r.Order == OrderNewest && len(r.Terms) == 0
 	var out []Candidate
 	for rows.Next() {
 		var c Candidate
-		if err := rows.Scan(&c.RowID, &c.NodeID); err != nil {
-			return nil, err
+		if newest {
+			var createdAt, nodeRowID int64
+			if err := rows.Scan(&c.RowID, &c.NodeID, &createdAt, &nodeRowID); err != nil {
+				return nil, err
+			}
+			c.At = Pos{A: createdAt, B: nodeRowID}
+		} else {
+			if err := rows.Scan(&c.RowID, &c.NodeID); err != nil {
+				return nil, err
+			}
+			c.At = Pos{A: c.RowID}
 		}
-		c.At = Pos{A: c.RowID}
 		out = append(out, c)
 	}
 	return out, rows.Err()

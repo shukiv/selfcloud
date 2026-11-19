@@ -4,7 +4,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -44,10 +43,10 @@ func TestMeasureSearchStarredAndSharedAlone(t *testing.T) {
 		}
 	}
 	t.Logf("%d nodes seeded and indexed in %v", nodes, time.Since(start).Round(time.Millisecond))
-	// The member stars twenty of the seeded files; ann holds the team root as a viewer, so she reaches them all.
+	// The member stars twenty files of the team space; ann holds its root as a viewer, so she reaches them all.
 	for i := range 20 {
-		id := fmt.Sprintf("nod_seed_f_000_%05d", i)
-		wantStatus(t, callSession(t, fx.s, fx.annSess, "PUT", "/api/v1/nodes/"+id+"/star", nil), 204)
+		n := putTyped(t, fx.s, fx.key, fx.fld.ID, "starred-"+strconv.Itoa(i)+".txt", "text/plain", "x")
+		wantStatus(t, callSession(t, fx.s, fx.annSess, "PUT", "/api/v1/nodes/"+n.ID+"/star", nil), 204)
 	}
 	deadline := fx.s.cfg.Search.Timeout.D()
 	for _, c := range []struct {

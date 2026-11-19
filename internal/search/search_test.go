@@ -222,7 +222,7 @@ func TestCandidateSQLBindsEveryValue(t *testing.T) {
 	r := &Request{AccountID: "acc_a", Terms: []string{"x'y"}, Kind: "file",
 		Exts: []string{"pdf"}, ModifiedFrom: 1, ModifiedTo: -1, SizeMin: -1, SizeMax: 9,
 		Labels: []LabelTest{{FieldID: "lbf_a", column: "value_text", op: "prefix", args: []any{"abc", "abc\xff"}}}}
-	query, args, err := r.candidateSQL(0, 10)
+	query, args, err := r.candidateSQL(Pos{}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
