@@ -156,6 +156,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	}
 	if ps.shared {
 		req.PersonOwner = p.Role == auth.RoleOwner
+		req.Now = s.store.Clock().UnixMilli()
 	}
 	var out listResponse[searchHit]
 	err = s.store.Read(ctx, func(q store.Querier) error {

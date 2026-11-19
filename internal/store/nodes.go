@@ -214,8 +214,8 @@ func (s *Store) Children(ctx context.Context, accountID, parentID string, p Page
 // copies can be made in this order. Trashed descendants are left out: a copy never carries what was
 // deleted. The node itself is included whatever its trash state, since the caller has checked it.
 func (tx *Tx) Subtree(ctx context.Context, accountID, id string) ([]*Node, error) {
-	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
-	// draw the planner into a scan of the account's nodes per level.
+	// The recursive step pins nodes_child, as countSubtree's does: the walk reads the children by their parent, and the
+	// pin keeps that plan explicit whatever indexes exist (decision 234).
 	rows, err := tx.q.QueryContext(ctx, `WITH RECURSIVE sub(nid, depth) AS (
 		SELECT id, 0 FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
@@ -272,8 +272,8 @@ func subtreeFiles(ctx context.Context, q interface {
 // limit. The copy size check asks only whether the count passes its limit.
 func (s *Store) SubtreeSize(ctx context.Context, accountID, id string, limit int) (int, error) {
 	var n int
-	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
-	// draw the planner into a scan of the account's nodes per level.
+	// The recursive step pins nodes_child, as countSubtree's does: the walk reads the children by their parent, and the
+	// pin keeps that plan explicit whatever indexes exist (decision 234).
 	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL

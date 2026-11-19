@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -249,6 +248,9 @@ type Request struct {
 	// caller's role is the account's owner.
 	Person      string `json:",omitempty"`
 	PersonOwner bool   `json:",omitempty"`
+	// Now is the store's clock in unix milliseconds, set only when Shared: the shared rule's grant expiry reads it, so
+	// a test's fake clock holds. It is never in the fingerprint: it changes every millisecond.
+	Now int64 `json:"-"`
 	// LabelFilters are the label filters as the caller typed them: field ID and raw value. They are part of the
 	// fingerprint, so a cursor is bound to the values it was made for.
 	LabelFilters [][2]string
@@ -312,10 +314,12 @@ func (r *Request) candidateSQL(after Pos, limit int) (string, []any, error) {
 		// The newest order pins nodes as the outer loop, the way contentSQL pins its full-text table: the created index
 		// gives the account's nodes in created order, and its rowid tail breaks ties, so a reverse scan is the order the
 		// query asks for and no page sorts the account. The position is the created time and the node's rowid; the bound
-		// keeps the seek inside the index (no bare OR), as contentSQL's position does.
+		// keeps the seek inside the index (no bare OR), as contentSQL's position does. The created_at > -1 literal is the
+		// index's own partial term (migration 0061): writing it here is what lets this query use the index, and no query
+		// that does not write it can.
 		b.WriteString("SELECT sn.id, sn.node_id, n.created_at, n.rowid FROM nodes n INDEXED BY nodes_created")
 		b.WriteString(" CROSS JOIN search_names sn ON sn.node_id = n.id JOIN folders f ON f.id = n.folder_id")
-		b.WriteString(" WHERE n.account_id = ? AND n.trashed_at IS NULL AND f.staged = 0")
+		b.WriteString(" WHERE n.account_id = ? AND n.trashed_at IS NULL AND n.created_at > -1 AND f.staged = 0")
 		args = append(args, r.AccountID)
 		if after.A != 0 || after.B != 0 {
 			b.WriteString(" AND n.created_at <= ? AND (n.created_at < ? OR n.rowid < ?)")
@@ -386,7 +390,8 @@ func (r *Request) candidateSQL(after Pos, limit int) (string, []any, error) {
 // appending their arguments. Every value is an argument. The shared rule is the Shared with me page's own three
 // exclusions (store SharedNodesFiltered): not the caller's own personal space; not a space whose ROOT the caller or one
 // of their groups holds a live grant on; and no team space at all for an owner. Items below a shared folder count: the
-// root rule looks at the space's root only. The reach check that follows keeps only what the caller reaches.
+// root rule looks at the space's root only. The grant expiry reads r.Now, the store's clock the caller set, so a fake
+// clock holds. The reach check that follows keeps only what the caller reaches.
 func (r *Request) nodeFilters(b *strings.Builder, args []any) []any {
 	if r.CreatedFrom != nil {
 		b.WriteString(" AND n.created_at >= ?")
@@ -409,7 +414,7 @@ func (r *Request) nodeFilters(b *strings.Builder, args []any) []any {
 					SELECT gm.group_id FROM group_members gm JOIN groups g ON g.id = gm.group_id
 					WHERE gm.user_id = ? AND g.account_id = n.account_id)))
 			AND (rp.expires_at IS NULL OR rp.expires_at > ?))`)
-		args = append(args, r.Person, r.Person, r.Person, time.Now().UnixMilli())
+		args = append(args, r.Person, r.Person, r.Person, r.Now)
 		if r.PersonOwner {
 			b.WriteString(" AND f.kind <> 'team'")
 		}

@@ -152,8 +152,8 @@ var ErrSourceChanged = errors.New("source_changed: the source changed during the
 // without versions (a copy carries no versions). It is the copy's reservation. SubtreeTotals counts trashed nodes and
 // versions too, which a copy does not make, so a copy could be refused for quota it does not need.
 func (s *Store) CopyableTotals(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
-	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
-	// draw the planner into a scan of the account's nodes per level.
+	// The recursive step pins nodes_child, as countSubtree's does: the walk reads the children by their parent, and the
+	// pin keeps that plan explicit whatever indexes exist (decision 234).
 	err = s.r.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ? AND trashed_at IS NULL
 		UNION ALL
@@ -168,8 +168,8 @@ func (s *Store) CopyableTotals(ctx context.Context, accountID, id string) (files
 // consistent view of the tree. It returns at most limit+1 rows, so a caller compares the count with its limit. The
 // rows come in depth order, then by ID, so a parent always comes before its children.
 func (s *Store) SubtreeRows(ctx context.Context, accountID, id string, limit int) ([]SubtreeRow, error) {
-	// The recursive step is pinned to nodes_child, as countSubtree's is: the created index (0061) would otherwise
-	// draw the planner into a scan of the account's nodes per level.
+	// The recursive step pins nodes_child, as countSubtree's does: the walk reads the children by their parent, and the
+	// pin keeps that plan explicit whatever indexes exist (decision 234).
 	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE sub(nid, pid, depth) AS (
 		SELECT id, COALESCE(parent_id, ''), 0 FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
