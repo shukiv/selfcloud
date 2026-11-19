@@ -1269,6 +1269,8 @@ without a space). `--limit` is the most changes one page carries, 1 to 1000, def
 Each change prints `ID`, `STATE` and `NAME`: `STATE` is `removed` when the node is gone, trashed, below a trashed folder,
 or has left the space (then there is no name), `relist` when a restore brought a folder back whose children's own rows did
 not change, and `changed` otherwise. The page ends with a `cursor TOKEN` line; pass it back as `--cursor` to read on.
+A complete page's cursor moves to the journal's head, so a client that keeps polling a quiet space follows the head and
+is reset only if it stops polling for longer than the retention; with rows remaining the cursor names the last row read.
 `--json` prints the API's own document (`changes`, `cursor`, `has_more`) instead.
 
 `--follow` keeps reading, long-polling with a 25-second wait for each next change, and prints every page as it lands,
