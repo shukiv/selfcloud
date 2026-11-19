@@ -177,6 +177,22 @@ describe("a preset list draws a row again only when its own state changes (decis
   });
 });
 
+describe("a preset row's icon follows its item under the selection mark", () => {
+  it("a row whose icon changes keeps its id, name and selection but draws the new icon", () => {
+    let color = "red";
+    const icon = (r: Row) => <span data-icon={r.id} data-color={color} />;
+    const { rerender } = render(<Listing<Row> {...props({ icon })} />);
+    const iconOf = (name: string) => rowOf(name).querySelector("[data-icon]") as HTMLElement;
+    expect(iconOf("Row 0").getAttribute("data-color")).toBe("red");
+    fireEvent.click(rowOf("Row 0"));
+    expect(rowOf("Row 0").getAttribute("aria-selected")).toBe("true");
+    color = "blue";
+    rerender(<Listing<Row> {...props({ icon })} />);
+    expect(rowOf("Row 0").getAttribute("aria-selected")).toBe("true");
+    expect(iconOf("Row 0").getAttribute("data-color")).toBe("blue");
+  });
+});
+
 describe("a preset row's actions follow the page (decision 128)", () => {
   it("an inline icon runs the page's latest action, not the one the row was drawn with", () => {
     const first = vi.fn();
