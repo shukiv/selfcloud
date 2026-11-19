@@ -208,3 +208,31 @@ func TestSearchSharedOwnerGetsNoTeamItems(t *testing.T) {
 		t.Fatalf("the owner's shared hits = %q, want none", got)
 	}
 }
+
+// TestSearchSharedRootGrantExpiryFollowsTheStoreClock: the shared rule reads the store's clock, not the wall clock.
+// The fake clock runs behind the wall clock, and the root grant's expiry is written on its scale (the API checks
+// expires_at against the wall clock, so the row is set directly): while the grant is live on the store's clock it
+// excludes the whole space, and once the store's clock passes the expiry the items the member reaches below their own
+// subfolder grant show again (decision 234). Mutation: reading time.Now() in the rule sees the grant as already expired
+// and never excludes.
+func TestSearchSharedRootGrantExpiryFollowsTheStoreClock(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, fx.b.ID, fx.ann.ID, "editor")
+	base := time.Now().Add(-30 * 24 * time.Hour)
+	now := base
+	fx.s.store.SetClock(func() time.Time { return now })
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+root+"/permissions/"+fx.ann.ID, fx.key,
+		map[string]any{"role": "viewer", "notify": false}), 200)
+	rawExec(t, fx.s, "UPDATE permissions SET expires_at = ? WHERE node_id = ? AND subject_kind = 'user' AND subject_id = ?",
+		base.Add(time.Hour).UnixMilli(), root, fx.ann.ID)
+	if got := sharedNames(t, fx, fx.annSess, ""); len(got) != 0 {
+		t.Fatalf("a root grant live on the store's clock excludes nothing: %q", got)
+	}
+	now = base.Add(2 * time.Hour)
+	want := []string{"b", "file.txt"}
+	if got := sharedNames(t, fx, fx.annSess, ""); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("past the expiry on the store's clock, shared hits = %q, want %q", got, want)
+	}
+}
