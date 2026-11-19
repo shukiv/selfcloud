@@ -445,7 +445,9 @@ route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	version restore	cli11b	bui
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	POST /api/v1/notifications/{ntf}/read	-	-	browser session only: the server refuses every token on this route
 route	POST /api/v1/playlists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	POST /api/v1/playlists/import	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	POST /api/v1/playlists/{pls}/entries	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+route	POST /api/v1/playlists/{pls}/export	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 route	POST /api/v1/share-links/{shl}/reset	link reset	cli7	built in cli7
 route	POST /api/v1/share/open	get	cli6	built in cli6
 route	POST /api/v1/share/renew	get	cli6	built in cli6

@@ -193,6 +193,8 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../api/ownership.go MoveSubtree":                               {1, lockGuarded, "a move into My files (personal branch): file.moved for each file, explicitly in ownership.go"},
 	"../api/ownership.go UpdateNode":                                {1, lockGuarded, "the move into My files (personal branch): reported with the MoveSubtree above"},
 	"../api/ownership.go SetSubtreeOwner":                           {1, lockGuarded, "a change of owner inside a team space: nothing is reported, the item does not move"},
+	"../api/playlists_m3u.go newNode":                               {1, lockAdds, "POST /playlists/{pls}/export: the exported .m3u8 file, audited as node.create with via playlist_export, which reports file.created (decision 237)"},
+	"../api/playlists_m3u.go UpdateNode":                            {1, lockGuarded, "POST /playlists/{pls}/export: the new file, which no lock can hold yet (as PUT's create of a file), so its content tag and blob are set once (decision 237)"},
 	"../api/shortcuts.go InsertNode":                                {1, lockAdds, "node.shortcut: file.created with kind shortcut and no target"},
 	"../api/transfer.go ClearSubtreeEditorsCanShare":                {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},
 	"../api/transfer.go InsertNode":                                 {1, lockAdds, "copyTree of a small copy (up to store.SearchSmallCopy nodes): each node made, indexed in the same write (decision 40)"},

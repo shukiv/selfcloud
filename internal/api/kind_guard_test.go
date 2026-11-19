@@ -166,6 +166,15 @@ var reviewedNodeKindSites = map[string]int{
 	// answer: a directory's href ends in "/", resourcetype is a collection for a directory, and getcontentlength and
 	// getcontenttype are a file's alone.
 	"internal/api/dav.go": 12,
+	// Playlist import and export (decision 237) added five in playlists_m3u.go, each reviewed. The import's source must
+	// be a file: a folder or a shortcut is not_found, the same body as a missing or unreachable one, after nodeAccess has
+	// run. A resolved candidate becomes an entry only when it is a file: a folder or a shortcut is skipped as not_found,
+	// after reachRoles, so the skip never tells whether an unreachable file exists. The export's target must be a
+	// directory, checked before the bytes are written and again inside the write (a file or a shortcut is invalid_request,
+	// which grants nothing; the caller needs contributor on it either way, requireNodeRole first). An export entry is
+	// written only for a file of the target's space: a folder or a shortcut is left out and counted, after reachRoles.
+	// Each fails closed and grants nothing; access is nodeAccess, requireNodeRole and reachRoles, which run first.
+	"internal/api/playlists_m3u.go": 5,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

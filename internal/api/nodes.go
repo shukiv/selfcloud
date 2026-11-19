@@ -452,6 +452,32 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	return wr.Commit()
 }
 
+// writeBlobBytes writes a byte slice the server made into a new blob, as writeBlob writes a request body: the same
+// one-request write rate per caller, the same disk and quota reservation before any byte lands, then Create, write and
+// Commit. The caller removes the blob (discardBlob) if the write that follows fails.
+func (s *Server) writeBlobBytes(ctx context.Context, p *auth.Principal, accountID string, data []byte) (blob.Committed, error) {
+	if p != nil {
+		if err := s.rateLimit(oneRequestWriteRate, string(p.Kind)+":"+p.ID); err != nil {
+			return blob.Committed{}, err
+		}
+	}
+	length := int64(len(data))
+	release, err := s.reserveOneRequest(ctx, p, accountID, length, 0, length)
+	if err != nil {
+		return blob.Committed{}, err
+	}
+	defer release()
+	wr, err := s.blobs.Create(ctx, accountID, length)
+	if err != nil {
+		return blob.Committed{}, err
+	}
+	defer wr.Abort() //nolint:errcheck // removes the partial file unless Commit succeeded
+	if _, err := wr.Write(data); err != nil {
+		return blob.Committed{}, apierr.Wrap(apierr.Internal, "the file's contents cannot be written", err)
+	}
+	return wr.Commit()
+}
+
 // oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84),
 // in total and per account, as dropFlight does. An account's entry is deleted at zero.
 type oneRequestFlight struct {

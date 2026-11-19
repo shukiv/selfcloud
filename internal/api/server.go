@@ -865,6 +865,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/playlists/{pls}/entries", handle: s.handleReplacePlaylistEntries, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/playlists/{pls}/entries/{ple}", handle: s.handleRemovePlaylistEntry, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/playlists/{pls}/order", handle: s.handleReorderPlaylistEntries, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/playlists/import", handle: s.handleImportPlaylist, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/playlists/{pls}/export", handle: s.handleExportPlaylist, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/subtitles", handle: s.handleListSubtitles, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true, imp: impRefuse},
