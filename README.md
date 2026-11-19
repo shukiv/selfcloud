@@ -225,6 +225,22 @@ docker run --rm -e SELFCLOUD_URL=https://selfcloud.example -e SELFCLOUD_TOKEN="$
 The image has no persistent home, so a profile written with `profile add` does not survive `--rm`; the environment
 variables are the way to give a container its address and key.
 
+## Mount as a drive
+
+With `dav.enabled` on, SelfCloud serves a read-only WebDAV mount at `/dav/`, so a computer can show an account's files
+as a network drive. It lists folders and reads files; it never writes, renames or deletes, and a write method is
+refused with `405` (decision 236).
+
+Sign in with an **app password**, made in the web interface on the person's own session. The secret is shown once,
+when it is made, and only its hash is kept, as an API key's is. A person holds at most 20, and revoking one stops it
+at once. The mount takes the app password as the Basic password (the user name is ignored), over HTTPS or from the
+same machine; the person's real password is never accepted here. A delegated or device token works as a Bearer token
+too.
+
+The mount shows the person's My files, the team spaces they reach, and a "Shared with me" folder of the items shared
+with them; shortcuts are left out. Failed sign-ins are bounded per address and per app password, and reads are rate
+limited per user.
+
 ## Embedding Selfcloud in another application
 
 A host application can show an account's drive inside its own page, in an `<iframe>`, or open it in a new tab.
@@ -349,6 +365,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `metrics_on_main` | `false` | Serve `/metrics` on the main listener too. Off by default: `/metrics` shows storage totals, route counts and the webhook queue to anyone who can reach the listener (sec1, decision 84). Ignored when `metrics_listen` is set, which serves it on its own address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
+| `dav.enabled` | `false` | **Off by default.** Turns on the read-only WebDAV mount at `/dav/` and the app passwords that sign in to it (decision 236). Off, `/dav/` and the app-password routes answer `not_found`. |
 | `ui.brand.name` | `SelfCloud` | The installation's name, in the web interface, the page titles, the installed app and `brand.name` in `/api/v1/info`. Up to 64 characters. With no logo, from `logo_file` or an upload, the web interface shows the SelfCloud artwork labelled with this name; set a logo to replace the artwork. |
 | `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
@@ -452,6 +469,7 @@ copy of the code list (`internal/api/textnames.go`): a `PUT` of content to a fil
 
 - **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
 - **The office editor.** `office.enabled` is `false`.
+- **The WebDAV mount.** `dav.enabled` is `false`, so `/dav/` and the app-password routes answer `not_found` until it is turned on.
 - **Per-user limits.** No account has a default limit for each user (`user_quota_bytes` is `0`), so a user has none
   until the owner or the account key sets one.
 - **Webhooks.** No account has an endpoint until one is created for it.
