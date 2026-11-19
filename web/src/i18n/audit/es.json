@@ -70,6 +70,8 @@
   "audit.access.request": "{actor} pidió acceso a un elemento.",
   "audit.key.create": "{actor} creó una clave de API.",
   "audit.key.revoke": "{actor} revocó una clave de API.",
+  "audit.app_password.create": "{actor} creó una contraseña de aplicación.",
+  "audit.app_password.revoke": "{actor} revocó una contraseña de aplicación.",
   "audit.tokens.revoke": "{actor} anuló todos los tokens de acceso emitidos hasta ahora.",
   "audit.token.mint": "{actor} emitió un token de acceso.",
   "audit.account.create": "{actor} creó el cliente {name}.",

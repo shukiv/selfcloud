@@ -26,6 +26,9 @@ const (
 	// DevicePrefix starts the device token a person gets by signing in at a terminal (decision 125). It has its own
 	// payload and MAC key, so a delegated token is never mistaken for it, nor it for one.
 	DevicePrefix = "scd_"
+	// AppPasswordPrefix starts an app password, the credential a person makes for the WebDAV mount (decision 236). It
+	// is followed by the app password's ID and a random part. It is refused on the API: only the mount accepts it.
+	AppPasswordPrefix = "scp_"
 )
 
 // CLIAudience is the audience of a device token. A device token is the only credential with it.

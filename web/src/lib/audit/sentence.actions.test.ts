@@ -43,6 +43,8 @@ const ROWS: Row[] = [
   { action: 'account.quota_warning', actor: user, target: 'acc_1', details: { percent: 80 } },
   { action: 'account.sharing_policy', actor: user, target: 'acc_1', details: { public_links: false } },
   { action: 'account.storage_policy', actor: user, target: 'acc_1', details: { user_quota_bytes: 0 } },
+  { action: 'app_password.create', actor: user, target: 'apw_1', details: { name: 'Laptop', access: 'read' } },
+  { action: 'app_password.revoke', actor: user, target: 'apw_1', details: {} },
   { action: 'auth.sign_in_link', actor: { kind: 'user', id: 'usr_mateo' }, target: 'usr_mateo', details: {} },
   { action: 'comment.create', actor: user, target: 'nod_1', details: { comment: 'cmt_1', reply: true, mentions: 1 } },
   { action: 'comment.delete', actor: user, target: 'nod_1', details: { comment: 'cmt_1', tombstone: false } },

@@ -240,6 +240,7 @@ route	DELETE /api/v1/admins/{usr}	admin rm	cli9a3	built in cli9a3
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
 route	DELETE /api/v1/comments/{cmt}	-	-	browser session only: the server refuses every token on this route
 route	DELETE /api/v1/folders/{fld}/hidden	folder show-again	cli8	built in cli8
+route	DELETE /api/v1/me/app-passwords/{apw}	-	-	browser session only: revoking an app password needs a signed-in session (decision 236)
 route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/bookmarks/{bmk}	-	-	media bookmarks: a player feature
 route	DELETE /api/v1/nodes/{nod}/external-permissions/{email}	share revoke	xs4	built in xs4 (decision 187)
@@ -300,6 +301,7 @@ route	GET /api/v1/jobs/{job}	job show	cli10	built in cli10
 route	GET /api/v1/label-fields	label field ls	cli11f	built in cli11f
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
+route	GET /api/v1/me/app-passwords	-	-	browser session only: app passwords are listed in the web interface (decision 236)
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
 route	GET /api/v1/media/played	-	-	CLI command later, slice mp4c (decision 206)
 route	GET /api/v1/media/tags	tag ls	cli11e	built in cli11e
@@ -421,6 +423,7 @@ route	POST /api/v1/imports	-	cli10	no CLI credential reaches it (decision 125: d
 route	POST /api/v1/imports/{imp}/cancel	-	cli10	no CLI credential reaches it (decision 125: device tokens refused; imports refuse keys)
 route	POST /api/v1/imports/{imp}/pause	import pause	cli10	built in cli10
 route	POST /api/v1/imports/{imp}/resume	-	cli10	no CLI credential reaches it (decision 125: device tokens refused; imports refuse keys)
+route	POST /api/v1/me/app-passwords	-	-	browser session only: minting an app password needs a signed-in session (decision 236)
 route	POST /api/v1/me/email-proof	-	-	browser session only: the user asks for a proof mail (decision 187)
 route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser

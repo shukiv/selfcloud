@@ -85,6 +85,7 @@ type Config struct {
 	Links     LinksConfig     `yaml:"links"`
 	Tokens    TokensConfig    `yaml:"tokens"`
 	CLI       CLIConfig       `yaml:"cli"`
+	Dav       DavConfig       `yaml:"dav"`
 	Webhooks  WebhooksConfig  `yaml:"webhooks"`
 	CORS      CORSConfig      `yaml:"cors"`
 	Embed     EmbedConfig     `yaml:"embed"`
@@ -743,6 +744,13 @@ type CLIConfig struct {
 	// DeviceTokenTTL is how long a device token lasts from its sign-in. It is not bounded by tokens.max_ttl, which is for
 	// the delegated tokens the API mints. Revoking a device, or a password change, ends it sooner.
 	DeviceTokenTTL Duration `yaml:"device_token_ttl"`
+}
+
+// DavConfig controls the read-only WebDAV mount at /dav/ (decision 236). Off by default: while it is off, the mount
+// and the app-password routes answer not_found.
+type DavConfig struct {
+	// Enabled turns the WebDAV mount and the app-password routes on.
+	Enabled bool `yaml:"enabled"`
 }
 
 // CORSConfig controls cross-origin requests from browser applications.

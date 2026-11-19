@@ -70,6 +70,8 @@
   "audit.access.request": "{actor} ביקש גישה לפריט.",
   "audit.key.create": "{actor} יצר מפתח API.",
   "audit.key.revoke": "{actor} ביטל מפתח API.",
+  "audit.app_password.create": "{actor} יצר סיסמת אפליקציה.",
+  "audit.app_password.revoke": "{actor} ביטל סיסמת אפליקציה.",
   "audit.tokens.revoke": "{actor} סיים את כל אסימוני הגישה שהונפקו עד עכשיו.",
   "audit.token.mint": "{actor} הנפיק אסימון גישה.",
   "audit.account.create": "{actor} יצר את הלקוח {name}.",

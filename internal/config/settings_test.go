@@ -468,7 +468,7 @@ func TestEverySettingNamesAField(t *testing.T) {
 	if !slices.IsSorted(keys) || len(slices.Compact(slices.Clone(keys))) != len(keys) {
 		t.Errorf("keys are not sorted and unique: %v", keys)
 	}
-	want := []string{"admin.tenant_access", "links.default_ttl", "links.max_ttl", "office.discovery_url", "office.enabled",
+	want := []string{"admin.tenant_access", "dav.enabled", "links.default_ttl", "links.max_ttl", "office.discovery_url", "office.enabled",
 		"office.lock_minutes", "office.max_file_bytes", "search.enabled", "search.office_text", "sessions.admin_idle_timeout",
 		"sessions.admin_max_age", "sessions.idle_timeout", "sessions.max_age", "sharing.max_expiry", "storage.min_free",
 		"trash.retention"}

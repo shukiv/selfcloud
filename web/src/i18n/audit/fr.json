@@ -70,6 +70,8 @@
   "audit.access.request": "{actor} a demandé l’accès à un élément.",
   "audit.key.create": "{actor} a créé une clé d’API.",
   "audit.key.revoke": "{actor} a révoqué une clé d’API.",
+  "audit.app_password.create": "{actor} a créé un mot de passe d’application.",
+  "audit.app_password.revoke": "{actor} a révoqué un mot de passe d’application.",
   "audit.tokens.revoke": "{actor} a mis fin à tous les jetons d’accès émis jusqu’ici.",
   "audit.token.mint": "{actor} a émis un jeton d’accès.",
   "audit.account.create": "{actor} a créé le locataire {name}.",

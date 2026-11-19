@@ -179,6 +179,8 @@ func TestAppPasswordAccessValues(t *testing.T) {
 func TestAppPasswordCap(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, davOn)
+	// Isolate the cap from the write budget so revoking a place and refilling it is not rate-limited.
+	s.limits[appPasswordWriteRate] = newLimiter(1000)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")

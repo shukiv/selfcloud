@@ -569,6 +569,12 @@ func New(opts Options) (*Server, error) {
 			// Conversions (previews and exports) that start new work, per caller. A read of one already made is not charged.
 			"convert.enqueue": newLimiter(120),
 			"links.serve":     newLimiter(600),
+			// App passwords (decision 236): creating one, per user. Revoking is never charged.
+			appPasswordWriteRate: newLimiterRate(20, time.Hour),
+			// WebDAV mount (decision 236): failed sign-ins per client address and per app-password id, and reads per
+			// principal. The read budget is generous: a drive client lists and stats often.
+			"dav.auth_failed": newLimiterRate(30, time.Minute),
+			"dav.read":        newLimiter(1200),
 		},
 	}
 	s.views = newViewRecorder(opts.Store, log)
@@ -651,6 +657,8 @@ func New(opts Options) (*Server, error) {
 	for _, rt := range s.routes() {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
 	}
+	// The read-only WebDAV mount (decision 236) authenticates on its own and answers in XML, so it is not an API route.
+	mux.Handle("/dav/", s.davHandler())
 	// Unmatched requests go to the web interface when it serves them; anything else, the JSON 404.
 	// Its answer is the web interface's files or the JSON 404. It reads no credential and changes nothing, so an
 	// impersonated browser loads the app (decision 41).
@@ -795,6 +803,10 @@ func (s *Server) routes() []route {
 		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true, imp: impRefuse, mustChange: true},
 		{method: http.MethodPost, path: "/api/v1/me/email-proof", handle: s.handleRequestEmailProof, session: true, imp: impRefuse},
+		// App passwords for the WebDAV mount (decision 236): the person's own session only, never while impersonated.
+		{method: http.MethodGet, path: "/api/v1/me/app-passwords", handle: s.handleListAppPasswords, session: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/me/app-passwords", handle: s.handleCreateAppPassword, session: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/me/app-passwords/{apw}", handle: s.handleRevokeAppPassword, session: true, imp: impRefuse},
 
 		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true, imp: impAllow},

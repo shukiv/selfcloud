@@ -522,8 +522,10 @@ func TestDAVSharedWithMe(t *testing.T) {
 func TestDAVSameNameSuffix(t *testing.T) {
 	t.Parallel()
 	fx := newDavFix(t)
-	// A team space named "My files" collides with the personal folder's display name.
-	newFolder(t, fx.s, fx.key, fx.acc.ID, "My files")
+	// A team space named "My files" collides with the personal folder's display name. Ann reaches it by a grant.
+	fld := newFolder(t, fx.s, fx.key, fx.acc.ID, "My files")
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
+		map[string]any{"level": "read"}), 200)
 	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	var base, suffixed bool
 	for _, r := range ms.all("response") {
@@ -551,7 +553,7 @@ func TestDAVHiddenSpaceExcluded(t *testing.T) {
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fld.ID+"/grants/"+fx.u.ID, fx.key,
 		map[string]any{"level": "read"}), 200)
 	// Ann hides the space.
-	wantStatus(t, callSession(t, fx.s, fx.sess, "PUT", "/api/v1/folders/"+fld.ID+"/hidden", nil), 200)
+	wantStatus(t, callSession(t, fx.s, fx.sess, "PUT", "/api/v1/folders/"+fld.ID+"/hidden", nil), 204)
 	ms := davMultistatus(t, davBasic(t, fx.s, "PROPFIND", "/dav/", fx.secret, "", map[string]string{"Depth": "1"}))
 	for _, h := range davHrefs(ms) {
 		if strings.Contains(h, "Hidden") {

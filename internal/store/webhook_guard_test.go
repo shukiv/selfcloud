@@ -57,6 +57,8 @@ var webhookAuditNoEvent = map[string]string{
 	"user.sign_in_link":    "sign-in activity is not on the event list",
 	"user.sessions_end":    "ending a user's web sessions is sign-in activity; not on the event list (decision 211)",
 	"user.tokens_revoke":   "tokens are not on the event list",
+	"app_password.create":  "a person's WebDAV credential is not on the event list (decision 236)",
+	"app_password.revoke":  "a person's WebDAV credential is not on the event list (decision 236)",
 	"admin.create":         "an installation admin has no account, so there is nothing to report to",
 	"admin.delete":         "an installation admin has no account, so there is nothing to report to",
 	"auth.sign_in_link":    "sign-in activity is not on the event list",

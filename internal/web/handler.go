@@ -40,7 +40,7 @@ const notBuiltPage = `<!doctype html>
 
 // reserved are the paths the server owns. The web interface never answers under them, so an
 // unknown API path still gets the JSON 404.
-var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/readyz"}
+var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/readyz", "/dav"}
 
 // cspNoncePlaceholder is the text the build writes where the nonce goes: the Vite option
 // html.cspNonce in the web interface's vite.config.ts sets it, in the page's meta tag and on its

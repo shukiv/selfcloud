@@ -158,6 +158,14 @@ var reviewedNodeKindSites = map[string]int{
 	// closed; access is nodeAccess for the single and batch routes, and the listing's own access for withTags. The thumbnail
 	// route's size check reads the audio limit for an audio file and adds no kind comparison.
 	"internal/api/tags.go": 1,
+	// The read-only WebDAV mount (decision 236): twelve comparisons, none an access decision. Access is nodeAccessWith
+	// in davResolve, the shared grant's reach in davSharedNodes, or folderAccessWith for a space, each of which runs
+	// first. davResolve and davWalk refuse a shortcut with not_found, and a file stood in the way of a deeper segment,
+	// so a shortcut is never served (fails closed); davSharedNodes and davChildren skip shortcut children the same way.
+	// davGet refuses whatever is not a file with 405, so a directory or shortcut fails closed. The rest only shape the
+	// answer: a directory's href ends in "/", resourcetype is a collection for a directory, and getcontentlength and
+	// getcontenttype are a file's alone.
+	"internal/api/dav.go": 12,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

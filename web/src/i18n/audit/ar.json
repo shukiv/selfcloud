@@ -70,6 +70,8 @@
   "audit.access.request": "طلب {actor} الوصول إلى عنصر.",
   "audit.key.create": "أنشأ {actor} مفتاح API.",
   "audit.key.revoke": "ألغى {actor} مفتاح API.",
+  "audit.app_password.create": "أنشأ {actor} كلمة مرور تطبيق.",
+  "audit.app_password.revoke": "ألغى {actor} كلمة مرور تطبيق.",
   "audit.tokens.revoke": "أنهى {actor} كل رموز الوصول الصادرة حتى الآن.",
   "audit.token.mint": "أصدر {actor} رمز وصول.",
   "audit.account.create": "أنشأ {actor} المستأجر {name}.",

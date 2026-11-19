@@ -70,6 +70,8 @@
   "audit.access.request": "{actor} запросил(а) доступ к объекту.",
   "audit.key.create": "{actor} создал(а) ключ API.",
   "audit.key.revoke": "{actor} отозвал(а) ключ API.",
+  "audit.app_password.create": "{actor} создал(а) пароль приложения.",
+  "audit.app_password.revoke": "{actor} отозвал(а) пароль приложения.",
   "audit.tokens.revoke": "{actor} отозвал(а) все токены доступа, выданные до этого момента.",
   "audit.token.mint": "{actor} выдал(а) токен доступа.",
   "audit.account.create": "{actor} создал(а) арендатора {name}.",

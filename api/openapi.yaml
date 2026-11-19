@@ -3375,6 +3375,64 @@ paths:
               schema: { $ref: "#/components/schemas/EmailProofAnswer" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/me/app-passwords:
+    get:
+      tags: [Auth]
+      operationId: listAppPasswords
+      summary: List your app passwords
+      description: |
+        Session only, and refused while impersonating (decision 236). Lists the signed-in user's app
+        passwords for the read-only WebDAV mount, revoked ones included. Secrets are never shown. While
+        `dav.enabled` is off the answer is `not_found`.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The app passwords, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppPasswordList" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Auth]
+      operationId: createAppPassword
+      summary: Make an app password
+      description: |
+        Session only, and refused while impersonating (decision 236). The secret is in this response and
+        nowhere else: store it at once. `access` is `read` (the default) or `write`. A user holds at most
+        20 app passwords; a create beyond that is a conflict with `reason: limit`. At most 20 creates an
+        hour per user. While `dav.enabled` is off the answer is `not_found`.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppPasswordCreate" }
+      responses:
+        "201":
+          description: Created. The secret is shown only here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppPasswordCreated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/me/app-passwords/{apw}:
+    parameters:
+      - name: apw
+        in: path
+        required: true
+        schema: { type: string, example: apw_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    delete:
+      tags: [Auth]
+      operationId: revokeAppPassword
+      summary: Revoke an app password
+      description: |
+        Session only, and refused while impersonating (decision 236). The app password stops working at
+        once. Revoking is never rate limited. While `dav.enabled` is off the answer is `not_found`.
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Revoked. }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/folders/{fld}/children:
     parameters:
       - $ref: "#/components/parameters/fld"
@@ -9343,6 +9401,51 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Key" }
+
+    AppPassword:
+      type: object
+      description: A person's credential for the read-only WebDAV mount (decision 236). Its secret is never shown.
+      required: [id, name, access, prefix, created_at, revoked_at, last_used_at]
+      properties:
+        id: { type: string, example: apw_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        name: { type: string }
+        access: { type: string, enum: [read, write], description: What the mount lets the password do. }
+        prefix:
+          type: string
+          description: The start of the secret, to tell app passwords apart.
+          example: scp_apw_5m2k8x1v0c3d9q7r4t6w8y0z2a_Qx7vT2
+        created_at: { type: string, format: date-time }
+        revoked_at: { type: [string, "null"], format: date-time }
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: Updated at most once a minute.
+
+    AppPasswordCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        access: { type: string, enum: [read, write], default: read }
+
+    AppPasswordCreated:
+      allOf:
+        - $ref: "#/components/schemas/AppPassword"
+        - type: object
+          required: [secret]
+          properties:
+            secret:
+              type: string
+              description: The secret. Shown only in this response.
+
+    AppPasswordList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AppPassword" }
 
     TokenCreate:
       type: object

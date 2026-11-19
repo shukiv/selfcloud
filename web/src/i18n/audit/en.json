@@ -70,6 +70,8 @@
   "audit.access.request": "{actor} asked for access to an item.",
   "audit.key.create": "{actor} created an API key.",
   "audit.key.revoke": "{actor} revoked an API key.",
+  "audit.app_password.create": "{actor} created an app password.",
+  "audit.app_password.revoke": "{actor} revoked an app password.",
   "audit.tokens.revoke": "{actor} ended every access token issued before now.",
   "audit.token.mint": "{actor} issued an access token.",
   "audit.account.create": "{actor} created the tenant {name}.",

@@ -211,6 +211,8 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'group.member.remove':
     case 'key.create':
     case 'key.revoke':
+    case 'app_password.create':
+    case 'app_password.revoke':
     case 'account.update':
     case 'account.delete':
     case 'account.deleted':

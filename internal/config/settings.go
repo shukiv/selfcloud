@@ -80,6 +80,7 @@ const (
 // kept for ever, stays in the file.
 var settingDefs = []settingDef{
 	{key: "admin.tenant_access", typ: TypeBool},
+	{key: "dav.enabled", typ: TypeBool},
 	{key: "links.default_ttl", typ: TypeDuration, min: minute, max: 7 * day},
 	{key: "links.max_ttl", typ: TypeDuration, min: minute, max: 7 * day},
 	{key: "office.discovery_url", typ: TypeString, restart: true},
