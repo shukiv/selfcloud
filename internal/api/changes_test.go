@@ -298,6 +298,69 @@ func TestChangesPaging(t *testing.T) {
 	}
 }
 
+// TestChangesHasMoreCursorNamesTheLastRow: with rows remaining, the cursor names the last raw row read, not the
+// head, so the next page returns the rest and every node is reported once; the last, complete page's cursor names
+// the head.
+func TestChangesHasMoreCursorNamesTheLastRow(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	startSeq := cursorSeq(t, fx.s, fx.fld.ID, cur)
+	var ids []string
+	for i := 0; i < 3; i++ {
+		n := putNode(t, fx.s, fx.key, fx.fld.ID, fmt.Sprintf("/more%d.txt", i), "x")
+		ids = append(ids, n.ID)
+	}
+	raw, err := fx.s.store.NodeChangesAfter(context.Background(), fx.acc.ID, fx.fld.ID, startSeq, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) < 4 {
+		t.Fatalf("raw rows = %d, want several pages' worth", len(raw))
+	}
+	seen := map[string]bool{}
+	pos, pages := 0, 0
+	for {
+		q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "limit": {"2"}}
+		rec := feedCall(t, fx.s, fx.key, q)
+		wantStatus(t, rec, 200)
+		out := decode[changesJSON](t, rec)
+		pages++
+		for _, e := range out.Changes {
+			if seen[e.NodeID] {
+				t.Fatalf("node %s reported twice", e.NodeID)
+			}
+			seen[e.NodeID] = true
+		}
+		if !out.HasMore {
+			head, err := fx.s.store.NodeChangesHead(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cursorSeq(t, fx.s, fx.fld.ID, out.Cursor); got != head {
+				t.Errorf("the complete page's cursor names %d, want the head %d", got, head)
+			}
+			break
+		}
+		if pos+2 > len(raw) {
+			t.Fatalf("has_more past the last raw row (pos %d of %d)", pos, len(raw))
+		}
+		if got := cursorSeq(t, fx.s, fx.fld.ID, out.Cursor); got != raw[pos+1].Seq {
+			t.Fatalf("has_more cursor names %d, want the last raw row read %d", got, raw[pos+1].Seq)
+		}
+		pos += 2
+		cur = out.Cursor
+		if pages > 10 {
+			t.Fatal("paging did not end")
+		}
+	}
+	for _, id := range ids {
+		if !seen[id] {
+			t.Errorf("node %s never reported", id)
+		}
+	}
+}
+
 // wantGoneReset checks a 410 gone answer with reason reset.
 func wantGoneReset(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
@@ -522,6 +585,81 @@ func TestChangesGoneAccountPruneKeepsTheFeed(t *testing.T) {
 	}
 }
 
+// otherAccountChange writes a node in a second account's space, advancing the journal's head without touching the
+// fixture account's feeds.
+func otherAccountChange(t *testing.T, fx *sharingFixture) {
+	t.Helper()
+	acc, key := newAccount(t, fx.s, fx.admin, "Elsewhere")
+	fld := newFolder(t, fx.s, key, acc.ID, "Other")
+	putNode(t, fx.s, key, fld.ID, "/other.txt", "x")
+}
+
+// TestChangesQuietFeedSurvivesThePrune: a space with no changes of its own gets a cursor at the journal's head on
+// its empty page while other feeds write, so an age prune of those feeds' rows raising the mark past the start seq
+// does not reset the quiet client: its next read is an empty page, not gone.
+func TestChangesQuietFeedSurvivesThePrune(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	startSeq := cursorSeq(t, fx.s, fx.fld.ID, cur)
+	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Elsewhere")
+	putNode(t, fx.s, fx.key, other.ID, "/elsewhere.txt", "x")
+	otherAccountChange(t, fx)
+	head, err := fx.s.store.NodeChangesHead(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head <= startSeq {
+		t.Fatalf("head %d did not advance past the start seq %d; the test proves nothing", head, startSeq)
+	}
+	out := feed(t, fx.s, fx.key, fx.fld.ID, cur)
+	if len(out.Changes) != 0 {
+		t.Fatalf("the quiet feed = %+v, want empty", out.Changes)
+	}
+	if got := cursorSeq(t, fx.s, fx.fld.ID, out.Cursor); got != head {
+		t.Fatalf("the empty page's cursor names %d, want the head %d", got, head)
+	}
+	// Age out every row: the mark rises to the head, past the start seq.
+	for {
+		n, err := fx.s.store.PruneNodeChanges(context.Background(), time.Now().Add(time.Hour), 10000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if mark, err := fx.s.store.NodeChangesMark(context.Background()); err != nil || mark <= startSeq {
+		t.Fatalf("mark = %d, %v; want it past the start seq %d", mark, err, startSeq)
+	}
+	out = feed(t, fx.s, fx.key, fx.fld.ID, out.Cursor)
+	if len(out.Changes) != 0 {
+		t.Fatalf("the quiet feed after the prune = %+v, want empty", out.Changes)
+	}
+}
+
+// TestChangesStoppedClientIsGoneAfterPrune: a client that stopped polling keeps its start cursor; once an age prune
+// of other feeds' rows raises the mark past it, the cursor is gone with reason reset and the client lists again.
+func TestChangesStoppedClientIsGoneAfterPrune(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
+	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Elsewhere")
+	putNode(t, fx.s, fx.key, other.ID, "/elsewhere.txt", "x")
+	otherAccountChange(t, fx)
+	for {
+		n, err := fx.s.store.PruneNodeChanges(context.Background(), time.Now().Add(time.Hour), 10000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	rec := feedCall(t, fx.s, fx.key, url.Values{"space": {fx.fld.ID}, "cursor": {cur}})
+	wantGoneReset(t, rec)
+}
+
 // TestChangesAccountCursorAdvancesPastStaged: the account feed skips staged rows but its cursor advances past them,
 // so the publish's new rows are read after it; a cursor stuck before the staged rows would read them never.
 func TestChangesAccountCursorAdvancesPastStaged(t *testing.T) {
@@ -556,6 +694,58 @@ func TestChangesAccountCursorAdvancesPastStaged(t *testing.T) {
 		t.Fatalf("cursor seq = %d, want the last raw row %d", got, lastRaw)
 	}
 	// The publish writes new rows, which the advanced cursor reads.
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		if err := tx.MoveStagedTree(ctx, fx.acc.ID, "fld_st", fx.fld.ID, store.Now()); err != nil {
+			return err
+		}
+		return tx.DropStaging(ctx, fx.acc.ID, "fld_st", "nod_st_root")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out = feed(t, fx.s, fx.key, "", out.Cursor)
+	if entryOf(out, "nod_st_file") == nil {
+		t.Fatalf("the published node never reached the account feed: %+v", out)
+	}
+}
+
+// TestChangesAccountStagedOnlyCursorAtHead: an account feed whose only rows are staged skips them, and its complete
+// page's cursor still moves to the head other accounts' writes raised, so the publish's new rows are read after it.
+func TestChangesAccountStagedOnlyCursorAtHead(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	ctx := context.Background()
+	cur := startCursor(t, fx.s, fx.key, "")
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		if err := tx.CreateStagingFolder(ctx, fx.acc.ID, "fld_st", "nod_st_root", store.Now()); err != nil {
+			return err
+		}
+		n := &store.Node{ID: "nod_st_file", AccountID: fx.acc.ID, FolderID: "fld_st", ParentID: "nod_st_root",
+			Name: "s.txt", NameKey: "s.txt", Kind: store.KindFile, Size: 1, ETag: "e", CreatedAt: store.Now(), ModifiedAt: store.Now()}
+		return tx.InsertNodeNoIndex(ctx, n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := fx.s.store.NodeChangesAfter(ctx, fx.acc.ID, "", cursorSeq(t, fx.s, fx.acc.ID, cur), 1000)
+	if err != nil || len(raw) == 0 {
+		t.Fatalf("staged rows after the start = %d, %v; want some", len(raw), err)
+	}
+	lastRaw := raw[len(raw)-1].Seq
+	otherAccountChange(t, fx)
+	head, err := fx.s.store.NodeChangesHead(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head <= lastRaw {
+		t.Fatalf("head %d did not advance past the staged rows %d; the test proves nothing", head, lastRaw)
+	}
+	out := feed(t, fx.s, fx.key, "", cur)
+	if len(out.Changes) != 0 {
+		t.Fatalf("staged rows reached the account feed: %+v", out.Changes)
+	}
+	if got := cursorSeq(t, fx.s, fx.acc.ID, out.Cursor); got != head {
+		t.Fatalf("the staged-only page's cursor names %d, want the head %d", got, head)
+	}
+	// The publish writes new rows above the head, which the advanced cursor reads.
 	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := tx.MoveStagedTree(ctx, fx.acc.ID, "fld_st", fx.fld.ID, store.Now()); err != nil {
 			return err
@@ -747,7 +937,8 @@ func TestChangesWaitAnswersOnCommit(t *testing.T) {
 	}
 }
 
-// TestChangesWaitTimesOut: a wait with no write answers empty at the deadline, the cursor unchanged.
+// TestChangesWaitTimesOut: a wait with no write answers empty at the deadline; the returned cursor opens, and a read
+// after it is an empty page.
 func TestChangesWaitTimesOut(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
@@ -758,8 +949,12 @@ func TestChangesWaitTimesOut(t *testing.T) {
 	if elapsed < time.Second || elapsed > 3*time.Second {
 		t.Errorf("wait elapsed %v, want about a second", elapsed)
 	}
-	if len(out.Changes) != 0 || out.Cursor != cur {
-		t.Errorf("timeout answer = %+v, want empty with the same cursor", out)
+	if len(out.Changes) != 0 {
+		t.Errorf("timeout answer = %+v, want empty", out)
+	}
+	cursorSeq(t, fx.s, fx.fld.ID, out.Cursor) // the returned cursor opens
+	if next := feed(t, fx.s, fx.key, fx.fld.ID, out.Cursor); len(next.Changes) != 0 {
+		t.Errorf("read after the timeout cursor = %+v, want empty", next)
 	}
 }
 
@@ -953,8 +1148,13 @@ func TestChangesWaitThrottleNeverPastDeadline(t *testing.T) {
 	if elapsed < 2*time.Second || elapsed > 2100*time.Millisecond {
 		t.Errorf("wait elapsed %v, want the 2 s deadline, not past it", elapsed)
 	}
-	if len(out.Changes) != 0 || out.Cursor != cur {
-		t.Errorf("deadline answer = %+v, want empty with the same cursor", out)
+	if len(out.Changes) != 0 {
+		t.Errorf("deadline answer = %+v, want empty", out)
+	}
+	// The other space's write raised the head, so the deadline cursor opens at it and a read after it is empty.
+	cursorSeq(t, fx.s, fx.fld.ID, out.Cursor)
+	if next := feed(t, fx.s, fx.key, fx.fld.ID, out.Cursor); len(next.Changes) != 0 {
+		t.Errorf("read after the deadline cursor = %+v, want empty", next)
 	}
 }
 

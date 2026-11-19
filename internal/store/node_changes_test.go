@@ -642,6 +642,21 @@ func TestNodeChangesPlansUseTheIndexes(t *testing.T) {
 	}
 }
 
+// TestNodeChangesGoneAccountsPlanUsesTheIndex: the gone-account read skip-scans the account index from one account
+// id to the next and checks each against accounts, never scanning the journal: the sweep runs it every pass, outside
+// the writer.
+func TestNodeChangesGoneAccountsPlanUsesTheIndex(t *testing.T) {
+	s := newChangesFixture(t)
+	goneAccountRows(t, s)
+	p := explainPlan(t, s, nodeChangesGoneAccountsSQL)
+	if strings.Contains(p, "SCAN node_changes") {
+		t.Errorf("gone-account read plan = %q, want no scan of node_changes", p)
+	}
+	if !strings.Contains(p, "SEARCH node_changes USING COVERING INDEX node_changes_account") {
+		t.Errorf("gone-account read plan = %q, want a search of node_changes_account", p)
+	}
+}
+
 // goneAccountRows makes a second account with one node, then deletes the account: its journal rows (the insert and
 // the cascade delete) stay behind, young, until a prune takes them.
 func goneAccountRows(t *testing.T, s *Store) {
