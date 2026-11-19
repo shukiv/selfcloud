@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
@@ -54,6 +55,7 @@ type davLoc struct {
 	node  *store.Node
 	role  string
 	href  string
+	name  string // a shared root's disambiguated display name, when it differs from the node's own
 }
 
 func (s *Server) davHandler() http.Handler {
@@ -73,10 +75,14 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request) error {
 	}
 	info := infoFrom(r.Context())
 	// Failed sign-ins are charged per address, and per app password when the credential names one; a success gives the
-	// tokens back, so a working drive client never spends the budget.
-	charges := []charge{{name: davAuthFailedRate, key: info.ip.String()}}
-	if apwID, ok := davBasicID(r); ok {
-		charges = append(charges, charge{name: davAuthFailedRate, key: apwID})
+	// tokens back, so a working drive client never spends the budget. A request with no Authorization header is not a
+	// failed sign-in: Windows and Finder probe anonymously first, so it is never charged.
+	var charges []charge
+	if r.Header.Get("Authorization") != "" {
+		charges = append(charges, charge{name: davAuthFailedRate, key: info.ip.String()})
+		if apwID, ok := davBasicID(r); ok {
+			charges = append(charges, charge{name: davAuthFailedRate, key: apwID})
+		}
 	}
 	hold, err := s.reserveAll(charges...)
 	if err != nil {
@@ -105,7 +111,7 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request) error {
 	case "PROPFIND":
 		return s.davPropfind(w, r, p)
 	case http.MethodGet, http.MethodHead:
-		return s.davGet(w, r, p)
+		return s.davGet(w, r, p, apw)
 	default:
 		davMethodNotAllowed(w)
 		return nil
@@ -124,7 +130,7 @@ func (s *Server) writeDAVError(w http.ResponseWriter, r *http.Request, err error
 		}
 	}
 	if e.Code == apierr.Unauthenticated {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Selfcloud"`)
+		w.Header().Set("WWW-Authenticate", `Basic realm="Selfcloud", charset="UTF-8"`)
 	}
 	if e.RetryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(e.RetryAfter.Seconds()+0.5)))
@@ -174,7 +180,7 @@ func (s *Server) davAuthBasic(r *http.Request, cred string) (*auth.Principal, *s
 	if err != nil {
 		return nil, nil, davUnauth()
 	}
-	_, password, ok := strings.Cut(string(dec), ":")
+	username, password, ok := strings.Cut(string(dec), ":")
 	if !ok {
 		return nil, nil, davUnauth()
 	}
@@ -185,23 +191,30 @@ func (s *Server) davAuthBasic(r *http.Request, cred string) (*auth.Principal, *s
 			return nil, nil, davUnauth()
 		}
 	}
-	// Only an app password is a Basic credential; the person's real password is refused.
-	if !strings.HasPrefix(password, auth.AppPasswordPrefix) {
+	// Only an app password is a Basic credential; the person's real password does not parse as one and is refused.
+	// The secret names its row by ID; the row is loaded by that ID and its hash compared in constant time, so a guess
+	// at the random tail learns nothing from the lookup or the comparison.
+	apwID, ok := appPasswordIDOf(password)
+	if !ok {
 		return nil, nil, davUnauth()
 	}
 	ctx := r.Context()
-	a, err := s.store.AppPasswordByHash(ctx, auth.HashKey(password))
+	a, err := s.store.AppPasswordByID(ctx, apwID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil, davUnauth()
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	if a.RevokedAt != nil {
+	if subtle.ConstantTimeCompare(a.SecretHash, auth.HashKey(password)) != 1 {
 		return nil, nil, davUnauth()
 	}
 	u, err := s.store.User(ctx, a.AccountID, a.UserID)
 	if err != nil || u.Status != store.UserActive || u.MustChangePassword {
+		return nil, nil, davUnauth()
+	}
+	// The Basic user name is the person's email; its key must be the key of the user the app password belongs to.
+	if emailKey(username) != u.EmailKey {
 		return nil, nil, davUnauth()
 	}
 	acc, err := s.store.Account(ctx, a.AccountID)
@@ -339,7 +352,14 @@ func (s *Server) davSpaces(ctx context.Context, p *auth.Principal) ([]davSpace, 
 	}
 
 	var spaces []davSpace
+	// Siblings are told apart by cleaned key, not by display spelling, so "Sales" and "sales" clash. The virtual
+	// shared space's key is reserved first, so a folder named like it takes the suffix and the virtual space keeps
+	// its name.
 	taken := map[string]bool{}
+	_, sharedKey, _ := names.Clean(davSharedName)
+	if !folderList {
+		taken[sharedKey] = true
+	}
 	for _, fid := range ids {
 		f, role, err := folderAccessWith(ctx, s.store, p, fid)
 		if err != nil {
@@ -357,21 +377,29 @@ func (s *Server) davSpaces(ctx context.Context, p *auth.Principal) ([]davSpace, 
 		spaces = append(spaces, davSpace{name: name, key: key, folder: f, role: role})
 	}
 	if !folderList {
-		name := davUniqueName(davSharedName, taken)
-		_, key, _ := names.Clean(name)
-		spaces = append(spaces, davSpace{name: name, key: key, role: store.RoleViewer, shared: true})
+		spaces = append(spaces, davSpace{name: davSharedName, key: sharedKey, role: store.RoleViewer, shared: true})
 	}
 	return spaces, nil
 }
 
-// davUniqueName appends " (2)", " (3)", … until the name is one no sibling holds, so two spaces of the same name are
-// both addressable.
+// davUniqueName appends " (2)", " (3)", … until the name's cleaned key is one no sibling holds, so two siblings whose
+// names differ only in case are both addressable. The base is cut to fit the suffix within the name limit rather than
+// overflow it.
 func davUniqueName(name string, taken map[string]bool) string {
-	cand := name
-	for i := 2; taken[cand]; i++ {
-		cand = fmt.Sprintf("%s (%d)", name, i)
+	_, key, err := names.Clean(name)
+	if err != nil {
+		return name
 	}
-	taken[cand] = true
+	cand, candKey := name, key
+	for i := 2; taken[candKey]; i++ {
+		suffix := fmt.Sprintf(" (%d)", i)
+		base := strings.TrimRight(truncateBytes(name, maxNameBytes-len(suffix)), " ")
+		cand = base + suffix
+		if _, candKey, err = names.Clean(cand); err != nil {
+			return name
+		}
+	}
+	taken[candKey] = true
 	return cand
 }
 
@@ -407,24 +435,25 @@ func (s *Server) davResolve(r *http.Request, p *auth.Principal) (*davLoc, error)
 	baseHref := davPrefix + dav.EncodeHref(sp.name) + "/"
 
 	var from *store.Node
+	var sharedRootName string
 	if sp.shared {
-		nodes, err := s.davSharedNodes(ctx, p)
+		roots, err := s.davSharedRoots(ctx, p)
 		if err != nil {
 			return nil, err
 		}
 		if len(rest) == 0 {
 			return &davLoc{space: sp, href: baseHref, role: store.RoleViewer}, nil
 		}
-		for _, n := range nodes {
-			if n.NameKey == rest[0].key {
-				from = n
+		for _, rt := range roots {
+			if rt.key == rest[0].key {
+				from, sharedRootName = rt.node, rt.name
 				break
 			}
 		}
 		if from == nil {
 			return nil, notFound("path")
 		}
-		baseHref += dav.EncodeHref(from.Name)
+		baseHref += dav.EncodeHref(sharedRootName)
 		if from.Kind == store.KindDir {
 			baseHref += "/"
 		}
@@ -449,7 +478,11 @@ func (s *Server) davResolve(r *http.Request, p *auth.Principal) (*davLoc, error)
 	if n.Kind == store.KindShortcut {
 		return nil, notFound("path")
 	}
-	return &davLoc{space: sp, node: n, href: href, role: role}, nil
+	loc := &davLoc{space: sp, node: n, href: href, role: role}
+	if sp.shared && cur == from {
+		loc.name = sharedRootName
+	}
+	return loc, nil
 }
 
 // davWalk follows segs from the directory from, building the href as it goes. A shortcut, or a file stood in the way
@@ -479,13 +512,15 @@ func (s *Server) davWalk(ctx context.Context, p *auth.Principal, from *store.Nod
 	return cur, href, nil
 }
 
-// davSharedNodes lists the nodes shared with the caller, the children of the virtual shared space. Shortcuts are left
-// out, as they are everywhere in the mount.
+// davSharedNodes lists the nodes shared with the caller that the caller actually reaches, the children of the virtual
+// shared space. As handleSharedWithMe does, the reach of the whole page is read in one query and a node the caller
+// does not reach (a trashed node, one outside a token's scope) is left out; an owner is passed the owner argument so
+// team items, already listed as spaces, are not shared a second time. Shortcuts are left out, as everywhere in the mount.
 func (s *Server) davSharedNodes(ctx context.Context, p *auth.Principal) ([]*store.Node, error) {
 	var ids []string
 	page := store.Page{Limit: 500}
 	for {
-		rows, next, err := s.store.SharedNodesFiltered(ctx, p.AccountID, p.UserID, false, false, store.ListFilter{}, page)
+		rows, next, err := s.store.SharedNodesFiltered(ctx, p.AccountID, p.UserID, p.Role == auth.RoleOwner, false, store.ListFilter{}, page)
 		if err != nil {
 			return nil, storeErr(err)
 		}
@@ -500,15 +535,44 @@ func (s *Server) davSharedNodes(ctx context.Context, p *auth.Principal) ([]*stor
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	reach, err := reachRoles(ctx, s.store, p, ids)
+	if err != nil {
+		return nil, err
+	}
 	byID, err := s.store.NodesByID(ctx, p.AccountID, ids)
 	if err != nil {
 		return nil, err
 	}
 	var out []*store.Node
 	for _, id := range ids {
-		if n := byID[id]; n != nil && n.Kind != store.KindShortcut {
+		if n := byID[id]; n != nil && reach[id] != "" && n.Kind != store.KindShortcut {
 			out = append(out, n)
 		}
+	}
+	return out, nil
+}
+
+// davSharedRoot is one child of the virtual shared space: a shared node with its name disambiguated against the other
+// shared roots, so two of one name are both addressable.
+type davSharedRoot struct {
+	name string
+	key  string
+	node *store.Node
+}
+
+// davSharedRoots lists the shared roots with their names disambiguated by cleaned key, in the stable order the shared
+// nodes come in.
+func (s *Server) davSharedRoots(ctx context.Context, p *auth.Principal) ([]davSharedRoot, error) {
+	nodes, err := s.davSharedNodes(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	var out []davSharedRoot
+	taken := map[string]bool{}
+	for _, n := range nodes {
+		name := davUniqueName(n.Name, taken)
+		_, key, _ := names.Clean(name)
+		out = append(out, davSharedRoot{name: name, key: key, node: n})
 	}
 	return out, nil
 }
@@ -524,58 +588,90 @@ func (s *Server) davPropfind(w http.ResponseWriter, r *http.Request, p *auth.Pri
 	}
 	pf, err := dav.ParsePropfind(w, r)
 	if err != nil {
-		if errors.Is(err, dav.ErrBodyTooLarge) {
+		switch {
+		case errors.Is(err, dav.ErrBodyTooLarge):
 			return apierr.New(apierr.TooLarge, "the PROPFIND body is too large")
+		case errors.Is(err, dav.ErrTooManyProps):
+			return apierr.New(apierr.InvalidRequest, "a PROPFIND may ask for at most 64 properties")
+		default:
+			return apierr.New(apierr.InvalidRequest, "the PROPFIND body is not a valid propfind")
 		}
-		return apierr.New(apierr.InvalidRequest, "the PROPFIND body is not a valid propfind")
 	}
 	loc, err := s.davResolve(r, p)
 	if err != nil {
 		return err
 	}
-	ms, err := s.davMultistatus(r.Context(), p, loc, r.Header.Get("Depth") == "1", pf)
+	ctx := r.Context()
+	children := r.Header.Get("Depth") == "1"
+	// The child count is bounded before any of the answer is written, so an over-large listing is a clean 403 rather
+	// than a truncated 207, and the answer that follows is streamed one response at a time.
+	if children {
+		n, err := s.davCountChildren(ctx, p, loc)
+		if err != nil {
+			return err
+		}
+		if n > davMaxChildren {
+			return apierr.New(apierr.Forbidden, "too many items to list at once; open a narrower folder")
+		}
+	}
+	resp, err := s.davResponse(ctx, loc, pf)
 	if err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusMultiStatus)
-	_ = dav.WriteMultistatus(w, ms)
-	return nil
-}
-
-func (s *Server) davMultistatus(ctx context.Context, p *auth.Principal, loc *davLoc, children bool, pf dav.Propfind) (dav.Multistatus, error) {
-	var ms dav.Multistatus
-	resp, err := s.davResponse(ctx, loc, pf)
-	if err != nil {
-		return ms, err
+	mw := dav.NewMultistatusWriter(w, pf.Props)
+	if err := mw.WriteResponse(resp); err != nil {
+		return err
 	}
-	ms.Responses = append(ms.Responses, resp)
-	if !children {
-		return ms, nil
-	}
-	kids, err := s.davChildren(ctx, p, loc)
-	if err != nil {
-		return ms, err
-	}
-	for _, k := range kids {
-		kr, err := s.davResponse(ctx, &k, pf)
+	if children {
+		err := s.davEachChild(ctx, p, loc, func(child *davLoc) error {
+			cr, err := s.davResponse(ctx, child, pf)
+			if err != nil {
+				return err
+			}
+			return mw.WriteResponse(cr)
+		})
 		if err != nil {
-			return ms, err
+			return err
 		}
-		ms.Responses = append(ms.Responses, kr)
 	}
-	return ms, nil
+	return mw.Close()
 }
 
-// davChildren lists the children of a place: the spaces at the root, the shared nodes at the shared space's root, and
-// the directory's children below a space. Shortcuts are never listed.
-func (s *Server) davChildren(ctx context.Context, p *auth.Principal, loc *davLoc) ([]davLoc, error) {
-	var out []davLoc
+// davMaxChildren is the most children a Depth 1 listing answers; more is refused so one request cannot build an
+// unbounded answer.
+const davMaxChildren = 10000
+
+// errDavTooManyChildren stops the counting walk once it passes davMaxChildren.
+var errDavTooManyChildren = errors.New("dav: too many children to list")
+
+// davCountChildren counts the children of a place, stopping once it passes davMaxChildren so the count itself is
+// bounded.
+func (s *Server) davCountChildren(ctx context.Context, p *auth.Principal, loc *davLoc) (int, error) {
+	n := 0
+	err := s.davEachChild(ctx, p, loc, func(*davLoc) error {
+		n++
+		if n > davMaxChildren {
+			return errDavTooManyChildren
+		}
+		return nil
+	})
+	if errors.Is(err, errDavTooManyChildren) {
+		return n, nil
+	}
+	return n, err
+}
+
+// davEachChild walks the children of a place one at a time, calling yield for each: the spaces at the root, the
+// shared roots at the shared space's root, and the directory's children below a space. Shortcuts are never listed.
+// A yield error stops the walk.
+func (s *Server) davEachChild(ctx context.Context, p *auth.Principal, loc *davLoc, yield func(*davLoc) error) error {
 	switch {
 	case loc.root:
 		spaces, err := s.davSpaces(ctx, p)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for i := range spaces {
 			sp := &spaces[i]
@@ -583,32 +679,41 @@ func (s *Server) davChildren(ctx context.Context, p *auth.Principal, loc *davLoc
 			if !sp.shared {
 				root, err := s.store.RootNode(ctx, p.AccountID, sp.folder.ID)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				child.node = root
 			}
-			out = append(out, child)
+			if err := yield(&child); err != nil {
+				return err
+			}
 		}
 	case loc.space != nil && loc.space.shared && loc.node == nil:
-		nodes, err := s.davSharedNodes(ctx, p)
+		roots, err := s.davSharedRoots(ctx, p)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, n := range nodes {
-			out = append(out, davLoc{space: loc.space, node: n, href: davChildHref(loc.href, n), role: loc.role})
+		for i := range roots {
+			rt := &roots[i]
+			child := davLoc{space: loc.space, node: rt.node, href: davChildHref(loc.href, rt.name, rt.node), role: loc.role, name: rt.name}
+			if err := yield(&child); err != nil {
+				return err
+			}
 		}
 	case loc.node != nil && loc.node.Kind == store.KindDir:
 		page := store.Page{Limit: 500}
 		for {
 			kids, next, err := s.store.Children(ctx, p.AccountID, loc.node.ID, page)
 			if err != nil {
-				return nil, storeErr(err)
+				return storeErr(err)
 			}
 			for _, k := range kids {
 				if k.Kind == store.KindShortcut {
 					continue
 				}
-				out = append(out, davLoc{space: loc.space, node: k, href: davChildHref(loc.href, k), role: loc.role})
+				child := davLoc{space: loc.space, node: k, href: davChildHref(loc.href, k.Name, k), role: loc.role}
+				if err := yield(&child); err != nil {
+					return err
+				}
 			}
 			if next == "" {
 				break
@@ -616,11 +721,11 @@ func (s *Server) davChildren(ctx context.Context, p *auth.Principal, loc *davLoc
 			page.Cursor = next
 		}
 	}
-	return out, nil
+	return nil
 }
 
-func davChildHref(parent string, n *store.Node) string {
-	href := parent + dav.EncodeHref(n.Name)
+func davChildHref(parent, name string, n *store.Node) string {
+	href := parent + dav.EncodeHref(name)
 	if n.Kind == store.KindDir {
 		href += "/"
 	}
@@ -684,14 +789,17 @@ func (s *Server) davProps(ctx context.Context, loc *davLoc) ([]dav.Property, err
 			name = loc.space.name
 		}
 	}
+	if loc.name != "" {
+		name = loc.name
+	}
 	props := []dav.Property{dav.TextProp("displayname", name), dav.ResourceType(collection)}
 	if n != nil {
 		props = append(props,
 			dav.TextProp("getlastmodified", n.ModifiedAt.UTC().Format(http.TimeFormat)),
-			dav.TextProp("creationdate", n.CreatedAt.UTC().Format(time.RFC3339)),
-			dav.TextProp("getetag", nodeETag(n)))
+			dav.TextProp("creationdate", n.CreatedAt.UTC().Format(time.RFC3339)))
 		if n.Kind == store.KindFile {
 			props = append(props,
+				dav.TextProp("getetag", nodeETag(n)),
 				dav.TextProp("getcontentlength", strconv.FormatInt(n.Size, 10)),
 				dav.TextProp("getcontenttype", n.MimeType))
 		}
@@ -703,18 +811,34 @@ func (s *Server) davProps(ctx context.Context, loc *davLoc) ([]dav.Property, err
 		}
 		used := qs.Folder.Bytes + qs.Folder.Reserved
 		props = append(props, dav.TextProp("quota-used-bytes", strconv.FormatInt(used, 10)))
-		limit := qs.UserLimit
-		if loc.space.folder.Kind == store.KindTeam {
-			limit = qs.AccountQuota
+		// A team space is bounded by the account's quota alone; a personal folder by the smaller of the person's own
+		// limit and the account's left. With no bound at all there is no available figure to report.
+		accountLeft := int64(0)
+		if qs.AccountQuota > 0 {
+			accountLeft = max(qs.AccountQuota-(qs.Account.Bytes+qs.Account.Reserved), 0)
 		}
-		if limit > 0 {
-			props = append(props, dav.TextProp("quota-available-bytes", strconv.FormatInt(max(limit-used, 0), 10)))
+		var avail int64
+		hasAvail := false
+		if loc.space.folder.Kind == store.KindTeam {
+			if qs.AccountQuota > 0 {
+				avail, hasAvail = accountLeft, true
+			}
+		} else {
+			if qs.UserLimit > 0 {
+				avail, hasAvail = max(qs.UserLimit-used, 0), true
+			}
+			if qs.AccountQuota > 0 && (!hasAvail || accountLeft < avail) {
+				avail, hasAvail = accountLeft, true
+			}
+		}
+		if hasAvail {
+			props = append(props, dav.TextProp("quota-available-bytes", strconv.FormatInt(avail, 10)))
 		}
 	}
 	return props, nil
 }
 
-func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p *auth.Principal) error {
+func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p *auth.Principal, apw *store.AppPassword) error {
 	loc, err := s.davResolve(r, p)
 	if err != nil {
 		return err
@@ -729,6 +853,15 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p *auth.Principa
 	}
 	if restricted {
 		return errDownloadRestricted()
+	}
+	// A GET counts as a view, as the content route does; a HEAD does not. An app-password sign-in carries a token
+	// scope, which noteView skips, so the view is recorded for the person acting for itself.
+	if r.Method == http.MethodGet {
+		vp := p
+		if apw != nil {
+			vp = &auth.Principal{Kind: auth.KindUser, ID: p.UserID, AccountID: p.AccountID, UserID: p.UserID, Role: p.Role}
+		}
+		s.noteView(vp, loc.node)
 	}
 	return s.serveFile(w, r, loc.node, false, corpSameOrigin)
 }

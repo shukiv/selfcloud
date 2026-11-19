@@ -33,16 +33,16 @@ type appPasswordJSON struct {
 	Access     string     `json:"access"`
 	Prefix     string     `json:"prefix"`
 	CreatedAt  time.Time  `json:"created_at"`
-	RevokedAt  *time.Time `json:"revoked_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
 func toAppPasswordJSON(a *store.AppPassword) appPasswordJSON {
 	return appPasswordJSON{ID: a.ID, Name: a.Name, Access: a.Access, Prefix: a.Prefix,
-		CreatedAt: a.CreatedAt, RevokedAt: a.RevokedAt, LastUsedAt: a.LastUsedAt}
+		CreatedAt: a.CreatedAt, LastUsedAt: a.LastUsedAt}
 }
 
-// davEnabled gates the app-password routes and the mount on dav.enabled. While it is off they answer not_found.
+// davEnabled gates making app passwords and the mount on dav.enabled. While it is off they answer not_found. Listing
+// and revoking keep working while it is off, so a leaked app password can always be ended.
 func (s *Server) davEnabled() error {
 	if !s.settings().Dav.Enabled {
 		return apierr.New(apierr.NotFound, "WebDAV is turned off")
@@ -50,11 +50,20 @@ func (s *Server) davEnabled() error {
 	return nil
 }
 
+// appPasswordCaller refuses an installation admin: it has no account of its own to hold app passwords, so the routes
+// answer 403 rather than fail on the empty account.
+func appPasswordCaller(p *auth.Principal) error {
+	if p.IsAdmin() {
+		return apierr.New(apierr.Forbidden, "an installation admin does not hold app passwords")
+	}
+	return nil
+}
+
 func (s *Server) handleListAppPasswords(w http.ResponseWriter, r *http.Request) error {
-	if err := s.davEnabled(); err != nil {
+	p := principalOf(r)
+	if err := appPasswordCaller(p); err != nil {
 		return err
 	}
-	p := principalOf(r)
 	items, err := s.store.AppPasswords(r.Context(), p.AccountID, p.UserID)
 	if err != nil {
 		return storeErr(err)
@@ -69,6 +78,9 @@ func (s *Server) handleListAppPasswords(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleCreateAppPassword(w http.ResponseWriter, r *http.Request) error {
 	if err := s.davEnabled(); err != nil {
+		return err
+	}
+	if err := appPasswordCaller(principalOf(r)); err != nil {
 		return err
 	}
 	var in struct {
@@ -127,21 +139,21 @@ func (s *Server) handleCreateAppPassword(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	writeJSON(w, http.StatusCreated, struct {
-		appPasswordJSON
-		Secret string `json:"secret"`
+		AppPassword appPasswordJSON `json:"app_password"`
+		Secret      string          `json:"secret"`
 	}{toAppPasswordJSON(a), secret})
 	return nil
 }
 
 func (s *Server) handleRevokeAppPassword(w http.ResponseWriter, r *http.Request) error {
-	if err := s.davEnabled(); err != nil {
+	p := principalOf(r)
+	if err := appPasswordCaller(p); err != nil {
 		return err
 	}
-	p := principalOf(r)
 	apwID := r.PathValue("apw")
 	ctx := r.Context()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
-		if err := tx.RevokeAppPassword(ctx, p.AccountID, p.UserID, apwID, store.Now()); errors.Is(err, store.ErrNotFound) {
+		if err := tx.DeleteAppPassword(ctx, p.AccountID, p.UserID, apwID); errors.Is(err, store.ErrNotFound) {
 			return notFound("app password")
 		} else if err != nil {
 			return err

@@ -77,7 +77,7 @@ func TestAppPasswordRevokeDeletesRow(t *testing.T) {
 	a := appPasswordRow(t, s, acc, u.ID, AppAccessRead)
 
 	// Revoking removes the row outright: the list never grows with ended app passwords.
-	if err := s.Write(ctx, func(tx *Tx) error { return tx.RevokeAppPassword(ctx, acc, u.ID, a.ID, Now()) }); err != nil {
+	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteAppPassword(ctx, acc, u.ID, a.ID) }); err != nil {
 		t.Fatal(err)
 	}
 	list, err := s.AppPasswords(ctx, acc, u.ID)
@@ -88,7 +88,7 @@ func TestAppPasswordRevokeDeletesRow(t *testing.T) {
 		t.Errorf("after revoke the row is still listed: %+v", list)
 	}
 	// Revoking one that is gone is not found.
-	err = s.Write(ctx, func(tx *Tx) error { return tx.RevokeAppPassword(ctx, acc, u.ID, a.ID, Now()) })
+	err = s.Write(ctx, func(tx *Tx) error { return tx.DeleteAppPassword(ctx, acc, u.ID, a.ID) })
 	if err != ErrNotFound {
 		t.Errorf("revoking a gone row = %v, want ErrNotFound", err)
 	}

@@ -22,14 +22,20 @@ const (
 	Propname = "propname"
 )
 
-// MaxPropfindBytes is the largest PROPFIND body the mount reads.
-const MaxPropfindBytes = 64 << 10
+// MaxPropfindBytes is the largest PROPFIND body the mount reads. MaxProps is the most distinct properties one
+// PROPFIND may ask for; a body within the byte cap can still name an unbounded set of duplicates, so the count is
+// bounded too.
+const (
+	MaxPropfindBytes = 64 << 10
+	MaxProps         = 64
+)
 
-// ErrBodyTooLarge is a PROPFIND body past MaxPropfindBytes; ErrBadPropfind is one that is not a
-// propfind the mount understands.
+// ErrBodyTooLarge is a PROPFIND body past MaxPropfindBytes; ErrBadPropfind is one that is not a propfind the mount
+// understands; ErrTooManyProps is one that asks for more than MaxProps distinct properties.
 var (
 	ErrBodyTooLarge = errors.New("dav: the PROPFIND body is too large")
 	ErrBadPropfind  = errors.New("dav: the PROPFIND body is not a valid propfind")
+	ErrTooManyProps = errors.New("dav: the PROPFIND asks for too many properties")
 )
 
 // Propfind is a parsed PROPFIND body: its kind, and the property names it asks for when the kind is
@@ -76,8 +82,12 @@ func ParsePropfind(w http.ResponseWriter, r *http.Request) (Propfind, error) {
 			pf.Kind, kinds = Propname, kinds+1
 		case xml.Name{Space: "DAV:", Local: "prop"}:
 			pf.Kind, kinds = Prop, kinds+1
+			seen := make(map[xml.Name]bool)
 			for _, p := range k.Kids {
-				pf.Props = append(pf.Props, p.XMLName)
+				if !seen[p.XMLName] {
+					seen[p.XMLName] = true
+					pf.Props = append(pf.Props, p.XMLName)
+				}
 			}
 		default:
 			return Propfind{}, ErrBadPropfind
@@ -85,6 +95,9 @@ func ParsePropfind(w http.ResponseWriter, r *http.Request) (Propfind, error) {
 	}
 	if kinds != 1 {
 		return Propfind{}, ErrBadPropfind
+	}
+	if len(pf.Props) > MaxProps {
+		return Propfind{}, ErrTooManyProps
 	}
 	return pf, nil
 }

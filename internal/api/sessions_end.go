@@ -65,6 +65,10 @@ func (s *Server) handleEndUserSessions(w http.ResponseWriter, r *http.Request) e
 			return err
 		}
 		ended = n
+		// The mount credentials end with the sessions they were made alongside (decision 236).
+		if err := tx.DeleteAppPasswords(ctx, acc.ID, u.ID); err != nil {
+			return err
+		}
 		// The audit names the user, whether a ref was given and how many sessions ended; it never holds the ref.
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.sessions_end", u.ID,
 			map[string]any{"ref_given": ref != "", "ended": n}))

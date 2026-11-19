@@ -29,10 +29,23 @@ type apwItem struct {
 	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
-// apwCreated is a create answer: the item plus the secret, shown once.
+// apwCreated is a create answer: the item under "app_password" plus the secret, shown once beside it.
 type apwCreated struct {
 	apwItem
 	Secret string `json:"secret"`
+}
+
+func (c *apwCreated) UnmarshalJSON(b []byte) error {
+	var w struct {
+		AppPassword apwItem `json:"app_password"`
+		Secret      string  `json:"secret"`
+	}
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	c.apwItem = w.AppPassword
+	c.Secret = w.Secret
+	return nil
 }
 
 const apwPath = "/api/v1/me/app-passwords"
@@ -284,17 +297,19 @@ func TestAppPasswordWriteRateLimit(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
 
-	// Create and revoke twenty times: the active count stays low, but each create spends a write token.
+	// Create twenty times, revoking all but the last: the active count stays low, but each create spends a write token.
 	var lastID string
 	for i := 0; i < 20; i++ {
 		created := makeAppPassword(t, s, sess, "mount", "read")
 		lastID = created.ID
-		wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 204)
+		if i < 19 {
+			wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+created.ID, nil), 204)
+		}
 	}
 	// The twenty-first create is rate-limited, not capped.
 	wantError(t, callSession(t, s, sess, "POST", apwPath, map[string]any{"name": "x"}),
 		429, apierr.RateLimited)
-	// Revocation is never rate-limited out.
+	// Revocation is never rate-limited out: the live last one is deleted even though the write budget is spent.
 	wantStatus(t, callSession(t, s, sess, "DELETE", apwPath+"/"+lastID, nil), 204)
 }
 

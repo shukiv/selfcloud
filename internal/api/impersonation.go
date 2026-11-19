@@ -214,6 +214,10 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) e
 		if _, err := endUserTokens(ctx, tx, u.AccountID, u.ID); err != nil {
 			return err
 		}
+		// The mount credentials end with the password they were made under (decision 236).
+		if err := tx.DeleteAppPasswords(ctx, u.AccountID, u.ID); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.password_set", u.ID,
 			map[string]any{"must_change_password": true}))
 	})

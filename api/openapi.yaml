@@ -3381,9 +3381,9 @@ paths:
       operationId: listAppPasswords
       summary: List your app passwords
       description: |
-        Session only, and refused while impersonating (decision 236). Lists the signed-in user's app
-        passwords for the read-only WebDAV mount, revoked ones included. Secrets are never shown. While
-        `dav.enabled` is off the answer is `not_found`.
+        Session only, refused while impersonating, and refused for an installation admin (decision 236).
+        Lists the signed-in user's app passwords for the read-only WebDAV mount; a revoked one is deleted,
+        so only live ones appear. Secrets are never shown. Listing keeps working while `dav.enabled` is off.
       security: [{ session: [] }]
       responses:
         "200":
@@ -3397,10 +3397,11 @@ paths:
       operationId: createAppPassword
       summary: Make an app password
       description: |
-        Session only, and refused while impersonating (decision 236). The secret is in this response and
-        nowhere else: store it at once. `access` is `read` (the default) or `write`. A user holds at most
-        20 app passwords; a create beyond that is a conflict with `reason: limit`. At most 20 creates an
-        hour per user. While `dav.enabled` is off the answer is `not_found`.
+        Session only, refused while impersonating, and refused for an installation admin (decision 236).
+        The secret is in this response, under `secret`, and nowhere else: store it at once. `access` is
+        `read` (the default) or `write`. A user holds at most 20 app passwords; a create beyond that is a
+        conflict with `reason: limit`. At most 20 creates an hour per user. While `dav.enabled` is off the
+        answer is `not_found`.
       security: [{ session: [] }]
       requestBody:
         required: true
@@ -3426,8 +3427,10 @@ paths:
       operationId: revokeAppPassword
       summary: Revoke an app password
       description: |
-        Session only, and refused while impersonating (decision 236). The app password stops working at
-        once. Revoking is never rate limited. While `dav.enabled` is off the answer is `not_found`.
+        Session only, refused while impersonating, and refused for an installation admin (decision 236).
+        The app password is deleted and stops working at once; a second revoke is `not_found`. Revoking is
+        never rate limited and keeps working while `dav.enabled` is off, so a leaked password can always be
+        ended.
       security: [{ session: [] }]
       responses:
         "204": { description: Revoked. }
@@ -9405,7 +9408,7 @@ components:
     AppPassword:
       type: object
       description: A person's credential for the read-only WebDAV mount (decision 236). Its secret is never shown.
-      required: [id, name, access, prefix, created_at, revoked_at, last_used_at]
+      required: [id, name, access, prefix, created_at, last_used_at]
       properties:
         id: { type: string, example: apw_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         name: { type: string }
@@ -9415,7 +9418,6 @@ components:
           description: The start of the secret, to tell app passwords apart.
           example: scp_apw_5m2k8x1v0c3d9q7r4t6w8y0z2a_Qx7vT2
         created_at: { type: string, format: date-time }
-        revoked_at: { type: [string, "null"], format: date-time }
         last_used_at:
           type: [string, "null"]
           format: date-time
@@ -9430,14 +9432,13 @@ components:
         access: { type: string, enum: [read, write], default: read }
 
     AppPasswordCreated:
-      allOf:
-        - $ref: "#/components/schemas/AppPassword"
-        - type: object
-          required: [secret]
-          properties:
-            secret:
-              type: string
-              description: The secret. Shown only in this response.
+      type: object
+      required: [app_password, secret]
+      properties:
+        app_password: { $ref: "#/components/schemas/AppPassword" }
+        secret:
+          type: string
+          description: The secret. Shown only in this response.
 
     AppPasswordList:
       type: object

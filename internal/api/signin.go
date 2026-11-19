@@ -762,6 +762,10 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err != nil {
 			return err
 		}
+		// The mount credentials end with the password they were made under (decision 236).
+		if err := tx.DeleteAppPasswords(ctx, found.AccountID, found.ID); err != nil {
+			return err
+		}
 		cut = c
 		u = found
 		if err := s.endBrowserSession(r, tx); err != nil {
@@ -1158,6 +1162,10 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 			return err
 		}
 		if _, err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
+			return err
+		}
+		// The mount credentials end with the password they were made under (decision 236).
+		if err := tx.DeleteAppPasswords(ctx, found.AccountID, found.ID); err != nil {
 			return err
 		}
 		// The new session keeps the choice of the one it replaces (decision 75), and its frame (decision 197).

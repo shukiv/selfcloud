@@ -55,20 +55,82 @@ func ResourceType(collection bool) Property {
 	return p
 }
 
-// WriteMultistatus writes the multistatus as XML with the DAV: namespace bound to the D: prefix. A
-// property in another namespace gets a generated prefix, declared on the root in first-use order.
-func WriteMultistatus(w io.Writer, ms Multistatus) error {
+// MultistatusWriter writes a multistatus answer one response at a time, so a large listing never holds the whole
+// answer in memory. The namespaces are declared on the root up front, from the property names the answer may carry;
+// each response is flushed as it is written.
+type MultistatusWriter struct {
+	w        *bufio.Writer
+	prefixes map[string]string
+	err      error
+}
+
+// NewMultistatusWriter opens a multistatus on w, binding the DAV: namespace to D: and giving every other namespace
+// in props a generated prefix, declared on the root in first-use order. props is the set of property names the
+// responses may carry (the requested names, or all the names of a collected answer).
+func NewMultistatusWriter(w io.Writer, props []xml.Name) *MultistatusWriter {
 	prefixes := map[string]string{"DAV:": "D"}
 	var order []string
+	for _, n := range props {
+		if n.Space != "" && n.Space != "DAV:" {
+			if _, ok := prefixes[n.Space]; !ok {
+				prefixes[n.Space] = fmt.Sprintf("ns%d", len(order)+1)
+				order = append(order, n.Space)
+			}
+		}
+	}
+	b := bufio.NewWriter(w)
+	b.WriteString(xml.Header)
+	b.WriteString(`<D:multistatus xmlns:D="DAV:"`)
+	for _, uri := range order {
+		// The namespace URI is an XML attribute value: escape it as XML, not with Go quoting.
+		b.WriteString(` xmlns:` + prefixes[uri] + `="`)
+		xml.EscapeText(b, []byte(uri))
+		b.WriteString(`"`)
+	}
+	b.WriteString(">\n")
+	return &MultistatusWriter{w: b, prefixes: prefixes}
+}
+
+// WriteResponse writes one resource and flushes it, so the answer streams to the client as it is built.
+func (m *MultistatusWriter) WriteResponse(r Response) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.w.WriteString("<D:response><D:href>")
+	xml.EscapeText(m.w, []byte(r.Href))
+	m.w.WriteString("</D:href>")
+	for _, ps := range r.Propstats {
+		m.w.WriteString("<D:propstat><D:prop>")
+		for _, pr := range ps.Props {
+			writeProperty(m.w, pr, m.prefixes)
+		}
+		m.w.WriteString("</D:prop><D:status>")
+		xml.EscapeText(m.w, []byte(ps.Status))
+		m.w.WriteString("</D:status></D:propstat>")
+	}
+	m.w.WriteString("</D:response>\n")
+	m.err = m.w.Flush()
+	return m.err
+}
+
+// Close ends the multistatus and flushes the remainder.
+func (m *MultistatusWriter) Close() error {
+	if m.err != nil {
+		return m.err
+	}
+	m.w.WriteString("</D:multistatus>\n")
+	m.err = m.w.Flush()
+	return m.err
+}
+
+// WriteMultistatus writes a collected multistatus as XML, response by response, with the DAV: namespace bound to the
+// D: prefix and a generated prefix for every other namespace its properties carry.
+func WriteMultistatus(w io.Writer, ms Multistatus) error {
+	var names []xml.Name
 	var walk func([]Property)
 	walk = func(props []Property) {
 		for _, pr := range props {
-			if pr.Name.Space != "" && pr.Name.Space != "DAV:" {
-				if _, ok := prefixes[pr.Name.Space]; !ok {
-					prefixes[pr.Name.Space] = fmt.Sprintf("ns%d", len(order)+1)
-					order = append(order, pr.Name.Space)
-				}
-			}
+			names = append(names, pr.Name)
 			walk(pr.Inner)
 		}
 	}
@@ -77,31 +139,13 @@ func WriteMultistatus(w io.Writer, ms Multistatus) error {
 			walk(ps.Props)
 		}
 	}
-
-	b := bufio.NewWriter(w)
-	b.WriteString(xml.Header)
-	b.WriteString(`<D:multistatus xmlns:D="DAV:"`)
-	for _, uri := range order {
-		fmt.Fprintf(b, ` xmlns:%s=%q`, prefixes[uri], uri)
-	}
-	b.WriteString(">\n")
+	m := NewMultistatusWriter(w, names)
 	for _, r := range ms.Responses {
-		b.WriteString("<D:response><D:href>")
-		xml.EscapeText(b, []byte(r.Href))
-		b.WriteString("</D:href>")
-		for _, ps := range r.Propstats {
-			b.WriteString("<D:propstat><D:prop>")
-			for _, pr := range ps.Props {
-				writeProperty(b, pr, prefixes)
-			}
-			b.WriteString("</D:prop><D:status>")
-			xml.EscapeText(b, []byte(ps.Status))
-			b.WriteString("</D:status></D:propstat>")
+		if err := m.WriteResponse(r); err != nil {
+			return err
 		}
-		b.WriteString("</D:response>\n")
 	}
-	b.WriteString("</D:multistatus>\n")
-	return b.Flush()
+	return m.Close()
 }
 
 func writeProperty(w io.Writer, pr Property, prefixes map[string]string) {

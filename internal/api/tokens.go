@@ -784,6 +784,10 @@ func (s *Server) handleRevokeUserTokens(w http.ResponseWriter, r *http.Request) 
 		if _, err := tx.RevokeWOPISessions(ctx, acc.ID, usr, cut); err != nil {
 			return err
 		}
+		// The mount credentials end with the tokens they were made alongside (decision 236).
+		if err := tx.DeleteAppPasswords(ctx, acc.ID, usr); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.tokens_revoke", usr,
 			map[string]any{"user": usr, "tokens_not_before": cut.Format(time.RFC3339Nano)}))
 	})
