@@ -36,6 +36,7 @@ export async function ps1Checks(h, { page, base, adminKey, MEMBER, ADMIN }) {
     await api(base, 'PATCH', '/api/v1/settings', adminKey, { set: { 'ui.scripts': [src] } });
     await page.send('Page.reload');
     await page.waitFor(`document.documentElement.dataset.ps1 === 'on'`, 20000);
+    await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]')`, 20000);
     check(true, 'the next page runs the listed script, with no restart');
 
     const tag = await page.evaluate(`(() => {
@@ -74,6 +75,7 @@ export async function ps1Checks(h, { page, base, adminKey, MEMBER, ADMIN }) {
     check(JSON.stringify(held.value) === q([src]) && held.source === 'settings', `the settings answer holds the script added in the page (${q(held.value)}, ${held.source})`);
     await page.send('Page.reload');
     await page.waitFor(`document.documentElement.dataset.ps1 === 'on'`, 20000);
+    await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]')`, 20000);
     check(true, 'the page saved in Settings runs the script after a reload');
     await h.clickOn(page, '[data-setting="ui.scripts"] button[aria-label="Remove script 1"]');
     await page.waitFor(`!document.querySelector('[data-setting="ui.scripts"] input[aria-label="Script 1"]')`, 10000);

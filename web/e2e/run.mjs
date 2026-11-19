@@ -377,10 +377,16 @@ async function signOut(page) {
   // A signed-in visitor on a public page has no account menu: the shell is opened first, through a link click.
   if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) {
     // A visitor who is not signed in has nothing to sign out of: the sign-in page is what it sees.
-    if (await page.evaluate(`location.pathname === '/login'`)) return;
+    if (await page.evaluate(`location.pathname === '/login'`)) {
+      console.log(`DIAG sign-out: nothing to sign out of (first check) at ${await page.evaluate(`location.pathname`)}`);
+      return;
+    }
     await navigateTo(page, '/');
     await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname === '/login'`, 15000);
-    if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) return;
+    if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) {
+      console.log(`DIAG sign-out: nothing to sign out of (after opening the shell) at ${await page.evaluate(`location.pathname`)}`);
+      return;
+    }
   }
   await clickOn(page, '[data-testid="account-menu"]');
   await clickText(page, '.ant-dropdown-menu-item', 'Sign out');
