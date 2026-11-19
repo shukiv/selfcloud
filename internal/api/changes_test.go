@@ -528,6 +528,8 @@ func TestChangesAccountCursorAdvancesPastStaged(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
 	ctx := context.Background()
+	cur := startCursor(t, fx.s, fx.key, "")
+	startSeq := cursorSeq(t, fx.s, fx.acc.ID, cur)
 	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := tx.CreateStagingFolder(ctx, fx.acc.ID, "fld_st", "nod_st_root", store.Now()); err != nil {
 			return err
@@ -538,8 +540,6 @@ func TestChangesAccountCursorAdvancesPastStaged(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cur := startCursor(t, fx.s, fx.key, "")
-	startSeq := cursorSeq(t, fx.s, fx.acc.ID, cur)
 	raw, err := fx.s.store.NodeChangesAfter(ctx, fx.acc.ID, "", startSeq, 1000)
 	if err != nil || len(raw) == 0 {
 		t.Fatalf("staged rows after the start = %d, %v; want some", len(raw), err)
@@ -803,6 +803,25 @@ func heldWait(t *testing.T, srv *httptest.Server, cred string, q url.Values) (co
 	return cancel, done
 }
 
+// waitWaiters polls until the server holds n long polls, so a test does not race the registration of its held waits
+// (a fixed sleep is not enough under the race detector on a busy machine). It reads the count under the mutex.
+func waitWaiters(t *testing.T, s *Server, n int) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		s.changesMu.Lock()
+		got := s.changesWaiting
+		s.changesMu.Unlock()
+		if got >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d waits registered, want %d", got, n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // TestChangesWaitFifthCallerReturnsAtOnce: a caller holds at most four waits; the fifth answers at once.
 func TestChangesWaitFifthCallerReturnsAtOnce(t *testing.T) {
 	t.Parallel()
@@ -817,7 +836,7 @@ func TestChangesWaitFifthCallerReturnsAtOnce(t *testing.T) {
 		cancels = append(cancels, c)
 		dones = append(dones, d)
 	}
-	time.Sleep(500 * time.Millisecond) // let the four register
+	waitWaiters(t, fx.s, 4) // let the four register
 	out, elapsed, hdr := waitGET(t, srv, fx.key, q, context.Background())
 	if elapsed > time.Second {
 		t.Errorf("the fifth wait took %v, want an immediate answer", elapsed)
@@ -845,7 +864,7 @@ func TestChangesWaitGlobalCap(t *testing.T) {
 	cur := startCursor(t, fx.s, fx.key, fx.fld.ID)
 	q := url.Values{"space": {fx.fld.ID}, "cursor": {cur}, "wait": {"60"}}
 	cancel, done := heldWait(t, srv, fx.key, q)
-	time.Sleep(500 * time.Millisecond)
+	waitWaiters(t, fx.s, 1)
 	_, elapsed, hdr := waitGET(t, srv, fx.key, q, context.Background())
 	if elapsed > time.Second {
 		t.Errorf("the over-cap wait took %v, want an immediate answer", elapsed)
@@ -962,7 +981,8 @@ func TestChangesWaitKeyIsTheUserBehindAToken(t *testing.T) {
 		cancels = append(cancels, c)
 		dones = append(dones, d)
 	}
-	time.Sleep(500 * time.Millisecond) // let the eight register
+	waitWaiters(t, fx.s, 8)            // let the eight register
+	time.Sleep(500 * time.Millisecond) // let them hold, so a refused wait is distinguishable from a held one
 	for _, tok := range []string{annTok, bobTok} {
 		out, elapsed, hdr := waitGET(t, srv, tok, q, context.Background())
 		if elapsed > time.Second || len(out.Changes) != 0 {
@@ -998,7 +1018,7 @@ func TestChangesWaitKeyOfAnAccountKeyToken(t *testing.T) {
 		cancels = append(cancels, c)
 		dones = append(dones, d)
 	}
-	time.Sleep(500 * time.Millisecond)
+	waitWaiters(t, fx.s, 4)
 	_, elapsed, hdr := waitGET(t, srv, keyTok, q, context.Background())
 	if elapsed > time.Second {
 		t.Errorf("the token's wait took %v, want an immediate answer behind the key's four", elapsed)

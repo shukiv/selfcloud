@@ -13,7 +13,9 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/conn"
@@ -24,6 +26,22 @@ import (
 // followContext is the context --follow runs under, cancelled by an interrupt. A test replaces it to stop the follow.
 var followContext = func() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
+// followWait is the long poll --follow asks for: under the client's 30 s header timeout, so a held wait answers before
+// the client gives up on it.
+const followWait = 25
+
+// followSleep waits before the next follow poll. Tests make it return at once.
+var followSleep = derivedSleep
+
+// followRetryAfter reads a Retry-After header as a positive whole-second wait capped at thirty seconds, or five seconds
+// when it cannot be read: the backoff an empty page asks for before the follow polls again.
+func followRetryAfter(h string) time.Duration {
+	if n, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && n > 0 {
+		return min(time.Duration(n)*time.Second, 30*time.Second)
+	}
+	return 5 * time.Second
 }
 
 // changesFeed is the feed's answer: the folded changes, the cursor after the last raw row read, and whether rows remain.
@@ -115,7 +133,8 @@ func Changes(args []string, stdout, stderr io.Writer) int {
 		ctx, cancel := followContext()
 		defer cancel()
 		for ctx.Err() == nil {
-			resp, feed, err := readPage(ctx, cursor, 60)
+			start := time.Now()
+			resp, feed, err := readPage(ctx, cursor, followWait)
 			if err != nil {
 				if ctx.Err() != nil {
 					return exitcode.OK
@@ -129,6 +148,13 @@ func Changes(args []string, stdout, stderr io.Writer) int {
 				return fail(stderr, g, err)
 			}
 			cursor = feed.Cursor
+			// An empty page that came back well before the wait (a refused wait, or a server that does not hold)
+			// backs off before polling again, so the follow does not spin; a page that held the wait needs no sleep.
+			if len(feed.Changes) == 0 && !feed.HasMore && time.Since(start) < time.Duration(followWait)*time.Second/2 {
+				if err := followSleep(ctx, followRetryAfter(resp.Header.Get("Retry-After"))); err != nil {
+					return exitcode.OK
+				}
+			}
 		}
 		return exitcode.OK
 	}

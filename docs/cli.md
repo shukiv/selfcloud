@@ -1271,9 +1271,12 @@ or has left the space (then there is no name), `relist` when a restore brought a
 not change, and `changed` otherwise. The page ends with a `cursor TOKEN` line; pass it back as `--cursor` to read on.
 `--json` prints the API's own document (`changes`, `cursor`, `has_more`) instead.
 
-`--follow` keeps reading, waiting up to 60 seconds for each next change, and prints every page as it lands, until
-interrupted (Ctrl-C). A cursor that fell below the server's prune mark is refused with `gone`: the command prints the
-server's message plainly, in plain and `--json` output alike, and exits 1, so the client starts again with a fresh cursor.
+`--follow` keeps reading, long-polling with a 25-second wait for each next change, and prints every page as it lands,
+until interrupted (Ctrl-C). An empty page that comes back well before the wait backs off by the server's `Retry-After`
+(or 5 seconds) before polling again, so a server that answers at once is not polled in a tight loop. A cursor the server
+can no longer serve (one that fell below the prune mark, one above the journal's head, or one it cannot open) is refused
+with `gone`: the command prints the server's message plainly, in plain and `--json` output alike, and exits 1, so the
+client starts again with a fresh cursor.
 
 Exit codes follow the errors: 2 for a usage error (a bad limit, a malformed space, a stray argument), 3 when the server
 refuses, 4 for an unknown space, and 1 for a `gone` cursor.

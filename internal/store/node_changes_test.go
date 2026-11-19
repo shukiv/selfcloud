@@ -466,10 +466,10 @@ func TestNodeChangesImportPublish(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Staged rows never reach the account feed.
+	// Staged rows are marked staged, so the feed reader skips them until the publish.
 	for _, r := range changesAfter(t, s, "", 0) {
-		if r.NodeID == "nod_imp" {
-			t.Fatal("the staged insert reached the account feed")
+		if r.NodeID == "nod_imp" && !r.Staged {
+			t.Fatal("the staged insert is not marked staged")
 		}
 	}
 	if err := s.Write(ctx, func(tx *Tx) error {

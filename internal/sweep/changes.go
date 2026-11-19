@@ -9,11 +9,11 @@ import (
 
 // Changes retention (slice cf1, decision 235). The sweep removes the journal rows older than changes.retention, and
 // rows whose account is gone. A pass runs at most once an hour, and removes at most changesBatch rows per write, so a
-// backlog is removed over several writes and no write holds the writer for long. Each prune raises the mark a cursor
-// below which is refused with gone.
+// backlog is removed over several writes and no write holds the writer for long. The age prune raises the mark a cursor
+// below which is refused with gone; the gone-account prune leaves the mark where it was.
 const (
 	changesPruneEvery = time.Hour
-	changesBatch      = 1000
+	changesBatch      = 5000
 	changesBatches    = 200
 )
 

@@ -3,8 +3,13 @@
 package api
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/binary"
 	"net/http"
 	"sort"
 	"strconv"
@@ -28,36 +33,77 @@ const changesReadEvery = 250 * time.Millisecond
 // changesMaxWaits is the most long polls one caller holds at once; a further wait answers at once.
 const changesMaxWaits = 4
 
-// changesCursorPrefix marks a changes cursor. The body is base64url of the feed id and the seq it names; it is opaque to
-// the client and carries no authority, since the feed itself is access-checked on every read.
+// changesRetryAfter is the Retry-After a refused wait carries, so a client backs off before asking again.
+const changesRetryAfter = "5"
+
+// A changes cursor is sealed like a search cursor (decision 40): AES-GCM under a key derived from the links signing key,
+// with the feed id as its additional data. The body carries only the seq, so it shows no feed id and no write volume in
+// the clear, and a nonce makes two cursors of the same feed and seq differ. It opens for any caller of the same feed,
+// since the feed itself is access-checked on every read. A cursor that does not open, for any reason (another feed, a
+// rotated key, a malformed body), is gone with reason reset, telling the client to start again.
+const changesCursorLabel = "selfcloud changes cursor v1"
 const changesCursorPrefix = "c1_"
 
-type changesCursor struct {
-	S string `json:"s"`
-	Q int64  `json:"q"`
+// changesCursorGone is the one answer to a cursor that can no longer be served.
+var changesCursorGone = apierr.New(apierr.Gone, "the cursor can no longer be served; start again").With("reason", "reset")
+
+// changesCursorAEAD returns the cipher that seals changes cursors, made from the current links key on each use.
+func (s *Server) changesCursorAEAD() (cipher.AEAD, error) {
+	key, err := hkdf.Key(sha256.New, s.links.current, nil, changesCursorLabel, 32)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
 }
 
-func encodeChangesCursor(feed string, seq int64) string {
-	b, _ := json.Marshal(changesCursor{S: feed, Q: seq})
-	return changesCursorPrefix + base64.RawURLEncoding.EncodeToString(b)
+// sealChangesCursor returns the cursor that reads feed after seq.
+func (s *Server) sealChangesCursor(feed string, seq int64) (string, error) {
+	aead, err := s.changesCursorAEAD()
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	plain := make([]byte, 8)
+	binary.BigEndian.PutUint64(plain, uint64(seq))
+	sealed := aead.Seal(nonce, nonce, plain, []byte(feed))
+	return changesCursorPrefix + base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// decodeChangesCursor reads a cursor, or refuses it as invalid. A cursor of another feed is refused by the caller, which
-// compares the feed id it names with the feed the request reads.
-func decodeChangesCursor(tok string) (changesCursor, error) {
+// openChangesCursor returns the seq a cursor names for feed. A cursor that does not open, for any reason, is gone with
+// reason reset, so the answer tells nothing about which part was wrong.
+func (s *Server) openChangesCursor(feed, tok string) (int64, error) {
 	body, ok := strings.CutPrefix(tok, changesCursorPrefix)
 	if !ok {
-		return changesCursor{}, apierr.New(apierr.InvalidRequest, "cursor is not valid for this feed")
+		return 0, changesCursorGone
 	}
-	b, err := base64.RawURLEncoding.DecodeString(body)
+	raw, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil {
-		return changesCursor{}, apierr.New(apierr.InvalidRequest, "cursor is not valid for this feed")
+		return 0, changesCursorGone
 	}
-	var c changesCursor
-	if err := json.Unmarshal(b, &c); err != nil {
-		return changesCursor{}, apierr.New(apierr.InvalidRequest, "cursor is not valid for this feed")
+	aead, err := s.changesCursorAEAD()
+	if err != nil {
+		return 0, err
 	}
-	return c, nil
+	if len(raw) < aead.NonceSize() {
+		return 0, changesCursorGone
+	}
+	nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
+	plain, err := aead.Open(nil, nonce, sealed, []byte(feed))
+	if err != nil || len(plain) != 8 {
+		return 0, changesCursorGone
+	}
+	seq := int64(binary.BigEndian.Uint64(plain))
+	if seq < 0 {
+		return 0, changesCursorGone
+	}
+	return seq, nil
 }
 
 // changeEntry is one folded change: the node as a stat answers it while it is live, and removed with no node once it is
@@ -105,7 +151,8 @@ func (s *Server) changesFeed(r *http.Request, p *auth.Principal, space string) (
 	return space, nil
 }
 
-// handleChangesStart answers a cursor at the journal's head, the point a client reads changes after.
+// handleChangesStart answers a cursor at the journal's head, the point a client reads changes after. The head never
+// lowers with the rows, so a start after a full prune still names a seq the journal keeps.
 func (s *Server) handleChangesStart(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if err := callerCheck(p); err != nil {
@@ -118,11 +165,15 @@ func (s *Server) handleChangesStart(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	seq, err := s.store.NodeChangesMaxSeq(r.Context())
+	seq, err := s.store.NodeChangesHead(r.Context())
 	if err != nil {
 		return storeErr(err)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"cursor": encodeChangesCursor(feed, seq)})
+	cur, err := s.sealChangesCursor(feed, seq)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"cursor": cur})
 	return nil
 }
 
@@ -140,12 +191,21 @@ func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	cur, err := decodeChangesCursor(q.Get("cursor"))
+	curTok := q.Get("cursor")
+	if curTok == "" {
+		return apierr.New(apierr.InvalidRequest, "cursor is required")
+	}
+	seq, err := s.openChangesCursor(feed, curTok)
 	if err != nil {
 		return err
 	}
-	if cur.S != feed {
-		return apierr.New(apierr.InvalidRequest, "cursor is not valid for this feed")
+	// A cursor above the head (kept across a restore from an older backup) can no longer be served.
+	head, err := s.store.NodeChangesHead(r.Context())
+	if err != nil {
+		return storeErr(err)
+	}
+	if seq > head {
+		return changesCursorGone
 	}
 	limit, err := changesBound(q.Get("limit"), 200, 1, 1000)
 	if err != nil {
@@ -155,14 +215,7 @@ func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	mark, err := s.store.NodeChangesMark(r.Context())
-	if err != nil {
-		return storeErr(err)
-	}
-	if cur.Q < mark {
-		return apierr.New(apierr.Gone, "the cursor is too old; start again").With("reason", "reset")
-	}
-	return s.changesWaitLoop(w, r, p, feed, q.Get("space"), cur.Q, limit, time.Duration(waitSecs)*time.Second, q.Get("cursor"))
+	return s.changesWaitLoop(w, r, p, feed, q.Get("space"), seq, limit, time.Duration(waitSecs)*time.Second, curTok)
 }
 
 // changesBound reads an integer query value with a default and inclusive bounds, refusing a value outside them.
@@ -175,6 +228,15 @@ func changesBound(raw string, def, lo, hi int) (int, error) {
 		return 0, apierr.New(apierr.InvalidRequest, "value is out of range")
 	}
 	return n, nil
+}
+
+// changesWaitKey is the caller a long poll counts against. An end user behind a delegated token counts as that user, so
+// each user holds their own waits; a token acting as the account key keeps the key's own key.
+func changesWaitKey(p *auth.Principal) string {
+	if p.Token != nil && p.UserID != "" {
+		return "user:" + p.UserID
+	}
+	return string(p.Kind) + ":" + p.ID
 }
 
 // acquireChangesWaiter takes a long-poll slot for the caller, unless it already holds four or the server holds its cap.
@@ -202,12 +264,15 @@ func (s *Server) releaseChangesWaiter(key string) {
 
 // changesWaitLoop reads the feed, and while it is empty and a wait is held, waits for a write to commit, the deadline,
 // the client to go, or the server to drain. It re-reads at most every changesReadEvery, and answers empty at the
-// deadline with the cursor unchanged.
+// deadline with the cursor unchanged. A wait refused a slot answers at once with Retry-After.
 func (s *Server) changesWaitLoop(w http.ResponseWriter, r *http.Request, p *auth.Principal, feed, space string,
 	after int64, limit int, wait time.Duration, curTok string) error {
 	ctx := r.Context()
-	key := string(p.Kind) + ":" + p.ID
+	key := changesWaitKey(p)
 	holding := wait > 0 && s.acquireChangesWaiter(key, s.cfg.Changes.MaxWaiters)
+	if wait > 0 && !holding {
+		w.Header().Set("Retry-After", changesRetryAfter)
+	}
 	var sub <-chan struct{}
 	if holding {
 		var stop func()
@@ -230,11 +295,16 @@ func (s *Server) changesWaitLoop(w http.ResponseWriter, r *http.Request, p *auth
 			writeJSON(w, http.StatusOK, out)
 			return nil
 		}
-		throttle := time.Until(lastRead.Add(changesReadEvery))
 		timer := time.NewTimer(time.Until(deadline))
 		select {
 		case <-sub:
 			timer.Stop()
+			// The throttle is computed after the wake, so the first wake after a long idle answers at once; it is
+			// capped at the deadline, so a late wake never holds the answer past it.
+			throttle := time.Until(lastRead.Add(changesReadEvery))
+			if d := time.Until(deadline); throttle > d {
+				throttle = d
+			}
 			if throttle > 0 {
 				t := time.NewTimer(throttle)
 				select {
@@ -261,15 +331,31 @@ func (s *Server) changesWaitLoop(w http.ResponseWriter, r *http.Request, p *auth
 	}
 }
 
-// readChanges reads limit+1 journal rows after seq, folds them to one entry per node ordered by the node's latest row,
-// and decorates the live nodes as a stat does. The cursor advances to the last raw row read; with no rows it is the
-// cursor the caller passed, unchanged.
+// readChanges reads the mark and limit+1 journal rows after seq in one snapshot, so a prune landing between them cannot
+// make the feed skip rows silently. It folds the rows to one entry per node ordered by the node's latest row, skipping
+// the staged rows of the account feed, and decorates the live nodes as a stat does. The cursor advances to the last raw
+// row read (staged included); with no rows it is the cursor the caller passed, unchanged.
 func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space string, after int64, limit int,
 	curTok string) (changesResponse, error) {
 	ctx := r.Context()
-	rows, err := s.store.NodeChangesAfter(ctx, p.AccountID, space, after, limit+1)
-	if err != nil {
+	var mark int64
+	var rows []store.NodeChange
+	if err := s.store.Read(ctx, func(q store.Querier) error {
+		var err error
+		mark, err = store.NodeChangesMarkIn(ctx, q)
+		if err != nil {
+			return err
+		}
+		if s.changesPruneHook != nil {
+			s.changesPruneHook()
+		}
+		rows, err = store.NodeChangesAfterIn(ctx, q, p.AccountID, space, after, limit+1)
+		return err
+	}); err != nil {
 		return changesResponse{}, storeErr(err)
+	}
+	if after < mark {
+		return changesResponse{}, changesCursorGone
 	}
 	hasMore := len(rows) > limit
 	if hasMore {
@@ -279,7 +365,11 @@ func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space str
 	if len(rows) == 0 {
 		return out, nil
 	}
-	out.Cursor = encodeChangesCursor(feed, rows[len(rows)-1].Seq)
+	cur, err := s.sealChangesCursor(feed, rows[len(rows)-1].Seq)
+	if err != nil {
+		return changesResponse{}, err
+	}
+	out.Cursor = cur
 
 	type fold struct {
 		seq    int64
@@ -288,6 +378,9 @@ func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space str
 	folds := map[string]*fold{}
 	var order []string
 	for _, row := range rows {
+		if row.Staged {
+			continue // a staged folder's rows are not reported until the publish
+		}
 		f := folds[row.NodeID]
 		if f == nil {
 			f = &fold{}
@@ -298,6 +391,9 @@ func (s *Server) readChanges(r *http.Request, p *auth.Principal, feed, space str
 			f.seq = row.Seq
 		}
 		f.relist = f.relist || row.Relist
+	}
+	if len(order) == 0 {
+		return out, nil
 	}
 	sort.Slice(order, func(i, j int) bool { return folds[order[i]].seq < folds[order[j]].seq })
 

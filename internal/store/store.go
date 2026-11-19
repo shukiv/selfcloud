@@ -180,20 +180,32 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
-// write runs fn in a write transaction, committing if fn returns nil.
+// write runs fn in a write transaction, committing if fn returns nil. The watchers are signalled only when the
+// commit wrote journal rows: the journal's counter before and after fn tells whether it grew, so a write that
+// touches no node does not wake a changes long poll.
 func (s *Store) write(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	tx, err := s.w.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // a no-op after Commit
+	headBefore, err := journalCounter(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("store: journal head: %w", err)
+	}
 	if err := fn(tx); err != nil {
 		return err
+	}
+	headAfter, err := journalCounter(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("store: journal head: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: commit: %w", err)
 	}
-	s.notifyWrites()
+	if headAfter > headBefore {
+		s.notifyWrites()
+	}
 	return nil
 }
 

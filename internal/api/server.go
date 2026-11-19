@@ -170,7 +170,10 @@ type Server struct {
 	changesMu      sync.Mutex
 	changesWaiters map[string]int
 	changesWaiting int
-	handler        http.Handler
+	// changesPruneHook, when set, runs between the mark read and the row read of one feed snapshot; a test uses it
+	// to land a prune there. Nil in production.
+	changesPruneHook func()
+	handler          http.Handler
 	// copySyncNodes is the largest copy made in the request; see syncCopyNodes.
 	copySyncNodes int
 	// copyYield is how long a chunked copy runs before it yields its turn to the queue (copyBatches). A test lowers it.

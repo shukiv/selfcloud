@@ -6255,17 +6255,20 @@ paths:
         node's latest row. An entry carries the node as `GET /nodes/{nod}` answers it while it is live, and
         `removed` with no node once it is gone, trashed, below a trashed folder, or (in a space feed) has left
         the space. `relist` marks a restore whose children's own rows did not change, so the client re-lists
-        the folder. The cursor advances to the last raw row read; `has_more` says rows remain after it.
+        the folder. The account feed skips the rows of staged folders, which are not reported until publish,
+        while the cursor still advances past them. The cursor advances to the last raw row read; `has_more`
+        says rows remain after it.
 
-        `cursor` must name the feed the request reads (the space, or the account); a cursor of another feed,
-        or one that cannot be decoded, is `invalid_request`. A cursor whose seq fell below the prune mark is
-        `gone` with `details.reason` `reset`: start again. The space and account feeds are reached as for
-        `/changes/start`.
+        `cursor` is an opaque sealed token: it shows no feed id or seq, and opens only for the feed it names.
+        A cursor that does not open (another feed, a rotated signing key, a malformed body), one whose seq is
+        above the journal's head, or one whose seq fell below the prune mark is `gone` with `details.reason`
+        `reset`: start again. The space and account feeds are reached as for `/changes/start`.
 
         With `wait` above 0 the read holds until a write commits, the wait elapses, the client goes, or the
         server begins to shut down, re-reading at most every 250 ms; it answers empty at the deadline with the
-        cursor unchanged. A caller holds at most four waits at once, and the server holds at most
-        `changes.max_waiters` in total; a wait beyond either cap answers at once. Each caller is rate limited.
+        cursor unchanged. A caller holds at most four waits at once, counted against the end user behind a
+        delegated token, and the server holds at most `changes.max_waiters` in total; a wait beyond either cap
+        answers at once with `Retry-After: 5`. Each caller is rate limited.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: space
@@ -7753,7 +7756,7 @@ components:
       type: object
       required: [cursor]
       properties:
-        cursor: { type: string, description: The starting cursor, naming the feed and the journal's head. }
+        cursor: { type: string, description: The starting cursor, an opaque sealed token naming the journal's head. }
 
     ChangeEntry:
       type: object
@@ -7779,7 +7782,7 @@ components:
           type: array
           description: One entry per node, ordered by the node's latest row. Never null.
           items: { $ref: "#/components/schemas/ChangeEntry" }
-        cursor: { type: string, description: The cursor after the last raw row read; unchanged when the page is empty. }
+        cursor: { type: string, description: The cursor after the last raw row read, an opaque sealed token; unchanged when the page is empty. }
         has_more: { type: boolean, description: True when rows remain after the cursor. }
 
     PlayedItem:
