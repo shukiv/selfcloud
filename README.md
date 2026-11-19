@@ -232,14 +232,18 @@ as a network drive. It lists folders and reads files; it never writes, renames o
 refused with `405` (decision 236).
 
 Sign in with an **app password**, made in the web interface on the person's own session. The secret is shown once,
-when it is made, and only its hash is kept, as an API key's is. A person holds at most 20, and revoking one stops it
-at once. The mount takes the app password as the Basic password (the user name is ignored), over HTTPS or from the
-same machine; the person's real password is never accepted here. A delegated or device token works as a Bearer token
-too.
+when it is made, and only its hash is kept, as an API key's is. A person holds at most 20; revoking one deletes it and
+stops it at once, and listing and revoking keep working even with the mount turned off, so a leaked password can
+always be ended. An app password also stops working when the person's password is changed or reset, or their sessions
+and tokens are revoked. The mount takes the person's email as the Basic user name and the app password as the Basic
+password, over HTTPS or from the same machine; the person's real password is never accepted here. A delegated or
+device token works as a Bearer token too.
 
 The mount shows the person's My files, the team spaces they reach, and a "Shared with me" folder of the items shared
-with them; shortcuts are left out. Failed sign-ins are bounded per address and per app password, and reads are rate
-limited per user.
+with them that they actually reach; shortcuts are left out. Spaces whose names match ignoring case are told apart by
+a " (2)" suffix. A listing one level deep answers at most 10,000 children; a folder with more is refused with `403`,
+so open a narrower folder. A file read counts as a view, as it does in the web interface. Failed sign-ins are bounded
+per address and per app password (an anonymous probe is not charged), and reads are rate limited per user.
 
 ## Embedding Selfcloud in another application
 
@@ -365,7 +369,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `metrics_on_main` | `false` | Serve `/metrics` on the main listener too. Off by default: `/metrics` shows storage totals, route counts and the webhook queue to anyone who can reach the listener (sec1, decision 84). Ignored when `metrics_listen` is set, which serves it on its own address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
-| `dav.enabled` | `false` | **Off by default.** Turns on the read-only WebDAV mount at `/dav/` and the app passwords that sign in to it (decision 236). Off, `/dav/` and the app-password routes answer `not_found`. |
+| `dav.enabled` | `false` | **Off by default.** Turns on the read-only WebDAV mount at `/dav/` and the making of app passwords that sign in to it (decision 236). Off, `/dav/` and making an app password answer `not_found`; listing and revoking app passwords keep working. |
 | `ui.brand.name` | `SelfCloud` | The installation's name, in the web interface, the page titles, the installed app and `brand.name` in `/api/v1/info`. Up to 64 characters. With no logo, from `logo_file` or an upload, the web interface shows the SelfCloud artwork labelled with this name; set a logo to replace the artwork. |
 | `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
@@ -469,7 +473,7 @@ copy of the code list (`internal/api/textnames.go`): a `PUT` of content to a fil
 
 - **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
 - **The office editor.** `office.enabled` is `false`.
-- **The WebDAV mount.** `dav.enabled` is `false`, so `/dav/` and the app-password routes answer `not_found` until it is turned on.
+- **The WebDAV mount.** `dav.enabled` is `false`, so `/dav/` and making an app password answer `not_found` until it is turned on; listing and revoking app passwords keep working.
 - **Per-user limits.** No account has a default limit for each user (`user_quota_bytes` is `0`), so a user has none
   until the owner or the account key sets one.
 - **Webhooks.** No account has an endpoint until one is created for it.
