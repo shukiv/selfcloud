@@ -35,6 +35,10 @@ func TestSearchQuery(t *testing.T) {
 	q.Set("ext", "txt,pdf,docx")
 	q.Set("modified_after", "1793491200000")
 	q.Set("modified_before", "1796083200000")
+	q.Set("created_after", "1793491200000")
+	q.Set("created_before", "1796083200000")
+	q.Set("starred", "true")
+	q.Set("shared", "true")
 	q.Set("size_min", "67108864")
 	q.Set("size_max", "2147483648")
 	q.Add("label", testFolder+":one")
@@ -44,6 +48,8 @@ func TestSearchQuery(t *testing.T) {
 	res := f.run(Search, "needle", "--in", "content", "--kind", "file", "--type", "pdf",
 		"--ext", "txt,pdf", "--ext", "docx",
 		"--modified-after", "2026-11-01T00:00:00Z", "--modified-before", "2026-12-01T00:00:00Z",
+		"--created-after", "2026-11-01T00:00:00Z", "--created-before", "2026-12-01T00:00:00Z",
+		"--starred", "--shared",
 		"--size-min", "64MiB", "--size-max", "2GiB",
 		"--label", testFolder+":one", "--label", testFolder+":two",
 		"--scope", testDest, "--limit", "10")
@@ -68,6 +74,21 @@ func TestSearchOnlyFilterNeedsNoQuery(t *testing.T) {
 	res := f.run(Search, "--kind", "file")
 	wantCode(t, res, 0)
 	f.wantCalls("GET /api/v1/search?kind=file")
+}
+
+func TestSearchNewestAndCreatedAlone(t *testing.T) {
+	isolate(t, testDeviceTok)
+	f := newFake(t)
+	f.on(http.MethodGet, "/api/v1/search", page("", searchHit(testNode, "a.txt")))
+	res := f.run(Search, "--newest", "--starred")
+	wantCode(t, res, 0)
+	f.wantCalls("GET /api/v1/search?order=newest&starred=true")
+
+	f = newFake(t)
+	f.on(http.MethodGet, "/api/v1/search", page("", searchHit(testNode, "a.txt")))
+	res = f.run(Search, "--shared", "--created-after", "2026-11-01T00:00:00Z")
+	wantCode(t, res, 0)
+	f.wantCalls("GET /api/v1/search?created_after=1793491200000&shared=true")
 }
 
 func TestSearchJSON(t *testing.T) {
@@ -131,6 +152,9 @@ func TestSearchUsage(t *testing.T) {
 		{"limit too big", []string{"q", "--limit", "51"}},
 		{"bad time", []string{"q", "--modified-after", "tomorrow"}},
 		{"time before 1970", []string{"q", "--modified-before", "1969-12-31T23:59:59Z"}},
+		{"bad created time", []string{"q", "--created-after", "tomorrow"}},
+		{"created time before 1970", []string{"q", "--created-before", "1969-12-31T23:59:59Z"}},
+		{"newest alone", []string{"--newest"}},
 		{"bad size", []string{"q", "--size-min", "-1"}},
 		{"bad scope", []string{"q", "--scope", "folder"}},
 		{"two queries", []string{"one", "two"}},
