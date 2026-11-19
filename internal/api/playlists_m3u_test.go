@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/id"
@@ -153,7 +154,7 @@ func TestPlaylistImportSkipReasons(t *testing.T) {
 		"/x.mp3",                    // 8: absolute
 		`\x.mp3`,                    // 9: absolute
 		`C:\x.mp3`,                  // 10: absolute
-		"../../x.mp3",               // 11: outside
+		"../../x.mp3",               // 11: not_found, the climb reaches the root, which ann does not reach
 		"gone.mp3",                  // 12: not_found, missing
 		"../Other/b.mp3",            // 13: not_found, not reached
 		"sub",                       // 14: not_found, a folder
@@ -170,7 +171,7 @@ func TestPlaylistImportSkipReasons(t *testing.T) {
 	want := []m3uSkip{
 		{5, "url"}, {6, "url"}, {7, "url"},
 		{8, "absolute"}, {9, "absolute"}, {10, "absolute"},
-		{11, "outside"},
+		{11, "not_found"},
 		{12, "not_found"}, {13, "not_found"}, {14, "not_found"}, {15, "not_found"},
 		{16, "duplicate"},
 	}
@@ -708,5 +709,201 @@ func TestPlaylistExportNotAFolder(t *testing.T) {
 	wantError(t, other, 404, apierr.NotFound)
 	if !sameAnswer(other.Body.String(), missing.Body.String()) {
 		t.Errorf("another user's playlist and a missing one answer differently:\n%s\n%s", other.Body.String(), missing.Body.String())
+	}
+}
+
+// TestPlaylistImportSkipLineOrder: the skipped lines are reported in line order, so the list does not say whether a
+// file the caller cannot reach exists. [Secret.pdf, http://x] gives the same skipped list whether Secret.pdf is there
+// or not: line 1 not_found, line 2 url, in that order.
+func TestPlaylistImportSkipLineOrder(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music")
+	list := putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/list.m3u", "Secret.pdf\nhttp://x\n")
+	fx.setPerm(t, list.ID, fx.ann.ID, "viewer") // the file only: ann reaches neither Music nor Secret.pdf
+	wantStatus(t, plImportCall(t, fx, fx.annSess, list.ID), 201)
+	missing := decode[m3uImportAnswer](t, plImportCall(t, fx, fx.annSess, list.ID))
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/Secret.pdf", "s") // exists now, but ann still does not reach it
+	present := decode[m3uImportAnswer](t, plImportCall(t, fx, fx.annSess, list.ID))
+	want := []m3uSkip{{1, "not_found"}, {2, "url"}}
+	for name, got := range map[string]m3uImportAnswer{"missing": missing, "present": present} {
+		if len(got.Skipped) != len(want) || got.SkippedTotal != len(want) {
+			t.Fatalf("%s: skipped = %+v, total %d, want %+v", name, got.Skipped, got.SkippedTotal, want)
+		}
+		for i, s := range want {
+			if got.Skipped[i] != s {
+				t.Errorf("%s: skip %d = %+v, want %+v", name, i, got.Skipped[i], s)
+			}
+		}
+	}
+}
+
+// TestPlaylistImportUnreachableWalk: a path is resolved without walking through nodes the caller does not reach.
+// name/.. pairs fold as text, so Hidden/../../.. climbs the same whether Hidden exists or not; and a path that goes
+// down through an unreachable folder is not_found even when the file it names is reached. Hidden/../../.. and
+// Hidden/x.mp3 answer alike whether Hidden is there or not.
+func TestPlaylistImportUnreachableWalk(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music")
+	list := putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/list.m3u", "Hidden/../../..\nHidden/x.mp3\n")
+	fx.setPerm(t, list.ID, fx.ann.ID, "viewer") // the file only: Music and any Hidden are out of reach
+	missing := decode[m3uImportAnswer](t, plImportCall(t, fx, fx.annSess, list.ID))
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music/Hidden")
+	x := putNode(t, fx.s, fx.key, fx.fld.ID, "/Music/Hidden/x.mp3", "x")
+	fx.setPerm(t, x.ID, fx.ann.ID, "viewer") // the file only: ann reaches x.mp3 but not the folder Hidden it sits in
+	present := decode[m3uImportAnswer](t, plImportCall(t, fx, fx.annSess, list.ID))
+	want := []m3uSkip{{1, "not_found"}, {2, "not_found"}}
+	for name, got := range map[string]m3uImportAnswer{"missing": missing, "present": present} {
+		if got.Playlist.EntryCount != 0 {
+			t.Errorf("%s: kept %d entries, want none (a reachable file behind an unreachable folder is not_found)", name, got.Playlist.EntryCount)
+		}
+		if len(got.Skipped) != len(want) || got.SkippedTotal != len(want) {
+			t.Fatalf("%s: skipped = %+v, total %d, want %+v", name, got.Skipped, got.SkippedTotal, want)
+		}
+		for i, s := range want {
+			if got.Skipped[i] != s {
+				t.Errorf("%s: skip %d = %+v, want %+v", name, i, got.Skipped[i], s)
+			}
+		}
+	}
+}
+
+// TestPlaylistImportBoundedTime: a 1 MiB file of some 500k one-segment lines imports in bounded time. The first 500
+// distinct files are kept in order; every later path line is limit without a lookup, so the work does not grow with
+// the line count. The duration is measured and logged.
+func TestPlaylistImportBoundedTime(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	fx.s.limits[oneRequestWriteRate] = newLimiter(1 << 20)
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Many")
+	fx.setPerm(t, fx.rootOf(t, fx.fld.ID), fx.ann.ID, "viewer")
+	var b strings.Builder
+	ids := make([]string, 0, maxPlaylistEntries)
+	for i := 0; i < maxPlaylistEntries; i++ {
+		name := "t" + strconv.Itoa(i) + ".mp3"
+		f := putNode(t, fx.s, fx.key, fx.fld.ID, "/Many/"+name, "t")
+		ids = append(ids, f.ID)
+		b.WriteString(name + "\n")
+	}
+	for b.Len() < (1<<20)-2 {
+		b.WriteString("x\n")
+	}
+	content := b.String()
+	lines := strings.Count(content, "\n")
+	list := putNode(t, fx.s, fx.key, fx.fld.ID, "/Many/list.m3u", content)
+	start := time.Now()
+	rec := plImportCall(t, fx, fx.annSess, list.ID)
+	elapsed := time.Since(start)
+	wantStatus(t, rec, 201)
+	got := decode[m3uImportAnswer](t, rec)
+	if got.Playlist.EntryCount != maxPlaylistEntries || len(got.Playlist.Entries) != maxPlaylistEntries {
+		t.Fatalf("entries = %d, want %d", got.Playlist.EntryCount, maxPlaylistEntries)
+	}
+	for i, e := range got.Playlist.Entries {
+		if e.NodeID != ids[i] {
+			t.Fatalf("entry %d = %s, want %s", i, e.NodeID, ids[i])
+		}
+	}
+	if got.SkippedTotal != lines-maxPlaylistEntries {
+		t.Errorf("skipped total %d, want %d (every line past the 500 kept)", got.SkippedTotal, lines-maxPlaylistEntries)
+	}
+	if len(got.Skipped) == 0 || got.Skipped[0] != (m3uSkip{maxPlaylistEntries + 1, "limit"}) {
+		t.Errorf("first skip = %+v, want line %d limit", got.Skipped[0], maxPlaylistEntries+1)
+	}
+	t.Logf("import of %d bytes / %d lines took %s", len(content), lines, elapsed)
+	if elapsed > 30*time.Second {
+		t.Errorf("import took %s, want bounded time (later path lines are limit without a lookup)", elapsed)
+	}
+}
+
+// TestPlaylistExportNameClean: the export cleans the playlist's name before it writes any byte: / and \ become -,
+// invisible and format characters are dropped, and a name that cleans to nothing becomes Playlist. A name the rules
+// still refuse is refused before any byte is written or any write rate charged.
+func TestPlaylistExportNameClean(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "contributor")
+	lists := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Lists")
+	for name, want := range map[string]string{
+		"AC/DC":        "AC-DC.m3u8",
+		"a\\b":         "a-b.m3u8",
+		"Mix\u200b":    "Mix.m3u8",
+		"\u200b\u200c": "Playlist.m3u8",
+	} {
+		pls := plCreate(t, fx, fx.annSess, name)
+		rec := plExportCall(t, fx, fx.annSess, pls, lists.ID)
+		wantStatus(t, rec, 201)
+		if got := decode[m3uExportAnswer](t, rec); got.Node.Name != want {
+			t.Errorf("name of %q = %q, want %q", name, got.Node.Name, want)
+		}
+	}
+	// A name the rules refuse even after cleaning (a lone .) writes no byte and leaves no blob.
+	pls := plCreate(t, fx, fx.annSess, ".")
+	before := blobCount(t, fx.s, fx.acc.ID)
+	wantError(t, plExportCall(t, fx, fx.annSess, pls, lists.ID), 400, apierr.InvalidName)
+	if after := blobCount(t, fx.s, fx.acc.ID); after != before {
+		t.Errorf("blobs after the refused name = %d, want %d (no byte written for a name that fails)", after, before)
+	}
+}
+
+// TestPlaylistExportUrlAbsolutePath: a relative path whose first segment would read back as a url or an absolute path
+// (a C: folder, a file: name) gets ./ in front, so importing the export gives the same entries back.
+func TestPlaylistExportUrlAbsolutePath(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "contributor")
+	lists := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Lists")
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Lists/C:")
+	csong := putNode(t, fx.s, fx.key, fx.fld.ID, "/Lists/C:/song.mp3", "c")
+	filex := putNode(t, fx.s, fx.key, fx.fld.ID, "/Lists/file:x.mp3", "f")
+	pls := plCreate(t, fx, fx.annSess, "Mix")
+	plAdd(t, fx, fx.annSess, pls, csong.ID, 204)
+	plAdd(t, fx, fx.annSess, pls, filex.ID, 204)
+	rec := plExportCall(t, fx, fx.annSess, pls, lists.ID)
+	wantStatus(t, rec, 201)
+	got := decode[m3uExportAnswer](t, rec)
+	want := "#EXTM3U\n#EXTINF:-1,song.mp3\n./C:/song.mp3\n#EXTINF:-1,file:x.mp3\n./file:x.mp3\n"
+	if content := m3uContent(t, fx, fx.annSess, got.Node.ID); content != want {
+		t.Fatalf("content = %q, want %q", content, want)
+	}
+	back := plImportCall(t, fx, fx.annSess, got.Node.ID)
+	wantStatus(t, back, 201)
+	imp := decode[m3uImportAnswer](t, back)
+	if imp.Playlist.EntryCount != 2 || imp.SkippedTotal != 0 {
+		t.Fatalf("round trip = %+v, skipped %d", imp.Playlist, imp.SkippedTotal)
+	}
+	for i, wantID := range []string{csong.ID, filex.ID} {
+		if imp.Playlist.Entries[i].NodeID != wantID {
+			t.Errorf("round trip entry %d = %s, want %s", i, imp.Playlist.Entries[i].NodeID, wantID)
+		}
+	}
+}
+
+// TestPlaylistExportMovedTarget: the content is built in one read snapshot; if the target folder's space or parent
+// changes before the write, the export is refused with conflict and reason moved, and no blob is left behind.
+func TestPlaylistExportMovedTarget(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "contributor")
+	lists := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Lists")
+	music := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/Music")
+	a := putNode(t, fx.s, fx.key, fx.fld.ID, "/Lists/a.mp3", "a")
+	pls := plCreate(t, fx, fx.annSess, "Mix")
+	plAdd(t, fx, fx.annSess, pls, a.ID, 204)
+	before := blobCount(t, fx.s, fx.acc.ID)
+	onceBefore(fx.s, func() {
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+lists.ID+"/move", fx.key, map[string]any{"parent": music.ID}), 200)
+	})
+	t.Cleanup(func() { fx.s.beforeWrite = nil })
+	e := wantError(t, plExportCall(t, fx, fx.annSess, pls, lists.ID), 409, apierr.Conflict)
+	if e.Details["reason"] != "moved" {
+		t.Errorf("reason %v, want moved", e.Details["reason"])
+	}
+	if after := blobCount(t, fx.s, fx.acc.ID); after != before {
+		t.Errorf("blobs after the moved refusal = %d, want %d", after, before)
 	}
 }
