@@ -103,12 +103,14 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	ctx := r.Context()
-	// The paths are resolved in one read snapshot, so the lookups never hold the single writer.
+	// The paths are resolved in one read snapshot, so the lookups never hold the single writer. The read keeps only
+	// the first maxImportSkips skips it will report and counts the rest, so a long file holds no skip per line.
 	var kept []importKept
 	var skips []playlistImportSkip
+	var skippedTotal int
 	err = s.store.Read(ctx, func(q store.Querier) error {
 		var err error
-		kept, skips, err = resolveImportPaths(ctx, q, p, file.ParentID, text)
+		kept, skips, skippedTotal, err = resolveImportPaths(ctx, q, p, file.ParentID, text, s.importResolveLookup)
 		return err
 	})
 	if err != nil {
@@ -134,6 +136,7 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 			return err
 		}
 		skips = append(skips, more...)
+		skippedTotal += len(more)
 		for _, k := range hold {
 			entries = append(entries, store.PlaylistEntry{ID: id.New("ple"), PlaylistID: pl.ID, NodeID: k.node, Position: len(entries)})
 		}
@@ -147,14 +150,14 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) er
 			pl.EntryCount = len(entries)
 		}
 		return s.playlistAudit(ctx, tx, r, p, p.AccountID, "playlist.create", pl.ID,
-			map[string]any{"via": "import", "count": len(entries), "skipped": len(skips)})
+			map[string]any{"via": "import", "count": len(entries), "skipped": skippedTotal})
 	})
 	if err != nil {
 		return err
 	}
-	// The skips are reported in line order, capped at the first maxImportSkips; the total is exact.
+	// The read's first maxImportSkips skips and the re-check's are merged (at most maxImportSkips +
+	// maxPlaylistEntries records), reported in line order and capped at the first maxImportSkips; the total is exact.
 	sort.SliceStable(skips, func(i, j int) bool { return skips[i].Line < skips[j].Line })
-	skippedTotal := len(skips)
 	if len(skips) > maxImportSkips {
 		skips = skips[:maxImportSkips]
 	}
@@ -260,17 +263,24 @@ type importResolved struct {
 }
 
 // resolveImportPaths resolves every path line of the file in one read snapshot, off the writer, and returns the kept
-// entries in line order and the skipped lines (uncapped, in line order). name/.. pairs fold as text so only leading ..
-// steps climb; every folder a path climbs to or goes down through must be reached, read in one batch per path and
-// cached, so a repeated path costs no further query. Once maxPlaylistEntries entries are kept, later path lines are
-// limit without a lookup. A line is skipped not_found for a segment that does not resolve, a folder or file the caller
-// does not reach, a folder or shortcut target alike; outside only when every ancestor climbed is reached and the climb
-// passes the space's root. The reasons answer alike for every cause they cover, so the answer does not say whether a
-// hidden file exists.
-func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal, parentID, text string) ([]importKept, []playlistImportSkip, error) {
+// entries in line order, the first maxImportSkips skipped lines in line order and the whole skip count. name/.. pairs
+// fold as text so only leading .. steps climb; every folder a path climbs to or goes down through must be reached, read
+// in one batch per path and cached, so a repeated path costs no further query. Once maxPlaylistEntries entries are kept,
+// later path lines are limit without a lookup. A line is skipped not_found for a segment that does not resolve, a folder
+// or file the caller does not reach, a folder or shortcut target alike; outside only when every ancestor climbed is
+// reached and the climb passes the space's root. The reasons answer alike for every cause they cover, so the answer does
+// not say whether a hidden file exists. lookup, when set, is called on each Child/Node lookup the resolve makes (tests
+// only); reach is read in one batch per path and cached, so it is not counted.
+func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal, parentID, text string, lookup func()) ([]importKept, []playlistImportSkip, int, error) {
+	hit := func() {
+		if lookup != nil {
+			lookup()
+		}
+	}
+	hit()
 	parent, err := store.NodeIn(ctx, q, p.AccountID, parentID)
 	if err != nil {
-		return nil, nil, storeErr(err)
+		return nil, nil, 0, storeErr(err)
 	}
 	within := ""
 	if p.Token != nil {
@@ -284,6 +294,7 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 		if n, ok := nodes[id]; ok {
 			return n, nil
 		}
+		hit()
 		n, err := store.NodeIn(ctx, q, p.AccountID, id)
 		if errors.Is(err, store.ErrNotFound) {
 			nodes[id] = nil
@@ -300,6 +311,7 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 		if n, ok := children[k]; ok {
 			return n, nil
 		}
+		hit()
 		n, err := store.ChildIn(ctx, q, p.AccountID, parentID, key)
 		if errors.Is(err, store.ErrNotFound) {
 			children[k] = nil
@@ -437,7 +449,16 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 		return ""
 	}
 	var kept []importKept
-	skips := make([]playlistImportSkip, 0)
+	// The read pass meets the lines in order, so it keeps the first maxImportSkips skips it will report and counts
+	// the rest; a long file holds no skip record per line. The whole count stays exact.
+	skips := make([]playlistImportSkip, 0, maxImportSkips)
+	skipped := 0
+	skip := func(line int, reason string) {
+		skipped++
+		if len(skips) < maxImportSkips {
+			skips = append(skips, playlistImportSkip{Line: line, Reason: reason})
+		}
+	}
 	seen := make(map[string]bool)
 	for i, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSuffix(raw, "\r")
@@ -446,15 +467,15 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 		}
 		switch {
 		case m3uURL(line):
-			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "url"})
+			skip(i+1, "url")
 			continue
 		case m3uAbsolute(line):
-			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "absolute"})
+			skip(i+1, "absolute")
 			continue
 		}
 		// Once the playlist is full, a later path line is limit without a lookup.
 		if len(kept) >= maxPlaylistEntries {
-			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "limit"})
+			skip(i+1, "limit")
 			continue
 		}
 		res, ok := paths[line]
@@ -462,25 +483,25 @@ func resolveImportPaths(ctx context.Context, q store.Querier, p *auth.Principal,
 			var err error
 			res, err = resolve(line)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 			paths[line] = res
 		}
 		if err := reachFor(res); err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		if r := reason(res); r != "" {
-			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: r})
+			skip(i+1, r)
 			continue
 		}
 		if seen[res.nodeID] {
-			skips = append(skips, playlistImportSkip{Line: i + 1, Reason: "duplicate"})
+			skip(i+1, "duplicate")
 			continue
 		}
 		seen[res.nodeID] = true
 		kept = append(kept, importKept{line: i + 1, node: res.nodeID})
 	}
-	return kept, skips, nil
+	return kept, skips, skipped, nil
 }
 
 // playlistImportName is the playlist's name from the file's: without its extension, cut to maxPlaylistNameRunes

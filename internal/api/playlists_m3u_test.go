@@ -839,9 +839,10 @@ func TestPlaylistImportUnreachableWalk(t *testing.T) {
 	}
 }
 
-// TestPlaylistImportBoundedTime: a 1 MiB file of some 500k one-segment lines imports in bounded time. The first 500
-// distinct files are kept in order; every later path line is limit without a lookup, so the work does not grow with
-// the line count. The duration is measured and logged.
+// TestPlaylistImportBoundedTime: a 1 MiB file of some 500k one-segment lines imports with a bounded number of store
+// lookups, counted rather than timed. The first 500 distinct files are kept in order; every later path line is limit
+// without a lookup, so the resolve's lookups do not grow with the line count. The duration is measured and logged,
+// with no wall-clock bound.
 func TestPlaylistImportBoundedTime(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
@@ -862,6 +863,9 @@ func TestPlaylistImportBoundedTime(t *testing.T) {
 	content := b.String()
 	lines := strings.Count(content, "\n")
 	list := putNode(t, fx.s, fx.key, fx.fld.ID, "/Many/list.m3u", content)
+	lookups := 0
+	fx.s.importResolveLookup = func() { lookups++ }
+	t.Cleanup(func() { fx.s.importResolveLookup = nil })
 	start := time.Now()
 	rec := plImportCall(t, fx, fx.annSess, list.ID)
 	elapsed := time.Since(start)
@@ -878,12 +882,16 @@ func TestPlaylistImportBoundedTime(t *testing.T) {
 	if got.SkippedTotal != lines-maxPlaylistEntries {
 		t.Errorf("skipped total %d, want %d (every line past the 500 kept)", got.SkippedTotal, lines-maxPlaylistEntries)
 	}
-	if len(got.Skipped) == 0 || got.Skipped[0] != (m3uSkip{maxPlaylistEntries + 1, "limit"}) {
+	if len(got.Skipped) != maxImportSkips {
+		t.Fatalf("skipped %d lines, want %d", len(got.Skipped), maxImportSkips)
+	}
+	if got.Skipped[0] != (m3uSkip{maxPlaylistEntries + 1, "limit"}) {
 		t.Errorf("first skip = %+v, want line %d limit", got.Skipped[0], maxPlaylistEntries+1)
 	}
-	t.Logf("import of %d bytes / %d lines took %s", len(content), lines, elapsed)
-	if elapsed > 30*time.Second {
-		t.Errorf("import took %s, want bounded time (later path lines are limit without a lookup)", elapsed)
+	t.Logf("import of %d bytes / %d lines took %s, %d store lookups", len(content), lines, elapsed, lookups)
+	if lookups > maxPlaylistEntries+10 {
+		t.Errorf("import made %d store lookups, want at most %d (the 500 kept files and the one cached x path; later path lines are limit without a lookup)",
+			lookups, maxPlaylistEntries+10)
 	}
 }
 

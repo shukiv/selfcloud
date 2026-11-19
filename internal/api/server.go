@@ -199,6 +199,9 @@ type Server struct {
 	importYield time.Duration
 	// importNow, when set, is the clock a turn of an import reads for its window (tests only); nil reads the wall clock.
 	importNow func() time.Time
+	// importResolveLookup, when set, is called on each Child/Node lookup a playlist import's resolve makes (tests
+	// only); reach is read in one batch per path and cached, so it is not counted here. Nil in production.
+	importResolveLookup func()
 	// activityCeiling, when set, replaces the most audit rows one activity read looks at (tests only).
 	activityCeiling int
 	// activityWalks, when set, replaces the most distinct people one activity read walks for reach (tests only).
