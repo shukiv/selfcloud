@@ -91,9 +91,13 @@ async function clickRow(page, region, name) {
   await page.evaluate(`document.querySelector(${q(rowSel(region, name))})?.click()`);
 }
 
-// clickDetail presses one of the detail header's buttons by its text (Play, Shuffle and play, Rename, Delete).
+// clickDetail presses one of the detail header's buttons by its text (Play, Shuffle and play, Rename, Delete). Picking a
+// playlist reads its detail again, and until it is read the heading already shows the name while Rename and Delete are
+// disabled, where a click does nothing; so it waits for the button to be enabled first.
 async function clickDetail(page, text) {
-  await page.evaluate(`[...document.querySelectorAll('.media-pl-actions button')].find((b) => b.textContent.trim() === ${q(text)})?.click()`);
+  const button = `[...document.querySelectorAll('.media-pl-actions button')].find((b) => b.textContent.trim() === ${q(text)})`;
+  await until(page, `(() => { const b = ${button}; return !!b && !b.disabled; })()`, 10000, `the ${text} button`);
+  await page.evaluate(`${button}?.click()`);
 }
 
 // realClickEl sends a real mouse click at the element the expression names, the way Chrome sends it for a person. A play
