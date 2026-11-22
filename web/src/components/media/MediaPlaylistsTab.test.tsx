@@ -842,7 +842,7 @@ describe("the Playlists tab's Import", () => {
     });
     await waitFor(() => expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists&list=pls_imp"));
     expect(await screen.findByRole("region", { name: "Mix" })).toBeTruthy();
-    expect(await screen.findByText("2 lines were skipped")).toBeTruthy();
+    expect(await screen.findByText("4 lines were skipped")).toBeTruthy();
     expect(screen.queryByTestId("pick-mock")).toBeNull();
   });
 
@@ -877,10 +877,10 @@ describe("the Playlists tab's Import", () => {
     act(() => {
       (pick.props as unknown as PickProps).onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
     });
-    expect(await screen.findByText("2 lines were skipped")).toBeTruthy();
+    expect(await screen.findByText("4 lines were skipped")).toBeTruthy();
     fireEvent.click(row("Road trip"));
     await screen.findByRole("region", { name: "Road trip" });
-    expect(screen.queryByText("2 lines were skipped")).toBeNull();
+    expect(screen.queryByText("4 lines were skipped")).toBeNull();
   });
 
   it("a second import waits for the first, so one file makes one playlist", async () => {
