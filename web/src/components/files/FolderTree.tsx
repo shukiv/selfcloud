@@ -187,11 +187,12 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
             aria-label={open ? t("files.tree.collapse", { name }) : t("files.tree.expand", { name })}
             onClick={toggle}
             icon={open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight className="icon-dir" size={14} aria-hidden="true" />}
-            style={{ flex: "none", minInlineSize: arrow, minBlockSize: arrow, padding: 0, color: textColour }}
+            style={{ flex: "none", minInlineSize: arrow, minBlockSize: arrow, padding: 0, color: textColour, transition: "none" }}
           />
         ) : (
           <span aria-hidden="true" style={{ flex: "none", inlineSize: arrow }} />
         )}
+        {/* antd's link transition would fade the text over a fill that changes at once: no transition, so the text and icon change with the fill. */}
         <a
           href={id ? `/files/${space}/${id}` : `/files/${space}`}
           tabIndex={-1}
@@ -204,7 +205,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
             if (e.detail > 1) return;
             ctx.onOpen(space, id);
           }}
-          style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minInlineSize: 0, minBlockSize: link, color: "inherit", textDecoration: "none" }}
+          style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minInlineSize: 0, minBlockSize: link, color: "inherit", textDecoration: "none", transition: "none" }}
         >
           {/* The icon is the sidebar's (18 px, as the menu's), and the name follows it 10 px on: the same columns as the menu rows (decision 66). */}
           <Folder size={18} strokeWidth={1.75} aria-hidden="true" style={{ flex: "none" }} />
