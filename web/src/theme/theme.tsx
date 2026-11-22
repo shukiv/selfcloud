@@ -142,8 +142,8 @@ export function antdTokens(mode: Mode, p: Palette, sb: Sidebar): ThemeConfig {
         darkItemColor: sb.text,
         darkItemHoverBg: SIDEBAR.hover,
         darkItemHoverColor: sb.text,
-        // The current top-level place is filled with the sidebar's active colour and its on-active text (decision 72), as the tree's
-        // top-level row is (index.css, FolderTree). A deeper folder keeps the bar (currentMark).
+        // The current place is filled with the sidebar's active colour and its on-active text (decisions 72 and 239), as the tree's
+        // current row is at every depth (index.css, FolderTree).
         darkItemSelectedBg: sb.active,
         darkItemSelectedColor: sb.onActive,
         darkGroupTitleColor: sb.caption,

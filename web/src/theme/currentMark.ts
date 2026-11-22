@@ -3,24 +3,23 @@
 import { contrast } from "../lib/brand";
 import type { Sidebar } from "./tokens";
 
-// The current place in the sidebar (decision 69, the owner's option B): no background on the row, a 3 px bar at its start edge, and
-// the row's text and icon in the same colour. This is the one definition the folder tree, the menu (its theme and its stylesheet)
-// and the folded rail read, so they look alike.
+// The sidebar's mark colours (decision 69, the owner's option B). The current place itself is now filled inline with the active
+// colour at every depth (decisions 72 and 239), so the folder tree and the menu no longer read a bar from here. What remains serves
+// the group tint's row text (ink, theme/groupTint.ts) and the storage block's focus ring (bar, --sc-side-mark in index.css).
 //
 // The colours follow WCAG: the text needs 4.5:1 and the bar 3:1 against the sidebar. The text is also checked on the hover tint
-// (SIDEBAR.hover, white at 10%, drawn over the sidebar), because the current row keeps its mark colour when it is hovered. The text
-// takes the sidebar's `active` colour when that reads on both; otherwise the sidebar's text colour when that does; otherwise the
-// colour (white or black) that reads best on the weaker of the sidebar and its tint. The bar is `active` when it reaches 3:1 on the
-// sidebar, else the text.
+// (SIDEBAR.hover, white at 10%, drawn over the sidebar). The text takes the sidebar's `active` colour when that reads on both;
+// otherwise the sidebar's text colour when that does; otherwise the colour (white or black) that reads best on the weaker of the
+// sidebar and its tint. The bar is `active` when it reaches 3:1 on the sidebar, else the text.
 export const MARK_TEXT_MIN = 4.5;
 export const MARK_BAR_MIN = 3;
 // The hover tint of a row: SIDEBAR.hover (white at 10%).
 const HOVER_WHITE = 0.1;
 
 export interface CurrentMark {
-  // ink is the current row's text and icon.
+  // ink is the text colour that reads on the sidebar and its hover tint (the group tint's rows).
   ink: string;
-  // bar is the 3 px bar at the start edge.
+  // bar is the colour that reads at 3:1 on the sidebar (the storage block's focus ring).
   bar: string;
 }
 

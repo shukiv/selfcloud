@@ -226,7 +226,7 @@ const CUT_OPACITY = 0.5;
 // TILE_MIN_PX is the narrowest a tile is in the tile view. At 1920 wide the listing is 1600 pixels beside the sidebar, which
 // gives five columns of 260 pixels and a gap of 12; a 320 pixel window still fits one column.
 const TILE_MIN_PX = 260;
-// PREVIEW_H_PX is the height of a file card's preview: the same for every card, so the cards of a row are one height.
+// PREVIEW_H_PX is the height of a card's preview: the same for every tile, a folder's or a file's, so the tiles of a row are one height.
 const PREVIEW_H_PX = 120;
 // ROW_ICON_PX is the width of one of a row's icon buttons. The row end keeps room for four icons and the More button, so a row
 // does not move when its icons appear.
@@ -688,14 +688,12 @@ function actsSig(acts: RowAct[]): string {
   return acts.map((a) => `${a.key}${a.enabled ? "+" : "-"}${a.label}`).join("|");
 }
 
-// TypeIcon is a file's type icon, which keeps its size when the name is long. A folder's chip shows the selection badge on it
-// (badgeSize); a file's card shows the badge on its preview instead, so its name-row icon has none.
-function TypeIcon({ n, badgeSize, selected, visitor }: { n: Node; badgeSize?: number; selected: boolean; visitor: boolean }) {
-  const { token } = antdTheme.useToken();
+// TypeIcon is a tile's name-row type icon, which keeps its size when the name is long. The selection badge sits on the card's
+// preview instead, so the name-row icon has none (decision 239).
+function TypeIcon({ n }: { n: Node }) {
   return (
     <span style={{ position: "relative", display: "inline-flex", flex: "none" }}>
       <Icon kind={kindOf(n)} size={20} colour={n.color} node={n} />
-      {badgeSize !== undefined && selected && !visitor && <CheckBadge size={badgeSize} ring={token.colorPrimaryBg} pos={{ insetBlockStart: -3, insetInlineStart: -3 }} />}
     </span>
   );
 }
@@ -739,15 +737,14 @@ function rowDomAttrs(n: Node, selected: boolean, focused: boolean, RH: RowHandle
 }
 
 interface TileProps extends FileCellProps {
-  kind: "chip" | "card";
   focused: boolean;
   cut: boolean;
   scrollMarginTop: number;
   RH: RowHandlers;
 }
 
-// FileTile is a tile of the tile view: a folder's chip or a file's card, with its box, its state and its content.
-const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
+// FileTile is a tile of the tile view: a card, a folder's or a file's alike (decision 239), with its box, its state and its content.
+const FileTile = memo(function FileTile({ n, selected, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
   const { token } = antdTheme.useToken();
   const outer = {
     position: "relative" as const,
@@ -763,31 +760,6 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
     scrollMarginTop,
     opacity: cut ? CUT_OPACITY : undefined,
   };
-  if (kind === "chip") {
-    return (
-      <div
-        {...rowDomAttrs(n, selected, focused, RH, visitor)}
-        role="option"
-        style={{
-          ...outer,
-          alignItems: "center",
-          gap: 6,
-          minHeight: coarse ? 44 : 40,
-          paddingInlineStart: 10,
-          paddingInlineEnd: 4,
-          boxSizing: "border-box",
-          background: selected ? token.colorPrimaryBg : undefined,
-        }}
-      >
-        <TypeIcon n={n} badgeSize={17} selected={selected} visitor={visitor} />
-        <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
-        <KindMarks node={n} />
-        {!visitor && <StarMark node={n} />}
-        {visitor ? <RowActIcons n={n} tab={focused ? 0 : -1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
-        <RenameError error={renaming ? renameError : null} />
-      </div>
-    );
-  }
   return (
     <div
       {...rowDomAttrs(n, selected, focused, RH, visitor)}
@@ -800,14 +772,15 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
-        <TypeIcon n={n} selected={selected} visitor={visitor} />
+        <TypeIcon n={n} />
         <OneLine n={n} renaming={renaming} renameValue={renameValue} renameError={renameError} H={H} />
         {!visitor && <StarMark node={n} />}
         {visitor ? <RowActIcons n={n} tab={focused ? 0 : -1} H={H} /> : <FileMore n={n} tab={-1} H={H} />}
       </div>
       {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
-          there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. A visitor's
-          tile shows the type icon alone (pb1): a thumbnail is asked for on a signed-in endpoint the visitor cannot reach. */}
+          there is one; the rest show the type's icon on a tinted area, a folder's card its folder icon (decision 239). The play
+          mark and the star sit in its corners. A visitor's tile shows the type icon alone (pb1): a thumbnail is asked for on a
+          signed-in endpoint the visitor cannot reach. */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
         {thumbable(n) && !visitor ? (
           <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />} />
@@ -1831,17 +1804,15 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const folders = p.items.filter((n) => n.kind === "dir");
   const files = p.items.filter((n) => n.kind !== "dir");
   const band = { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${TILE_MIN_PX}px), 1fr))`, gap: 12 } as const;
-  // A folder's chip or a file's card: a memoised tile, drawn again only when its own state changes.
-  const tile = (n: Node, kind: "chip" | "card") => (
-    <FileTile key={n.id} kind={kind} focused={p.focusID === n.id} cut={p.cutIDs?.has(n.id) ?? false} scrollMarginTop={scrollMarginTop} RH={RH} {...contentOf(n)} />
+  // Every tile is a card, a folder's or a file's alike (decision 239): a memoised tile, drawn again only when its own state changes.
+  const tile = (n: Node) => (
+    <FileTile key={n.id} focused={p.focusID === n.id} cut={p.cutIDs?.has(n.id) ?? false} scrollMarginTop={scrollMarginTop} RH={RH} {...contentOf(n)} />
   );
-  const chip = (n: Node) => tile(n, "chip");
-  const card = (n: Node) => tile(n, "card");
   return (
     // The padding is the gutter a rubber band starts in, as the grid had before the bands.
     <div role="listbox" aria-label={p.label} aria-multiselectable={visitor ? "false" : "true"} tabIndex={-1} ref={setRegion} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
-      {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
-      {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
+      {folders.length > 0 && <div role="presentation" style={band}>{folders.map(tile)}</div>}
+      {files.length > 0 && <div role="presentation" style={band}>{files.map(tile)}</div>}
     </div>
   );
 }

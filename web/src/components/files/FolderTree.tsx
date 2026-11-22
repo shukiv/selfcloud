@@ -12,7 +12,6 @@ import { fileErrorText } from "../../lib/files/fileErrors";
 import { loadDirs } from "../../lib/files/treeLoad";
 import { touchExpanded, withExpanded, type TreeState } from "../../lib/files/treeState";
 import { clearFailure, closedFor, currentSerial, failureSeenIn, holdClose, holdOpen, noteFailure, startPlace } from "../../lib/files/treeHold";
-import { currentMark } from "../../theme/currentMark";
 import { groupColours } from "../../theme/groupTint";
 import { sidebarRow } from "../../theme/sidebarRow";
 import type { FolderAccess } from "../../lib/files/types";
@@ -39,7 +38,7 @@ export interface FolderTreeProps {
   // top is the folder the person reaches the place by when the space's own root is not theirs (they were given a folder below
   // it): the tree starts there, in place of the space's root, and only shows what the person can reach.
   top?: { id: string; name: string; role: string | undefined };
-  // colours are the sidebar's, when the tree sits in the sidebar: the text, and the mark colour of the current folder (a bar, no background).
+  // colours are the sidebar's, when the tree sits in the sidebar: the text, and the fill of the current folder (the active colour, decision 239).
   colours?: Sidebar;
   // spaceLabel and spaceEnd add to a space's own row: a tag after its name, and a control at its end (the team's options).
   spaceLabel?: (s: FolderAccess) => ReactNode;
@@ -109,13 +108,10 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const arrow = row ? row.indent : ctx.coarse ? 44 : 24;
   const link = ctx.coarse ? 44 : 28;
   const toggle = () => ctx.setOpen(key, !open);
-  // The current place (decision 69, option B) has no background: a bar at the row's start edge, and its text and icon in the
-  // mark colour, the same as the menu's selected item (theme/currentMark.ts). The others keep the sidebar's text.
-  const mark = side ? currentMark(side) : null;
-  // A top-level place (a space or a top folder, level 1) is filled with the sidebar's active colour and its on-active text, with no
-  // bar (decision 72). A deeper place keeps the bar.
-  const filled = side !== undefined && level === 1 && current;
-  const textColour = side ? (filled ? side.onActive : current && mark ? mark.ink : side.text) : undefined;
+  // The current place is filled with the sidebar's active colour and its on-active text, at every depth (decisions 69, 72 and
+  // 239), the same as the menu's selected item, with no bar. The others keep the sidebar's text.
+  const filled = side !== undefined && current;
+  const textColour = side ? (filled ? side.onActive : side.text) : undefined;
   // The tint of the group under a space's root (decision 93): only the sidebar's, and only the root's group (id null).
   const colours = side && id === null ? groupColours(side) : undefined;
   const tint = colours?.tint;
@@ -144,7 +140,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
       style={{ listStyle: "none", outline: "none" }}
     >
       <div
-        className={side ? (filled ? "tree-row tree-row-side side-current-full" : current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
+        className={side ? (filled ? "tree-row tree-row-side side-current-full" : "tree-row tree-row-side") : "tree-row"}
         // A double click (a pointer's gesture) opens a folder with subfolders in the tree, so they show (decision 93), as its arrow does. A
         // double click on the arrow is the arrow's own (it toggles on each click), and an open folder stays open.
         // The second press of a double click would select the word under the pointer: the row is a control, so that press does not start a

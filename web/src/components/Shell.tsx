@@ -509,7 +509,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-side-text": sidebar.text,
           "--sc-side-active": sidebar.active,
           "--sc-side-on-active": sidebar.onActive,
-          // The current place's bar and the hover tint of the rows (decision 69): the menu's own hover, and the mark from currentMark.
+          // The mark colours from currentMark (decision 69): the storage block's focus ring (--sc-side-mark) and the group tint's
+          // row text (--sc-side-ink), plus the menu's own hover tint. The current place itself is filled inline (decision 239).
           "--sc-side-mark": currentMark(sidebar).bar,
           "--sc-side-ink": currentMark(sidebar).ink,
           "--sc-side-hover": sidebar.hover,

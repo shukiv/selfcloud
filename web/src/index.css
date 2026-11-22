@@ -229,8 +229,8 @@ a {
   border-color: var(--sc-side-on-active, #0d2142);
 }
 
-/* A folder row in the sidebar's tree takes the sidebar's hover tint, the menu's own (decision 69): the current folder too. The
-   sidebar's rows have no background of their own when they are current; their mark is the bar below. */
+/* A folder row in the sidebar's tree takes the sidebar's hover tint, the menu's own (decision 69). The current folder is filled
+   inline with the active colour (decision 239), so its hover keeps the fill rather than taking this tint. */
 .tree-row-side {
   position: relative;
 }
@@ -318,34 +318,24 @@ a {
   color: var(--sc-crumb-ink, currentcolor);
 }
 
-/* A deeper current folder in the sidebar (decision 69, option B; decision 72): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
-   rule for the folder tree's current row and the menu's selected item, so the two look alike; the colour and the text are set by
-   currentMark (theme/currentMark.ts). The menu's inline indicator (antd's ::after) is not drawn: the bar replaces it. */
-.shell-sider-body .side-current::before {
-  content: "";
-  position: absolute;
-  inset-block: 7px;
-  inset-inline-start: 0;
-  inline-size: 3px;
-  border-radius: 2px;
-  background: var(--sc-side-mark, #fecc00);
-}
+/* The menu's inline indicator (antd's ::after) is not drawn: the selected item is filled with the active colour instead
+   (decisions 72 and 239), as the folder tree's current row is. */
 .shell-menu.ant-menu .ant-menu-item::after {
   display: none;
 }
-/* The selected menu item's text is the mark colour (the same variable the folder tree's current row uses), with no background. */
+/* The selected menu item is filled with the active colour and its text is the on-active colour. */
 .shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected {
   color: var(--sc-side-on-active, #0d2142);
   background: var(--sc-side-active, #fecc00);
   font-weight: 400;
 }
-/* On hover the current item has the same hover tint as every other row, and keeps its mark colour (decision 69, option B). */
+/* On hover the current item keeps its fill and the on-active text (decision 69). */
 .shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected:hover {
   background: var(--sc-side-active, #fecc00);
   color: var(--sc-side-on-active, #0d2142);
 }
-/* A top-level place in the tree (a space, or a top folder) is filled the same way: its fill and text are set inline from the sidebar's
-   colours, so its hover keeps them (decision 72). */
+/* The current place in the tree is filled the same way at every depth (decisions 72 and 239): its fill and text are set inline from
+   the sidebar's colours, so its hover keeps them. */
 .shell-sider-body .side-current-full {
   font-weight: 400;
 }
