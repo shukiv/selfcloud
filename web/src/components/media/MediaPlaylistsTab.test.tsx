@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The Media page's Playlists tab: the person's saved playlists and the automatic Continue watching list, side by side on a
-// desktop and stacked on a phone. The left table lists Continue watching first (its Automatic tag and first-page count) then
-// the saved ones; the address's list= picks the detail. The detail plays its available rows through the page's one session,
-// shows the place and time left for Continue watching, and edits a saved playlist (rename, delete, move, remove) only on the
-// person's action. An unavailable entry is italic, tagged, and never played. The API is replaced at the fetch boundary.
+// desktop and stacked on a phone. The left table lists Continue watching first (its Automatic tag and first-page count),
+// then Recently added, then the saved ones; the address's list= picks the detail. The detail plays its available rows through
+// the page's one session, shows the place and time left for Continue watching, and edits a saved playlist (rename, delete,
+// move, remove) only on the person's action. An unavailable entry is italic, tagged, and never played. The API is replaced at
+// the fetch boundary. Recently added's own checks sit beside these, in MediaPlaylistsRecent.test.tsx.
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -51,6 +52,7 @@ const PLAYLISTS = "/api/v1/playlists";
 const PLAYED = "/api/v1/media/played";
 const TAGS = "/api/v1/media/tags";
 const FOLDERS = "/api/v1/folders";
+const SEARCH = "/api/v1/search";
 
 function signedAs(id: string): Session {
   return {
@@ -133,8 +135,8 @@ function renderTab(onPlay: () => void = () => {}, entry = "/media?tab=playlists"
 const paramsOf = (c: Call) => new URLSearchParams(c.url.split("?")[1] ?? "");
 const row = (name: string) => screen.getByRole("row", { name });
 
-// answers keeps the playlists, the played list, the tags and the folders empty but for what a check gives.
-function answers(opts: { lists?: unknown[]; playedItems?: unknown[]; nextCursor?: string; details?: Record<string, unknown> } = {}) {
+// answers keeps the playlists, the played list, the search, the tags and the folders empty but for what a check gives.
+function answers(opts: { lists?: unknown[]; playedItems?: unknown[]; nextCursor?: string; recentItems?: unknown[]; details?: Record<string, unknown> } = {}) {
   return (c: Call) => {
     if (c.url.startsWith(TAGS)) return { status: 200, body: { items: {} } };
     if (c.url.startsWith(FOLDERS)) return { status: 200, body: { items: [] } };
@@ -143,6 +145,7 @@ function answers(opts: { lists?: unknown[]; playedItems?: unknown[]; nextCursor?
       if (opts.nextCursor) body.next_cursor = opts.nextCursor;
       return { status: 200, body };
     }
+    if (c.url.startsWith(SEARCH)) return { status: 200, body: { items: opts.recentItems ?? [] } };
     if (c.url.startsWith(PLAYLISTS)) {
       const m = /\/api\/v1\/playlists\/([^/?]+)/.exec(c.url);
       if (m && c.method === "GET") {
@@ -172,7 +175,7 @@ afterEach(() => {
 });
 
 describe("the Playlists tab's list", () => {
-  it("lists Continue watching first with its Automatic tag and count, then the saved playlists", async () => {
+  it("lists Continue watching first with its Automatic tag and count, then Recently added, then the saved playlists", async () => {
     const { calls } = stubFetch(
       answers({
         lists: [summary("pls_a", "Evening", 3), summary("pls_b", "Road trip", 12)],
@@ -181,15 +184,17 @@ describe("the Playlists tab's list", () => {
     );
     renderTab();
     const region = await screen.findByRole("region", { name: "Your playlists" });
-    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(3));
+    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(4));
     const rows = Array.from(region.querySelectorAll('tbody tr[role="row"][aria-label]'));
     expect(rows[0]!.textContent).toContain("Continue watching");
     expect(rows[0]!.textContent).toContain("Automatic");
     expect(rows[0]!.textContent).toContain("3");
-    expect(rows[1]!.textContent).toContain("Evening");
-    expect(rows[1]!.textContent).toContain("3");
-    expect(rows[2]!.textContent).toContain("Road trip");
-    expect(rows[2]!.textContent).toContain("12");
+    expect(rows[1]!.textContent).toContain("Recently added");
+    expect(rows[1]!.textContent).toContain("Automatic");
+    expect(rows[2]!.textContent).toContain("Evening");
+    expect(rows[2]!.textContent).toContain("3");
+    expect(rows[3]!.textContent).toContain("Road trip");
+    expect(rows[3]!.textContent).toContain("12");
     const p = paramsOf(calls.find((c) => c.url.startsWith(PLAYED))!);
     expect(p.get("unfinished")).toBe("true");
     expect(p.get("limit")).toBe("50");
@@ -429,12 +434,13 @@ describe("the Playlists tab's rename and delete", () => {
 });
 
 describe("the Playlists tab's empty states", () => {
-  it("with no saved playlists the list keeps only the Continue watching row", async () => {
+  it("with no saved playlists the list keeps only the two automatic rows", async () => {
     stubFetch(answers({ lists: [], playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)] }));
     renderTab();
     const region = await screen.findByRole("region", { name: "Your playlists" });
-    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(1));
+    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(2));
     expect(within(region).getByRole("row", { name: /Continue watching/ })).toBeTruthy();
+    expect(within(region).getByRole("row", { name: /Recently added/ })).toBeTruthy();
     expect(within(region).queryByText("No saved playlists yet. Save the queue to keep it.")).toBeNull();
   });
 

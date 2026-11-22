@@ -2,10 +2,11 @@
 
 // The Media page's Playlists tab (slice mp3), run inside the shared end-to-end run (run.mjs) on the shared page, server and
 // accounts, as the member: the tab sits right after Now playing; the automatic Continue watching lists a file stopped part
-// way with the place and the time left, and plays it through the page's one session; a saved playlist's detail plays, is
-// renamed and deleted through the page (the delete asks first), and an empty detail falls back to Continue watching; the
-// two tables fit a phone with no sideways scroll. Run it alone with SELFCLOUD_E2E_ONLY=mp3. The checks end signed in as the
-// member, which the rest of the run expects; the interface's language and theme and the listing's view are put back afterwards.
+// way with the place and the time left, and plays it through the page's one session; Recently added, the second automatic
+// list, holds the uploaded file at list=recent; a saved playlist's detail plays, is renamed and deleted through the page
+// (the delete asks first), and an empty detail falls back to Continue watching; the two tables fit a phone with no sideways
+// scroll. Run it alone with SELFCLOUD_E2E_ONLY=mp3. The checks end signed in as the member, which the rest of the run
+// expects; the interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,6 +189,16 @@ export async function mp3Checks(h, { page, base }) {
       check(await page.evaluate(`!document.querySelector('[data-testid="media-mini"]')`), 'no mini player beside the page');
       await stopOnPage(page);
       await until(page, `!document.querySelector('audio')`, 10000, 'the session ends');
+    });
+
+    await step('Recently added lists the uploaded file as the second automatic list', async () => {
+      await clickTab(page, 'Playlists');
+      await until(page, `location.search.includes('tab=playlists')`, 10000, 'the Playlists tab');
+      await clickRow(page, 'Your playlists', 'Recently added');
+      await until(page, `location.search.includes('list=recent')`, 10000, 'Recently added in the address');
+      check(await page.evaluate(`[...document.querySelectorAll('.media-pl-head .ant-tag')].some((t) => t.textContent.trim() === 'Automatic playlist')`), 'the detail is tagged Automatic');
+      // The search lists the file once the index holds it; the wait covers the indexing job.
+      await until(page, `!!document.querySelector(${q(rowSel('Recently added', toneName))})`, 15000, 'the uploaded file in Recently added');
     });
 
     await step('the saved playlist’s detail plays its file', async () => {
