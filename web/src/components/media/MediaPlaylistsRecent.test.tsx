@@ -311,7 +311,7 @@ describe("the Playlists tab's Recently added list", () => {
     });
     renderTab(() => {}, "/media?tab=playlists&list=recent");
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("That did not work. Try again.");
+    expect(alert.textContent).toContain("The server had a problem. Try again in a moment.");
     expect(screen.queryByRole("row", { name: "new.webm" })).toBeNull();
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("row", { name: "new.webm" })).toBeTruthy();

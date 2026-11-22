@@ -102,6 +102,24 @@ function mergeRows<T extends { id: string }>(shown: T[], page: T[]): T[] {
   return [...shown, ...page.filter((r) => !seen.has(r.id))];
 }
 
+// newestFirst keeps the PAGE newest files of the two type answers: created_at descending, ties by id, so the cut is stable.
+// The 50 newest of the union are always within the 50 newest of each type, so one page per type is exact.
+function newestFirst(video: SearchHit[], audio: SearchHit[]): SearchHit[] {
+  const seen = new Set<string>();
+  const all: SearchHit[] = [];
+  for (const n of [...video, ...audio]) {
+    if (!seen.has(n.id)) {
+      seen.add(n.id);
+      all.push(n);
+    }
+  }
+  all.sort((a, b) => {
+    const d = Date.parse(b.created_at) - Date.parse(a.created_at);
+    return d !== 0 ? d : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  return all.slice(0, PAGE);
+}
+
 export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const { t, ready } = useMT();
   const { t: mt } = useT();
@@ -136,14 +154,12 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const [playedTick, setPlayedTick] = useState(0);
   const playedSeq = useRef(0);
 
-  // Recently added: the newest video and audio files of the last 30 days, paged. The left count is its first page; the
-  // next pages are read only while the list is chosen.
+  // Recently added: the newest video and audio files of the last 30 days. The search takes one type per ask, so two reads
+  // run at once and their answers merge into the 50 newest; there is no paging, only the note that a type had more.
   const [recent, setRecent] = useState<SearchHit[]>([]);
-  const [recentCursor, setRecentCursor] = useState<string | null>(null);
-  const [recentLoading, setRecentLoading] = useState(true);
+  const [recentTruncated, setRecentTruncated] = useState(false);
   const [recentFirstDone, setRecentFirstDone] = useState(false);
   const [recentErr, setRecentErr] = useState<unknown>(null);
-  const [recentMoreFailed, setRecentMoreFailed] = useState(false);
   const [recentTick, setRecentTick] = useState(0);
   const recentSeq = useRef(0);
 
@@ -220,44 +236,39 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     void loadPlayed(true, null);
   }, [sk, loadPlayed, playedTick]);
 
-  const loadRecent = useCallback(async (reset: boolean, from: string | null) => {
+  const loadRecent = useCallback(async () => {
     const mine = ++recentSeq.current;
-    if (reset) {
-      setRecent([]);
-      setRecentCursor(null);
-      setRecentErr(null);
-      setRecentMoreFailed(false);
-    }
-    setRecentLoading(true);
+    setRecent([]);
+    setRecentTruncated(false);
+    setRecentErr(null);
     try {
-      const p = new URLSearchParams();
-      p.append("type", "video");
-      p.append("type", "audio");
-      p.set("kind", "file");
-      p.set("order", "newest");
-      p.set("limit", String(PAGE));
-      p.set("created_after", String(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
-      if (from !== null) p.set("cursor", from);
-      const page = await searchNodes(p);
+      const after = String(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000);
+      const ask = (type: string) => {
+        const p = new URLSearchParams();
+        p.set("type", type);
+        p.set("kind", "file");
+        p.set("order", "newest");
+        p.set("created_after", after);
+        p.set("limit", String(PAGE));
+        return searchNodes(p);
+      };
+      const [video, audio] = await Promise.all([ask("video"), ask("audio")]);
       if (mine !== recentSeq.current) return;
-      setRecent((prev) => (reset ? page.items : mergeRows(prev, page.items)));
-      setRecentCursor(page.next_cursor ?? null);
+      setRecent(newestFirst(video.items, audio.items));
+      setRecentTruncated(Boolean(video.next_cursor) || Boolean(audio.next_cursor));
       setRecentErr(null);
-      if (!reset) setRecentMoreFailed(false);
     } catch (err) {
       if (mine !== recentSeq.current) return;
-      if (!reset) setRecentMoreFailed(true);
       setRecentErr(err);
     } finally {
       if (mine === recentSeq.current) {
-        setRecentLoading(false);
-        if (reset) setRecentFirstDone(true);
+        setRecentFirstDone(true);
       }
     }
   }, []);
 
   useEffect(() => {
-    void loadRecent(true, null);
+    void loadRecent();
   }, [sk, loadRecent, recentTick]);
 
   // The address's list= picks the detail: Recently added, a saved playlist the person has, else Continue watching. An
@@ -472,11 +483,6 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     void loadPlayed(false, playedCursor);
   };
   const sentinel = useLoadMoreSentinel(isContinue && playedCursor !== null, playedLoading, playedMoreFailed, loadMore);
-  const loadMoreRecent = () => {
-    if (recentCursor === null || recentLoading) return;
-    void loadRecent(false, recentCursor);
-  };
-  const recentSentinel = useLoadMoreSentinel(isRecent && recentCursor !== null, recentLoading, recentMoreFailed, loadMoreRecent);
 
   const detailName = isContinue ? t("media.pl.continue") : isRecent ? t("media.pl.recent") : (detail?.name ?? selectedList?.name ?? "");
   const kind = isContinue || isRecent ? t("media.pl.kindAutomatic") : t("media.pl.kindSaved");
@@ -766,7 +772,6 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         {detailBody()}
 
         {isContinue && playedCursor !== null && <div ref={sentinel} aria-hidden="true" />}
-        {isRecent && recentCursor !== null && <div ref={recentSentinel} aria-hidden="true" />}
         {isContinue && playedCursor !== null && (
           <div style={{ marginBlockStart: 12 }}>
             <Button onClick={loadMore} disabled={playedLoading} style={coarse ? { minHeight: 44 } : undefined}>
@@ -774,11 +779,9 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             </Button>
           </div>
         )}
-        {isRecent && recentCursor !== null && (
+        {isRecent && recentTruncated && (
           <div style={{ marginBlockStart: 12 }}>
-            <Button onClick={loadMoreRecent} disabled={recentLoading} style={coarse ? { minHeight: 44 } : undefined}>
-              {mt("files.loadMore")}
-            </Button>
+            <span className="media-pl-summary">{t("media.pl.recentTruncated")}</span>
           </div>
         )}
       </div>
