@@ -830,7 +830,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             style={{ marginBlockEnd: 12 }}
             message={
               <>
-                {translatePlural(lang, "files.playlists.skipped", note.skipped.length)}{" "}
+                {translatePlural(lang, "files.playlists.skipped", note.skipped_total)}{" "}
                 <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setNoteOpen((v) => !v)}>
                   {t("media.pl.skipDetails")}
                 </Button>
