@@ -36,6 +36,18 @@ vi.mock("../files/PickFiles", async () => {
   };
 });
 
+// The destination picker is a lazy chunk too; its pick is called by hand.
+const dest = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+vi.mock("../files/PickDestination", async () => {
+  const { createElement } = await import("react");
+  return {
+    default: (p: Record<string, unknown>) => {
+      dest.props = p;
+      return createElement("div", { "data-testid": "dest-mock" });
+    },
+  };
+});
+
 interface PickProps {
   title: string;
   action: string;
@@ -45,6 +57,16 @@ interface PickProps {
   multiple?: boolean;
   max?: number;
   onPick: (nodes: Node[]) => void;
+  onClose: () => void;
+}
+
+interface DestProps {
+  mode: string;
+  heading?: string;
+  action?: string;
+  spaces: FolderAccess[];
+  startAt?: string;
+  onPick: (d: { folder: string; dir: string | null; name?: string }) => void;
   onClose: () => void;
 }
 
@@ -104,10 +126,15 @@ const goneEntry = (nodeID: string, i: number) => ({ entry_id: `ple_${nodeID}`, p
 
 function LocationProbe() {
   const loc = useLocation();
-  return <span data-testid="pl-loc">{loc.search}</span>;
+  return (
+    <>
+      <span data-testid="pl-loc">{loc.search}</span>
+      <span data-testid="pl-state">{JSON.stringify(loc.state ?? null)}</span>
+    </>
+  );
 }
 
-function renderTab(onPlay: () => void = () => {}, entry = "/media?tab=playlists") {
+function renderTab(onPlay: () => void = () => {}, entry: string | { pathname: string; search?: string; state?: unknown } = "/media?tab=playlists") {
   return render(
     <QueryClientProvider client={createQueryClient()}>
       <App>
@@ -754,5 +781,325 @@ describe("the Playlists tab's Add files", () => {
     expect(await screen.findByText("That did not work. Try again.")).toBeTruthy();
     await waitFor(() => expect((screen.getByRole("button", { name: "Add files" }) as HTMLButtonElement).disabled).toBe(false));
     expect(calls.filter((c) => c.method === "PUT" && c.url === `${PLAYLISTS}/pls_a/entries`).length).toBe(1);
+  });
+});
+
+// Import reads an .m3u or .m3u8 file into a new playlist (decision 237). The skipped lines are told in a note over the
+// detail, and the Files page hands the same note over in the router state.
+describe("the Playlists tab's Import", () => {
+  const personal: FolderAccess = {
+    id: "fld_mine",
+    name: "My space",
+    kind: "personal",
+    access: "write",
+    role: "manager",
+    members_only: false,
+    sharing_managers_only: false,
+    no_download_for_viewers: false,
+    allow_links: false,
+  };
+  const m3u = (id: string, name: string) => file(id, name, "audio/x-mpegurl");
+  const imported = detailOf("pls_imp", "Mix", [entry(song("nod_i1", "one.mp3"), 0)]);
+  const importAnswer = { playlist: imported, skipped: [{ line: 2, reason: "url" }, { line: 5, reason: "not_found" }], skipped_total: 4 };
+  beforeEach(() => {
+    folders.set([personal]);
+  });
+
+  it("opens the picker on the personal space, for one .m3u or .m3u8 file", async () => {
+    stubFetch(answers({}));
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    expect(p.title).toBe("Import a playlist file");
+    expect(p.action).toBe("Import");
+    expect(p.multiple).toBe(false);
+    expect(p.startAt).toBe("fld_mine");
+    expect(p.spaces.map((s) => s.id)).toContain("fld_mine");
+    expect(p.accept(m3u("nod_m", "mix.m3u8") as unknown as Node)).toBe(true);
+    expect(p.accept(m3u("nod_m2", "mix.M3U") as unknown as Node)).toBe(true);
+    expect(p.accept(song("nod_x", "x.mp3") as unknown as Node)).toBe(false);
+    expect(p.accept({ ...file("nod_d", "d", "text/plain"), kind: "dir" } as unknown as Node)).toBe(false);
+  });
+
+  it("the pick imports the file, selects the new playlist, and tells the skipped lines", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/import`) return { status: 201, body: importAnswer };
+      return answers({ lists: [summary("pls_imp", "Mix", 1)], details: { pls_imp: imported } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    act(() => {
+      (pick.props as unknown as PickProps).onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
+    });
+    await waitFor(() => {
+      const posts = calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/import`);
+      expect(posts.length).toBe(1);
+      expect(posts[0]!.body).toEqual({ node_id: "nod_f" });
+    });
+    await waitFor(() => expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists&list=pls_imp"));
+    expect(await screen.findByRole("region", { name: "Mix" })).toBeTruthy();
+    expect(await screen.findByText("2 lines were skipped")).toBeTruthy();
+    expect(screen.queryByTestId("pick-mock")).toBeNull();
+  });
+
+  it("the details name each skipped line and say how many more there are", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/import`) return { status: 201, body: importAnswer };
+      return answers({ lists: [summary("pls_imp", "Mix", 1)], details: { pls_imp: imported } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    act(() => {
+      (pick.props as unknown as PickProps).onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Show details" }));
+    expect(await screen.findByText("Line 2: a web address")).toBeTruthy();
+    expect(screen.getByText("Line 5: not found, or you cannot open it")).toBeTruthy();
+    expect(screen.getByText("and 2 more")).toBeTruthy();
+  });
+
+  it("the note goes when another playlist is picked", async () => {
+    const other = detailOf("pls_b", "Road trip", []);
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/import`) return { status: 201, body: importAnswer };
+      return answers({ lists: [summary("pls_imp", "Mix", 1), summary("pls_b", "Road trip", 0)], details: { pls_imp: imported, pls_b: other } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    act(() => {
+      (pick.props as unknown as PickProps).onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
+    });
+    expect(await screen.findByText("2 lines were skipped")).toBeTruthy();
+    fireEvent.click(row("Road trip"));
+    await screen.findByRole("region", { name: "Road trip" });
+    expect(screen.queryByText("2 lines were skipped")).toBeNull();
+  });
+
+  it("a second import waits for the first, so one file makes one playlist", async () => {
+    let gate!: () => void;
+    const held = new Promise<void>((res) => (gate = res));
+    const { calls } = stubFetch(async (c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/import`) {
+        await held;
+        return { status: 201, body: importAnswer };
+      }
+      return answers({ lists: [summary("pls_imp", "Mix", 1)], details: { pls_imp: imported } })(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    const p = pick.props as unknown as PickProps;
+    act(() => {
+      p.onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/import`).length).toBe(1));
+    expect((screen.getByRole("button", { name: "Import a playlist file" }) as HTMLButtonElement).disabled).toBe(true);
+    act(() => {
+      p.onPick([m3u("nod_g", "other.m3u") as unknown as Node]);
+    });
+    expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/import`).length).toBe(1);
+    await act(async () => {
+      gate();
+    });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Import a playlist file" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/import`).length).toBe(1);
+  });
+
+  it("an import refusal shows its own sentence", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/import`) return fail(409, "conflict", { reason: "limit" });
+      return answers({})(c);
+    });
+    renderTab();
+    await screen.findByRole("region", { name: "Your playlists" });
+    fireEvent.click(screen.getByRole("button", { name: "Import a playlist file" }));
+    await screen.findByTestId("pick-mock");
+    act(() => {
+      (pick.props as unknown as PickProps).onPick([m3u("nod_f", "mix.m3u8") as unknown as Node]);
+    });
+    expect(await screen.findByText("You have 100 playlists, the most allowed. Delete one before importing another.")).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Import a playlist file" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+});
+
+describe("the import handoff from the Files page", () => {
+  const imported = detailOf("pls_imp", "Mix", [entry(song("nod_i1", "one.mp3"), 0)]);
+
+  it("reads the skipped lines from the router state once, for the playlist the address names, and clears the state", async () => {
+    stubFetch(answers({ lists: [summary("pls_imp", "Mix", 1)], details: { pls_imp: imported } }));
+    renderTab(() => {}, {
+      pathname: "/media",
+      search: "?tab=playlists&list=pls_imp",
+      state: { playlistImport: { skipped: [{ line: 3, reason: "outside" }], skipped_total: 1 } },
+    });
+    expect(await screen.findByText("1 line was skipped")).toBeTruthy();
+    expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists&list=pls_imp");
+    expect(screen.getByTestId("pl-state").textContent).toBe("null");
+  });
+
+  it("keeps no note without the state, and none on Continue watching", async () => {
+    stubFetch(answers({ lists: [summary("pls_imp", "Mix", 1)], details: { pls_imp: imported }, playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)] }));
+    const first = renderTab(() => {}, "/media?tab=playlists&list=pls_imp");
+    await screen.findByRole("region", { name: "Mix" });
+    expect(screen.queryByText("1 line was skipped")).toBeNull();
+    first.unmount();
+    renderTab(() => {}, { pathname: "/media", search: "?tab=playlists", state: { playlistImport: { skipped: [{ line: 3, reason: "outside" }], skipped_total: 1 } } });
+    await screen.findByRole("region", { name: "Continue watching" });
+    expect(screen.queryByText("1 line was skipped")).toBeNull();
+  });
+});
+
+// Export writes a saved playlist as an .m3u8 file into a folder the person picks (decision 237).
+describe("the Playlists tab's Export", () => {
+  const personal: FolderAccess = {
+    id: "fld_mine",
+    name: "My space",
+    kind: "personal",
+    access: "write",
+    role: "manager",
+    members_only: false,
+    sharing_managers_only: false,
+    no_download_for_viewers: false,
+    allow_links: false,
+    root_node_id: "nod_root",
+  };
+  const d = detailOf("pls_a", "Evening", [entry(song("nod_a1", "a.mp3"), 0)]);
+  const exportAnswer = { node: { id: "nod_out", name: "Evening (2).m3u8" }, left_out: 0 };
+  beforeEach(() => {
+    folders.set([personal]);
+  });
+
+  it("opens the save picker on the personal space", async () => {
+    stubFetch(answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } }));
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    const p = dest.props as unknown as DestProps;
+    expect(p.mode).toBe("save");
+    expect(p.heading).toBe("Export playlist");
+    expect(p.action).toBe("Export here");
+    expect(p.startAt).toBe("fld_mine");
+    expect(p.spaces.map((s) => s.id)).toContain("fld_mine");
+  });
+
+  it("the pick exports into the chosen folder and offers the new file's place", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`) return { status: 201, body: exportAnswer };
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    act(() => {
+      (dest.props as unknown as DestProps).onPick({ folder: "fld_mine", dir: "nod_dir1", name: "Music" });
+    });
+    await waitFor(() => {
+      const posts = calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`);
+      expect(posts.length).toBe(1);
+      expect(posts[0]!.body).toEqual({ folder_id: "nod_dir1" });
+    });
+    expect(await screen.findByText(/Saved as Evening \(2\)\.m3u8 in Music/)).toBeTruthy();
+    expect(screen.queryByTestId("dest-mock")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(await screen.findByText("dir page")).toBeTruthy();
+  });
+
+  it("a pick of the space's root exports into its root node", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`) return { status: 201, body: exportAnswer };
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    act(() => {
+      (dest.props as unknown as DestProps).onPick({ folder: "fld_mine", dir: null, name: "My space" });
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`)[0]!.body).toEqual({ folder_id: "nod_root" }));
+    expect(await screen.findByText(/Saved as Evening \(2\)\.m3u8 in My space/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(await screen.findByText("folder page")).toBeTruthy();
+  });
+
+  it("the left-out count joins the message", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`) return { status: 201, body: { node: { id: "nod_out", name: "Evening.m3u8" }, left_out: 2 } };
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    act(() => {
+      (dest.props as unknown as DestProps).onPick({ folder: "fld_mine", dir: "nod_dir1", name: "Music" });
+    });
+    expect(await screen.findByText(/2 entries were left out: files you cannot reach now or in another space/)).toBeTruthy();
+  });
+
+  it("Continue watching and Recently added have no Export", async () => {
+    stubFetch(answers({ playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)], recentItems: [song("nod_r1", "new.mp3")] }));
+    renderTab();
+    await screen.findByRole("region", { name: "Continue watching" });
+    await screen.findByRole("region", { name: "Recently added" });
+    expect(screen.queryByRole("button", { name: "Export to a folder" })).toBeNull();
+  });
+
+  it("a second export waits for the first", async () => {
+    let gate!: () => void;
+    const held = new Promise<void>((res) => (gate = res));
+    const { calls } = stubFetch(async (c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`) {
+        await held;
+        return { status: 201, body: exportAnswer };
+      }
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    const p = dest.props as unknown as DestProps;
+    act(() => {
+      p.onPick({ folder: "fld_mine", dir: "nod_dir1", name: "Music" });
+    });
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`).length).toBe(1));
+    expect((screen.getByRole("button", { name: "Export to a folder" }) as HTMLButtonElement).disabled).toBe(true);
+    act(() => {
+      p.onPick({ folder: "fld_mine", dir: "nod_dir2", name: "Other" });
+    });
+    expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`).length).toBe(1);
+    await act(async () => {
+      gate();
+    });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Export to a folder" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls.filter((c) => c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`).length).toBe(1);
+  });
+
+  it("an export refusal shows its own sentence", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === `${PLAYLISTS}/pls_a/export`) return fail(409, "conflict", { reason: "moved" });
+      return answers({ lists: [summary("pls_a", "Evening", 1)], details: { pls_a: d } })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=pls_a");
+    await screen.findByRole("region", { name: "Evening" });
+    fireEvent.click(screen.getByRole("button", { name: "Export to a folder" }));
+    await screen.findByTestId("dest-mock");
+    act(() => {
+      (dest.props as unknown as DestProps).onPick({ folder: "fld_mine", dir: "nod_dir1", name: "Music" });
+    });
+    expect(await screen.findByText("The folder moved while exporting. Try again.")).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Export to a folder" }) as HTMLButtonElement).disabled).toBe(false));
   });
 });

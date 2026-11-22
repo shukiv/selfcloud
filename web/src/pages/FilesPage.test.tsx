@@ -23,6 +23,7 @@ import { officeEdit } from "../lib/files/editor";
 import { officeConvert } from "../lib/files/convert";
 import { PREF_FILES } from "../lib/files/viewPrefs";
 import { DENSITY_KEY_PREFIX, writeDensity } from "../lib/files/density";
+import { fail, stubFetch } from "../test/fetchStub";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -2662,6 +2663,98 @@ describe("Play media", () => {
     fireEvent.contextMenu(rows("one.mp4") as Element, { clientX: 40, clientY: 50 });
     await menuEntry("Details", "Information");
     expect(screen.queryByRole("menuitem", { name: "Play media" })).toBeNull();
+  });
+});
+
+// An .m3u or .m3u8 file imports as a new playlist (decision 237): the page sends the import and opens the Media page's
+// Playlists tab on the new list, handing the skipped lines over in the router state.
+describe("Import as playlist (decision 237)", () => {
+  const m3u = (id: string, name: string) => node(id, name, { mime_type: "audio/x-mpegurl" });
+  const importAnswer = {
+    playlist: { id: "pls_new", name: "Mix", entry_count: 1, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-10T09:00:00Z", entries: [] },
+    skipped: [{ line: 2, reason: "url" }],
+    skipped_total: 1,
+  };
+  const openMenu = async (name: string) => {
+    await screen.findByRole("row", { name });
+    fireEvent.contextMenu(rows(name) as Element, { clientX: 40, clientY: 50 });
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is in the menu of one .m3u8 file, whatever the case of its ending", async () => {
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.M3U8")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await openMenu("mix.M3U8");
+    expect(await menuEntry("Import as playlist")).toBeTruthy();
+  });
+
+  it("is in the selection bar of one .m3u file", async () => {
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "mix.m3u" });
+    fireEvent.click(rows("mix.m3u") as Element);
+    expect(await inPanel("Import as playlist")).toBeTruthy();
+  });
+
+  it("is not offered for an .mp3, for two files, or for a folder", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "song.mp3", { mime_type: "audio/mpeg" })], next_cursor: undefined });
+    const first = renderAt(FOLDER);
+    await openMenu("song.mp3");
+    await menuEntry("Details", "Information");
+    expect(screen.queryByRole("menuitem", { name: "Import as playlist" })).toBeNull();
+    first.unmount();
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u8"), node("n2", "song.mp3", { mime_type: "audio/mpeg" })], next_cursor: undefined });
+    const second = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "mix.m3u8" });
+    fireEvent.click(rows("mix.m3u8") as Element);
+    fireEvent.click(rows("song.mp3") as Element, { ctrlKey: true });
+    fireEvent.contextMenu(rows("mix.m3u8") as Element, { clientX: 40, clientY: 50 });
+    await menuEntry("Details", "Information");
+    expect(screen.queryByRole("menuitem", { name: "Import as playlist" })).toBeNull();
+    second.unmount();
+    api.childrenPage.mockResolvedValue({ items: [node("d1", "Music", { kind: "dir", mime_type: "" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await openMenu("Music");
+    await menuEntry("Play media");
+    expect(screen.queryByRole("menuitem", { name: "Import as playlist" })).toBeNull();
+  });
+
+  it("sends the import and opens the new playlist with the skipped lines in the state", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.method === "POST" && c.url === "/api/v1/playlists/import") return { status: 201, body: importAnswer };
+      return fail(404, "not_found");
+    });
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u8")], next_cursor: undefined });
+    const { router } = renderAt(FOLDER);
+    await openMenu("mix.m3u8");
+    fireEvent.click(await menuEntry("Import as playlist"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/media"));
+    expect(router.state.location.search).toBe("?tab=playlists&list=pls_new");
+    expect(router.state.location.state).toEqual({ playlistImport: { skipped: [{ line: 2, reason: "url" }], skipped_total: 1 } });
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.body).toEqual({ node_id: "n1" });
+  });
+
+  it("a refusal shows its own sentence and stays on the page", async () => {
+    stubFetch((c) => {
+      if (c.method === "POST" && c.url === "/api/v1/playlists/import") return fail(403, "download_restricted");
+      return fail(404, "not_found");
+    });
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u8")], next_cursor: undefined });
+    const { router } = renderAt(FOLDER);
+    await openMenu("mix.m3u8");
+    fireEvent.click(await menuEntry("Import as playlist"));
+    expect(await screen.findByText("You can't download this file, so it can't be imported.")).toBeTruthy();
+    expect(router.state.location.pathname).toBe(FOLDER);
+  });
+
+  it("is hidden while an installation admin is signed in as the person", async () => {
+    session.set({ ...signedAs("u1"), impersonation: { endsAt: "2099-01-01T00:00:00Z" } });
+    api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u8")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await openMenu("mix.m3u8");
+    await menuEntry("Details", "Information");
+    expect(screen.queryByRole("menuitem", { name: "Import as playlist" })).toBeNull();
   });
 });
 
