@@ -1,6 +1,9 @@
 {
   "app.skip": "Aller au contenu",
   "app.loading": "Chargement…",
+  "app.bootRetry.title": "Impossible de joindre Selfcloud pour le moment",
+  "app.bootRetry.body": "Votre session est en sécurité. Nouvelle tentative…",
+  "app.bootRetry.retry": "Réessayer",
   "app.notFound.title": "Page introuvable",
   "app.notFound.body": "Il n’y a aucune page à cette adresse.",
   "nav.main": "Principal",

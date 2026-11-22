@@ -1,6 +1,9 @@
 {
   "app.skip": "Перейти к содержимому",
   "app.loading": "Загрузка…",
+  "app.bootRetry.title": "Не удаётся связаться с Selfcloud прямо сейчас",
+  "app.bootRetry.body": "Ваша сессия в безопасности. Пробуем снова…",
+  "app.bootRetry.retry": "Повторить",
   "app.notFound.title": "Страница не найдена",
   "app.notFound.body": "По этому адресу нет страницы.",
   "nav.main": "Основное",

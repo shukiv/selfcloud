@@ -1,6 +1,9 @@
 {
   "app.skip": "דילוג לתוכן",
   "app.loading": "טוען…",
+  "app.bootRetry.title": "אין אפשרות להתחבר ל-Selfcloud כרגע",
+  "app.bootRetry.body": "ההתחברות שלך בטוחה. מנסים שוב…",
+  "app.bootRetry.retry": "נסו שוב",
   "app.notFound.title": "העמוד לא נמצא",
   "app.notFound.body": "אין עמוד בכתובת הזאת.",
   "nav.main": "ראשי",

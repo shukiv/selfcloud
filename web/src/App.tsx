@@ -2,9 +2,10 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Spin, ConfigProvider } from "antd";
+import { Spin, ConfigProvider, Button, Result } from "antd";
 import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
+import { ApiError } from "./lib/api";
 import { loadInfo, loadMe } from "./lib/auth";
 import { seedLimits } from "./lib/files/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +19,7 @@ import { outsideSignIn } from "./lib/outsideSignIn";
 import { frameSession } from "./lib/frame";
 import { session } from "./lib/session";
 import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./lib/routes";
-import type { User } from "./lib/types";
+import type { Me, User } from "./lib/types";
 import { antdLocaleOf, directionOf, matchLang, setLang, useLang, useT, type Lang } from "./lib/i18n";
 import { PREF_LANG, readPref } from "./lib/prefs";
 import { useStore } from "./lib/store";
@@ -193,18 +194,61 @@ function Loading() {
   );
 }
 
+// The waits between the start's reads of the signed-in person while the server cannot be reached: a second, doubling
+// to sixteen, then every thirty. Retry and the window's online event read at once and start the waits again at a second.
+const BOOT_RETRY_WAITS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
+
+// bootReadFailure names the cause of a failed read of the signed-in person: the answer's status, or "network" when no
+// answer came. It never names the session or the answer's body.
+function bootReadFailure(err: unknown): void {
+  console.warn("boot: could not read the signed-in person", err instanceof ApiError && err.status > 0 ? err.status : "network");
+}
+
+// BootRetry is the start's "cannot reach" screen, in the same frame as Loading. Only a 401 means signed out; any other
+// failure of the signed-in read keeps the session and shows this screen while the boot reads again on its own. The
+// address is never moved, so the page opens where the person was once a read lands.
+function BootRetry({ onRetry }: { onRetry: () => void }) {
+  const { t } = useT();
+  return (
+    <div role="alert" data-testid="boot-retry" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+      <Result
+        status="warning"
+        title={t("app.bootRetry.title")}
+        subTitle={t("app.bootRetry.body")}
+        extra={
+          <Button type="primary" onClick={onRetry}>
+            {t("app.bootRetry.retry")}
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
 // Boot loads the installation's brand and password rule, the signed-in person if there is one, and
 // chooses the language, before anything else is drawn.
 export function Boot({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   const qc = useQueryClient();
   const started = useRef(false);
+  const retryRef = useRef<() => void>(() => {});
   // Links are listened to in their own effect: StrictMode runs an effect twice, and the boot below
   // must not run twice, since a failed second run would leave the page unready.
   useEffect(() => {
     document.addEventListener("click", interceptLinks);
     return () => document.removeEventListener("click", interceptLinks);
   }, []);
+  // The boot's last step, shared by the first read and the retry screen's reads: a person is marked signed in, a
+  // signed-out visitor's auth pages are started, the language is chosen, and the page is drawn.
+  const finish = (me: Me | null) => {
+    if (me) void markSignedIn();
+    // A signed-out visitor's next screen is an auth page: start its chunks now, alongside the language read, so the
+    // form waits for nothing the entry used to carry (decision 198).
+    if (!me) void warmAuthPages();
+    chooseLang(me);
+    setReady(true);
+  };
   useEffect(() => {
     if (started.current) return;
     started.current = true;
@@ -222,15 +266,67 @@ export function Boot({ children }: { children: ReactNode }) {
       officeEdit.set(info !== null && featureOn(info.features, EDIT_FEATURE));
       // The upload limits of this read seed the files page, which uses them while they are fresh.
       if (info?.limits) seedLimits(qc, info.limits);
-      const me = await loadMe().catch(() => null);
-      if (me) void markSignedIn();
-      // A signed-out visitor's next screen is an auth page: start its chunks now, alongside the language read, so the
-      // form waits for nothing the entry used to carry (decision 198).
-      if (!me) void warmAuthPages();
-      chooseLang(me);
-      setReady(true);
+      // Only a 401 answers null (signed out); loadMe throws every other failure, and the retry screen takes it from
+      // there. The brand read above is kept: a retry repeats only this step.
+      let me: Me | null;
+      try {
+        me = await loadMe();
+      } catch (err) {
+        bootReadFailure(err);
+        setUnreachable(true);
+        return;
+      }
+      finish(me);
     })();
   }, []);
+  // The retry screen's own reads: one in flight at a time, on the growing wait, and at once on Retry and on the
+  // window's online event. The timer and the listener go on success and on unmount, so nothing is sent after either.
+  useEffect(() => {
+    if (!unreachable) return;
+    let live = true;
+    let busy = false;
+    let step = 0;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        void read();
+      }, BOOT_RETRY_WAITS_MS[Math.min(step, BOOT_RETRY_WAITS_MS.length - 1)]);
+      step += 1;
+    };
+    const read = async () => {
+      if (!live || busy) return;
+      busy = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+      try {
+        const me = await loadMe();
+        if (!live) return;
+        setUnreachable(false);
+        finish(me);
+      } catch (err) {
+        if (!live) return;
+        bootReadFailure(err);
+        schedule();
+      } finally {
+        busy = false;
+      }
+    };
+    const retryNow = () => {
+      step = 0;
+      void read();
+    };
+    retryRef.current = retryNow;
+    window.addEventListener("online", retryNow);
+    schedule();
+    return () => {
+      live = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener("online", retryNow);
+    };
+  }, [unreachable]);
+  if (unreachable) return <BootRetry onRetry={() => retryRef.current()} />;
   if (!ready) return <Loading />;
   return <>{children}</>;
 }
