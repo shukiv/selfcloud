@@ -4,7 +4,7 @@
 // wide, is checked for a sample of each group: the sign-in page's language and theme are icon buttons with names and tooltips,
 // and no segmented switch; the trash's Restore and Delete forever are borderless 40 px icons with names, a tooltip on hover, and
 // Empty trash is an icon with its name (tl4); in dark the icons keep no border. The sidebar: a top-level place (a space) is filled with the
-// active colour and its text is the on-active colour, and a folder below it keeps the bar with no fill; in light and dark. The
+// active colour and its text is the on-active colour, and a folder below it is filled the same way at every depth (decision 239); in light and dark. The
 // playlist drawer of an audio file opens with its shadow, and the stage and the rows show the file's type icon when there is no
 // cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. The five drive lists (Starred, Recent, Shared with
 // me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Each list's table is right to left in Hebrew, and its body's background in dark is darker than in light. Every folder made is deleted for good,
@@ -103,7 +103,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await snap('ic2-trash-dark.png');
     await setTheme(page, 'Light');
 
-    // ---- The sidebar's fill (decision 72): a folder below a top-level place keeps the bar, and the top-level place is filled.
+    // ---- The sidebar's fill (decisions 72 and 239): a folder below a top-level place is filled the same way, at every depth.
     const treeMade = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `/IC2 Tree ${suffix}`, parents: false });
     treeID = treeMade?.id ?? null;
     const innerMade = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `/IC2 Tree ${suffix}/IC2 Inner ${suffix}`, parents: false });
@@ -118,14 +118,14 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await page.waitFor(`!!document.querySelector(${q(TREE_CURRENT)}) && document.querySelector(${q(TREE_CURRENT)}).textContent.includes(${q(`IC2 Inner ${suffix}`)})`, 20000);
     await sleep(600);
     const deep = await currentRow(page);
-    check(deep && deep.cls.includes('side-current') && !deep.cls.includes('side-current-full') && deep.bg === 'rgba(0, 0, 0, 0)' && deep.bar === '3px', `a folder below a top-level place keeps the bar, with no fill (${JSON.stringify(deep)})`);
+    check(deep && deep.cls.includes('side-current-full') && !deep.cls.split(/\s+/).includes('side-current') && deep.bg === FILL && deep.colour === ON_ACTIVE && deep.bar === 'none', `a folder below a top-level place is filled like the top-level place, with no bar (${JSON.stringify(deep)})`);
     const topFill = await page.evaluate(`getComputedStyle(document.querySelector('.shell-sider [data-tree-key="${teamA}"] > .tree-row')).backgroundColor`);
     check(topFill !== FILL, `the top-level place above is not filled while a folder inside it is current (${topFill})`);
     await snap('ic2-tree-deep-light.png');
     await setTheme(page, 'Dark');
     await sleep(400);
     const deepDark = await currentRow(page);
-    check(deepDark && deepDark.bar === '3px' && deepDark.bg === 'rgba(0, 0, 0, 0)', `in dark a folder below a top-level place keeps the bar (${JSON.stringify(deepDark)})`);
+    check(deepDark && deepDark.cls.includes('side-current-full') && deepDark.bg === FILL && deepDark.bar === 'none', `in dark a folder below a top-level place is filled too (${JSON.stringify(deepDark)})`);
     await snap('ic2-tree-deep-dark.png');
     await setTheme(page, 'Light');
 

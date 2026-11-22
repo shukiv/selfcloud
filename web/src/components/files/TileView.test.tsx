@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The tile view (slice d1): folders first, in their own band of one-line chips; the files as cards of one height; no size on a
-// tile; the star and the menu on each item; and the full name in a title.
+// The tile view (slice d1, its folder chips made cards by decision 239): folders first, in their own band of cards like the
+// files'; every card one height; no size on a tile; the star and the menu on each item; and the full name in a title.
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import { formatBytes } from "../../lib/files/format";
@@ -58,7 +58,7 @@ describe("the tile view", () => {
     render(<Listing {...props()} />);
     const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
     expect(options.map((o) => o.dataset.id)).toEqual(["d1", "n1", "n2"]);
-    // Two bands: the folder chip's band holds Docs and no file.
+    // Two bands: the folder band holds Docs and no file.
     const bands = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
     expect(bands).toHaveLength(2);
     expect(bands[0].textContent).toContain("Docs");
@@ -116,7 +116,7 @@ describe("the tile view", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
-  // A starred tile shows a filled star after its name, in a chip and in a card alike; no tile has a star button (decision 70).
+  // A starred tile shows a filled star after its name, on every card alike; no tile has a star button (decision 70).
   it("shows the star as a mark after the name of a starred item, and no star button on any tile", () => {
     render(<Listing {...props()} />);
     expect(screen.queryByRole("button", { name: "Star notes.txt" })).toBeNull();
@@ -132,5 +132,91 @@ describe("the tile view", () => {
     const previews = Array.from(document.querySelectorAll<HTMLElement>(".tile-preview, [data-id] > div:nth-child(2)")).filter((el) => el.style.height);
     expect(previews.length).toBeGreaterThanOrEqual(2);
     expect(new Set(previews.map((el) => el.style.height)).size).toBe(1);
+  });
+});
+
+// Decision 239: a folder's tile is the same card as a file's, not a one-line chip: the same header, the same preview height,
+// the folder's own icon in the preview, the same selected look, and the same visitor rules. The folders keep their own band.
+describe("the tile view: a folder's tile is a card (decision 239)", () => {
+  const tileOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+  const headerOf = (id: string) => tileOf(id).querySelector(":scope > div:nth-child(1)") as HTMLElement;
+  const previewOf = (id: string) => tileOf(id).querySelector(":scope > div:nth-child(2)") as HTMLElement;
+
+  it("gives a folder the file card's preview at the same height, with the folder's icon at 48 px inside it and no thumbnail", () => {
+    render(<Listing {...props()} />);
+    const preview = previewOf("d1");
+    expect(preview.style.height).toBe(previewOf("n1").style.height);
+    expect(preview.style.height).toBe("120px");
+    const icon = preview.querySelector("svg.kind-folder");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("width")).toBe("48");
+    expect(icon?.getAttribute("height")).toBe("48");
+    expect(preview.querySelector("img")).toBeNull();
+  });
+
+  it("gives a folder the file card's header: the name on one line, the star mark and the More button, at the same height", () => {
+    render(<Listing {...props({ items: [node("d1", "Docs", { kind: "dir", mime_type: undefined, starred: true }), node("n1", "plan.txt")] })} />);
+    const header = headerOf("d1");
+    expect(header.style.minHeight).toBe(headerOf("n1").style.minHeight);
+    expect(header.style.minHeight).toBe("40px");
+    expect(within(header).getByText("Docs")).toBeTruthy();
+    expect(header.textContent).toContain("Starred");
+    expect(within(header).getByRole("button", { name: "More actions for Docs" })).toBeTruthy();
+  });
+
+  it("keeps a folder's colour mark on its card, and its rename field and error in the header", () => {
+    const { unmount } = render(<Listing {...props({ items: [node("d1", "Docs", { kind: "dir", mime_type: undefined, color: "blue" })] })} />);
+    expect(tileOf("d1").textContent).toContain("Colour: Blue");
+    unmount();
+    render(<Listing {...props({ renameID: "d1", renameValue: "Docs 2", renameError: "That name is taken." })} />);
+    expect(within(headerOf("d1")).getByRole("textbox", { name: "New name" })).toBeTruthy();
+    expect(within(tileOf("d1")).getByRole("alert").textContent).toBe("That name is taken.");
+  });
+
+  it("shows the check badge in the preview of a selected folder tile, with the selected tint and outline", () => {
+    render(<Listing {...props({ selected: new Set(["d1"]) })} />);
+    const tile = tileOf("d1");
+    expect(tile.getAttribute("aria-selected")).toBe("true");
+    expect(tile.style.background).not.toBe("");
+    expect(tile.style.outline).toContain("2px solid");
+    const badge = previewOf("d1").querySelector(".check-badge");
+    expect(badge).not.toBeNull();
+    expect(headerOf("d1").querySelector(".check-badge")).toBeNull();
+  });
+
+  it("keeps the folders first in their own band, as cards of the files' height", () => {
+    render(<Listing {...props()} />);
+    const bands = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
+    expect(bands).toHaveLength(2);
+    expect(bands[0].querySelector('[role="option"]')?.getAttribute("data-id")).toBe("d1");
+    const heights = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => (o.querySelector(":scope > div:nth-child(2)") as HTMLElement).style.height);
+    expect(new Set(heights).size).toBe(1);
+    // The folder tile keeps its drop attributes and its row role.
+    const folder = tileOf("d1");
+    expect(folder.getAttribute("data-drop-folder")).toBe("f1");
+    expect(folder.getAttribute("data-drop-dir")).toBe("d1");
+    expect(folder.getAttribute("role")).toBe("option");
+  });
+
+  it("gives a visitor's folder tile the visitor rules: no drop, no More, no star or badge, the row icons in their place", () => {
+    render(
+      <Listing
+        {...props({
+          visitor: true,
+          selected: new Set(["d1"]),
+          items: [node("d1", "Docs", { kind: "dir", mime_type: undefined, starred: true }), node("n1", "plan.txt")],
+          rowActs: (n) => (n.kind === "dir" ? [{ key: "open", label: "Open", icon: <svg aria-hidden="true" />, enabled: true, run: vi.fn() }] : []),
+        })}
+      />,
+    );
+    const folder = tileOf("d1");
+    expect(folder.hasAttribute("data-drop-folder")).toBe(false);
+    expect(folder.hasAttribute("data-drop-dir")).toBe(false);
+    expect(screen.queryByRole("button", { name: "More actions for Docs" })).toBeNull();
+    expect(folder.textContent).not.toContain("Starred");
+    expect(folder.querySelector(".check-badge")).toBeNull();
+    expect(within(headerOf("d1")).getByRole("button", { name: "Open" })).toBeTruthy();
+    expect(previewOf("d1").querySelector("svg.kind-folder")).not.toBeNull();
+    expect(previewOf("d1").querySelector("img")).toBeNull();
   });
 });

@@ -2,8 +2,8 @@
 
 // Slice fu7 (decision 93), the owner's notes on the dev run. At 1280 wide, and on a 390 phone where it says so:
 //  1. The breadcrumbs' separators sit on the centre of the crumb text, in English light, English dark, Hebrew and at 390 wide.
-//  2. The sidebar's group under a space's root has a tint; the rows' text and the current row's mark read 4.5:1 or more on it, at rest and
-//     on hover, in English light, English dark and Hebrew (the e2e brand is teal).
+//  2. The sidebar's group under a space's root has a tint; the rows' text reads 4.5:1 or more on it (the current row on its own fill,
+//     decision 239), at rest and on hover, in English light, English dark and Hebrew (the e2e brand is teal).
 //  3. A double click (a pointer's gesture) on a sidebar folder with subfolders opens it, in one navigation, with no word selected.
 //  4. Painting: a group's read error and its capped hint are on top of the tint (elementFromPoint at their centres).
 //  5. The tree's focus ring is visible, over the tint and over the bare sidebar (non-text contrast 3:1 or more).
@@ -50,20 +50,26 @@ const separators = (page) =>
   })()`);
 
 // groupTints reads every group of folders under a space's root in the sidebar (or the phone drawer): its tint, and each of its rows'
-// text colour with the contrast against the tint at rest. Nested groups must have no tint.
+// text colour with the contrast against what the row sits on at rest: its own background blended over the tint (the current row's fill
+// is opaque, decision 239). Nested groups must have no tint.
 const groupTints = (page) =>
   page.evaluate(`(() => {
     ${RGB_HELPERS}
     const scope = ${SCOPE};
     if (!scope) return null;
+    const parse = (s) => { const m = s.match(/[\\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+    const hex = (c) => '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
     return [...scope.querySelectorAll('[data-tree-group="root"]')].map((g) => {
       const bg = getComputedStyle(g, '::before').backgroundColor;
+      const tint = parse(bg);
       const parentRow = g.parentElement?.querySelector(':scope > .tree-row');
       const rows = [...g.querySelectorAll(':scope > li > .tree-row')].map((row) => {
         const label = row.querySelector('bdi');
         const ink = getComputedStyle(label).color;
         const current = row.parentElement?.getAttribute('aria-current') === 'location';
-        return { name: row.getAttribute('data-drop-name'), ink, current, contrast: bg === 'rgba(0, 0, 0, 0)' ? 0 : cr(rgb(ink), rgb(bg)) };
+        const over = parse(getComputedStyle(row).backgroundColor);
+        const under = { r: over.r * over.a + tint.r * (1 - over.a), g: over.g * over.a + tint.g * (1 - over.a), b: over.b * over.a + tint.b * (1 - over.a) };
+        return { name: row.getAttribute('data-drop-name'), ink, current, under: hex(under), contrast: bg === 'rgba(0, 0, 0, 0)' ? 0 : cr(rgb(ink), under) };
       });
       const nested = [...g.querySelectorAll('ul[role="group"]')].map((u) => getComputedStyle(u, '::before').backgroundColor);
       return { parent: parentRow?.getAttribute('data-drop-name') ?? null, bg, rows, nestedTinted: nested.filter((c) => c !== 'rgba(0, 0, 0, 0)').length, nestedCount: nested.length };
@@ -98,8 +104,8 @@ const pointOf = (page, name) =>
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   })()`);
 
-// hoverRead reads a row's colours while the pointer is over it: its own hover background drawn over its group's tint, and its text
-// colour (the current row's mark is its text colour too). Null when the row is not on the screen.
+// hoverRead reads a row's colours while the pointer is over it: its own background (the current row's fill, or the hover tint) drawn
+// over its group's tint, and its text colour. Null when the row is not on the screen.
 const hoverRead = (page, name) =>
   page.evaluate(`(() => {
     ${RGB_HELPERS}
@@ -117,7 +123,7 @@ const hoverRead = (page, name) =>
   })()`);
 
 // hoverChecks points the pointer at each row of the groups (a real mouse move over CDP), reads the row as hovered, and requires
-// the text and the current row's mark at 4.5:1 or more on the hover, then moves the pointer away.
+// the text at 4.5:1 or more on what it sits on (the current row's fill, or the hover tint), then moves the pointer away.
 async function hoverChecks(page, check, groups, label) {
   for (const g of groups) {
     for (const r of g.rows) {
@@ -131,7 +137,7 @@ async function hoverChecks(page, check, groups, label) {
       const h = await hoverRead(page, r.name);
       await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1270, y: 790 });
       await sleep(100);
-      const what = `${label}, hover, group under ${g.parent}: the row "${r.name}"${r.current ? ' (current, its mark)' : ''}`;
+      const what = `${label}, hover, group under ${g.parent}: the row "${r.name}"${r.current ? ' (current, its fill)' : ''}`;
       check(h !== null && h.hovered, `${what}: the pointer is over the row (${JSON.stringify(h && { hovered: h.hovered })})`);
       check(h !== null && h.contrast >= CONTRAST_MIN, `${what} reads ${h ? h.contrast.toFixed(2) : 'nothing'}:1 (${h?.ink} on ${h?.under}, background ${h?.overlay}; needs ${CONTRAST_MIN})`);
     }
@@ -291,7 +297,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
   };
 
   // tintAt checks the groups' tint and each row's hover, in the state the page is in (a theme and a language): the folders under My files
-  // (P is the current folder, so its mark is on the tinted row), and under the team space (T is current).
+  // (P is the current folder, so its fill is on the tinted row), and under the team space (T is current).
   const tintAt = async (label) => {
     await navigateTo(page, `/files/${myID}/${pID}`);
     await openMine();
@@ -312,7 +318,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
       check(g.nestedTinted === 0, `${what}: nested groups are not tinted (${g.nestedTinted} of ${g.nestedCount})`);
       check(g.rows.length > 0, `${what}: it has rows`);
       for (const r of g.rows) {
-        check(r.contrast >= CONTRAST_MIN, `${what}: the row "${r.name}"${r.current ? ' (current, its mark)' : ''} reads ${r.contrast.toFixed(2)}:1 on the tint (${r.ink} on ${g.bg}; needs ${CONTRAST_MIN})`);
+        check(r.contrast >= CONTRAST_MIN, `${what}: the row "${r.name}"${r.current ? ' (current, its fill)' : ''} reads ${r.contrast.toFixed(2)}:1 on what it sits on (${r.ink} on ${r.under}, tint ${g.bg}; needs ${CONTRAST_MIN})`);
       }
     }
   };
@@ -516,7 +522,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
     await focusP();
     await key('Enter', 13);
     await page.waitFor(`location.pathname.endsWith('${pID}')`, 10000).catch(() => undefined);
-    // The address changes before the tree re-renders, so the row's mark is waited for, not read at once.
+    // The address changes before the tree re-renders, so the row's fill is waited for, not read at once.
     await page.waitFor(`${SCOPE}?.querySelector('[data-testid="folder-tree"] [data-drop-name="${P}"]')?.parentElement?.getAttribute('aria-current') === 'location'`, 10000).catch(() => undefined);
     const shownNow = await treeRow(page, P, C);
     check((await page.evaluate(`location.pathname`)).endsWith(pID), `on the keyboard, Enter shows ${P}`);

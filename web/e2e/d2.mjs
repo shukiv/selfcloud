@@ -7,8 +7,8 @@
 // a folder the member cannot add to shows its entries disabled, with the reason. The storage block is pinned below the menu: its line
 // matches the Storage page, and the bar takes its three colours at the member's limit (set through the API, and put back before the
 // section ends). The collapsed rail has a round New with a tooltip and a Cloud storage icon link, the phone drawer has New at its top and the
-// block at its foot, and the toolbar has its New only on a phone. The current place (decision 69, option B) has no background: its text
-// reads at 4.5:1 or more on the sidebar, and its bar at 3:1 or more (the sidebar's rule, theme/currentMark.ts); the storage block keeps
+// block at its foot, and the toolbar has its New only on a phone. The current place (decisions 69, 72 and 239) is filled with the active
+// colour: its text reads at 4.5:1 or more on the fill, with no bar; the storage block keeps
 // its track and fill, and on the Storage page it takes the selected menu row's look: the active fill and the on-active ink, the bar's
 // normal fill in the on-active ink so it keeps 3:1 against its track (decision 193).
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
@@ -212,7 +212,7 @@ const TREE_ROW = '[data-testid="folder-tree"] [role="treeitem"][aria-current="lo
 const SEL_ROW = '.shell-storage-card[aria-current="page"]';
 const CARD = '.shell-storage-card';
 const TREE_MARK = TREE_ROW;
-// noBarIn says the element has no bar: its ::before draws nothing (decision 72: a filled top-level place has no bar).
+// noBarIn says the element has no bar: its ::before draws nothing (a filled current place has no bar, decisions 72 and 239).
 const noBarIn = (page, sel) =>
   page.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; const s = getComputedStyle(el, '::before'); return s.content === 'none' || s.width === '0px'; })()`);
 const METER = '[data-testid="sidebar-meter"]';
@@ -243,20 +243,8 @@ const contrastOf = (page, sel, prop, bgs) =>
     return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el)[${q(prop)}], bg: bg.map(Math.round) };
   })()`);
 
-// SIDER is the sidebar: the layer the current place's text and bar sit on (decision 69, option B).
+// SIDER is the sidebar: the layer the current place's text sits on (its fill is the active colour, decisions 72 and 239).
 const SIDER = '.shell-sider';
-// barOf reads the current place's bar (its ::before) against the sidebar, as the ratio of its colour on the sidebar.
-const barOf = (page, sel) =>
-  page.evaluate(`(() => {
-    const parse = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s); return m ? m[1].split(',').map((x) => parseFloat(x)) : null; };
-    const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-    const el = document.querySelector(${q(sel)});
-    const bg = el && parse(getComputedStyle(document.querySelector(${q(SIDER)})).backgroundColor);
-    const bar = el && parse(getComputedStyle(el, '::before').backgroundColor);
-    if (!bg || !bar) return null;
-    const [hi, lo] = [lum(bar.slice(0, 3)), lum(bg.slice(0, 3))].sort((x, y) => y - x);
-    return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el, '::before').backgroundColor, bg: bg.slice(0, 3).map(Math.round) };
-  })()`);
 // onMark reads the storage block's title and figures on the block (which sits on the sidebar), and the bar's track, edge and fill,
 // as the block draws them (decisions 181 and 193). The fill is compared with the unfilled track it is drawn on, the pair a person compares.
 const onMark = (page) =>
@@ -404,7 +392,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     // below: there the block takes the selected row's fill and ink (decision 193).
     const plainTitle = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-title'); return t ? getComputedStyle(t).color : null; })()`);
     const plainLineColour = await page.evaluate(`(() => { const t = document.querySelector('.shell-storage-card .shell-storage-line'); return t ? getComputedStyle(t).color : null; })()`);
-    // The current folder has no background (decision 69, option B): its name, its arrow and its bar read on the sidebar.
+    // The current folder is filled with the active colour (decisions 72 and 239): its name and its arrow read on the fill, and it has no bar.
     await waitTreeCurrent(page, teamA);
     const treeName = await contrastOf(page, `${TREE_ROW} a bdi`, 'color', [TREE_ROW]);
     const treeArrow = await contrastOf(page, `${TREE_ROW} > button`, 'color', [TREE_ROW]);

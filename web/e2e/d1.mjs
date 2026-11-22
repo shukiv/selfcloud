@@ -225,15 +225,18 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   const stayedURL = await page.evaluate('location.href');
   check(dropped === true && stayedURL === dropURL && !droppedIn.items.some((n) => n.name === 'desk-drop.txt'), `a desktop file dropped on a tree row is not taken: the browser stays, nothing uploads (prevented ${dropped}, same page ${stayedURL === dropURL})`);
 
-  // ---- Tiles: folders first in a band of chips, the files as cards of one height, long and Hebrew names included.
-  const heights = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] > [role="presentation"]:last-of-type [role="option"]')].map((o) => Math.round(o.getBoundingClientRect().height))`);
-  check(heights.length >= 3 && new Set(heights).size === 1, `the file cards are one height (${JSON.stringify([...new Set(heights)])})`);
+  // ---- Tiles: folders first in a band of cards, the files as cards below, every tile one height, long and Hebrew names included.
+  const heights = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => Math.round(o.getBoundingClientRect().height))`);
+  check(heights.length >= 3 && new Set(heights).size === 1, `the tiles are one height, the folder cards and the file cards alike (${JSON.stringify([...new Set(heights)])})`);
+  // A folder's tile is a card: a preview area with the folder's own icon in it, and the drop attributes on the tile.
+  const folderCard = await page.evaluate(`(() => { const o = document.querySelector('[role="listbox"] > [role="presentation"] [role="option"][data-drop-folder]'); if (!o) return null; const p = o.querySelector(':scope > div:nth-child(2)'); return { preview: !!p && p.style.height !== '', icon: !!p?.querySelector('svg.kind-folder') }; })()`);
+  check(folderCard !== null && folderCard.preview && folderCard.icon, `the folder tile is a card with the folder's icon in its preview (${JSON.stringify(folderCard)})`);
   // A folder's tile carries its drop attributes; a file's does not.
   const bandsOrder = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] > [role="presentation"]')].map((b) => (b.querySelector('[role="option"]')?.hasAttribute('data-drop-folder') ? 'folders' : 'files'))`);
   check(bandsOrder[0] === 'folders' || bandsOrder.length === 1, `the folders band comes first (${bandsOrder.join(', ')})`);
   const cols = await page.evaluate(`(() => { const b = document.querySelector('[role="listbox"] > [role="presentation"]'); return b ? getComputedStyle(b).gridTemplateColumns.split(' ').length : 0; })()`);
   check(cols >= 4, `about five columns at 1920 wide (${cols})`);
-  // Down from the first folder chip moves to the file band (or to the next folder row when the folders take more than one row).
+  // Down from the first folder tile moves to the file band (or to the next folder row when the folders take more than one row).
   const folderCount = await page.evaluate(`document.querySelector('[role="listbox"] > [role="presentation"]')?.querySelectorAll('[role="option"]').length ?? 0`);
   await page.evaluate(`document.querySelector('[role="listbox"] > [role="presentation"] [role="option"]').focus()`);
   await sleep(200);

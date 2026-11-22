@@ -548,8 +548,8 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
   });
 });
 
-// Decision 69 (option B): the current folder has no background. It has a 3 px bar at its start edge and its text and icon in the
-// sidebar's mark colour (the yellow on the default blue). Other rows keep the sidebar's text. Its weight is the menu's.
+// Decisions 69 and 72, changed by decision 239: the current folder is filled at every depth with the sidebar's active colour
+// and its on-active text, as the menu's selected item is. Other rows keep the sidebar's text. Its weight is the menu's.
 describe("the folder tree in the sidebar: the current row's mark", () => {
   const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
 
@@ -586,17 +586,43 @@ describe("the folder tree in the sidebar: the current row's mark", () => {
     expect(current?.style.background).toBe("rgb(254, 204, 0)");
   });
 
-  // Decision 72: a folder below a top-level place keeps the bar, with no background; the place above is not marked.
-  it("marks a deeper current folder with the bar and no fill, and leaves its top-level row plain", async () => {
+  // Decision 239 (changing 69's bar and 72's level-1-only fill): a folder below a top-level place is filled the same way,
+  // at level 2 and at level 3; the place above is not marked.
+  it("fills a current folder at level 2 with the active colour and the on-active text, and leaves its top-level row plain", async () => {
     render(<Harness colours={SIDEBAR} folder="nod_one" chain={["nod_one"]} start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     const deep = rowOf("Docs");
-    expect(deep?.classList.contains("side-current")).toBe(true);
-    expect(deep?.style.background).toBe("");
-    expect(deep?.style.color).toBe("rgb(254, 204, 0)");
+    expect(deep?.classList.contains("side-current-full")).toBe(true);
+    expect(deep?.classList.contains("side-current")).toBe(false);
+    expect(deep?.style.background).toBe("rgb(254, 204, 0)");
+    expect(deep?.style.color).toBe("rgb(13, 33, 66)");
+    const arrow = screen.getByRole("button", { name: /(Expand|Collapse) Docs/ });
+    expect(arrow.style.color).toBe("rgb(13, 33, 66)");
     const top = rowOf("Team A");
     expect(top?.classList.contains("side-current-full")).toBe(false);
+    expect(top?.classList.contains("side-current")).toBe(false);
     expect(top?.style.background).toBe("");
+    expect(top?.style.color).toBe("rgb(255, 255, 255)");
+    const other = rowOf("Pics");
+    expect(other?.classList.contains("side-current-full")).toBe(false);
+    expect(other?.classList.contains("side-current")).toBe(false);
+    expect(other?.style.background).toBe("");
+  });
+
+  it("fills a current folder at level 3 the same way, and leaves the rows above it plain", async () => {
+    render(<Harness colours={SIDEBAR} folder="nod_deep" chain={["nod_one", "nod_deep"]} start={{ expanded: ["fld_a", "nod_one"] }} />);
+    await screen.findByText("Deep");
+    const deep = rowOf("Deep");
+    expect(deep?.classList.contains("side-current-full")).toBe(true);
+    expect(deep?.classList.contains("side-current")).toBe(false);
+    expect(deep?.style.background).toBe("rgb(254, 204, 0)");
+    expect(deep?.style.color).toBe("rgb(13, 33, 66)");
+    for (const name of ["Team A", "Docs"]) {
+      const above = rowOf(name);
+      expect(above?.classList.contains("side-current-full"), name).toBe(false);
+      expect(above?.classList.contains("side-current"), name).toBe(false);
+      expect(above?.style.background, name).toBe("");
+    }
   });
 });
 
@@ -702,10 +728,10 @@ describe("the folder tree's double click and group tint (decision 93)", () => {
     expect(nested?.style.getPropertyValue("--sc-group-tint") ?? "").toBe("");
   });
 
-  it("the sidebar's rows keep the mark on top of the tint: the current folder's row has no background of its own", async () => {
+  it("the sidebar's current row keeps its fill on top of the tint: its background is the active colour, not the tint", async () => {
     render(<Harness folder="nod_one" chain={["nod_one"]} colours={SIDEBAR} start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
-    expect(rowOf("Docs")?.style.background ?? "").toBe("");
+    expect(rowOf("Docs")?.style.background ?? "").toBe("rgb(254, 204, 0)");
   });
 
   it("the tint is not drawn outside the sidebar", async () => {
