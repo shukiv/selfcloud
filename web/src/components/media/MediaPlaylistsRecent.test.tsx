@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The Playlists tab's second automatic list, Recently added: the person's video and audio files created in the last 30 days,
-// newest first, read through the search. The left table lists it right after Continue watching; the address's list=recent
-// picks its detail, which plays its rows and shows the added date instead of the length, with no Add files, Rename or Delete.
-// The API is replaced at the fetch boundary, and the clock is fixed so the search's created_after is known.
+// The Playlists tab's second automatic list, Recently added: the person's video and audio files created in the last 30 days.
+// The server's search takes one type per ask, so the list reads two searches at once (type=video and type=audio, each
+// kind=file&order=newest&created_after&limit=50) and keeps the 50 newest of the union, by created_at, ties by id. There is no
+// paging: when either answer has a next page, one line under the table says so. The left table lists it right after Continue
+// watching; the address's list=recent picks its detail, which plays its rows and shows the added date instead of the length,
+// with no Add files, Rename or Delete. The API is replaced at the fetch boundary, and the clock is fixed so created_after is known.
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -28,7 +30,8 @@ const SEARCH = "/api/v1/search";
 // The fixed clock: 2026-11-15T12:00:00Z. Recently added asks for the files created after the same moment 30 days earlier.
 const CLOCK = Date.UTC(2026, 10, 15, 12, 0, 0);
 const AFTER = CLOCK - 30 * 24 * 60 * 60 * 1000;
-const RECENT_QUERY = `type=video&type=audio&kind=file&order=newest&limit=50&created_after=${AFTER}`;
+const VIDEO_QUERY = `type=video&kind=file&order=newest&created_after=${AFTER}&limit=50`;
+const AUDIO_QUERY = `type=audio&kind=file&order=newest&created_after=${AFTER}&limit=50`;
 
 function signedAs(id: string): Session {
   return {
@@ -96,15 +99,18 @@ function renderTab(onPlay: () => void = () => {}, entry = "/media?tab=playlists"
 
 const row = (name: string) => screen.getByRole("row", { name });
 
-// answers keeps the playlists, the played list, the search, the tags and the folders empty but for what a check gives.
-function answers(opts: { lists?: unknown[]; recentItems?: unknown[]; recentCursor?: string } = {}) {
+// answers keeps the playlists, the played list, the tags and the folders empty, and gives each type's search what a check
+// names for it, with a next page when the check asks for one.
+function answers(opts: { lists?: unknown[]; videoItems?: unknown[]; audioItems?: unknown[]; videoCursor?: string; audioCursor?: string } = {}) {
   return (c: Call) => {
     if (c.url.startsWith(TAGS)) return { status: 200, body: { items: {} } };
     if (c.url.startsWith(FOLDERS)) return { status: 200, body: { items: [] } };
     if (c.url.startsWith(PLAYED)) return { status: 200, body: { items: [] } };
     if (c.url.startsWith(SEARCH)) {
-      const body: Record<string, unknown> = { items: opts.recentItems ?? [] };
-      if (opts.recentCursor) body.next_cursor = opts.recentCursor;
+      const video = new URLSearchParams(c.url.split("?")[1] ?? "").get("type") === "video";
+      const body: Record<string, unknown> = { items: (video ? opts.videoItems : opts.audioItems) ?? [] };
+      const cursor = video ? opts.videoCursor : opts.audioCursor;
+      if (cursor) body.next_cursor = cursor;
       return { status: 200, body };
     }
     if (c.url.startsWith(PLAYLISTS)) {
@@ -117,6 +123,8 @@ function answers(opts: { lists?: unknown[]; recentItems?: unknown[]; recentCurso
 
 // addedText is the page's own date format for a created_at, as the Added column writes it.
 const addedText = (iso: string) => new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+
+const bodyRows = (region: HTMLElement) => Array.from(region.querySelectorAll('tbody tr[role="row"][aria-label]'));
 
 let undoView: () => void = () => undefined;
 beforeEach(() => {
@@ -137,40 +145,85 @@ afterEach(() => {
 describe("the Playlists tab's Recently added list", () => {
   it("is listed second, after Continue watching and before the saved playlists, with its Automatic tag and count", async () => {
     const { calls } = stubFetch(
-      answers({ lists: [summary("pls_a", "Evening", 3)], recentItems: [clip("nod_r1", "new.webm"), song("nod_r2", "fresh.mp3")] }),
+      answers({ lists: [summary("pls_a", "Evening", 3)], videoItems: [clip("nod_r1", "new.webm")], audioItems: [song("nod_r2", "fresh.mp3")] }),
     );
     renderTab();
     const region = await screen.findByRole("region", { name: "Your playlists" });
-    await waitFor(() => expect(region.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(3));
-    const rows = Array.from(region.querySelectorAll('tbody tr[role="row"][aria-label]'));
+    await waitFor(() => expect(bodyRows(region).length).toBe(3));
+    const rows = bodyRows(region);
     expect(rows[0]!.textContent).toContain("Continue watching");
     expect(rows[1]!.textContent).toContain("Recently added");
     expect(rows[1]!.textContent).toContain("Automatic");
     expect(rows[1]!.textContent).toContain("2");
     expect(rows[2]!.textContent).toContain("Evening");
-    // The count's first page is read once, even while Continue watching is the chosen list.
-    await waitFor(() => expect(calls.filter((c) => c.url.startsWith(SEARCH)).length).toBe(1));
+    // The count's two searches are read once, even while Continue watching is the chosen list.
+    await waitFor(() => expect(calls.filter((c) => c.url.startsWith(SEARCH)).length).toBe(2));
   });
 
-  it("choosing it writes list=recent and sends one search with the newest-first ask of the last 30 days", async () => {
-    const { calls } = stubFetch(answers({ lists: [summary("pls_a", "Evening", 1)], recentItems: [clip("nod_r1", "new.webm")] }));
+  it("choosing it writes list=recent and sends two searches, one per type, with the newest-first ask of the last 30 days", async () => {
+    const { calls } = stubFetch(answers({ lists: [summary("pls_a", "Evening", 1)], videoItems: [clip("nod_r1", "new.webm")] }));
     renderTab();
     await screen.findByRole("region", { name: "Your playlists" });
     fireEvent.click(row("Recently added"));
     await waitFor(() => expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists&list=recent"));
     expect(await screen.findByRole("heading", { name: "Recently added" })).toBeTruthy();
     expect(screen.getByText("Automatic playlist")).toBeTruthy();
-    const searches = calls.filter((c) => c.url.startsWith(SEARCH));
-    expect(searches.length).toBe(1);
-    expect(searches[0]!.url).toBe(`${SEARCH}?${RECENT_QUERY}`);
+    const searches = calls.filter((c) => c.url.startsWith(SEARCH)).map((c) => c.url);
+    expect(searches.length).toBe(2);
+    expect(searches).toContain(`${SEARCH}?${VIDEO_QUERY}`);
+    expect(searches).toContain(`${SEARCH}?${AUDIO_QUERY}`);
     // Choosing Continue watching again keeps the address clean, as before.
     fireEvent.click(row("Continue watching"));
     await waitFor(() => expect(screen.getByTestId("pl-loc").textContent).toBe("?tab=playlists"));
   });
 
+  it("merges the two answers newest first by created_at, ties by id", async () => {
+    stubFetch(
+      answers({
+        videoItems: [
+          clip("nod_v1", "v-new.webm", { created_at: "2026-11-14T10:00:00Z" }),
+          clip("nod_v2", "v-old.webm", { created_at: "2026-11-12T10:00:00Z" }),
+          clip("nod_t1", "tie-v.webm", { created_at: "2026-11-13T10:00:00Z" }),
+        ],
+        audioItems: [
+          song("nod_a1", "a-mid.mp3", { created_at: "2026-11-13T10:00:00Z" }),
+          song("nod_a2", "a-old.mp3", { created_at: "2026-11-11T10:00:00Z" }),
+        ],
+      }),
+    );
+    renderTab(() => {}, "/media?tab=playlists&list=recent");
+    const detail = await screen.findByRole("region", { name: "Recently added" });
+    await within(detail).findByRole("row", { name: "v-new.webm" });
+    await waitFor(() => expect(bodyRows(detail).map((r) => r.getAttribute("aria-label"))).toEqual(["v-new.webm", "a-mid.mp3", "tie-v.webm", "v-old.webm", "a-old.mp3"]));
+    // Neither answer has a next page, so no note sits under the table, and there is no Load more.
+    expect(screen.queryByText("Showing the 50 newest.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("keeps the 50 newest of the union and says so when either answer has a next page", async () => {
+    const base = Date.UTC(2026, 10, 14, 12, 0, 0);
+    const videoItems = Array.from({ length: 50 }, (_, i) => clip(`nod_v${i}`, `v${i}.webm`, { created_at: new Date(base - i * 3600000).toISOString() }));
+    const audioItems = [song("nod_a0", "a-new.mp3", { created_at: new Date(base + 3600000).toISOString() })];
+    const { calls } = stubFetch(answers({ videoItems, audioItems, videoCursor: "vc1" }));
+    renderTab(() => {}, "/media?tab=playlists&list=recent");
+    const detail = await screen.findByRole("region", { name: "Recently added" });
+    await within(detail).findByRole("row", { name: "a-new.mp3" });
+    await waitFor(() => expect(bodyRows(detail).length).toBe(50));
+    const rows = bodyRows(detail);
+    expect(rows[0]!.getAttribute("aria-label")).toBe("a-new.mp3");
+    expect(rows[49]!.getAttribute("aria-label")).toBe("v48.webm");
+    expect(within(detail).queryByRole("row", { name: "v49.webm" })).toBeNull();
+    expect(await screen.findByText("Showing the 50 newest.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(calls.filter((c) => c.url.startsWith(SEARCH)).length).toBe(2);
+  });
+
   it("list=recent opens its detail with the Added date, and no Add files, Rename or Delete", async () => {
     const { calls } = stubFetch(
-      answers({ recentItems: [song("nod_r1", "fresh.mp3", { created_at: "2026-11-14T10:00:00Z" }), clip("nod_r2", "new.webm", { created_at: "2026-11-13T09:00:00Z" })] }),
+      answers({
+        videoItems: [clip("nod_r2", "new.webm", { created_at: "2026-11-13T09:00:00Z" })],
+        audioItems: [song("nod_r1", "fresh.mp3", { created_at: "2026-11-14T10:00:00Z" })],
+      }),
     );
     renderTab(() => {}, "/media?tab=playlists&list=recent");
     const detail = await screen.findByRole("region", { name: "Recently added" });
@@ -189,49 +242,30 @@ describe("the Playlists tab's Recently added list", () => {
     await waitFor(() => expect(calls.some((c) => c.url.startsWith(TAGS) && c.url.includes("ids=nod_r1"))).toBe(true));
   });
 
-  it("Play plays the rows in order, and a row click plays from it", async () => {
-    stubFetch(answers({ recentItems: [clip("nod_r1", "one.webm"), song("nod_r2", "two.mp3"), clip("nod_r3", "three.webm")] }));
+  it("Play plays the merged rows in order, and a row click plays from it", async () => {
+    stubFetch(
+      answers({
+        videoItems: [clip("nod_v1", "one.webm", { created_at: "2026-11-14T10:00:00Z" }), clip("nod_v2", "three.webm", { created_at: "2026-11-12T10:00:00Z" })],
+        audioItems: [song("nod_a1", "two.mp3", { created_at: "2026-11-13T10:00:00Z" })],
+      }),
+    );
     const onPlay = vi.fn();
     renderTab(onPlay, "/media?tab=playlists&list=recent");
     const detail = await screen.findByRole("region", { name: "Recently added" });
     await within(detail).findByRole("row", { name: "one.webm" });
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     const seed = getPlayback().seed;
-    expect(seed?.start.id).toBe("nod_r1");
-    expect(seed?.selection?.map((n) => n.id)).toEqual(["nod_r1", "nod_r2", "nod_r3"]);
+    expect(seed?.start.id).toBe("nod_v1");
+    expect(seed?.selection?.map((n) => n.id)).toEqual(["nod_v1", "nod_a1", "nod_v2"]);
     expect(onPlay).toHaveBeenCalledTimes(1);
     fireEvent.click(within(detail).getByRole("row", { name: "three.webm" }));
-    expect(getPlayback().seed?.start.id).toBe("nod_r3");
-    expect(getPlayback().seed?.selection?.map((n) => n.id)).toEqual(["nod_r1", "nod_r2", "nod_r3"]);
+    expect(getPlayback().seed?.start.id).toBe("nod_v2");
+    expect(getPlayback().seed?.selection?.map((n) => n.id)).toEqual(["nod_v1", "nod_a1", "nod_v2"]);
     expect(onPlay).toHaveBeenCalledTimes(2);
   });
 
-  it("the next page is read with the cursor and appends its rows", async () => {
-    let n = 0;
-    const { calls } = stubFetch((c) => {
-      if (c.url.startsWith(SEARCH)) {
-        n++;
-        return n === 1
-          ? { status: 200, body: { items: [clip("nod_r1", "first.webm")], next_cursor: "rc1" } }
-          : { status: 200, body: { items: [song("nod_r2", "second.mp3")] } };
-      }
-      return answers()(c);
-    });
-    renderTab(() => {}, "/media?tab=playlists&list=recent");
-    const detail = await screen.findByRole("region", { name: "Recently added" });
-    await within(detail).findByRole("row", { name: "first.webm" });
-    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    await within(detail).findByRole("row", { name: "second.mp3" });
-    const searches = calls.filter((c) => c.url.startsWith(SEARCH));
-    expect(searches.length).toBe(2);
-    expect(searches[1]!.url).toBe(`${SEARCH}?${RECENT_QUERY}&cursor=rc1`);
-    const rows = Array.from(detail.querySelectorAll('tbody tr[role="row"][aria-label]'));
-    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual(["first.webm", "second.mp3"]);
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Load more" })).toBeNull());
-  });
-
   it("an empty answer keeps the table's frame with the empty title and no action", async () => {
-    stubFetch(answers({ recentItems: [] }));
+    stubFetch(answers());
     renderTab(() => {}, "/media?tab=playlists&list=recent");
     const detail = await screen.findByRole("region", { name: "Recently added" });
     await waitFor(() => {
@@ -247,20 +281,41 @@ describe("the Playlists tab's Recently added list", () => {
     expect((screen.getByRole("button", { name: "Play" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("a 429 shows the rate-limit text with a retry that reads again", async () => {
+  it("a 429 in one search shows the rate-limit text with a retry, and no half list", async () => {
     let n = 0;
     stubFetch((c) => {
-      if (c.url.startsWith(SEARCH)) {
+      if (c.url.startsWith(SEARCH) && c.url.includes("type=video")) {
         n++;
         return n === 1 ? fail(429, "rate_limited") : { status: 200, body: { items: [clip("nod_r1", "new.webm")] } };
       }
-      return answers()(c);
+      return answers({ audioItems: [song("nod_r2", "fresh.mp3")] })(c);
     });
     renderTab(() => {}, "/media?tab=playlists&list=recent");
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Too many searches. Wait a minute, then try again.");
+    expect(screen.queryByRole("row", { name: "fresh.mp3" })).toBeNull();
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("row", { name: "new.webm" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "fresh.mp3" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("a failed search shows the list's error with a retry, and no half list", async () => {
+    let n = 0;
+    stubFetch((c) => {
+      if (c.url.startsWith(SEARCH) && c.url.includes("type=audio")) {
+        n++;
+        return n === 1 ? fail(500, "internal") : { status: 200, body: { items: [song("nod_r2", "fresh.mp3")] } };
+      }
+      return answers({ videoItems: [clip("nod_r1", "new.webm")] })(c);
+    });
+    renderTab(() => {}, "/media?tab=playlists&list=recent");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("That did not work. Try again.");
+    expect(screen.queryByRole("row", { name: "new.webm" })).toBeNull();
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("row", { name: "new.webm" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "fresh.mp3" })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
