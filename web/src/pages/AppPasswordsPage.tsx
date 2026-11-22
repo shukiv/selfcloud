@@ -108,7 +108,7 @@ export default function AppPasswordsPage() {
       setNameError("apppw.nameRequired");
       return;
     }
-    if (trimmed.length > 64) {
+    if ([...trimmed].length > 64) {
       setNameError("apppw.nameLong");
       return;
     }
