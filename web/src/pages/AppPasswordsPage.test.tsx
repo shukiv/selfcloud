@@ -122,6 +122,24 @@ describe("the App passwords page", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
   });
 
+  it("the name counts characters as the server does: 64 emoji are sent, 65 are refused without a request", async () => {
+    const { calls } = list([], true, { status: 201, body: { app_password: apw("apw_1", "laptop"), secret: "scp_apw_1_tail" } });
+    renderPage();
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
+    const name = await screen.findByLabelText("Name");
+    // 65 emoji are 65 characters (the server counts runes), refused in the form with no request.
+    fireEvent.change(name, { target: { value: "😀".repeat(65) } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByText("The name is at most 64 characters.")).toBeTruthy();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    // 64 emoji are 64 characters even though they are 128 UTF-16 code units: the create goes out, name intact.
+    fireEvent.change(name, { target: { value: "😀".repeat(64) } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    const sent = calls.find((c) => c.method === "POST");
+    expect((sent?.body as { name: string }).name).toBe("😀".repeat(64));
+  });
+
   it("a create shows the secret once in ShowOnce and reads the list again", async () => {
     const secret = "scp_apw_1_randomtail";
     let reads = 0;
