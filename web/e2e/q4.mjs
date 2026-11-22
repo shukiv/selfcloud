@@ -273,7 +273,12 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
     })()`);
   const starPut = await starCall('PUT');
   check(starPut >= 200 && starPut < 300, `the member stars the file through the API (${starPut})`);
+  const beforeStar = searchRequests(page);
   await navigateTo(page, '/search?starred=1');
+  await page.waitFor(`location.search.includes('starred=1')`, 10000);
+  // The old results hold the same name, so the run waits for the new request to leave before it reads them.
+  const starUntil = Date.now() + 10000;
+  while (searchRequests(page) <= beforeStar && Date.now() < starUntil) await sleep(100);
   await page.waitFor(`document.querySelector(${q(RESULTS)})?.textContent.includes('Q4 budget.txt')`, 10000);
   const starNames = await resultNames(page);
   check(
@@ -281,7 +286,7 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
     `a starred-only search lists the starred file and not an unstarred one (${JSON.stringify(starNames)})`,
   );
   const starReq = page.sent.filter((r) => r.url.includes(SEARCH_PATH)).pop()?.url ?? '';
-  check(starReq.includes('starred=true') && starReq.includes('order=newest'), 'the filter-only search asks for starred, newest first');
+  check(starReq.includes('starred=true') && starReq.includes('order=newest'), `the filter-only search asks for starred, newest first (${starReq})`);
   check(
     await page.evaluate(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Starred' && b.getAttribute('aria-pressed') === 'true')`),
     'the Starred toggle is pressed',
@@ -308,6 +313,7 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   await typeKeys(page, 'budget', 30);
   await page.waitFor(`location.pathname === '/search' && location.search.includes('scope=')`, 10000);
   await page.waitFor(`document.querySelector(${q(RESULTS)})?.textContent.includes('Q4 budget.txt')`, 10000);
+  await page.waitFor(`[...document.querySelectorAll('[data-testid="search-chip"]')].some((c) => c.textContent.includes('In Q4 annex'))`, 10000);
   check(await chipShows(page, 'In Q4 annex'), 'the scope shows as a chip naming the directory');
   const scopeNames = await resultNames(page);
   check(scopeNames.length === 1 && scopeNames[0] === 'Q4 budget.txt', `the scoped search lists only the directory's own match (${JSON.stringify(scopeNames)})`);
