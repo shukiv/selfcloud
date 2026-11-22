@@ -681,6 +681,36 @@ describe("the Requests entry", () => {
     unmount();
   });
 
+  // App passwords (decision 236) is in the account menu after Signed-in devices, for every signed-in person except an
+  // installation admin, who holds no account of its own.
+  it("the account menu offers App passwords after Signed-in devices, and not to an installation admin", async () => {
+    for (const role of ["member", "owner"] as const) {
+      signIn(role);
+      const { unmount } = renderShell("/files");
+      fireEvent.click(await screen.findByTestId("account-menu"));
+      const menu = await screen.findByRole("menu", { name: `Signed in as olivia@example.com` });
+      const items = within(menu).getAllByRole("menuitem").map((m) => m.textContent);
+      expect(items, `${role} menu`).toContain("App passwords");
+      expect(items.indexOf("App passwords")).toBe(items.indexOf("Signed-in devices") + 1);
+      unmount();
+    }
+    signIn("admin");
+    const { unmount } = renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const menu = await screen.findByRole("menu", { name: `Signed in as olivia@example.com` });
+    const items = within(menu).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(items, "admin menu").not.toContain("App passwords");
+    unmount();
+  });
+
+  it("the account menu's App passwords opens /app-passwords", async () => {
+    signIn("member");
+    const router = renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "App passwords" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/app-passwords"));
+  });
+
   // Decision 95: "Signed in as" is a header on the menu, not a disabled item. It is not a menu item (no menuitem, no aria-disabled),
   // the menu is named by it so a screen reader hears it once, and the first item a keyboard reaches is Change password.
   it("the account menu's Signed in as line is a header, not a disabled menu item, and Change password comes first", async () => {

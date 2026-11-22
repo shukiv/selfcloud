@@ -290,6 +290,39 @@ func TestAppPasswordOnlyCreateOffWhenDavDisabled(t *testing.T) {
 	}
 }
 
+// The list says whether the drive mount is on: mount_enabled is the live dav.enabled, read as POST and /dav/ read it,
+// so the page can say the mount is off without a second read of the settings.
+func TestAppPasswordListSaysMountEnabled(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+
+	var list struct {
+		Items        []apwItem `json:"items"`
+		MountEnabled bool      `json:"mount_enabled"`
+	}
+	rec := callSession(t, s, sess, "GET", apwPath, nil)
+	wantStatus(t, rec, 200)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rec.Body.String(), `"mount_enabled":false`) {
+		t.Errorf("list while off = %s, want mount_enabled false", rec.Body.String())
+	}
+
+	wantStatus(t, patchSettings(t, s, admin, map[string]any{"dav.enabled": true}), 200)
+	rec = callSession(t, s, sess, "GET", apwPath, nil)
+	wantStatus(t, rec, 200)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if !list.MountEnabled {
+		t.Errorf("list while on = %s, want mount_enabled true", rec.Body.String())
+	}
+}
+
 func TestAppPasswordWriteRateLimit(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, davOn)

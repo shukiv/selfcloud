@@ -73,6 +73,7 @@ import { eb4Checks } from './eb4.mjs';
 import { eb2aChecks } from './eb2a.mjs';
 import { eb2bChecks } from './eb2b.mjs';
 import { ps1Checks } from './ps1.mjs';
+import { apw1Checks } from './apw1.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
@@ -843,6 +844,8 @@ async function main() {
   let eb2aBrowser = null;
   // ps1Browser is the page scripts' own browser, while its checks run (see the ps1 call).
   let ps1Browser = null;
+  // apw1Browser is the app passwords' own browser, while its checks run (see the apw1 call).
+  let apw1Browser = null;
   let page = null;
   // runner records the failed sections and names them at the end (decision 190); it is made once the page is up.
   let runner = null;
@@ -1072,7 +1075,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, mp7, mp6b, mp2b, pk1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, ps1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, mp1, mp3, mp7, mp6b, mp2b, pk1, q4, r7, r7b, d1, d2, i1, l1, vr1, l4, l6, d3, x3, x4, x6, ks, ks1, fu3a, fu3b, st, ce1, sb, zr1e, pwa, ip1, sec2, eb4, eb2a, eb2b, ps1, apw1, admin, tl1, se3, an2, cli4, pb1, xs or myfiles runs that slice's checks alone, to work on them quickly; a full run never sets it.
     // SELFCLOUD_E2E_STOP_FIRST=1 stops the run at the first failed section, as it did before decision 190, for a
     // builder's quick local run; the default records the failure, recovers the page and runs the rest, and the end of
     // the run names every failed section at once (the run still fails).
@@ -1355,6 +1358,24 @@ async function main() {
         ps1Browser = null;
       }
     }, { as: 'member' });
+    // Slice apw1 (decision 236): the App passwords page and the drive mount's sign-in. Its own browser, as ps1 has, so the
+    // member's session and the mount's Basic credential stay apart from the shared page.
+    if (!only || onlySet.has('apw1')) await section('apw1', async () => {
+      const apw1Launch = await launchBrowser(await findBrowser(), join(dir, 'apw1-profile'));
+      apw1Browser = apw1Launch.proc;
+      const apw1Page = new Page(apw1Launch.wsUrl);
+      apw1Page.base = base;
+      try {
+        await apw1Page.start(EXPECTED);
+        await apw1Page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await apw1Checks(h, { page: apw1Page, base, adminKey, MEMBER });
+        check(apw1Page.errors.length === 0, `the app passwords browser has no console errors or policy violations (${apw1Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        apw1Page.close();
+        apw1Browser.kill();
+        apw1Browser = null;
+      }
+    }, { as: 'member' });
     // Slice myfiles: the member's star, open and recent checks, run alone (SELFCLOUD_E2E_ONLY=myfiles), signed in as the
     // member the run leaves the shared page as. The full run reaches the same checks below.
     if (only && onlySet.has('myfiles')) await section('myfiles', () => owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }), { as: 'member' });
@@ -1498,6 +1519,7 @@ async function main() {
     eb4Browser?.kill();
     eb2aBrowser?.kill();
     ps1Browser?.kill();
+    apw1Browser?.kill();
     server.kill();
     await fake.close();
     crashWatch?.close();

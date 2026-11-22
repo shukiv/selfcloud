@@ -59,6 +59,17 @@ describe("the impersonation banner", () => {
     expect(screen.queryByText("Sign out")).toBeNull();
   });
 
+  // App passwords (decision 236) are the person's own: while signed in as another, the routes refuse them, so the
+  // account menu does not offer the page.
+  it("the account menu offers no App passwords while impersonating", async () => {
+    session.set(impersonating());
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderShell("/files");
+    fireEvent.click(screen.getByTestId("account-menu"));
+    expect(await screen.findByText("Change password")).toBeTruthy();
+    expect(screen.queryByText("App passwords")).toBeNull();
+  });
+
   it("is not shown to a person who is not impersonated", () => {
     session.set({ ...impersonating(), impersonation: null });
     stubFetch(() => ({ status: 200, body: { items: [] } }));
