@@ -2,12 +2,13 @@
 
 // The search page's slice q4 checks. A member types in the browser, through the browser's own key events: a burst of letters is
 // one request; a name search finds names, a text search finds words inside files, and a snippet marks its match; a filter is a
-// chip that removes itself; an empty answer says so; Hebrew turns the page right to left and translates its strings; a phone
-// has the box on the page, and its filter fields are touch-sized; a file whose name and text hold markup shows the markup as
-// text; the result links and the Clear filters button reach 4.5 to 1 in both themes; a failed request says it could not reach
-// the server; and past the limit of sixty a minute the page says so in a sentence. With SELFCLOUD_Q4_SHOTS set (a folder, or 1
-// for the slice's own folder, e2e-out/shots-q4), the run also saves the pictures of the page: desktop and phone, English and
-// Hebrew, light and dark.
+// chip that removes itself; a starred-only search lists the member's own star, newest first, and the shell box carries the
+// directory it submits from as a scope; an empty answer says so; Hebrew turns the page right to left and translates its
+// strings; a phone has the box on the page, and its filter fields are touch-sized; a file whose name and text hold markup
+// shows the markup as text; the result links and the Clear filters button reach 4.5 to 1 in both themes; a failed request
+// says it could not reach the server; and past the limit of sixty a minute the page says so in a sentence. With
+// SELFCLOUD_Q4_SHOTS set (a folder, or 1 for the slice's own folder, e2e-out/shots-q4), the run also saves the pictures of
+// the page: desktop and phone, English and Hebrew, light and dark.
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -254,6 +255,67 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   await page.waitFor(`![...document.querySelectorAll('[data-testid="search-chip"]')].some((c) => c.textContent.includes('Type: Files'))`, 10000);
   await page.waitFor(`!location.search.includes('kind=')`, 10000);
   check(searchRequests(page) > beforeRemove, 'removing the chip sends the search again, without that filter');
+
+  // Starred: the member stars one of the section's own files through the API, and a filter-only search lists it, newest
+  // first, and not an unstarred one. The toggle is pressed and its chip shows; closing the chip leaves the toggle off.
+  // The star is taken off again, so the file is left as it was found.
+  const starID = await page.evaluate(
+    `[...document.querySelectorAll(${q(RESULTS + ' tbody tr[data-id]')})].find((r) => r.textContent.includes('Q4 budget.txt'))?.getAttribute('data-id') ?? null`,
+  );
+  check(starID !== null, 'the section reads the node ID of its own file from the results');
+  const starPath = `/api/v1/nodes/${starID}/star`;
+  // starCall stars or unstars as the signed-in member, with the session's CSRF token, the way the page's own calls do.
+  const starCall = (method) =>
+    page.evaluate(`(async () => {
+      const me = await fetch('/api/v1/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => r.json());
+      const r = await fetch(${q(starPath)}, { method: ${q(method)}, credentials: 'same-origin', headers: { 'X-CSRF-Token': me.csrf_token ?? '' } });
+      return r.status;
+    })()`);
+  const starPut = await starCall('PUT');
+  check(starPut >= 200 && starPut < 300, `the member stars the file through the API (${starPut})`);
+  await navigateTo(page, '/search?starred=1');
+  await page.waitFor(`document.querySelector(${q(RESULTS)})?.textContent.includes('Q4 budget.txt')`, 10000);
+  const starNames = await resultNames(page);
+  check(
+    starNames.includes('Q4 budget.txt') && !starNames.includes('Harbour plan.txt'),
+    `a starred-only search lists the starred file and not an unstarred one (${JSON.stringify(starNames)})`,
+  );
+  const starReq = page.sent.filter((r) => r.url.includes(SEARCH_PATH)).pop()?.url ?? '';
+  check(starReq.includes('starred=true') && starReq.includes('order=newest'), 'the filter-only search asks for starred, newest first');
+  check(
+    await page.evaluate(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Starred' && b.getAttribute('aria-pressed') === 'true')`),
+    'the Starred toggle is pressed',
+  );
+  check(await chipShows(page, 'Starred'), 'the starred filter shows as a chip');
+  await page.evaluate(`(document.querySelector('[aria-label="Remove filter Starred"]').click(), true)`);
+  await page.waitFor(`![...document.querySelectorAll('[data-testid="search-chip"]')].some((c) => c.textContent.includes('Starred'))`, 10000);
+  await page.waitFor(`!location.search.includes('starred=')`, 10000);
+  check(
+    await page.evaluate(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Starred' && b.getAttribute('aria-pressed') === 'false')`),
+    'closing the chip leaves the Starred toggle off',
+  );
+  const starDel = await starCall('DELETE');
+  check(starDel >= 200 && starDel < 300, `the star is taken off again (${starDel})`);
+
+  // In this folder: the shell box submits from inside one of the section's own directories, and the search keeps to it.
+  // The space's top level already holds Q4 budget.txt; the directory holds a same-named copy, and only that copy answers.
+  // The directory and its copy are removed afterwards, leaving the section's files as they were.
+  const annex = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: '/Q4 annex' });
+  await rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent('/Q4 annex/Q4 budget.txt')}`, accountKey, 'The annex copy of the quarterly figures.\n');
+  await navigateTo(page, `/files/${teamA}/${annex.id}`);
+  await page.waitFor(`document.body.textContent.includes('Q4 budget.txt') && !!document.querySelector(${q(`input[aria-label=${q(BOX)}]`)})`, 10000);
+  await page.evaluate(`(document.querySelector(${q(`input[aria-label=${q(BOX)}]`)}).focus(), true)`);
+  await typeKeys(page, 'budget', 30);
+  await page.waitFor(`location.pathname === '/search' && location.search.includes('scope=')`, 10000);
+  await page.waitFor(`document.querySelector(${q(RESULTS)})?.textContent.includes('Q4 budget.txt')`, 10000);
+  check(await chipShows(page, 'In Q4 annex'), 'the scope shows as a chip naming the directory');
+  const scopeNames = await resultNames(page);
+  check(scopeNames.length === 1 && scopeNames[0] === 'Q4 budget.txt', `the scoped search lists only the directory's own match (${JSON.stringify(scopeNames)})`);
+  await page.evaluate(`(document.querySelector('[aria-label="Remove filter In Q4 annex"]').click(), true)`);
+  await page.waitFor(`!location.search.includes('scope=')`, 10000);
+  await page.waitFor(`document.querySelectorAll(${q(RESULTS + ' tbody tr[data-id]')}).length === 2`, 10000);
+  check(true, 'closing the scope chip searches everywhere again');
+  await api(base, 'DELETE', `/api/v1/nodes/${annex.id}?permanent=true`, accountKey);
 
   // A text search: the words are found inside the file, and the match is marked in the snippet.
   await clickButtonText(page, 'Text in files');

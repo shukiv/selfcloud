@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
@@ -335,5 +335,166 @@ describe("the page's helpers", () => {
 
   it("searchErrorText reads a code, and falls back to the file errors for the rest", () => {
     expect(searchErrorText(new (class extends Error {})(), "en")).toBe("Something went wrong. Try again.");
+  });
+});
+
+// Address shows the address the page is at, so a test can read what a filter wrote there.
+function Address() {
+  const l = useLocation();
+  return <p data-testid="address">{`${l.pathname}${l.search}`}</p>;
+}
+
+function renderWithAddress(url: string) {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route path="/search" element={<><SearchPage /><Address /></>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+const address = () => screen.getByTestId("address").textContent ?? "";
+
+// pickFilter chooses one option of the filter select whose label is the given one, as a person does with the mouse.
+async function pickFilter(label: string, option: string) {
+  const selector = screen.getByLabelText(label).closest(".ant-select")!.querySelector(".ant-select-selector") as HTMLElement;
+  fireEvent.mouseDown(selector);
+  const choices = await screen.findAllByText(option, { selector: ".ant-select-item-option-content" });
+  fireEvent.click(choices[choices.length - 1]);
+}
+
+// chipText finds a filter chip by its text.
+const chipText = (text: string) => screen.queryByText(text, { selector: '[data-testid="search-chip"] bdi' });
+
+describe("the created, starred and shared filters", () => {
+  it("choosing Created writes created=30 to the address, and the request carries created_after", async () => {
+    const { calls } = answerEach(() => ok([hit("nod_a", "Alpha.txt")]));
+    renderWithAddress("/search?q=alpha");
+    await screen.findByText("Alpha.txt");
+    await pickFilter("Created", "Past 30 days");
+    await waitFor(() => expect(address()).toContain("created=30"));
+    await waitFor(() => expect(searches(calls)).toHaveLength(2));
+    expect(searches(calls)[1].url).toContain("created_after=");
+    expect(chipText("Created: Past 30 days")).toBeTruthy();
+  });
+
+  it("pressing Starred presses the toggle, adds its chip and sends starred=true; the chip's close takes it all away", async () => {
+    const { calls } = answerEach(() => ok([hit("nod_a", "Alpha.txt")]));
+    renderWithAddress("/search?q=alpha");
+    await screen.findByText("Alpha.txt");
+    expect(screen.getByRole("button", { name: "Starred" }).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Starred" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Starred" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(chipText("Starred")).toBeTruthy();
+    await waitFor(() => expect(searches(calls)).toHaveLength(2));
+    expect(searches(calls)[1].url).toContain("starred=true");
+    expect(address()).toContain("starred=1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter Starred" }));
+    await waitFor(() => expect(searches(calls)).toHaveLength(3));
+    expect(searches(calls)[2].url).not.toContain("starred=");
+    expect(address()).not.toContain("starred=");
+    expect(screen.getByRole("button", { name: "Starred" }).getAttribute("aria-pressed")).toBe("false");
+    expect(chipText("Starred")).toBeNull();
+  });
+
+  it("pressing Shared with me presses the toggle, adds its chip and sends shared=true", async () => {
+    const { calls } = answerEach(() => ok([hit("nod_a", "Alpha.txt")]));
+    renderWithAddress("/search?q=alpha");
+    await screen.findByText("Alpha.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Shared with me" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Shared with me" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(chipText("Shared with me")).toBeTruthy();
+    await waitFor(() => expect(searches(calls)).toHaveLength(2));
+    expect(searches(calls)[1].url).toContain("shared=true");
+  });
+
+  it("Clear filters takes created, starred and shared away too", async () => {
+    const { calls } = answerEach(() => ok([hit("nod_a", "Alpha.txt")]));
+    renderWithAddress("/search?q=alpha&created=7&starred=1&shared=1");
+    await screen.findByText("Alpha.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(address()).toBe("/search?q=alpha"));
+    await waitFor(() => expect(searches(calls)).toHaveLength(2));
+    const last = searches(calls)[1].url;
+    expect(last).not.toContain("created_after=");
+    expect(last).not.toContain("starred=");
+    expect(last).not.toContain("shared=");
+  });
+
+  it("a filter-only search asks for newest first", async () => {
+    const { calls } = answerEach(() => ok([]));
+    renderAt("/search?starred=1");
+    await waitFor(() => expect(searches(calls)).toHaveLength(1));
+    expect(searches(calls)[0].url).toContain("starred=true");
+    expect(searches(calls)[0].url).toContain("order=newest");
+  });
+
+  it("a search with words asks for no order, even with a filter set", async () => {
+    const { calls } = answerEach(() => ok([]));
+    renderAt("/search?q=alpha&starred=1");
+    await waitFor(() => expect(searches(calls)).toHaveLength(1));
+    expect(searches(calls)[0].url).not.toContain("order=");
+  });
+});
+
+describe("the scope filter: in this folder", () => {
+  // scopeStub answers the label fields, the scope directory's stat and the search.
+  function scopeStub(stat: (c: Call) => Answer | Promise<Answer>, search: (c: Call) => Answer) {
+    return stubFetch((c) => {
+      if (c.url.startsWith("/api/v1/label-fields")) return { status: 200, body: FIELDS };
+      if (c.url.startsWith("/api/v1/nodes/nod_dir12345")) return stat(c);
+      if (!c.url.startsWith(SEARCH)) return fail(404, "not_found");
+      return search(c);
+    });
+  }
+
+  it("the chip names the directory, and its close takes the scope out of the address and the request", async () => {
+    const { calls } = scopeStub(
+      () => ({ status: 200, body: hit("nod_dir12345", "Contracts", { kind: "dir" }) }),
+      () => ok([hit("nod_a", "Alpha.txt")]),
+    );
+    renderWithAddress("/search?q=alpha&scope=nod_dir12345");
+    await screen.findByText("Alpha.txt");
+    expect(await screen.findByText("In Contracts")).toBeTruthy();
+    expect(searches(calls)[0].url).toContain("scope=nod_dir12345");
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter In Contracts" }));
+    await waitFor(() => expect(searches(calls)).toHaveLength(2));
+    expect(address()).not.toContain("scope=");
+    expect(searches(calls)[1].url).not.toContain("scope=");
+    expect(chipText("In Contracts")).toBeNull();
+  });
+
+  it("while the directory's name is read the chip says In this folder, and a failed read says the folder cannot be seen; the search is sent either way", async () => {
+    const held: { resolve: (a: Answer) => void }[] = [];
+    const { calls } = scopeStub(
+      () => new Promise<Answer>((resolve) => held.push({ resolve })),
+      () => ok([hit("nod_a", "Alpha.txt")]),
+    );
+    renderWithAddress("/search?q=alpha&scope=nod_dir12345");
+    await screen.findByText("Alpha.txt");
+    expect(chipText("In this folder")).toBeTruthy();
+    expect(searches(calls)).toHaveLength(1);
+    await act(async () => held[0].resolve(fail(404, "not_found")));
+    expect(await screen.findByText("In a folder you cannot see")).toBeTruthy();
+    expect(searches(calls)).toHaveLength(1);
+  });
+
+  it("a scope the person cannot reach fails the search, and the page shows its normal error", async () => {
+    scopeStub(
+      () => ({ status: 200, body: hit("nod_dir12345", "Contracts", { kind: "dir" }) }),
+      () => fail(404, "not_found"),
+    );
+    renderAt("/search?scope=nod_dir12345");
+    expect(await screen.findByText("Search is turned off on this server.")).toBeTruthy();
+  });
+
+  it("a scope that is not a node ID is dropped, so no filter is set and nothing is sent", async () => {
+    const { calls } = answerEach(() => ok([]));
+    renderAt("/search?scope=notanid");
+    expect(await screen.findByText("Type a word, or choose a filter.")).toBeTruthy();
+    expect(searches(calls)).toHaveLength(0);
   });
 });

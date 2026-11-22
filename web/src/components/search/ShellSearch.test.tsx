@@ -107,4 +107,35 @@ describe("the search box in the top bar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     expect(where()).toBe("/search");
   });
+
+  it("submitting from inside a directory carries its scope to the search page", () => {
+    renderAt("/files/fld_team1234/nod_dir12345");
+    const box = screen.getByLabelText(BOX);
+    fireEvent.change(box, { target: { value: "budget" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(where()).toBe("/search?q=budget&scope=nod_dir12345");
+  });
+
+  it("a word typed inside a directory opens the search page with the scope after the pause", async () => {
+    renderAt("/files/fld_team1234/nod_dir12345");
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(BOX), "budget");
+    await waitFor(() => expect(where()).toBe("/search?q=budget&scope=nod_dir12345"));
+  });
+
+  it("submitting from a space's top level carries no scope", () => {
+    renderAt("/files/fld_team1234");
+    const box = screen.getByLabelText(BOX);
+    fireEvent.change(box, { target: { value: "budget" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(where()).toBe("/search?q=budget");
+  });
+
+  it("submitting from a page that is not a directory view carries no scope", () => {
+    renderAt("/recent");
+    const box = screen.getByLabelText(BOX);
+    fireEvent.change(box, { target: { value: "budget" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(where()).toBe("/search?q=budget");
+  });
 });

@@ -6,6 +6,7 @@ import {
   MAX_LABELS,
   MAX_QUERY_BYTES,
   MAX_TERM_BYTES,
+  hasFilter,
   labelValueProblem,
   paramsFromState,
   queryProblem,
@@ -20,7 +21,7 @@ const base = (over: Partial<SearchState> = {}): SearchState => ({ ...emptyState(
 describe("the address is the search state", () => {
   it("reads a full address and writes the same one back", () => {
     const p = new URLSearchParams(
-      "q=budget+2026&kind=file&ext=PDF,.docx&modified=30&size=large&label=fld_abc1:Acme&label=fld_abc2:5..10&in=name",
+      "q=budget+2026&kind=file&ext=PDF,.docx&modified=30&created=7&starred=1&shared=1&scope=nod_abc12345&size=large&label=fld_abc1:Acme&label=fld_abc2:5..10&in=name",
     );
     const s = stateFromParams(p);
     expect(s).toEqual({
@@ -29,6 +30,10 @@ describe("the address is the search state", () => {
       kind: "file",
       exts: ["pdf", "docx"],
       modified: "30",
+      created: "7",
+      starred: true,
+      shared: true,
+      scope: "nod_abc12345",
       size: "large",
       labels: [
         { field: "fld_abc1", value: "Acme" },
@@ -69,6 +74,34 @@ describe("the address is the search state", () => {
   it("writes only what is set", () => {
     expect(paramsFromState(base()).toString()).toBe("");
     expect(paramsFromState(base({ q: "a b" })).toString()).toBe("q=a+b");
+  });
+
+  it("round-trips created, starred, shared and scope through the address", () => {
+    const s = stateFromParams(new URLSearchParams("created=30&starred=1&shared=1&scope=nod_abc12345"));
+    expect(s.created).toBe("30");
+    expect(s.starred).toBe(true);
+    expect(s.shared).toBe(true);
+    expect(s.scope).toBe("nod_abc12345");
+    expect(paramsFromState(s).toString()).toBe("created=30&starred=1&shared=1&scope=nod_abc12345");
+    expect(stateFromParams(paramsFromState(s))).toEqual(s);
+  });
+
+  it("drops an unknown created window, a starred or shared value that is not 1, and a scope that is not a node ID", () => {
+    const s = stateFromParams(new URLSearchParams("created=3&starred=yes&shared=0&scope=nod_SHORT"));
+    expect(s.created).toBe("");
+    expect(s.starred).toBe(false);
+    expect(s.shared).toBe(false);
+    expect(s.scope).toBe("");
+    expect(paramsFromState(s).toString()).toBe("");
+    expect(stateFromParams(new URLSearchParams("scope=dir_abc12345")).scope).toBe("");
+  });
+
+  it("hasFilter counts created, starred, shared and scope, each alone", () => {
+    expect(hasFilter(base())).toBe(false);
+    expect(hasFilter(base({ created: "7" }))).toBe(true);
+    expect(hasFilter(base({ starred: true }))).toBe(true);
+    expect(hasFilter(base({ shared: true }))).toBe(true);
+    expect(hasFilter(base({ scope: "nod_abc12345" }))).toBe(true);
   });
 });
 
@@ -183,5 +216,32 @@ describe("searchParamsFor: what one request asks", () => {
     const large = searchParamsFor(base({ size: "large" }), now);
     expect(large.get("size_min")).toBe(String(100 * 1_048_576));
     expect(large.has("size_max")).toBe(false);
+  });
+
+  it("sends created_after for each created window, as the modified window does", () => {
+    for (const days of ["7", "30", "365"] as const) {
+      expect(searchParamsFor(base({ created: days }), now).get("created_after")).toBe(String(now - Number(days) * 86_400_000));
+    }
+    expect(searchParamsFor(base(), now).has("created_after")).toBe(false);
+  });
+
+  it("sends starred=true, shared=true and the scope directory", () => {
+    const p = searchParamsFor(base({ starred: true, shared: true, scope: "nod_abc12345" }), now);
+    expect(p.get("starred")).toBe("true");
+    expect(p.get("shared")).toBe("true");
+    expect(p.get("scope")).toBe("nod_abc12345");
+    const none = searchParamsFor(base(), now);
+    expect(none.has("starred")).toBe(false);
+    expect(none.has("shared")).toBe(false);
+    expect(none.has("scope")).toBe(false);
+  });
+
+  it("a filter-only search asks for newest first; words take the order away, and a text search never has it", () => {
+    expect(searchParamsFor(base({ starred: true }), now).get("order")).toBe("newest");
+    expect(searchParamsFor(base({ created: "30" }), now).get("order")).toBe("newest");
+    expect(searchParamsFor(base({ q: "budget", starred: true }), now).has("order")).toBe(false);
+    expect(searchParamsFor(base({ q: "  ", starred: true }), now).get("order")).toBe("newest");
+    expect(searchParamsFor(base({ q: "budget", inText: true }), now).has("order")).toBe(false);
+    expect(searchParamsFor(base({ inText: true, starred: true }), now).has("order")).toBe(false);
   });
 });
