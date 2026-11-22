@@ -22,6 +22,9 @@ cmd	search-rebuild	search-rebuild	pre-cli1	local only (design 4.6)
 cmd	upload ls	upload ls	cli6	the records of the uploads this client began; no server call (design 3.8)
 cmd	users	users	cli1	local only (design 4.6)
 cmd	verify	verify	cli1	local only (design 4.6)
+fn	lib/account/appPasswords.ts:createAppPassword	-	-	browser session only: the App passwords page (/app-passwords) (decision 236)
+fn	lib/account/appPasswords.ts:listAppPasswords	-	-	browser session only: the App passwords page (/app-passwords) (decision 236)
+fn	lib/account/appPasswords.ts:revokeAppPassword	-	-	browser session only: the App passwords page (/app-passwords) (decision 236)
 fn	lib/api.ts:api	-	-	the request helper every call goes through; each caller has its own row
 fn	lib/auth.ts:changePassword	-	-	browser session only
 fn	lib/auth.ts:confirmDevice	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
