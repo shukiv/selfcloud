@@ -572,6 +572,18 @@ describe("the folder tree in the sidebar: the current row's mark", () => {
     expect(arrow.style.color).toBe("rgb(13, 33, 66)");
   });
 
+  // antd's link style fades the colour over 300 ms (and its button over 200 ms) while the row's fill changes at once, so the text
+  // would fade over a fill already changed. The link and the arrow carry no transition: they change with the fill in the same frame.
+  it("gives the row's link and arrow no colour transition, so the text changes with the fill", async () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    const arrow = await screen.findByRole("button", { name: "Collapse Team A" });
+    for (const name of ["Team A", "My files"]) {
+      const link = rowOf(name)?.querySelector("a");
+      expect(link?.getAttribute("style") ?? "", name).toContain("transition: none");
+    }
+    expect(arrow.getAttribute("style") ?? "").toContain("transition: none");
+  });
+
   // Decision 69: the current row is not bold, as the menu's selected item is not (the sidebar's rows look alike in every state).
   it("is not bold on the current row, as the menu's selected item is not", () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);

@@ -51,7 +51,8 @@ const separators = (page) =>
 
 // groupTints reads every group of folders under a space's root in the sidebar (or the phone drawer): its tint, and each of its rows'
 // text colour with the contrast against what the row sits on at rest: its own background blended over the tint (the current row's fill
-// is opaque, decision 239). Nested groups must have no tint.
+// is opaque, decision 239). It also reads each row link's transition duration, so the text is seen to change with the fill, with no fade.
+// Nested groups must have no tint.
 const groupTints = (page) =>
   page.evaluate(`(() => {
     ${RGB_HELPERS}
@@ -69,7 +70,8 @@ const groupTints = (page) =>
         const current = row.parentElement?.getAttribute('aria-current') === 'location';
         const over = parse(getComputedStyle(row).backgroundColor);
         const under = { r: over.r * over.a + tint.r * (1 - over.a), g: over.g * over.a + tint.g * (1 - over.a), b: over.b * over.a + tint.b * (1 - over.a) };
-        return { name: row.getAttribute('data-drop-name'), ink, current, under: hex(under), contrast: bg === 'rgba(0, 0, 0, 0)' ? 0 : cr(rgb(ink), under) };
+        const fade = getComputedStyle(row.querySelector('a')).transitionDuration;
+        return { name: row.getAttribute('data-drop-name'), ink, current, under: hex(under), contrast: bg === 'rgba(0, 0, 0, 0)' ? 0 : cr(rgb(ink), under), fade };
       });
       const nested = [...g.querySelectorAll('ul[role="group"]')].map((u) => getComputedStyle(u, '::before').backgroundColor);
       return { parent: parentRow?.getAttribute('data-drop-name') ?? null, bg, rows, nestedTinted: nested.filter((c) => c !== 'rgba(0, 0, 0, 0)').length, nestedCount: nested.length };
@@ -319,6 +321,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
       check(g.rows.length > 0, `${what}: it has rows`);
       for (const r of g.rows) {
         check(r.contrast >= CONTRAST_MIN, `${what}: the row "${r.name}"${r.current ? ' (current, its fill)' : ''} reads ${r.contrast.toFixed(2)}:1 on what it sits on (${r.ink} on ${r.under}, tint ${g.bg}; needs ${CONTRAST_MIN})`);
+        check(r.fade.split(',').every((v) => v.trim() === '0s'), `${what}: the row "${r.name}"'s text changes with its fill, with no fade (transition-duration ${r.fade})`);
       }
     }
   };
