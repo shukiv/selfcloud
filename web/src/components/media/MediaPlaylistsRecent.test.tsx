@@ -237,7 +237,7 @@ describe("the Playlists tab's Recently added list", () => {
     await waitFor(() => {
       const t = detail.querySelector("table") as HTMLElement;
       expect(t).not.toBeNull();
-      expect(within(t).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Title", "#", "Folder", "Added", "Actions"]);
+      expect(within(t).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Title", "#", "Folder", "Added"]);
     });
     const body = detail.querySelector("tbody") as HTMLElement;
     expect(await within(body).findByText("Nothing added in the last 30 days")).toBeTruthy();

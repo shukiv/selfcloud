@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The Media page's Playlists tab: the person's saved playlists and the automatic Continue watching list, side by side on a
-// desktop and stacked on a phone. The left table lists Continue watching first (its Automatic tag and first-page count) then
-// the saved ones; the address's list= picks the detail. The detail plays its available rows through the page's one session,
-// shows the place and the time left for Continue watching, and edits a saved playlist (rename, delete, move, remove, add
-// files) only on the person's action. An unavailable entry is italic, tagged, and never played. New playlist names an empty
-// playlist through the queue save's name rules; Add files opens the lazy file picker on My files and adds the chosen media in
-// the order they were checked, without duplicating an entry. Only Continue watching is automatic here: Recently added would
-// need a newest-first search, so it stays out.
+// The Media page's Playlists tab: the person's saved playlists and the two automatic lists, Continue watching and Recently
+// added, side by side on a desktop and stacked on a phone. The left table lists Continue watching first (its Automatic tag
+// and first-page count), then Recently added (the last 30 days' video and audio files, newest first), then the saved ones;
+// the address's list= picks the detail. The detail plays its available rows through the page's one session, shows the place
+// and the time left for Continue watching and the added date for Recently added, and edits a saved playlist (rename, delete,
+// move, remove, add files) only on the person's action. An unavailable entry is italic, tagged, and never played. New
+// playlist names an empty playlist through the queue save's name rules; Add files opens the lazy file picker on My files and
+// adds the chosen media in the order they were checked, without duplicating an entry.
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, App, Button, Grid, Input, Modal, Popconfirm, Skeleton, Tag } from "antd";
 import { FilePlus, History, ListMusic, ListPlus, Play, Shuffle } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ApiError } from "../../lib/api";
 import { locationOf } from "../../lib/drive/location";
 import { useLocationSpaces } from "../../lib/drive/spaces";
 import { fileErrorText } from "../../lib/files/fileErrors";
@@ -42,6 +43,7 @@ import { useLang, useT } from "../../lib/i18n";
 import { listPlayed, type PlayedItem } from "../../lib/media/api";
 import { useMT } from "../../lib/media/i18n";
 import { useCoarsePointer } from "../../lib/pointer";
+import { searchNodes, type SearchHit } from "../../lib/search/api";
 import { session, sessionKey } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import Icon from "../files/Icon";
@@ -60,12 +62,15 @@ const mediaAccept = (n: Node) => {
   const k = kindOf(n);
   return k === "audio" || k === "video";
 };
-// PAGE is how many Continue watching rows one ask reads; the left count says 50+ while a next page is there.
+// PAGE is how many rows one ask of an automatic list reads; Continue watching's left count says 50+ while a next page is there.
 const PAGE = 50;
 // CONTINUE is the automatic list's place in the address's list=, and the default when it names nothing the person has.
 const CONTINUE = "continue";
+// RECENT is the second automatic list's place in the address's list=: the files created in the last RECENT_DAYS days.
+const RECENT = "recent";
+const RECENT_DAYS = 30;
 
-// LeftRow is one row of the left table: the automatic Continue watching, or a saved playlist.
+// LeftRow is one row of the left table: an automatic list (Continue watching or Recently added), or a saved playlist.
 interface LeftRow {
   id: string;
   name: string;
@@ -74,7 +79,8 @@ interface LeftRow {
   updated: string | null;
 }
 
-// DetailRow is one row of the detail: a played file with its place, or a playlist entry. An unavailable entry has no node.
+// DetailRow is one row of the detail: a played file with its place, a recently added file, or a playlist entry. An
+// unavailable entry has no node.
 interface DetailRow {
   id: string;
   entryId: string | null;
@@ -90,8 +96,8 @@ function emptyPager(): Pager {
   return new Pager([], null, async () => ({ items: [] }));
 }
 
-// mergePlayed appends a page to the rows shown, leaving out a row that is already there.
-function mergePlayed(shown: PlayedItem[], page: PlayedItem[]): PlayedItem[] {
+// mergeRows appends a page to the rows shown, leaving out a row that is already there.
+function mergeRows<T extends { id: string }>(shown: T[], page: T[]): T[] {
   const seen = new Set(shown.map((r) => r.id));
   return [...shown, ...page.filter((r) => !seen.has(r.id))];
 }
@@ -129,6 +135,17 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const [playedMoreFailed, setPlayedMoreFailed] = useState(false);
   const [playedTick, setPlayedTick] = useState(0);
   const playedSeq = useRef(0);
+
+  // Recently added: the newest video and audio files of the last 30 days, paged. The left count is its first page; the
+  // next pages are read only while the list is chosen.
+  const [recent, setRecent] = useState<SearchHit[]>([]);
+  const [recentCursor, setRecentCursor] = useState<string | null>(null);
+  const [recentLoading, setRecentLoading] = useState(true);
+  const [recentFirstDone, setRecentFirstDone] = useState(false);
+  const [recentErr, setRecentErr] = useState<unknown>(null);
+  const [recentMoreFailed, setRecentMoreFailed] = useState(false);
+  const [recentTick, setRecentTick] = useState(0);
+  const recentSeq = useRef(0);
 
   // The detail of a saved playlist.
   const [detail, setDetail] = useState<PlaylistDetail | null>(null);
@@ -183,7 +200,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
       if (from !== null) p.set("cursor", from);
       const page = await listPlayed(p);
       if (mine !== playedSeq.current) return;
-      setPlayed((prev) => (reset ? page.items : mergePlayed(prev, page.items)));
+      setPlayed((prev) => (reset ? page.items : mergeRows(prev, page.items)));
       setPlayedCursor(page.next_cursor ?? null);
       setPlayedErr(null);
       if (!reset) setPlayedMoreFailed(false);
@@ -203,11 +220,57 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     void loadPlayed(true, null);
   }, [sk, loadPlayed, playedTick]);
 
-  // The address's list= picks the detail: a saved playlist the person has, else Continue watching. An unknown id falls back
-  // without rewriting the address.
+  const loadRecent = useCallback(async (reset: boolean, from: string | null) => {
+    const mine = ++recentSeq.current;
+    if (reset) {
+      setRecent([]);
+      setRecentCursor(null);
+      setRecentErr(null);
+      setRecentMoreFailed(false);
+    }
+    setRecentLoading(true);
+    try {
+      const p = new URLSearchParams();
+      p.append("type", "video");
+      p.append("type", "audio");
+      p.set("kind", "file");
+      p.set("order", "newest");
+      p.set("limit", String(PAGE));
+      p.set("created_after", String(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
+      if (from !== null) p.set("cursor", from);
+      const page = await searchNodes(p);
+      if (mine !== recentSeq.current) return;
+      setRecent((prev) => (reset ? page.items : mergeRows(prev, page.items)));
+      setRecentCursor(page.next_cursor ?? null);
+      setRecentErr(null);
+      if (!reset) setRecentMoreFailed(false);
+    } catch (err) {
+      if (mine !== recentSeq.current) return;
+      if (!reset) setRecentMoreFailed(true);
+      setRecentErr(err);
+    } finally {
+      if (mine === recentSeq.current) {
+        setRecentLoading(false);
+        if (reset) setRecentFirstDone(true);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRecent(true, null);
+  }, [sk, loadRecent, recentTick]);
+
+  // The address's list= picks the detail: Recently added, a saved playlist the person has, else Continue watching. An
+  // unknown id falls back without rewriting the address.
   const listParam = params.get("list");
-  const selected = listParam !== null && listParam !== CONTINUE && lists !== null && lists.some((l) => l.id === listParam) ? listParam : CONTINUE;
+  const selected =
+    listParam === RECENT
+      ? RECENT
+      : listParam !== null && listParam !== CONTINUE && lists !== null && lists.some((l) => l.id === listParam)
+        ? listParam
+        : CONTINUE;
   const isContinue = selected === CONTINUE;
+  const isRecent = selected === RECENT;
   const selectedList = lists?.find((l) => l.id === selected);
 
   useEffect(() => {
@@ -218,7 +281,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         setAddBusy(false);
       }
     };
-    if (isContinue) {
+    if (isContinue || isRecent) {
       setDetail(null);
       setDetailErr(null);
       doneAdd();
@@ -241,7 +304,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     return () => {
       live = false;
     };
-  }, [selected, isContinue, sk, detailTick]);
+  }, [selected, isContinue, isRecent, sk, detailTick]);
 
   // select writes the chosen list in the address with replace; Continue watching keeps the address clean.
   const select = (id: string) => {
@@ -251,6 +314,9 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   const detailRows: DetailRow[] = useMemo(() => {
     if (isContinue) {
       return played.map((n, i) => ({ id: n.id, entryId: null, node: n, unavailable: false, index: i, position: n.position_seconds, duration: n.duration_seconds }));
+    }
+    if (isRecent) {
+      return recent.map((n, i) => ({ id: n.id, entryId: null, node: n, unavailable: false, index: i, position: 0, duration: 0 }));
     }
     if (detail === null) return [];
     return detail.entries.map((e, i) => ({
@@ -262,7 +328,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
       position: 0,
       duration: 0,
     }));
-  }, [isContinue, played, detail]);
+  }, [isContinue, isRecent, played, recent, detail]);
 
   const availableNodes = useMemo(() => detailRows.filter((r) => !r.unavailable && r.node !== null).map((r) => r.node as Node), [detailRows]);
 
@@ -406,9 +472,14 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     void loadPlayed(false, playedCursor);
   };
   const sentinel = useLoadMoreSentinel(isContinue && playedCursor !== null, playedLoading, playedMoreFailed, loadMore);
+  const loadMoreRecent = () => {
+    if (recentCursor === null || recentLoading) return;
+    void loadRecent(false, recentCursor);
+  };
+  const recentSentinel = useLoadMoreSentinel(isRecent && recentCursor !== null, recentLoading, recentMoreFailed, loadMoreRecent);
 
-  const detailName = isContinue ? t("media.pl.continue") : (detail?.name ?? selectedList?.name ?? "");
-  const kind = isContinue ? t("media.pl.kindAutomatic") : t("media.pl.kindSaved");
+  const detailName = isContinue ? t("media.pl.continue") : isRecent ? t("media.pl.recent") : (detail?.name ?? selectedList?.name ?? "");
+  const kind = isContinue || isRecent ? t("media.pl.kindAutomatic") : t("media.pl.kindSaved");
   const rowCount = detailRows.length;
   // The detail's entry count drives Add files: the room left for the picker, and the cap that turns the button off.
   const entryCount = detail?.entry_count ?? selectedList?.entry_count ?? 0;
@@ -459,12 +530,15 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     { key: "title", title: t("media.pl.colTitle"), render: titleCell },
     { key: "num", title: "#", width: 48, render: (r) => r.index + 1 },
     { key: "folder", title: t("media.lib.col.folder"), secondary: true, render: (r) => (r.node !== null ? locationOf(r.node, spaces, mt("nav.files")) : "—") },
-    { key: "length", title: t("media.lib.col.length"), secondary: true, align: "end", render: lengthOf },
+    isRecent
+      ? { key: "added", title: t("media.pl.colAdded"), secondary: true, render: (r) => (r.node !== null ? <time dateTime={r.node.created_at}>{formatDate(r.node.created_at, lang)}</time> : "—") }
+      : { key: "length", title: t("media.lib.col.length"), secondary: true, align: "end", render: lengthOf },
   ];
 
   const continueCount = playedCursor !== null ? `${PAGE}+` : String(played.length);
   const leftRows: LeftRow[] = [
     { id: CONTINUE, name: t("media.pl.continue"), automatic: true, count: continueCount, updated: played[0]?.played_at ?? null },
+    { id: RECENT, name: t("media.pl.recent"), automatic: true, count: String(recent.length), updated: recent[0]?.created_at ?? null },
     ...(lists ?? []).map((l) => ({ id: l.id, name: l.name, automatic: false, count: String(l.entry_count), updated: l.updated_at })),
   ];
   const leftColumns: ListColumn<LeftRow>[] = [
@@ -485,14 +559,18 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     { key: "updated", title: t("media.pl.colUpdated"), secondary: true, render: (r) => (r.updated !== null ? <time dateTime={r.updated}>{formatDate(r.updated, lang)}</time> : "—") },
   ];
 
-  const summaryCount = isContinue ? continueCount : String(detail?.entry_count ?? selectedList?.entry_count ?? 0);
-  const summaryDate = isContinue ? (played[0]?.played_at ?? null) : (detail?.updated_at ?? selectedList?.updated_at ?? null);
+  const summaryCount = isContinue ? continueCount : isRecent ? String(recent.length) : String(detail?.entry_count ?? selectedList?.entry_count ?? 0);
+  const summaryDate = isContinue ? (played[0]?.played_at ?? null) : isRecent ? (recent[0]?.created_at ?? null) : (detail?.updated_at ?? selectedList?.updated_at ?? null);
   const summary = summaryDate !== null ? t("media.pl.summary", { count: summaryCount, date: formatDate(summaryDate, lang) }) : t("media.pl.summaryCount", { count: summaryCount });
 
   const continueEmpty: ListEmpty = {
     title: t("media.pl.emptyContinueTitle"),
     description: t("media.pl.emptyContinueBody"),
     action: { label: t("media.pl.emptyContinueAction"), onClick: () => setParams({ tab: "videos" }, { replace: true }) },
+    className: "empty",
+  };
+  const recentEmpty: ListEmpty = {
+    title: t("media.pl.emptyRecentTitle"),
     className: "empty",
   };
   const savedEmpty: ListEmpty = {
@@ -519,7 +597,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
       />
     );
   }
-  if (lists === null || !playedFirstDone) return <Skeleton active />;
+  if (lists === null || !playedFirstDone || !recentFirstDone) return <Skeleton active />;
 
   const detailBody = () => {
     if (isContinue) {
@@ -551,6 +629,38 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             if (!r.unavailable && r.node !== null) playFrom(r.node);
           }}
           empty={continueEmpty}
+        />
+      );
+    }
+    if (isRecent) {
+      if (recentErr !== null && recent.length === 0) {
+        return (
+          <Alert
+            type="error"
+            showIcon
+            role="alert"
+            message={recentErr instanceof ApiError && recentErr.code === "rate_limited" ? t("media.lib.rateLimited") : fileErrorText(recentErr, lang)}
+            action={
+              <Button size="small" onClick={() => setRecentTick((n) => n + 1)}>
+                {mt("files.retry")}
+              </Button>
+            }
+          />
+        );
+      }
+      return (
+        <Listing<DetailRow>
+          label={detailName}
+          items={detailRows}
+          rowLabel={(r) => rowName(r)}
+          columns={detailColumns}
+          icon={(r) => (r.node !== null ? <Icon kind={kindOf(r.node)} size={22} node={r.node} /> : null)}
+          menu={menu}
+          rowClassName={(r) => (r.unavailable ? "media-pl-row--off" : "")}
+          onOpen={(r) => {
+            if (!r.unavailable && r.node !== null) playFrom(r.node);
+          }}
+          empty={recentEmpty}
         />
       );
     }
@@ -624,7 +734,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             <Button icon={<Shuffle size={16} aria-hidden="true" focusable="false" />} disabled={availableNodes.length === 0} onClick={shuffleAll}>
               {t("media.pl.shufflePlay")}
             </Button>
-            {!isContinue && (
+            {!isContinue && !isRecent && (
               <IconButton
                 label={t("media.pl.addFiles")}
                 tip={atCap ? t("media.pl.full") : undefined}
@@ -633,12 +743,12 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
                 icon={<FilePlus size={16} aria-hidden="true" focusable="false" />}
               />
             )}
-            {!isContinue && (
+            {!isContinue && !isRecent && (
               <Button onClick={openRename} disabled={detail === null}>
                 {mt("files.playlists.rename")}
               </Button>
             )}
-            {!isContinue && (
+            {!isContinue && !isRecent && (
               <Popconfirm
                 title={t("media.pl.deleteConfirm")}
                 okText={mt("files.playlists.deleteOk")}
@@ -656,9 +766,17 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         {detailBody()}
 
         {isContinue && playedCursor !== null && <div ref={sentinel} aria-hidden="true" />}
+        {isRecent && recentCursor !== null && <div ref={recentSentinel} aria-hidden="true" />}
         {isContinue && playedCursor !== null && (
           <div style={{ marginBlockStart: 12 }}>
             <Button onClick={loadMore} disabled={playedLoading} style={coarse ? { minHeight: 44 } : undefined}>
+              {mt("files.loadMore")}
+            </Button>
+          </div>
+        )}
+        {isRecent && recentCursor !== null && (
+          <div style={{ marginBlockStart: 12 }}>
+            <Button onClick={loadMoreRecent} disabled={recentLoading} style={coarse ? { minHeight: 44 } : undefined}>
               {mt("files.loadMore")}
             </Button>
           </div>
@@ -701,7 +819,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
         <p className="pl-hint">{mt("files.playlists.nameHint", { count: NAME_MAX })}</p>
       </Modal>
 
-      {addOpen && !isContinue && (
+      {addOpen && !isContinue && !isRecent && (
         <Suspense fallback={null}>
           <PickFiles
             title={t("media.pl.addTitle", { name: detailName })}
