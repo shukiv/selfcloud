@@ -1052,6 +1052,8 @@ describe("the Playlists tab's Export", () => {
     stubFetch(answers({ playedItems: [played(clip("nod_c1", "one.webm"), 6, 60)], recentItems: [song("nod_r1", "new.mp3")] }));
     renderTab();
     await screen.findByRole("region", { name: "Continue watching" });
+    expect(screen.queryByRole("button", { name: "Export to a folder" })).toBeNull();
+    fireEvent.click(row("Recently added"));
     await screen.findByRole("region", { name: "Recently added" });
     expect(screen.queryByRole("button", { name: "Export to a folder" })).toBeNull();
   });

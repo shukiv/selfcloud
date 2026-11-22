@@ -2688,12 +2688,14 @@ describe("Import as playlist (decision 237)", () => {
     expect(await menuEntry("Import as playlist")).toBeTruthy();
   });
 
-  it("is in the selection bar of one .m3u file", async () => {
+  it("is in the selection's More menu of one .m3u file", async () => {
     api.childrenPage.mockResolvedValue({ items: [m3u("n1", "mix.m3u")], next_cursor: undefined });
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "mix.m3u" });
     fireEvent.click(rows("mix.m3u") as Element);
-    expect(await inPanel("Import as playlist")).toBeTruthy();
+    const panel = await screen.findByTestId("selection-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("menuitem", { name: "Import as playlist" })).toBeTruthy();
   });
 
   it("is not offered for an .mp3, for two files, or for a folder", async () => {

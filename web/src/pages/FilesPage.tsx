@@ -28,6 +28,7 @@ import {
   Link as LinkIcon,
   Link2,
   List,
+  ListMusic,
   EllipsisVertical,
   Pencil,
   Play,
@@ -96,6 +97,7 @@ import Details from "../components/files/Details";
 import Preview, { type MediaSeed } from "../components/files/Preview";
 import { Pager } from "../lib/files/pager";
 import { isPlayable } from "../lib/files/queue";
+import { importPlaylist, playlistErrorText } from "../lib/files/playlists";
 import Versions from "../components/files/Versions";
 import PickDestination, { type Destination } from "../components/files/PickDestination";
 import AddShortcut from "../components/files/AddShortcut";
@@ -129,6 +131,11 @@ function previewKey(n: Node): "files.act.play" | "files.act.view" | "files.act.p
   if (k === "video" || k === "audio") return "files.act.play";
   if (k === "image") return "files.act.view";
   return "files.act.preview";
+}
+
+// playlistFile is a file the import reads as a playlist: an .m3u or .m3u8, whatever the case of its ending (decision 237).
+function playlistFile(n: Node): boolean {
+  return n.kind === "file" && /\.m3u8?$/i.test(n.name);
 }
 
 // Place is where the browser is, or why it cannot show it.
@@ -1033,6 +1040,21 @@ export default function FilesPage() {
     }
   }
 
+  // importAsPlaylist reads an .m3u or .m3u8 file into a new playlist and opens the Media page's Playlists tab on it, handing
+  // the skipped lines over in the router state (decision 237). A move to another place drops the answer.
+  async function importAsPlaylist(n: Node) {
+    const changed = sessionChanged();
+    try {
+      const got = await importPlaylist(n.id);
+      if (changed() || signingOut()) return;
+      navigate(`/media?tab=playlists&list=${got.playlist.id}`, {
+        state: { playlistImport: { skipped: got.skipped, skipped_total: got.skipped_total } },
+      });
+    } catch (err) {
+      if (!changed() && !signingOut()) void message.error(playlistErrorText(err, lang));
+    }
+  }
+
   // focusRow asks the listing for the focus on a row (decision 183). A row that is not drawn is scrolled to and drawn first, which the
   // listing does. The request is state, set with the selection by the same key, so it costs no extra render.
   function focusRow(id: string | null) {
@@ -1781,6 +1803,20 @@ export default function FilesPage() {
       enabled: true,
       run: () => {
         if (single) void playFolder(single);
+      },
+    },
+    {
+      key: "importPlaylist",
+      label: t("files.act.importPlaylist"),
+      icon: <ListMusic {...ic} />,
+      group: 1,
+      section: "first",
+      hidden: impersonating || !signedIn || !items.some(playlistFile),
+      // One .m3u or .m3u8 file imports as a new playlist (decision 237).
+      fits: single !== null && playlistFile(single),
+      enabled: single !== null && playlistFile(single),
+      run: () => {
+        if (single) void importAsPlaylist(single);
       },
     },
     {

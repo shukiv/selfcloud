@@ -98,7 +98,9 @@ fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview us
 fn	lib/files/ops.ts:startDownloadURL	get	cli6	built in cli6
 fn	lib/files/playlists.ts:createPlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/playlists.ts:deletePlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:exportPlaylist	-	-	browser session only, as the other playlist rows (decision 237)
 fn	lib/files/playlists.ts:getPlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
+fn	lib/files/playlists.ts:importPlaylist	-	-	browser session only, as the other playlist rows (decision 237)
 fn	lib/files/playlists.ts:listPlaylists	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/playlists.ts:removeEntry	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)
 fn	lib/files/playlists.ts:renamePlaylist	-	cli12	browser session only: a playlist refuses every key and token (owner's answer 8)

@@ -4,12 +4,14 @@
 // accounts, as the member: the tab sits right after Now playing; the automatic Continue watching lists a file stopped part
 // way with the place and the time left, and plays it through the page's one session; Recently added, the second automatic
 // list, holds the uploaded file at list=recent; a saved playlist's detail plays, is renamed and deleted through the page
-// (the delete asks first), and an empty detail falls back to Continue watching; the two tables fit a phone with no sideways
-// scroll. Run it alone with SELFCLOUD_E2E_ONLY=mp3. The checks end signed in as the member, which the rest of the run
-// expects; the interface's language and theme and the listing's view are put back afterwards.
+// (the delete asks first), and an empty detail falls back to Continue watching; an .m3u8 file imports as a playlist from
+// the Files page with the note of the skipped lines, and the imported playlist exports into a folder from the detail; the
+// two tables fit a phone with no sideways scroll. Run it alone with SELFCLOUD_E2E_ONLY=mp3. The checks end signed in as the
+// member, which the rest of the run expects; the interface's language and theme and the listing's view are put back afterwards.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LABELS, pickMenuEntry } from './menu.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const PASSWORD = 'correct horse battery staple';
@@ -47,11 +49,11 @@ function apiIn(page, method, path, body) {
 }
 
 // putAudioIn uploads the bytes as the signed-in member, with the session's CSRF token, the way the page's own upload does.
-function putAudioIn(page, path, b64) {
+function putAudioIn(page, path, b64, mime = 'audio/ogg') {
   return page.evaluate(`(async () => {
     const me = await fetch('/api/v1/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((x) => x.json());
     const bin = Uint8Array.from(atob(${q(b64)}), (c) => c.charCodeAt(0));
-    const r = await fetch(${q(path)}, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'audio/ogg', 'X-CSRF-Token': me.csrf_token ?? '' }, body: bin });
+    const r = await fetch(${q(path)}, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': ${q(mime)}, 'X-CSRF-Token': me.csrf_token ?? '' }, body: bin });
     return { status: r.status };
   })()`);
 }
@@ -123,8 +125,14 @@ export async function mp3Checks(h, { page, base }) {
   const toneName = `mp3-tone-${stamp}.ogg`;
   const savedName = `MP3 saved ${stamp}`;
   const renamedName = `MP3 renamed ${stamp}`;
+  const m3uName = `mp3-list-${stamp}.m3u8`;
+  const importedName = `mp3-list-${stamp}`;
+  const exportedName = `${importedName} (2).m3u8`;
   let toneId = null;
   let playlistId = null;
+  let m3uId = null;
+  let importedId = null;
+  let exportedId = null;
 
   await signOut();
   try {
@@ -152,6 +160,13 @@ export async function mp3Checks(h, { page, base }) {
     const made = await apiIn(page, 'POST', '/api/v1/playlists', { name: savedName, nodes: [toneId] });
     playlistId = made.body?.id ?? null;
     check(!!playlistId, `the saved playlist was made (${made.status})`);
+    // An .m3u8 file beside the audio: one relative line that names it, and one web address the import skips.
+    const m3uText = `#EXTM3U\n#EXTINF:30,Tone\n${toneName}\nhttps://example.com/remote.mp3\n`;
+    const m3uUp = await putAudioIn(page, `/api/v1/folders/${pf}/files?path=${encodeURIComponent('/' + m3uName)}`, Buffer.from(m3uText).toString('base64'), 'audio/x-mpegurl');
+    check(m3uUp.status === 201 || m3uUp.status === 200, `the member uploaded the playlist file (${m3uUp.status})`);
+    const kids2 = await apiIn(page, 'GET', `/api/v1/folders/${pf}/children?path=%2F`);
+    m3uId = kids2.body.items.find((n) => n.name === m3uName)?.id ?? null;
+    check(!!m3uId, 'the uploaded playlist file is listed');
 
     await step('the Playlists tab sits right after Now playing', async () => {
       await h.clickNav(page, 'Media');
@@ -244,7 +259,53 @@ export async function mp3Checks(h, { page, base }) {
       playlistId = null;
     });
 
+    await step('an .m3u8 file imports as a playlist from the Files page', async () => {
+      // My files in List view, so the row's More menu is the one a person reads.
+      const filesURL = `${base}/files/${pf}`;
+      await page.goto(filesURL);
+      await page.evaluate(`localStorage.setItem('selfcloud.files', JSON.stringify({ view: 'list', sort: { key: 'name', dir: 'asc' } }))`);
+      await page.goto(filesURL);
+      await until(page, `!!document.querySelector('[role="row"][aria-label=${q(m3uName)}]')`, 15000, 'the playlist file row');
+      await page.evaluate(`document.querySelector('[role="row"][aria-label=${q(m3uName)}] button[aria-haspopup="menu"]')?.click()`);
+      await page.waitFor(`${LABELS}.includes('Import as playlist')`, 10000);
+      await pickMenuEntry(page, 'Import as playlist');
+      // The import opens the Media page's Playlists tab on the new list, with the note of the skipped line.
+      await until(page, `location.pathname === '/media' && location.search.includes('tab=playlists') && location.search.includes('list=')`, 15000, 'the imported playlist in the address');
+      importedId = await page.evaluate(`new URLSearchParams(location.search).get('list')`);
+      check(!!importedId, 'the address names the imported playlist');
+      await until(page, `document.querySelector('.media-pl-name')?.textContent.trim() === ${q(importedName)}`, 15000, 'the imported detail');
+      await until(page, `!!document.querySelector(${q(rowSel(importedName, toneName))})`, 15000, 'the audio in the imported detail');
+      await until(page, `document.body.innerText.includes('1 line was skipped')`, 10000, 'the skipped-lines note');
+      await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Show details')?.click()`);
+      await until(page, `document.body.innerText.includes('a web address')`, 10000, 'the skipped line’s reason');
+    });
+
+    await step('the imported playlist exports into a folder from the detail', async () => {
+      // Export is the detail's icon button; the save picker opens on the personal space, whose root takes the file.
+      const exportBtn = `[...document.querySelectorAll('.media-pl-actions button')].find((b) => b.getAttribute('aria-label') === 'Export to a folder')`;
+      await until(page, `(() => { const b = ${exportBtn}; return !!b && !b.disabled; })()`, 10000, 'the Export button');
+      await page.evaluate(`${exportBtn}?.click()`);
+      await until(page, `!!document.querySelector('[data-testid="pick"]')`, 10000, 'the export picker');
+      check(await page.evaluate(`document.querySelector('[data-testid="pick"] .ant-modal-title')?.textContent.trim() === 'Export playlist'`), 'the picker is the export');
+      await until(page, `(() => { const b = [...document.querySelectorAll('[data-testid="pick"] button')].find((x) => x.textContent.trim() === 'Export here'); return !!b && !b.disabled; })()`, 10000, 'the Export here button');
+      await page.evaluate(`[...document.querySelectorAll('[data-testid="pick"] button')].find((x) => x.textContent.trim() === 'Export here')?.click()`);
+      // The uploaded file holds the name, so the export takes the next free one, and the message says where it landed.
+      await until(page, `(() => { const m = document.querySelector('.ant-message-success'); return !!m && m.textContent.includes(${q('Saved as ' + exportedName)}); })()`, 15000, 'the export message');
+      const kids3 = await apiIn(page, 'GET', `/api/v1/folders/${pf}/children?path=%2F`);
+      exportedId = kids3.body.items.find((n) => n.name === exportedName)?.id ?? null;
+      check(!!exportedId, 'the exported file is listed under its free name');
+      const content = await page.evaluate(`fetch(${q('/api/v1/nodes/' + exportedId + '/content')}, { credentials: 'same-origin' }).then((r) => r.text())`);
+      check(content.includes(toneName), 'the exported file names the audio');
+      // The message's Open folder goes to the place the file landed in.
+      await page.evaluate(`[...document.querySelectorAll('.ant-message-success button')].find((b) => b.textContent.trim() === 'Open folder')?.click()`);
+      await until(page, `location.pathname.startsWith('/files/')`, 10000, 'the exported file’s folder');
+      await until(page, `!!document.querySelector('[role="row"][aria-label=${q(exportedName)}]')`, 15000, 'the exported file row');
+    });
+
     await step('the two tables fit a phone with no sideways scroll', async () => {
+      // The export step left the Files page; the tables are measured on the Playlists tab again.
+      await page.goto(base + '/media?tab=playlists');
+      await until(page, `!!document.querySelector('[data-testid="media-pl-layout"]')`, 15000, 'the two tables');
       await setPhone(page, true);
       await sleep(400);
       const over = await page.evaluate(`Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth`);
@@ -253,8 +314,12 @@ export async function mp3Checks(h, { page, base }) {
     });
   } finally {
     await setPhone(page, false);
-    // The fixtures are the member's own; the playlist (if a check left it) and the audio are removed, the place with the file.
+    // The fixtures are the member's own; the playlists (if a check left them), the exported file, the playlist file and the
+    // audio are removed, the place with the file.
     if (playlistId !== null) await apiIn(page, 'DELETE', `/api/v1/playlists/${playlistId}`).catch(() => {});
+    if (importedId !== null) await apiIn(page, 'DELETE', `/api/v1/playlists/${importedId}`).catch(() => {});
+    if (exportedId !== null) await apiIn(page, 'DELETE', `/api/v1/nodes/${exportedId}`).catch(() => {});
+    if (m3uId !== null) await apiIn(page, 'DELETE', `/api/v1/nodes/${m3uId}`).catch(() => {});
     if (toneId !== null) await apiIn(page, 'DELETE', `/api/v1/nodes/${toneId}`).catch(() => {});
     const restore = [['selfcloud.lang', kept.lang], ['selfcloud.theme', kept.theme], ['selfcloud.files', kept.files]];
     await page.evaluate(`(() => { for (const [k, v] of ${q(restore)}) { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } return true; })()`);

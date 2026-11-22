@@ -11,8 +11,8 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, App, Button, Grid, Input, Modal, Popconfirm, Skeleton, Tag } from "antd";
-import { FilePlus, History, ListMusic, ListPlus, Play, Shuffle } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { FileInput, FileOutput, FilePlus, History, ListMusic, ListPlus, Play, Shuffle } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { locationOf } from "../../lib/drive/location";
 import { useLocationSpaces } from "../../lib/drive/spaces";
@@ -26,20 +26,24 @@ import { getPlayback, startPlayback, subscribePlayback } from "../../lib/files/p
 import {
   createPlaylist,
   deletePlaylist,
+  exportPlaylist,
   getPlaylist,
+  importPlaylist,
   listPlaylists,
+  playlistErrorText,
   removeEntry,
   renamePlaylist,
   reorderEntries,
   replaceEntries,
   type PlaylistDetail,
   type PlaylistSummary,
+  type SkipReason,
 } from "../../lib/files/playlists";
 import { getQueueControl, subscribeQueueControl } from "../../lib/files/queueControl";
 import { filesURL } from "../../lib/files/route";
 import { getTags, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
 import type { Node } from "../../lib/files/types";
-import { useLang, useT } from "../../lib/i18n";
+import { translatePlural, useLang, useT } from "../../lib/i18n";
 import { listPlayed, type PlayedItem } from "../../lib/media/api";
 import { useMT } from "../../lib/media/i18n";
 import { useCoarsePointer } from "../../lib/pointer";
@@ -47,11 +51,13 @@ import { searchNodes, type SearchHit } from "../../lib/search/api";
 import { session, sessionKey } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import Icon from "../files/Icon";
+import type { Destination } from "../files/PickDestination";
 import IconButton from "../IconButton";
 import Listing, { type ListColumn, type ListEmpty, type ListMenuEntry } from "../files/Listing";
 
-// The file picker is a lazy chunk of its own, so it is not in the tab's first load.
+// The pickers are lazy chunks of their own, so they are not in the tab's first load.
 const PickFiles = lazy(() => import("../files/PickFiles"));
+const PickDestination = lazy(() => import("../files/PickDestination"));
 
 // NAME_MAX is the longest a playlist's name may be, as the queue's save and rename dialogs keep it.
 const NAME_MAX = 120;
@@ -62,6 +68,8 @@ const mediaAccept = (n: Node) => {
   const k = kindOf(n);
   return k === "audio" || k === "video";
 };
+// playlistAccept keeps the .m3u and .m3u8 files alone, whatever the case of the ending (decision 237).
+const playlistAccept = (n: Node) => n.kind === "file" && /\.m3u8?$/i.test(n.name);
 // PAGE is how many rows one ask of an automatic list reads; Continue watching's left count says 50+ while a next page is there.
 const PAGE = 50;
 // CONTINUE is the automatic list's place in the address's list=, and the default when it names nothing the person has.
@@ -89,6 +97,12 @@ interface DetailRow {
   index: number;
   position: number;
   duration: number;
+}
+
+// ImportNote is the skipped lines of an import, as the Files page hands them over in the router state (decision 237).
+interface ImportNote {
+  skipped: { line: number; reason: SkipReason }[];
+  skipped_total: number;
 }
 
 // emptyPager is the folder of a playlist play: the selection is the list, so the folder has nothing to read.
@@ -182,6 +196,29 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
   // nothing, so a second Add cannot build on the old entries and drop the first batch.
   const [addBusy, setAddBusy] = useState(false);
   const addInFlight = useRef(false);
+
+  // Import: the lazy picker's open state, and the one import on its way. The note tells the skipped lines of the last
+  // import, for the playlist it named; the Files page hands the same note over in the router state (decision 237).
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const importInFlight = useRef(false);
+  const location = useLocation();
+  const [note, setNote] = useState<ImportNote | null>(() => {
+    const s = location.state as { playlistImport?: ImportNote } | null;
+    return s?.playlistImport ?? null;
+  });
+  const [noteFor, setNoteFor] = useState<string | null>(() => params.get("list"));
+  const [noteOpen, setNoteOpen] = useState(false);
+  // Export: the lazy destination picker's open state, and the one export on its way.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const exportInFlight = useRef(false);
+
+  useEffect(() => {
+    // The handoff is read once, on the way in: the state leaves the address, so a refresh or a back keeps no note.
+    if (location.state !== null) navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -478,6 +515,63 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
     );
   };
 
+  // Import reads the chosen .m3u or .m3u8 file into a new playlist, once, and opens it with the note of the lines the
+  // server skipped. A second pick while the import runs sends nothing, so one file makes one playlist.
+  const importFile = async (nodes: Node[]) => {
+    setImportOpen(false);
+    const n = nodes[0];
+    if (n === undefined || importInFlight.current) return;
+    importInFlight.current = true;
+    setImportBusy(true);
+    try {
+      const got = await importPlaylist(n.id);
+      setListsTick((v) => v + 1);
+      select(got.playlist.id);
+      if (got.skipped_total > 0) {
+        setNote({ skipped: got.skipped, skipped_total: got.skipped_total });
+        setNoteFor(got.playlist.id);
+        setNoteOpen(false);
+      }
+    } catch (err) {
+      message.error(playlistErrorText(err, lang));
+    } finally {
+      importInFlight.current = false;
+      setImportBusy(false);
+    }
+  };
+
+  // Export writes the playlist as an .m3u8 file into the place picked, once, and tells where it landed, with the count of
+  // entries left out. A pick of a space's root writes into its root node. A second pick while the export runs sends nothing.
+  const exportTo = async (dest: Destination) => {
+    setExportOpen(false);
+    if (detail === null || exportInFlight.current) return;
+    const folderId = dest.dir ?? spaces.find((s) => s.id === dest.folder)?.root_node_id;
+    if (folderId === undefined) return;
+    exportInFlight.current = true;
+    setExportBusy(true);
+    try {
+      const got = await exportPlaylist(selected, folderId);
+      const place = dest.name ?? spaces.find((s) => s.id === dest.folder)?.name ?? "";
+      message.success({
+        content: (
+          <>
+            {t("media.pl.exported", { name: got.node.name, place })}{" "}
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={() => navigate(filesURL(dest.folder, dest.dir))}>
+              {t("media.pl.exportOpen")}
+            </Button>
+            {got.left_out > 0 && <div>{translatePlural(lang, "files.playlists.leftOut", got.left_out)}</div>}
+          </>
+        ),
+        duration: 6,
+      });
+    } catch (err) {
+      message.error(playlistErrorText(err, lang));
+    } finally {
+      exportInFlight.current = false;
+      setExportBusy(false);
+    }
+  };
+
   const loadMore = () => {
     if (playedCursor === null || playedLoading) return;
     void loadPlayed(false, playedCursor);
@@ -712,6 +806,7 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
           </h3>
           <div className="media-queue-actions">
             <IconButton label={t("media.pl.newPlaylist")} disabled={createBusy} onClick={openCreate} icon={<ListPlus size={18} aria-hidden="true" focusable="false" />} />
+            <IconButton label={t("media.pl.import")} disabled={importBusy} onClick={() => setImportOpen(true)} icon={<FileInput size={18} aria-hidden="true" focusable="false" />} />
           </div>
         </header>
         <Listing<LeftRow>
@@ -727,6 +822,32 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
       </div>
 
       <div className="media-pl-detail">
+        {note !== null && note.skipped_total > 0 && noteFor === selected && !isContinue && !isRecent && (
+          <Alert
+            type="info"
+            closable
+            onClose={() => setNote(null)}
+            style={{ marginBlockEnd: 12 }}
+            message={
+              <>
+                {translatePlural(lang, "files.playlists.skipped", note.skipped.length)}{" "}
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setNoteOpen((v) => !v)}>
+                  {t("media.pl.skipDetails")}
+                </Button>
+              </>
+            }
+            description={
+              noteOpen ? (
+                <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                  {note.skipped.map((s) => (
+                    <li key={s.line}>{t("media.pl.skipLine", { line: s.line, reason: t(`media.pl.skipReason.${s.reason}`) })}</li>
+                  ))}
+                  {note.skipped_total > note.skipped.length && <li>{t("media.pl.skipMore", { count: note.skipped_total - note.skipped.length })}</li>}
+                </ul>
+              ) : undefined
+            }
+          />
+        )}
         <div className="media-pl-head">
           <div className="media-pl-head-text">
             <h2 className="media-pl-name">{detailName}</h2>
@@ -747,6 +868,14 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
                 disabled={detail === null || atCap || addBusy}
                 onClick={() => setAddOpen(true)}
                 icon={<FilePlus size={16} aria-hidden="true" focusable="false" />}
+              />
+            )}
+            {!isContinue && !isRecent && (
+              <IconButton
+                label={t("media.pl.export")}
+                disabled={detail === null || exportBusy}
+                onClick={() => setExportOpen(true)}
+                icon={<FileOutput size={16} aria-hidden="true" focusable="false" />}
               />
             )}
             {!isContinue && !isRecent && (
@@ -834,6 +963,35 @@ export default function MediaPlaylistsTab({ onPlay }: { onPlay: () => void }) {
             max={ENTRIES_MAX - entryCount}
             onPick={addFiles}
             onClose={() => setAddOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {importOpen && (
+        <Suspense fallback={null}>
+          <PickFiles
+            title={t("media.pl.import")}
+            action={t("media.pl.importAction")}
+            spaces={spaces}
+            startAt={personalId}
+            accept={playlistAccept}
+            multiple={false}
+            onPick={(nodes) => void importFile(nodes)}
+            onClose={() => setImportOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {exportOpen && !isContinue && !isRecent && (
+        <Suspense fallback={null}>
+          <PickDestination
+            mode="save"
+            heading={t("media.pl.exportTitle")}
+            action={t("media.pl.exportAction")}
+            spaces={spaces}
+            startAt={personalId}
+            onPick={(dest) => void exportTo(dest)}
+            onClose={() => setExportOpen(false)}
           />
         </Suspense>
       )}
