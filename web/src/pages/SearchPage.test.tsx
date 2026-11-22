@@ -360,7 +360,7 @@ const address = () => screen.getByTestId("address").textContent ?? "";
 
 // pickFilter chooses one option of the filter select whose label is the given one, as a person does with the mouse.
 async function pickFilter(label: string, option: string) {
-  const selector = screen.getByLabelText(label).closest(".ant-select")!.querySelector(".ant-select-selector") as HTMLElement;
+  const selector = screen.getByLabelText(label, { selector: "input" }).closest(".ant-select")!.querySelector(".ant-select-selector") as HTMLElement;
   fireEvent.mouseDown(selector);
   const choices = await screen.findAllByText(option, { selector: ".ant-select-item-option-content" });
   fireEvent.click(choices[choices.length - 1]);

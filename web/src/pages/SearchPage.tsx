@@ -10,6 +10,7 @@ import { Search } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { fileErrorText } from "../lib/files/fileErrors";
+import { statNode } from "../lib/files/api";
 import { listLabelFields, type LabelField } from "../lib/labels/api";
 import { translate, useLang, useT, type Lang } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -39,7 +40,7 @@ import { locationOf } from "../lib/drive/location";
 import Listing, { type ListColumn } from "../components/files/Listing";
 import Icon from "../components/files/Icon";
 import DriveName, { openDrive } from "../components/drive/DriveName";
-import SearchFilters from "../components/search/SearchFilters";
+import SearchFilters, { type ScopeName } from "../components/search/SearchFilters";
 import { useDraft } from "../components/search/useDraft";
 
 // searchErrorText is the text of a failed search, by its code. The server's own text is never shown.
@@ -148,6 +149,25 @@ export default function SearchPage() {
       live = false;
     };
   }, [sk]);
+
+  // The scope directory's name, read once for the chip. The search itself does not wait for it: a failed read still searches.
+  const [scopeName, setScopeName] = useState<ScopeName | null>(null);
+  useEffect(() => {
+    const id = state.scope;
+    if (id === "") {
+      setScopeName(null);
+      return;
+    }
+    let live = true;
+    setScopeName({ id, name: null, off: false });
+    statNode(id).then(
+      (n) => live && setScopeName({ id, name: n.name, off: false }),
+      () => live && setScopeName({ id, name: null, off: true }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [state.scope]);
 
   // The label filters the account can search. While the fields are being read, a label filter waits: the words are not
   // sent until it has been checked. A filter that is not kept is taken out of the address too, so the page shows what it
@@ -267,7 +287,8 @@ export default function SearchPage() {
         </bdi>
       </span>
     ) : null;
-  // The results are in relevance order, so no column is marked as sorted: the time column is not the order of the rows.
+  // With words the results are in relevance order, and a filter-only search is newest first by created time, so no column is
+  // marked as sorted: the time column shown is not the order of the rows.
   const columns: ListColumn<SearchHit>[] = [
     {
       key: "name",
@@ -346,7 +367,7 @@ export default function SearchPage() {
             <p style={{ margin: "0 0 10px", fontSize: token.fontSizeSM, color: token.colorTextSecondary }}>{t("search.textNote")}</p>
           )}
 
-          <SearchFilters state={state} change={(next) => write(() => next)} fields={fields} fieldsOff={fieldsOff} coarse={coarse} />
+          <SearchFilters state={state} change={(next) => write(() => next)} fields={fields} fieldsOff={fieldsOff} scopeName={scopeName} coarse={coarse} />
 
           <div style={{ marginBlock: 16 }}>
             {problem !== null && (

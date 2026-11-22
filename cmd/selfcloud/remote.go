@@ -616,8 +616,9 @@ var remoteCommands = []remoteCommand{
 
 	{name: "search", route: "GET /api/v1/search",
 		help: `  search [QUERY] [--in name|content] [--kind file|dir|shortcut] [--type TYPE] [--ext LIST]
-         [--modified-after TIME] [--modified-before TIME] [--size-min SIZE] [--size-max SIZE]
-         [--label FIELD:VALUE]... [--scope NODE] [--limit N] [--all]
+         [--modified-after TIME] [--modified-before TIME] [--created-after TIME] [--created-before TIME]
+         [--size-min SIZE] [--size-max SIZE] [--label FIELD:VALUE]... [--scope NODE]
+         [--newest] [--starred] [--shared] [--limit N] [--all]
                                  find nodes by name or content, and by their filters
 `, run: files.Search},
 	{name: "people find", route: "GET /api/v1/directory",

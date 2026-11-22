@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useNavigationType, useSearchParams } from "react-router-dom";
 import { useT } from "../../lib/i18n";
 import { useCoarsePointer } from "../../lib/pointer";
+import { parseFilesPath } from "../../lib/files/route";
 import { RADIUS } from "../../theme/tokens";
 import { useDraft } from "./useDraft";
 
@@ -41,7 +42,12 @@ export default function ShellSearch({ wide }: { wide: boolean }) {
       return;
     }
     if (q === "") return;
-    navigate(`${SEARCH_PATH}?${new URLSearchParams({ q: value }).toString()}`);
+    // A submit from inside a directory keeps the search to it: the directory's node ID rides along as the scope. A space's
+    // top level, and every other page, searches everywhere.
+    const next = new URLSearchParams({ q: value });
+    const route = parseFilesPath(location.pathname);
+    if (route !== null && route.kind === "dir") next.set("scope", route.dir);
+    navigate(`${SEARCH_PATH}?${next.toString()}`);
   };
   // A move the person makes (a link, back or forward) drops a pause in progress. A page's own replace, such as /files
   // moving on to the first folder once the folders are read, is not the person's move, so it keeps what they typed.

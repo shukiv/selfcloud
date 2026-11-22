@@ -4,6 +4,8 @@
 // be reloaded and walked with Back and Forward. The server checks every rule (internal/api/search.go); the checks here only
 // stop a request the server would refuse, so a person reads a sentence instead of a bad-request error.
 
+import { validID } from "../files/route";
+
 export type Kind = "" | "file" | "dir" | "shortcut";
 export type Modified = "" | "7" | "30" | "365";
 export type Size = "" | "small" | "medium" | "large";
@@ -20,8 +22,14 @@ export interface SearchState {
   kind: Kind;
   exts: string[];
   modified: Modified;
+  created: Modified;
   size: Size;
   labels: LabelFilter[];
+  // starred and shared keep the signed-in person's own stars and the items shared with them.
+  starred: boolean;
+  shared: boolean;
+  // scope is the directory the search keeps to, "" for everywhere.
+  scope: string;
 }
 
 // The limits the server sets by default (search.max_query_bytes, search.max_terms, decision 40). A term is at most 64 bytes.
@@ -44,7 +52,7 @@ const MIB = 1_048_576;
 export const EXT_CHOICES = ["pdf", "docx", "xlsx", "pptx", "odt", "txt", "md", "csv", "jpg", "png", "mp4", "mp3"] as const;
 
 export function emptyState(): SearchState {
-  return { q: "", inText: false, kind: "", exts: [], modified: "", size: "", labels: [] };
+  return { q: "", inText: false, kind: "", exts: [], modified: "", created: "", size: "", labels: [], starred: false, shared: false, scope: "" };
 }
 
 // stateFromParams reads the address. Anything it does not recognise is dropped, so a hand-typed address never breaks the page.
@@ -65,7 +73,9 @@ export function stateFromParams(p: URLSearchParams): SearchState {
   }
   const inText = p.get("in") === "content";
   const modified = p.get("modified") ?? "";
+  const created = p.get("created") ?? "";
   const size = p.get("size") ?? "";
+  const scope = p.get("scope") ?? "";
   return {
     q: p.get("q") ?? "",
     inText,
@@ -73,8 +83,12 @@ export function stateFromParams(p: URLSearchParams): SearchState {
     kind: !inText && KINDS.includes(kind) ? (kind as Kind) : "",
     exts,
     modified: MODIFIED.includes(modified) ? (modified as Modified) : "",
+    created: MODIFIED.includes(created) ? (created as Modified) : "",
     size: SIZES.includes(size) ? (size as Size) : "",
     labels,
+    starred: p.get("starred") === "1",
+    shared: p.get("shared") === "1",
+    scope: validID("nod", scope) ? scope : "",
   };
 }
 
@@ -86,14 +100,21 @@ export function paramsFromState(s: SearchState): URLSearchParams {
   if (s.kind !== "") p.set("kind", s.kind);
   if (s.exts.length > 0) p.set("ext", s.exts.join(","));
   if (s.modified !== "") p.set("modified", s.modified);
+  if (s.created !== "") p.set("created", s.created);
   if (s.size !== "") p.set("size", s.size);
   for (const l of s.labels) p.append("label", `${l.field}:${l.value}`);
+  if (s.starred) p.set("starred", "1");
+  if (s.shared) p.set("shared", "1");
+  if (s.scope !== "") p.set("scope", s.scope);
   return p;
 }
 
 // hasFilter says whether any filter is set, so that a search may run without words.
 export function hasFilter(s: SearchState): boolean {
-  return s.kind !== "" || s.exts.length > 0 || s.modified !== "" || s.size !== "" || s.labels.length > 0;
+  return (
+    s.kind !== "" || s.exts.length > 0 || s.modified !== "" || s.created !== "" || s.size !== "" || s.labels.length > 0 ||
+    s.starred || s.shared || s.scope !== ""
+  );
 }
 
 export const byteLength = (s: string): number => new TextEncoder().encode(s).length;
@@ -147,7 +168,8 @@ export function labelValueProblem(type: string, value: string): Problem | null {
 }
 
 // searchParamsFor builds the query of one request. A text search finds files only, so the kind is left out. The clock is
-// passed in, so a test can fix the "last 7 days" edge.
+// passed in, so a test can fix the "last 7 days" edge. A search with no words is a filter-only search, and asks for the
+// newest first; the server refuses that order beside words or a content search, so neither carries it.
 export function searchParamsFor(s: SearchState, now: number): URLSearchParams {
   const p = new URLSearchParams();
   const q = s.q.trim();
@@ -156,6 +178,7 @@ export function searchParamsFor(s: SearchState, now: number): URLSearchParams {
   else if (s.kind !== "") p.set("kind", s.kind);
   if (s.exts.length > 0) p.set("ext", s.exts.join(","));
   if (s.modified !== "") p.set("modified_after", String(now - Number(s.modified) * DAY_MS));
+  if (s.created !== "") p.set("created_after", String(now - Number(s.created) * DAY_MS));
   if (s.size === "small") p.set("size_max", String(MIB - 1));
   if (s.size === "medium") {
     p.set("size_min", String(MIB));
@@ -163,6 +186,10 @@ export function searchParamsFor(s: SearchState, now: number): URLSearchParams {
   }
   if (s.size === "large") p.set("size_min", String(100 * MIB));
   for (const l of s.labels) p.append("label", `${l.field}:${l.value}`);
+  if (s.starred) p.set("starred", "true");
+  if (s.shared) p.set("shared", "true");
+  if (s.scope !== "") p.set("scope", s.scope);
+  if (q === "" && !s.inText) p.set("order", "newest");
   p.set("limit", String(PAGE_LIMIT));
   return p;
 }

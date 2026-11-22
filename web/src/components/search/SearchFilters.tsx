@@ -4,7 +4,7 @@
 // set. A chip's close button removes that filter alone. The controls only write the state; the page writes the address.
 import { useState } from "react";
 import { Button, Input, Select, theme as antdTheme } from "antd";
-import { Eraser, X } from "lucide-react";
+import { Eraser, Star, Users, X } from "lucide-react";
 import IconButton from "../IconButton";
 import type { LabelField } from "../../lib/labels/api";
 import { useT, type Params } from "../../lib/i18n";
@@ -19,6 +19,14 @@ import {
   type SearchState,
 } from "../../lib/search/query";
 
+// ScopeName is the read of the scope directory's name: id is the scope it was read for, name is null while it reads, and
+// off says the read failed.
+export interface ScopeName {
+  id: string;
+  name: string | null;
+  off: boolean;
+}
+
 interface Props {
   state: SearchState;
   // change returns the state with one change made, and the page writes it to the address.
@@ -26,19 +34,22 @@ interface Props {
   // fields is the account's label fields, null while they are read, and fieldsOff when they could not be read.
   fields: LabelField[] | null;
   fieldsOff: boolean;
+  // scopeName is the scope directory's name, null when there is no scope.
+  scopeName: ScopeName | null;
   coarse: boolean;
 }
 
 const touch = (coarse: boolean) => (coarse ? { minHeight: 44 } : {});
 type Translate = (key: string, params?: Params) => string;
 
-export default function SearchFilters({ state, change, fields, fieldsOff, coarse }: Props) {
+export default function SearchFilters({ state, change, fields, fieldsOff, scopeName, coarse }: Props) {
   const { t } = useT();
   const { token } = antdTheme.useToken();
   const kindChoice = (value: string) => t(`search.kind.${value}`);
   const modifiedChoice = (value: Modified) => t(value === "" ? "search.modified.any" : `search.modified.${value}`);
+  const createdChoice = (value: Modified) => t(value === "" ? "search.created.any" : `search.created.${value}`);
   const sizeChoice = (value: Size) => t(value === "" ? "search.size.any" : `search.size.${value}`);
-  const chips = chipsFor(state, fields, t);
+  const chips = chipsFor(state, fields, t, scopeName);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -70,12 +81,37 @@ export default function SearchFilters({ state, change, fields, fieldsOff, coarse
           options={(["", "7", "30", "365"] as Modified[]).map((v) => ({ value: v, label: modifiedChoice(v) }))}
         />
         <Select
+          aria-label={t("search.created")}
+          value={state.created}
+          onChange={(v: Modified) => change({ ...state, created: v })}
+          className="search-filter" style={{ flex: "1 1 160px", minWidth: 0 }}
+          options={(["", "7", "30", "365"] as Modified[]).map((v) => ({ value: v, label: createdChoice(v) }))}
+        />
+        <Select
           aria-label={t("search.size")}
           value={state.size}
           onChange={(v: Size) => change({ ...state, size: v })}
           className="search-filter" style={{ flex: "1 1 160px", minWidth: 0 }}
           options={(["", "small", "medium", "large"] as Size[]).map((v) => ({ value: v, label: sizeChoice(v) }))}
         />
+        <Button
+          aria-pressed={state.starred}
+          type={state.starred ? "primary" : "default"}
+          icon={<Star size={16} aria-hidden="true" focusable="false" />}
+          onClick={() => change({ ...state, starred: !state.starred })}
+          style={touch(coarse)}
+        >
+          {t("search.starred")}
+        </Button>
+        <Button
+          aria-pressed={state.shared}
+          type={state.shared ? "primary" : "default"}
+          icon={<Users size={16} aria-hidden="true" focusable="false" />}
+          onClick={() => change({ ...state, shared: !state.shared })}
+          style={touch(coarse)}
+        >
+          {t("search.shared")}
+        </Button>
       </div>
 
       {fields !== null && fields.length > 0 && (
@@ -108,7 +144,7 @@ export default function SearchFilters({ state, change, fields, fieldsOff, coarse
               <IconButton label={t("search.chip.remove", { name: c.text })} onClick={() => change(c.remove(state))} icon={<X size={16} aria-hidden="true" focusable="false" />} />
             </span>
           ))}
-          <IconButton label={t("search.clear")} onClick={() => change({ ...state, kind: "", exts: [], modified: "", size: "", labels: [] })} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />
+          <IconButton label={t("search.clear")} onClick={() => change({ ...state, kind: "", exts: [], modified: "", created: "", size: "", labels: [], starred: false, shared: false, scope: "" })} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />
         </div>
       )}
     </div>
@@ -122,14 +158,25 @@ interface Chip {
 }
 
 // chipsFor lists the filters that are set, each with the change that removes it. A label chip names the field and shows a choice
-// by its name, never its ID.
-function chipsFor(s: SearchState, fields: LabelField[] | null, t: Translate): Chip[] {
+// by its name, never its ID. The scope chip names its directory once the name is read; until then it is neutral, and a failed
+// read says the folder cannot be seen.
+function chipsFor(s: SearchState, fields: LabelField[] | null, t: Translate, scopeName: ScopeName | null): Chip[] {
   const out: Chip[] = [];
   const chip = (label: string, value: string) => t("search.chip", { label, value });
   if (s.kind !== "") out.push({ key: "kind", text: chip(t("search.kind"), t(`search.kind.${s.kind}`)), remove: (x) => ({ ...x, kind: "" }) });
   if (s.exts.length > 0) out.push({ key: "ext", text: chip(t("search.ext"), s.exts.join(", ")), remove: (x) => ({ ...x, exts: [] }) });
   if (s.modified !== "") out.push({ key: "modified", text: chip(t("search.modified"), t(`search.modified.${s.modified}`)), remove: (x) => ({ ...x, modified: "" }) });
+  if (s.created !== "") out.push({ key: "created", text: chip(t("search.created"), t(`search.created.${s.created}`)), remove: (x) => ({ ...x, created: "" }) });
   if (s.size !== "") out.push({ key: "size", text: chip(t("search.size"), t(`search.size.${s.size}`)), remove: (x) => ({ ...x, size: "" }) });
+  if (s.starred) out.push({ key: "starred", text: t("search.starred"), remove: (x) => ({ ...x, starred: false }) });
+  if (s.shared) out.push({ key: "shared", text: t("search.shared"), remove: (x) => ({ ...x, shared: false }) });
+  if (s.scope !== "") {
+    const info = scopeName !== null && scopeName.id === s.scope ? scopeName : null;
+    let text = t("search.scope.reading");
+    if (info !== null && info.off) text = t("search.scope.off");
+    else if (info !== null && info.name !== null) text = t("search.scope", { name: info.name });
+    out.push({ key: "scope", text, remove: (x) => ({ ...x, scope: "" }) });
+  }
   s.labels.forEach((l, i) => {
     // Until the fields are read, or for a field they do not have, the chip is neutral: no value and no ID can be shown.
     const f = fields?.find((x) => x.id === l.field);
