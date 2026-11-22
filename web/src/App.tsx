@@ -90,6 +90,7 @@ const AdminSettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 const CliApprovePage = lazy(() => import("./pages/CliApprovePage"));
 const DevicesPage = lazy(() => import("./pages/DevicesPage"));
+const AppPasswordsPage = lazy(() => import("./pages/AppPasswordsPage"));
 // The proof page redeems a mailed token; the external item page opens what another account shared (decision 189).
 const ProvePage = lazy(() => import("./pages/ProvePage"));
 const ExternalItemPage = lazy(() => import("./pages/ExternalItemPage"));
@@ -104,12 +105,12 @@ const FrameEnded = lazy(() => import("./components/FrameEnded"));
 type View =
   | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change" | "prove" | "signed-out"
   | "files" | "node" | "starred" | "media" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
-  | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "devices" | "cli-approve" | "external" | "notfound";
+  | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "devices" | "app-passwords" | "cli-approve" | "external" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change", "cli-approve", "prove", "signed-out"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "media", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices", "external"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "media", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices", "app-passwords", "external"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
@@ -143,6 +144,7 @@ export function viewFor(path: string): View {
     case "/share": return "share";
     case "/change-password": return "change-password";
     case "/devices": return "devices";
+    case "/app-passwords": return "app-passwords";
     case "/cli-approve": return "cli-approve";
     default: return "notfound";
   }
@@ -435,6 +437,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "notifications": return <NotificationsPage />;
     case "share": return <SharePage />;
     case "devices": return <DevicesPage />;
+    case "app-passwords": return <AppPasswordsPage />;
     case "manage":
       if (target === null || target.area !== "manage" || !mayOpen(target, user)) return <NotFoundPage />;
       return manageSection(target.section);

@@ -42,7 +42,8 @@ func toAppPasswordJSON(a *store.AppPassword) appPasswordJSON {
 }
 
 // davEnabled gates making app passwords and the mount on dav.enabled. While it is off they answer not_found. Listing
-// and revoking keep working while it is off, so a leaked app password can always be ended.
+// and revoking keep working while it is off, so a leaked app password can always be ended. The list reports the same
+// live flag as mount_enabled, so the page can say the mount is off without a second read of the settings.
 func (s *Server) davEnabled() error {
 	if !s.settings().Dav.Enabled {
 		return apierr.New(apierr.NotFound, "WebDAV is turned off")
@@ -68,7 +69,10 @@ func (s *Server) handleListAppPasswords(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return storeErr(err)
 	}
-	out := listResponse[appPasswordJSON]{Items: []appPasswordJSON{}}
+	out := struct {
+		Items        []appPasswordJSON `json:"items"`
+		MountEnabled bool              `json:"mount_enabled"`
+	}{Items: []appPasswordJSON{}, MountEnabled: s.settings().Dav.Enabled}
 	for _, a := range items {
 		out.Items = append(out.Items, toAppPasswordJSON(a))
 	}

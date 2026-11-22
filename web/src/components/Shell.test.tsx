@@ -705,7 +705,16 @@ describe("the Requests entry", () => {
 
   it("the account menu's App passwords opens /app-passwords", async () => {
     signIn("member");
-    const router = renderShell("/files");
+    const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: ["/files"] });
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ThemeProvider>
+          <Direction>
+            <RouterProvider router={router} />
+          </Direction>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
     fireEvent.click(await screen.findByTestId("account-menu"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "App passwords" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/app-passwords"));

@@ -643,6 +643,9 @@ export default function Shell({ children }: { children: ReactNode }) {
     { key: "password", label: t("user.changePassword"), style: touchItem },
     // An installation admin holds no device sign-in, so the page is not theirs (App.tsx refuses it as a drive page).
     ...(me?.user.role === "admin" ? [] : [{ key: "devices", label: t("user.devices"), style: touchItem }]),
+    // App passwords are the person's own (decision 236): an installation admin holds no account of its own, and while
+    // signed in as another the routes refuse them, so the page is offered to neither.
+    ...(me?.user.role === "admin" || impersonating ? [] : [{ key: "app-passwords", label: t("user.appPasswords"), style: touchItem }]),
     ...(offerInstall ? [{ key: "install", label: t("pwa.install"), style: touchItem }] : []),
     ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome"), style: touchItem }] : []),
     ...(coarse ? [] : [shortcutsEntry]),
@@ -804,6 +807,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                     onClick: ({ key }) => {
                       if (key === "password") navigate("/change-password");
                       if (key === "devices") navigate("/devices");
+                      if (key === "app-passwords") navigate("/app-passwords");
                       if (key === "install") void promptInstall();
                       if (key === "addHome") setIosFor(who);
                       if (key === "shortcuts") setShortcutsOpen(true);

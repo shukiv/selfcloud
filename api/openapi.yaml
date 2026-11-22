@@ -3384,6 +3384,7 @@ paths:
         Session only, refused while impersonating, and refused for an installation admin (decision 236).
         Lists the signed-in user's app passwords for the read-only WebDAV mount; a revoked one is deleted,
         so only live ones appear. Secrets are never shown. Listing keeps working while `dav.enabled` is off.
+        The answer carries `mount_enabled`, the live `dav.enabled`, so the page can say the mount is off.
       security: [{ session: [] }]
       responses:
         "200":
@@ -9564,11 +9565,14 @@ components:
 
     AppPasswordList:
       type: object
-      required: [items]
+      required: [items, mount_enabled]
       properties:
         items:
           type: array
           items: { $ref: "#/components/schemas/AppPassword" }
+        mount_enabled:
+          type: boolean
+          description: The live `dav.enabled`, read as the create route and `/dav/` read it. While it is false the mount is off and a create answers `not_found`; listing and revoking keep working.
 
     TokenCreate:
       type: object

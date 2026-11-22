@@ -101,7 +101,7 @@ describe("the App passwords page", () => {
   it("New validates the name before sending: empty and over 64 characters send nothing", async () => {
     const { calls } = list([], true);
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New app password" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
     const name = await screen.findByLabelText("Name");
     // Empty: the create is refused in the form, with no request.
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -134,7 +134,7 @@ describe("the App passwords page", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New app password" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "  laptop  " } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     // The secret shows once, in the ShowOnce dialog, with its copy button and its warning.
@@ -167,7 +167,7 @@ describe("the App passwords page", () => {
   it("the cap's answer says to revoke one before making another", async () => {
     list([], true, { status: 409, body: { error: { code: "conflict", details: { reason: "limit", limit: 20 } } } });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New app password" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "one too many" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText("You have 20 app passwords, the most allowed. Revoke one before making another.")).toBeTruthy();
@@ -184,7 +184,7 @@ describe("the App passwords page", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New app password" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "laptop" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText(mountOff)).toBeTruthy();
@@ -195,7 +195,7 @@ describe("the App passwords page", () => {
   it("a rate-limited create shows the app's usual rate-limit text", async () => {
     list([], true, { status: 429, body: { error: { code: "rate_limited", details: {} } } });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New app password" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New app password" }))[0]);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "laptop" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText(/Too many attempts\. Try again in 1 minute\./)).toBeTruthy();
