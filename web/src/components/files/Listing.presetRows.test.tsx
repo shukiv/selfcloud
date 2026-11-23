@@ -2,9 +2,10 @@
 
 // A preset list (Starred, Trash, Search, the Manage and admin tables) draws its rows as My files does: a press is one update,
 // and a row's mark, icons and ⋮ button are drawn again only when that row's own state changes (decision 128).
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Listing, { type ItemListingProps, type ListAction } from "./Listing";
+import { presetMarkEqual } from "./PresetMark";
 import { desktopViewport } from "../../test/viewport";
 
 // buttons counts the renders of each icon button by its label, and checks the renders of each row's mark by its name. The mark is
@@ -98,10 +99,11 @@ afterEach(() => {
 });
 
 describe("a preset list draws a row again only when its own state changes (decision 128)", () => {
-  it("a click that selects a row draws that row's mark, and no other row's mark or buttons", () => {
+  it("a click that adds a row to the selection draws that row's mark, and no other row's mark or buttons", () => {
     render(<Listing<Row> {...props()} />);
+    fireEvent.click(rowOf("Row 0"));
     reset();
-    fireEvent.click(rowOf("Row 4"));
+    fireEvent.click(rowOf("Row 4"), { ctrlKey: true });
     expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("true");
     expect(checks["Row 4"]).toBeGreaterThan(0);
     expect(othersChecks(["Row 4"])).toBe(0);
@@ -249,5 +251,82 @@ describe("a preset row's actions follow the page (decision 128)", () => {
     when = "yesterday";
     rerender(<Listing<Row> {...props({ columns: [...withWhen] })} />);
     expect(screen.getAllByText("yesterday").length).toBe(ROWS);
+  });
+});
+
+// While anything is selected, every other preset row shows an empty outline circle in its mark; a click on the circle selects
+// that row too, and a click on the check unselects it. With nothing selected no circle shows.
+describe("a preset list: the empty circle while anything is selected", () => {
+  it("shows no circle on any row when nothing is selected", () => {
+    render(<Listing<Row> {...props()} />);
+    expect(document.querySelector(".empty-circle")).toBeNull();
+  });
+
+  it("shows the circle in every other row's mark, and the check on the selected row", () => {
+    render(<Listing<Row> {...props()} />);
+    fireEvent.click(rowOf("Row 4"));
+    expect(rowOf("Row 4").querySelector(".check-badge")).not.toBeNull();
+    expect(rowOf("Row 4").querySelector(".empty-circle")).toBeNull();
+    for (const name of ["Row 0", "Row 1", "Row 3", "Row 5", "Row 19"]) {
+      const mark = rowOf(name).querySelector("button.row-mark") as HTMLElement;
+      const circle = mark.querySelector(".empty-circle") as HTMLElement;
+      expect(circle).not.toBeNull();
+      expect(circle.style.width).toBe("17px");
+      expect(circle.style.height).toBe("17px");
+      expect(circle.style.border).toContain("2px solid");
+      expect(mark.getAttribute("aria-pressed")).toBe("false");
+      expect(mark.querySelector(".check-badge")).toBeNull();
+    }
+  });
+
+  it("a click on a circle adds the row to the selection and opens nothing; a click on the check takes it away", () => {
+    const onOpen = vi.fn();
+    render(<Listing<Row> {...props({ onOpen })} />);
+    fireEvent.click(rowOf("Row 4"));
+    fireEvent.click(within(rowOf("Row 2")).getByRole("button", { name: "Select Row 2" }));
+    expect(rowOf("Row 2").getAttribute("aria-selected")).toBe("true");
+    expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(within(rowOf("Row 4")).getByRole("button", { name: "Select Row 4" }));
+    expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("false");
+    expect(rowOf("Row 2").getAttribute("aria-selected")).toBe("true");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("a list without selectable shows no circle", () => {
+    render(<Listing<Row> {...props({ selectable: false })} />);
+    expect(document.querySelector(".empty-circle")).toBeNull();
+    expect(document.querySelector("button.row-mark")).toBeNull();
+  });
+});
+
+describe("a preset mark is drawn again when its own selection or the selection mode changes (decision 128)", () => {
+  it("the selection going from none to some draws every row's mark once, so the circles appear", () => {
+    render(<Listing<Row> {...props()} />);
+    reset();
+    fireEvent.click(rowOf("Row 4"));
+    expect(rows.every((r) => (checks[r.name] ?? 0) > 0)).toBe(true);
+  });
+
+  it("with something selected, adding another row draws that row's mark only", () => {
+    render(<Listing<Row> {...props()} />);
+    fireEvent.click(rowOf("Row 4"));
+    reset();
+    fireEvent.click(rowOf("Row 2"), { ctrlKey: true });
+    expect(checks["Row 2"]).toBeGreaterThan(0);
+    expect(othersChecks(["Row 2"])).toBe(0);
+  });
+
+  it("presetMarkEqual reads the mode: a flip draws the mark again, another row's selection leaves it alone", () => {
+    const pick = () => undefined;
+    const base = { id: "r1", checked: false, name: "Row 1", pick, mode: false };
+    const same = { ...base };
+    expect(presetMarkEqual(base, same)).toBe(true);
+    const modeOn = { ...base, mode: true };
+    expect(presetMarkEqual(base, modeOn)).toBe(false);
+    const checked = { ...base, checked: true };
+    expect(presetMarkEqual(base, checked)).toBe(false);
+    // Another row's selection changes nothing in this mark's own props.
+    const still = { ...modeOn };
+    expect(presetMarkEqual(modeOn, still)).toBe(true);
   });
 });

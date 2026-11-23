@@ -526,6 +526,27 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(await page.evaluate(`document.body.innerText.includes('50 selected')`), 'the panel counts 50 selected');
   });
 
+  // ---- 11a. While anything is selected, every other tile shows an empty circle that selects it ----
+  await step('in tiles every other item shows an empty circle that selects it', async () => {
+    await open(shortURL, 'Tiles', 's01.txt');
+    check(await page.evaluate(`!document.querySelector('[role="listbox"] .empty-circle') && !document.querySelector('[role="listbox"] button.row-mark')`), 'with nothing selected no tile shows a circle or a mark');
+    await click(page, await nameAt(page, 's01.txt'));
+    await page.waitFor(`document.querySelector('[role="option"][aria-label="s01.txt"]')?.getAttribute('aria-selected') === 'true'`, 8000);
+    const shown = await page.evaluate(`(() => { const tiles = [...document.querySelectorAll('[role="option"]')]; const other = tiles.filter((t) => t.getAttribute('aria-label') !== 's01.txt'); return { others: other.length, circles: other.filter((t) => t.querySelector('.empty-circle')).length, marks: other.filter((t) => t.querySelector('button.row-mark[aria-pressed="false"]')).length, check: !!document.querySelector('[role="option"][aria-label="s01.txt"] .check-badge') }; })()`);
+    check(shown.others === 5 && shown.circles === 5 && shown.marks === 5 && shown.check, `every other tile shows the circle and the selected one the check (${JSON.stringify(shown)})`);
+    // A click on another tile's circle selects it too: two selected, and the bar says so. Nothing opens.
+    await click(page, await centre(page, '[role="option"][aria-label="s02.txt"] button.row-mark'));
+    await page.waitFor(`document.querySelector('[role="option"][aria-label="s02.txt"]')?.getAttribute('aria-selected') === 'true'`, 8000);
+    check((await selectedNames(page)).join() === 's01.txt,s02.txt', `a click on a circle selects that tile too (${(await selectedNames(page)).join()})`);
+    check(await page.evaluate(`document.querySelector('[data-testid="selection-panel"]')?.textContent.includes('2 selected')`), 'the selection bar counts 2 selected');
+    // A click on the selected tile's check unselects it.
+    await click(page, await centre(page, '[role="option"][aria-label="s01.txt"] button.row-mark'));
+    await page.waitFor(`document.querySelector('[role="option"][aria-label="s01.txt"]')?.getAttribute('aria-selected') === 'false'`, 8000);
+    check((await selectedNames(page)).join() === 's02.txt', `a click on the check unselects its tile (${(await selectedNames(page)).join()})`);
+    await clearSelection(page);
+    check(await page.evaluate(`!document.querySelector('[role="listbox"] .empty-circle') && !document.querySelector('[role="listbox"] .check-badge')`), 'clearing the selection takes every circle and check away');
+  });
+
   // ---- 12. a cut pasted where it came from says so ----
   await step('a cut pasted into the same folder says that nothing moved', async () => {
     await open(shortURL, 'List', 's02.txt');

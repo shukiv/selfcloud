@@ -317,21 +317,31 @@ describe("Listing rows: a row's icons follow its actions (decision 128)", () => 
 });
 
 describe("Listing rows: a selection change re-renders only the rows it changes (decision 128)", () => {
-  it("selecting one row draws the icon of that row only, not of the other 49", () => {
-    const { rerender } = render(<Listing {...props(new Set())} />);
+  it("adding a row to the selection draws the icon of that row only, not of the other 49", () => {
+    const { rerender } = render(<Listing {...props(new Set(["n1"]))} />);
     resetCounts();
-    rerender(<Listing {...props(new Set(["n3"]))} />);
+    rerender(<Listing {...props(new Set(["n1", "n3"]))} />);
     const others = items.filter((n) => n.id !== "n3").map((n) => renders[n.name] ?? 0);
     expect(others.filter((c) => c > 0)).toEqual([]);
     expect(renders["file-3.txt"]).toBeGreaterThan(0);
   });
 
+  it("the selection going from none to some, or back, draws every row once, so the empty circles appear and go", () => {
+    const { rerender } = render(<Listing {...props(new Set())} />);
+    resetCounts();
+    rerender(<Listing {...props(new Set(["n3"]))} />);
+    expect(items.every((n) => (renders[n.name] ?? 0) > 0)).toBe(true);
+    resetCounts();
+    rerender(<Listing {...props(new Set())} />);
+    expect(items.every((n) => (renders[n.name] ?? 0) > 0)).toBe(true);
+  });
+
   it("a click on one row, with the page re-rendering, draws the icons of the changed row only", () => {
-    const { container, rerender } = render(<Listing {...props(new Set())} />);
+    const { container, rerender } = render(<Listing {...props(new Set(["n1"]))} />);
     const row = container.querySelector('[data-id="n7"]') as HTMLElement;
     resetCounts();
     fireEvent.click(row);
-    rerender(<Listing {...props(new Set(["n7"]), "n7")} />);
+    rerender(<Listing {...props(new Set(["n1", "n7"]), "n7")} />);
     const drawn = items.filter((n) => (renders[n.name] ?? 0) > 0).map((n) => n.id);
     expect(drawn).toEqual(["n7"]);
   });
@@ -426,12 +436,22 @@ describe("Listing tiles: a page render and a selection change draw only the tile
     expect(Object.values(renders).reduce((a, b) => a + b, 0)).toBe(0);
   });
 
-  it("selecting one tile draws that tile only, not the other 49", () => {
+  it("adding a tile to the selection draws that tile only, not the other 49", () => {
+    const { rerender } = render(<Listing {...grid(new Set(["n1"]))} />);
+    resetCounts();
+    rerender(<Listing {...grid(new Set(["n1", "n3"]))} />);
+    const drawn = items.filter((n) => (renders[n.name] ?? 0) > 0).map((n) => n.id);
+    expect(drawn).toEqual(["n3"]);
+  });
+
+  it("the selection going from none to some, or back, draws every tile once, so the empty circles appear and go", () => {
     const { rerender } = render(<Listing {...grid(new Set())} />);
     resetCounts();
     rerender(<Listing {...grid(new Set(["n3"]))} />);
-    const drawn = items.filter((n) => (renders[n.name] ?? 0) > 0).map((n) => n.id);
-    expect(drawn).toEqual(["n3"]);
+    expect(items.every((n) => (renders[n.name] ?? 0) > 0)).toBe(true);
+    resetCounts();
+    rerender(<Listing {...grid(new Set())} />);
+    expect(items.every((n) => (renders[n.name] ?? 0) > 0)).toBe(true);
   });
 
   it("a tile's tab stop follows the focus between two selected tiles", () => {

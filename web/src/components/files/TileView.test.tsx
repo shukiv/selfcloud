@@ -3,8 +3,9 @@
 // The tile view (slice d1, its folder chips made cards by decision 239): folders first, in their own band of cards like the
 // files'; every card one height; no size on a tile; the star and the menu on each item; and the full name in a title.
 
+import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import { formatBytes } from "../../lib/files/format";
 import Listing, { type ListingProps } from "./Listing";
@@ -218,5 +219,120 @@ describe("the tile view: a folder's tile is a card (decision 239)", () => {
     expect(within(headerOf("d1")).getByRole("button", { name: "Open" })).toBeTruthy();
     expect(previewOf("d1").querySelector("svg.kind-folder")).not.toBeNull();
     expect(previewOf("d1").querySelector("img")).toBeNull();
+  });
+});
+
+// While anything is selected, every other tile shows an empty outline circle where its yellow check would be, and a click on
+// the circle selects that tile too, as Ctrl does; a click on the check unselects it. With nothing selected no circle shows.
+describe("the tile view: the empty circle while anything is selected", () => {
+  const items = [
+    node("d1", "Docs", { kind: "dir", mime_type: undefined }),
+    node("d2", "Pics", { kind: "dir", mime_type: undefined }),
+    node("n1", "plan.txt"),
+    node("n2", "notes.txt"),
+  ];
+  const tileOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+  const previewOf = (id: string) => tileOf(id).querySelector(":scope > div:nth-child(2)") as HTMLElement;
+  const markOf = (id: string) => within(tileOf(id)).getByRole("button", { name: `Select ${items.find((n) => n.id === id)?.name}` });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Page keeps the selection as FilesPage does: a Ctrl click toggles its item and keeps the rest.
+  function Page({ over = {} }: { over?: Partial<ListingProps> }) {
+    const [sel, setSel] = useState<Set<string>>(over.selected ?? new Set());
+    return (
+      <Listing
+        {...props({ items, ...over, selected: sel })}
+        onRowClick={(i, e) => {
+          setSel((s) => {
+            const next = new Set(s);
+            if (e.ctrlKey && next.has(items[i].id)) next.delete(items[i].id);
+            else next.add(items[i].id);
+            return next;
+          });
+        }}
+      />
+    );
+  }
+
+  it("shows no circle and no mark on any tile when nothing is selected", () => {
+    render(<Listing {...props({ items })} />);
+    expect(document.querySelector(".empty-circle")).toBeNull();
+    expect(document.querySelector('[role="option"] button.row-mark')).toBeNull();
+  });
+
+  it("shows the circle on every other tile, a folder's and a file's alike, and the check on the selected one", () => {
+    render(<Listing {...props({ items, selected: new Set(["n1"]) })} />);
+    for (const id of ["d1", "d2", "n2"]) {
+      const circle = previewOf(id).querySelector(".empty-circle") as HTMLElement;
+      expect(circle).not.toBeNull();
+      expect(circle.getAttribute("aria-hidden")).toBe("true");
+      // The circle keeps the check's place and size: 28 px at the preview's top-start corner.
+      expect(circle.style.width).toBe("28px");
+      expect(circle.style.height).toBe("28px");
+      expect(circle.style.insetBlockStart).toBe("6px");
+      expect(circle.style.insetInlineStart).toBe("6px");
+      expect(circle.style.border).toContain("2px solid");
+      expect(previewOf(id).querySelector(".check-badge")).toBeNull();
+    }
+    expect(previewOf("n1").querySelector(".check-badge")).not.toBeNull();
+    expect(previewOf("n1").querySelector(".empty-circle")).toBeNull();
+  });
+
+  it("the circle is a button that is not a tab stop and says its pressed state and its item", () => {
+    render(<Listing {...props({ items, selected: new Set(["n1"]) })} />);
+    const mark = markOf("d2");
+    expect(mark.getAttribute("tabindex")).toBe("-1");
+    expect(mark.getAttribute("aria-pressed")).toBe("false");
+    expect(markOf("n1").getAttribute("aria-pressed")).toBe("true");
+    expect(mark.querySelector(".empty-circle")).not.toBeNull();
+  });
+
+  it("a click on a circle selects that tile too, keeps the rest, and opens nothing", () => {
+    const onRowClick = vi.fn();
+    render(<Listing {...props({ items, selected: new Set(["n1"]), onRowClick })} />);
+    fireEvent.click(markOf("d2"));
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+    expect(onRowClick).toHaveBeenLastCalledWith(1, expect.objectContaining({ ctrlKey: true, shiftKey: false, metaKey: false }));
+  });
+
+  it("a click on a circle adds the tile to the selection, and a click on the check takes it away", () => {
+    const dbl = vi.fn();
+    render(<Page over={{ selected: new Set(["n1"]), onRowDoubleClick: dbl }} />);
+    fireEvent.click(markOf("d2"));
+    expect(tileOf("d2").getAttribute("aria-selected")).toBe("true");
+    expect(tileOf("n1").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(markOf("n1"));
+    expect(tileOf("n1").getAttribute("aria-selected")).toBe("false");
+    expect(tileOf("d2").getAttribute("aria-selected")).toBe("true");
+    expect(dbl).not.toHaveBeenCalled();
+  });
+
+  it("a double click on the mark does nothing more", () => {
+    const dbl = vi.fn();
+    render(<Listing {...props({ items, selected: new Set(["n1"]), onRowDoubleClick: dbl })} />);
+    fireEvent.doubleClick(markOf("n1"));
+    expect(dbl).not.toHaveBeenCalled();
+  });
+
+  it("shows no circle on a visitor's tiles", () => {
+    render(<Listing {...props({ items, visitor: true, selected: new Set(["n1"]) })} />);
+    expect(document.querySelector(".empty-circle")).toBeNull();
+    expect(document.querySelector(".check-badge")).toBeNull();
+    expect(document.querySelector('[role="option"] button.row-mark')).toBeNull();
+  });
+
+  it("shows no circle on the tile being renamed, while the other tiles keep theirs", () => {
+    render(<Listing {...props({ items, selected: new Set(["n1"]), renameID: "d2", renameValue: "Pics 2" })} />);
+    expect(tileOf("d2").querySelector(".empty-circle")).toBeNull();
+    expect(previewOf("d1").querySelector(".empty-circle")).not.toBeNull();
+  });
+
+  it("on a finger the circles show too while anything is selected", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+    render(<Listing {...props({ items, selected: new Set(["n1"]) })} />);
+    expect(previewOf("d1").querySelector(".empty-circle")).not.toBeNull();
+    expect(previewOf("n2").querySelector(".empty-circle")).not.toBeNull();
+    expect(previewOf("n1").querySelector(".check-badge")).not.toBeNull();
   });
 });

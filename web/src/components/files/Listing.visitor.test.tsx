@@ -130,6 +130,14 @@ describe("Listing visitor: the list", () => {
     rowOf("n1").dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
   });
+
+  it("shows no empty circle and no mark on any row, even with a selection passed", () => {
+    undo = desktopViewport();
+    const { container } = render(<Listing {...props({ selected: new Set(["n1"]) })} visitor />);
+    expect(container.querySelector(".empty-circle")).toBeNull();
+    expect(container.querySelector(".check-badge")).toBeNull();
+    expect(container.querySelector("button.row-mark")).toBeNull();
+  });
 });
 
 describe("Listing visitor: the tiles", () => {
@@ -160,6 +168,14 @@ describe("Listing visitor: the tiles", () => {
     expect(within(rowOf("n2")).getByRole("button", { name: "Download" }).tabIndex).toBe(0);
     expect(within(rowOf("n1")).getByRole("button", { name: "Download" }).tabIndex).toBe(-1);
     expect(within(rowOf("n3")).getByRole("button", { name: "Download" }).tabIndex).toBe(-1);
+  });
+
+  it("shows no empty circle and no mark on any tile, even with a selection passed", () => {
+    undo = desktopViewport();
+    const { container } = render(<Listing {...props({ view: "grid", selected: new Set(["n1"]) })} visitor />);
+    expect(container.querySelector(".empty-circle")).toBeNull();
+    expect(container.querySelector(".check-badge")).toBeNull();
+    expect(container.querySelector('[role="option"] button.row-mark')).toBeNull();
   });
 });
 

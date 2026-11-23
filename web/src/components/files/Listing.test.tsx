@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { useState } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
@@ -750,6 +751,90 @@ describe("the selection marks (the checkbox swap is gone)", () => {
     expect(rowOf("n1").querySelector("button.row-mark svg")).not.toBeNull();
     expect(rowOf("n1").querySelector(".check-badge")).toBeNull();
     expect(container.querySelector(".ant-checkbox")).toBeNull();
+  });
+});
+
+// While anything is selected, every other row shows an empty outline circle where its yellow check would be; a click on the
+// circle selects that row too, as Ctrl does, and a click on the check unselects it. With nothing selected no circle shows.
+describe("the empty circle while anything is selected (rows)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // RowPage keeps the selection as FilesPage does: a Ctrl click toggles its row and keeps the rest.
+  function RowPage({ start }: { start: Set<string> }) {
+    const [sel, setSel] = useState<Set<string>>(start);
+    return (
+      <Listing
+        {...props({ selected: sel })}
+        onRowClick={(i, e) => {
+          setSel((s) => {
+            const next = new Set(s);
+            const id = ["n1", "n2"][i];
+            if (e.ctrlKey && next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+        }}
+      />
+    );
+  }
+
+  it("shows no circle on any row when nothing is selected", () => {
+    withPointer(false);
+    const { container } = render(<Listing {...props()} />);
+    expect(container.querySelector(".empty-circle")).toBeNull();
+  });
+
+  it("shows the circle in the other row's mark, at the check's place and size, and the check on the selected row", () => {
+    withPointer(false);
+    render(<Listing {...props({ selected: new Set(["n1"]) })} />);
+    const circle = rowOf("n2").querySelector("button.row-mark .empty-circle") as HTMLElement;
+    expect(circle).not.toBeNull();
+    expect(circle.getAttribute("aria-hidden")).toBe("true");
+    expect(circle.style.width).toBe("17px");
+    expect(circle.style.height).toBe("17px");
+    expect(circle.style.insetBlockEnd).toBe("-3px");
+    expect(circle.style.insetInlineEnd).toBe("-3px");
+    expect(circle.style.border).toContain("2px solid");
+    expect(rowOf("n2").querySelector(".check-badge")).toBeNull();
+    expect(rowOf("n1").querySelector(".check-badge")).not.toBeNull();
+    expect(rowOf("n1").querySelector(".empty-circle")).toBeNull();
+  });
+
+  it("a click on a circle adds the row to the selection, and a click on the check takes it away", () => {
+    withPointer(false);
+    render(<RowPage start={new Set(["n1"])} />);
+    fireEvent.click(within(rowOf("n2")).getByRole("button", { name: "Select notes.txt" }));
+    expect(rowOf("n2").getAttribute("aria-selected")).toBe("true");
+    expect(rowOf("n1").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(within(rowOf("n1")).getByRole("button", { name: "Select plan.txt" }));
+    expect(rowOf("n1").getAttribute("aria-selected")).toBe("false");
+    expect(rowOf("n2").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("a click on a circle reports one Ctrl click, and opens nothing", () => {
+    withPointer(false);
+    const onRowClick = vi.fn();
+    const onRowDoubleClick = vi.fn();
+    render(<Listing {...props({ selected: new Set(["n1"]), onRowClick, onRowDoubleClick })} />);
+    fireEvent.click(within(rowOf("n2")).getByRole("button", { name: "Select notes.txt" }));
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+    expect(onRowClick).toHaveBeenLastCalledWith(1, expect.objectContaining({ ctrlKey: true, shiftKey: false, metaKey: false }));
+    expect(onRowDoubleClick).not.toHaveBeenCalled();
+  });
+
+  it("shows no circle on the row being renamed, while the other row keeps its check", () => {
+    withPointer(false);
+    render(<Listing {...props({ selected: new Set(["n2"]), renameID: "n1", renameValue: "plan 2.txt" })} />);
+    expect(rowOf("n1").querySelector(".empty-circle")).toBeNull();
+    expect(rowOf("n2").querySelector(".check-badge")).not.toBeNull();
+  });
+
+  it("on a finger the circles show too while anything is selected, on the plain icon", () => {
+    withPointer(true);
+    render(<Listing {...props({ selected: new Set(["n1"]) })} />);
+    expect(rowOf("n2").querySelector(".empty-circle")).not.toBeNull();
+    expect(rowOf("n2").querySelector("button.row-mark")).toBeNull();
+    expect(rowOf("n1").querySelector(".check-badge")).not.toBeNull();
   });
 });
 
