@@ -390,12 +390,15 @@ function menuItemOf(e: ListMenuEntry, select: () => void, coarse: boolean): NonN
 
 // ---- A row's and a tile's content, memoised (decision 128). ----
 // Each is drawn again only when its own props change: the item, whether it is selected or focused, the rename state when the row
-// is the one being renamed. The page's callbacks are read through one handler object that is the same on every render, so a page
-// render that makes new callbacks does not draw every row again.
+// is the one being renamed, and the selection mode (anything selected), which flips only when the selection goes from none to
+// some or back, bringing the empty circles in or taking them away. The page's callbacks are read through one handler object that
+// is the same on every render, so a page render that makes new callbacks does not draw every row again.
 
 // FileHandlers are the files preset's callbacks, by item ID. They read the page's current props at the call.
 interface FileHandlers {
   click: (id: string, e: Click) => void;
+  // mark is a tile mark's click: it toggles the tile as Ctrl does, and the tap that ends a long press is part of the press.
+  mark: (id: string) => void;
   dbl: (id: string) => void;
   renameChange: (value: string) => void;
   rename: (commit: boolean) => void;
@@ -410,10 +413,12 @@ interface FileHandlers {
 // RowHandlers are the DOM handlers of a row or a tile. They name the item by the element's data-id, so one set serves every row.
 type RowHandlers = Record<string, unknown>;
 
-// FileCellProps are the props of a files row's or tile's content.
+// FileCellProps are the props of a files row's or tile's content. mode is the selection mode: anything in the listing is
+// selected. It is one boolean for every row and tile, so a row is drawn again only when its own selection or the mode changes.
 interface FileCellProps {
   n: Node;
   selected: boolean;
+  mode: boolean;
   coarse: boolean;
   renaming: boolean;
   renameValue: string;
@@ -567,8 +572,9 @@ const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H
 });
 
 // FileNameCell is the name cell of a list row: the row's icon in its selection mark (a mouse), the name, its marks. A selected
-// row shows a yellow check badge on its icon; a visitor's row has neither mark nor badge.
-const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming, renameValue, renameError, visitor, H }: FileCellProps) {
+// row shows a yellow check badge on its icon; while anything is selected, every other row shows an empty circle in its place.
+// A visitor's row has neither mark nor badge.
+const FileNameCell = memo(function FileNameCell({ n, selected, mode, coarse, renaming, renameValue, renameError, visitor, H }: FileCellProps) {
   const { t } = useT();
   const { token } = antdTheme.useToken();
   const icon = <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />;
@@ -581,14 +587,20 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
       {visitor ? (
         icon
       ) : coarse ? (
-        // A finger's row keeps its icon plain (a tap opens the item); a long press selects it, and the badge then shows on the icon.
+        // A finger's row keeps its icon plain (a tap opens the item); a long press selects it, and the badge then shows on the
+        // icon. While anything is selected, an unselected row shows the empty circle there: a tap toggles it in.
         <span style={{ position: "relative", display: "inline-flex", flex: "none", width: 22, height: 22 }}>
           <span className="row-icon">{icon}</span>
-          {selected && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
+          {selected ? (
+            <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />
+          ) : (
+            mode && !renaming && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} empty />
+          )}
         </span>
       ) : (
         // A mouse's mark is the icon wrapped in a button: a click on it toggles the row, as Ctrl does, and opens nothing. It is
-        // not a tab stop (the row takes focus), and the badge shows on the icon when the row is selected.
+        // not a tab stop (the row takes focus). The badge shows on the icon when the row is selected; the empty circle shows
+        // while anything is selected and this row is not.
         <button
           type="button"
           className="row-mark"
@@ -604,7 +616,11 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
           onDoubleClick={(e) => e.stopPropagation()}
         >
           <span className="row-icon">{icon}</span>
-          {selected && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
+          {selected ? (
+            <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />
+          ) : (
+            mode && !renaming && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} empty />
+          )}
         </button>
       )}
       {renaming ? (
@@ -744,7 +760,8 @@ interface TileProps extends FileCellProps {
 }
 
 // FileTile is a tile of the tile view: a card, a folder's or a file's alike (decision 239), with its box, its state and its content.
-const FileTile = memo(function FileTile({ n, selected, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
+const FileTile = memo(function FileTile({ n, selected, mode, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
+  const { t } = useT();
   const { token } = antdTheme.useToken();
   const outer = {
     position: "relative" as const,
@@ -787,8 +804,41 @@ const FileTile = memo(function FileTile({ n, selected, focused, cut, coarse, ren
         ) : (
           <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
         )}
-        {/* A selected card shows the check badge at the preview's top-start corner; a visitor's tile has none (pb1). */}
-        {selected && !visitor && <CheckBadge size={28} ring={token.colorPrimaryBg} pos={{ insetBlockStart: 6, insetInlineStart: 6 }} />}
+        {/* The selection mark sits at the preview's top-start corner: a real button, not a tab stop, that toggles the tile as
+            Ctrl does and opens nothing. It shows the check when the tile is selected, the empty circle while anything else is,
+            and nothing when nothing is selected. A visitor's tile has none (pb1). */}
+        {!visitor && (selected || (mode && !renaming)) && (
+          <button
+            type="button"
+            className="row-mark"
+            tabIndex={-1}
+            aria-pressed={selected}
+            aria-label={t("files.select.item", { name: n.name })}
+            style={{
+              position: "absolute",
+              insetBlockStart: 6,
+              insetInlineStart: 6,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 28,
+              height: 28,
+              padding: 0,
+              border: 0,
+              background: "none",
+              color: "inherit",
+              cursor: "default",
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              H.mark(n.id);
+            }}
+            onKeyDown={keysStop}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <CheckBadge size={28} ring={token.colorPrimaryBg} pos={{ insetBlockStart: 0, insetInlineStart: 0 }} empty={!selected} />
+          </button>
+        )}
         <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
           <KindMarks node={n} />
           {!visitor && <LinkBadge node={n} />}
@@ -1102,12 +1152,22 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const H = useMemo<FileHandlers>(() => {
     const files = () => latest.current as ListingProps;
     const at = (id: string) => (files().items as Node[]).findIndex((x) => x.id === id);
+    // A click that selects sets the focus itself, so the focus a press held is dropped.
+    const click = (id: string, e: Click) => {
+      pf.consume(id);
+      const i = at(id);
+      if (i >= 0) files().onRowClick(i, e);
+    };
     return {
-      // A click that selects sets the focus itself, so the focus a press held is dropped.
-      click: (id, e) => {
-        pf.consume(id);
-        const i = at(id);
-        if (i >= 0) files().onRowClick(i, e);
+      click,
+      // A tile mark's click toggles the tile, as Ctrl does. The tap that ends a long press is part of the press: the press
+      // selected the tile already, so the mark's click selects nothing more.
+      mark: (id) => {
+        if (pressed.current) {
+          pressed.current = false;
+          return;
+        }
+        click(id, CTRL_CLICK);
       },
       dbl: (id) => files().onRowDoubleClick(id),
       renameChange: (value) => files().onRenameChange(value),
@@ -1430,7 +1490,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const mark = (r: T) => (
       <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 22, height: 22 }}>
         {q.icon && <span className="row-icon">{q.icon(r)}</span>}
-        <PresetMark id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} />
+        <PresetMark id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} mode={anyPicked} />
       </span>
     );
     const nameCell = (r: T) => {
@@ -1444,10 +1504,15 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             {selectable && !coarse ? (
               mark(r)
             ) : selectable ? (
-              // A finger's row keeps its icon plain; a long press selects it, and the badge then shows on the icon.
+              // A finger's row keeps its icon plain; a long press selects it, and the badge then shows on the icon. While
+              // anything is selected, an unselected row shows the empty circle there: a tap toggles it in.
               <span style={{ position: "relative", display: "inline-flex", flex: "none", minWidth: 22, height: 22 }}>
                 {q.icon && <span className="row-icon">{q.icon(r)}</span>}
-                {picked.has(r.id) && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />}
+                {picked.has(r.id) ? (
+                  <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} />
+                ) : (
+                  anyPicked && <CheckBadge size={17} ring={token.colorPrimaryBg} pos={{ insetBlockEnd: -3, insetInlineEnd: -3 }} empty />
+                )}
               </span>
             ) : (
               q.icon?.(r)
@@ -1655,13 +1720,20 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
   const visitor = p.visitor === true;
 
+  // The selection mode: anything in the listing is selected. It flips only when the selection goes from none to some or back,
+  // and brings the empty circles in or takes them away. The select-all mark reads every loaded row, not the drawn slice
+  // (decision 183); it is always in the name's header, on every pointer, and a visitor has none (pb1).
+  const someSelected = p.items.some((n) => p.selected.has(n.id));
+  const allSelected = p.items.length > 0 && p.items.every((n) => p.selected.has(n.id));
+
   // contentOf is the props of a row's or a tile's content (FileCellProps). The rename state is passed only to the row being renamed,
-  // so the other rows' content is not drawn again when a rename starts or changes.
+  // so the other rows' content is not drawn again when a rename starts or changes. The mode is one boolean for every row and tile.
   const contentOf = (n: Node): FileCellProps => {
     const renaming = p.renameID === n.id;
     return {
       n,
       selected: p.selected.has(n.id),
+      mode: someSelected,
       coarse,
       renaming,
       renameValue: renaming ? p.renameValue : "",
@@ -1670,10 +1742,6 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       H,
     };
   };
-  // The select-all mark is always in the name's header, on every pointer; a visitor has none (pb1). It reads every loaded row,
-  // not the drawn slice (decision 183).
-  const someSelected = p.items.some((n) => p.selected.has(n.id));
-  const allSelected = p.items.length > 0 && p.items.every((n) => p.selected.has(n.id));
   const selectAllBox = <HeadMark state={allSelected ? "all" : someSelected ? "some" : "none"} onSelectAll={p.onSelectAll} />;
 
   // The active column shows its direction as an arrow after the label (headCell, the frame's header).

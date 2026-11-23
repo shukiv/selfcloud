@@ -282,7 +282,7 @@ describe("a preset list: the empty circle while anything is selected", () => {
   it("a click on a circle adds the row to the selection and opens nothing; a click on the check takes it away", () => {
     const onOpen = vi.fn();
     render(<Listing<Row> {...props({ onOpen })} />);
-    fireEvent.click(rowOf("Row 4"));
+    fireEvent.click(rowOf("Row 4"), { ctrlKey: true });
     fireEvent.click(within(rowOf("Row 2")).getByRole("button", { name: "Select Row 2" }));
     expect(rowOf("Row 2").getAttribute("aria-selected")).toBe("true");
     expect(rowOf("Row 4").getAttribute("aria-selected")).toBe("true");

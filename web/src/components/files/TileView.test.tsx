@@ -264,14 +264,15 @@ describe("the tile view: the empty circle while anything is selected", () => {
   it("shows the circle on every other tile, a folder's and a file's alike, and the check on the selected one", () => {
     render(<Listing {...props({ items, selected: new Set(["n1"]) })} />);
     for (const id of ["d1", "d2", "n2"]) {
-      const circle = previewOf(id).querySelector(".empty-circle") as HTMLElement;
+      const mark = previewOf(id).querySelector("button.row-mark") as HTMLElement;
+      const circle = mark.querySelector(".empty-circle") as HTMLElement;
       expect(circle).not.toBeNull();
       expect(circle.getAttribute("aria-hidden")).toBe("true");
-      // The circle keeps the check's place and size: 28 px at the preview's top-start corner.
+      // The mark keeps the check's place and size: 28 px at the preview's top-start corner, the circle filling it.
+      expect(mark.style.insetBlockStart).toBe("6px");
+      expect(mark.style.insetInlineStart).toBe("6px");
       expect(circle.style.width).toBe("28px");
       expect(circle.style.height).toBe("28px");
-      expect(circle.style.insetBlockStart).toBe("6px");
-      expect(circle.style.insetInlineStart).toBe("6px");
       expect(circle.style.border).toContain("2px solid");
       expect(previewOf(id).querySelector(".check-badge")).toBeNull();
     }
