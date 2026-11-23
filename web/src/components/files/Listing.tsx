@@ -20,13 +20,16 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Button, Dropdown, Grid, Input, Table, theme as antdTheme, type MenuProps } from "antd";
+import { Button, Dropdown, Grid, Input, Table, Tooltip, theme as antdTheme, type MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ArrowDown, ArrowUp, Check, EllipsisVertical, Link2, Minus, Plus, Star } from "lucide-react";
 import EmptyState from "../EmptyState";
 import IconButton from "../IconButton";
 import { translatePlural, useLang, useT } from "../../lib/i18n";
-import { formatBytes, formatDate } from "../../lib/files/format";
+import { formatBytes, formatDate, formatDay } from "../../lib/files/format";
+import { initialOf } from "../../lib/avatar";
+import { session } from "../../lib/session";
+import { useStore } from "../../lib/store";
 import { kindOf } from "../../lib/files/kind";
 import type { SortDir, SortKey } from "../../lib/files/sort";
 import type { Node } from "../../lib/files/types";
@@ -759,10 +762,25 @@ interface TileProps extends FileCellProps {
   RH: RowHandlers;
 }
 
-// FileTile is a tile of the tile view: a card, a folder's or a file's alike (decision 239), with its box, its state and its content.
+// FileTile is a tile of the tile view: a card, a folder's or a file's alike (decision 239), with its box, its state, its content
+// and a footer line under the preview — the owner's avatar, the modified day and a file's size (decision 241).
 const FileTile = memo(function FileTile({ n, selected, mode, focused, cut, coarse, renaming, renameValue, renameError, visitor, scrollMarginTop, H, RH }: TileProps) {
   const { t } = useT();
   const { token } = antdTheme.useToken();
+  const lang = useLang();
+  const me = useStore(session);
+  // The footer's owner: the viewer's own letter and a "You" tooltip when the viewer owns the item, another owner's letter and
+  // name otherwise, and no avatar when neither gives a letter (a link visitor's listing sends no owner name).
+  const mine = me !== null && n.owner_id !== undefined && n.owner_id === me.user.id;
+  const initial = mine ? initialOf(me.user.display_name, me.user.email) : initialOf(n.owner_name, null);
+  const ownerTitle = mine ? t("files.details.you") : (n.owner_name ?? "");
+  // The footer's text: the modified day without the time, then a file's size (a folder or a shortcut has none). The full date and
+  // time stay in the title. With no day the size shows alone; with neither, the line keeps its height and shows nothing.
+  const day = formatDay(n.modified_at, lang);
+  const size = sizeOf(n, lang);
+  const footerText = day ? t("files.tile.modified", { date: day }) + (size ? ` · ${size}` : "") : size;
+  const full = formatDate(n.modified_at, lang);
+  const footerTitle = full ? full + (size ? ` · ${size}` : "") : size;
   const outer = {
     position: "relative" as const,
     display: "flex",
@@ -842,6 +860,29 @@ const FileTile = memo(function FileTile({ n, selected, mode, focused, cut, coars
         <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
           <KindMarks node={n} />
           {!visitor && <LinkBadge node={n} />}
+        </span>
+      </div>
+      {/* The footer is a fixed 32 px line under the preview, so every tile stays one height (decision 241): the owner's avatar,
+          the modified day without the time and, for a file, its size. It is not interactive and takes no tab stop; the full date
+          and time stay in the text's title. The avatar is drawn as the account button's is, at 20 px and fontSize 11. */}
+      <div className="tile-footer" style={{ display: "flex", alignItems: "center", gap: 6, height: 32, paddingInline: 10, minWidth: 0 }}>
+        {initial !== "" && (
+          <Tooltip title={ownerTitle}>
+            <span
+              className="tile-owner"
+              aria-hidden="true"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 20, height: 20, borderRadius: "50%", background: token.colorFillSecondary, color: token.colorText, fontSize: 11, fontWeight: 600 }}
+            >
+              {initial}
+            </span>
+          </Tooltip>
+        )}
+        <span
+          className="tile-info"
+          title={footerTitle || undefined}
+          style={{ flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: token.fontSizeSM, color: token.colorTextSecondary }}
+        >
+          {footerText}
         </span>
       </div>
       <RenameError error={renaming ? renameError : null} />
@@ -1867,10 +1908,8 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     );
   }
 
-  // The tile view has two bands, the folders first and then the files, each a grid of its own with the same column widths, so
-  // a folder row and a file row line up. The flat order (the page's ids) is the items' order; the folders come first in it.
-  const folders = p.items.filter((n) => n.kind === "dir");
-  const files = p.items.filter((n) => n.kind !== "dir");
+  // The tile view is one grid holding every tile in the items' order, the folders first in it (decision 241), so a row fills up:
+  // when the folders do not fill a row, the first file shares it. The flat order (the page's ids) is the items' order.
   const band = { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${TILE_MIN_PX}px), 1fr))`, gap: 12 } as const;
   // Every tile is a card, a folder's or a file's alike (decision 239): a memoised tile, drawn again only when its own state changes.
   const tile = (n: Node) => (
@@ -1879,8 +1918,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   return (
     // The padding is the gutter a rubber band starts in, as the grid had before the bands.
     <div role="listbox" aria-label={p.label} aria-multiselectable={visitor ? "false" : "true"} tabIndex={-1} ref={setRegion} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
-      {folders.length > 0 && <div role="presentation" style={band}>{folders.map(tile)}</div>}
-      {files.length > 0 && <div role="presentation" style={band}>{files.map(tile)}</div>}
+      {p.items.length > 0 && <div role="presentation" style={band}>{p.items.map(tile)}</div>}
     </div>
   );
 }

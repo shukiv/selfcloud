@@ -253,7 +253,7 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   const footers = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => { const f = o.querySelector('.tile-footer'); return { folder: o.hasAttribute('data-drop-folder'), text: f?.textContent ?? null, h: f ? Math.round(f.getBoundingClientRect().height) : 0 }; })`);
   check(footers.length >= 3 && footers.every((f) => f.text && f.text.includes('Modified')), `every tile has the footer's Modified line (${footers.filter((f) => !f.text || !f.text.includes('Modified')).length} of ${footers.length} without)`);
   check(footers.every((f) => f.h === 32), `every footer is 32 pixels (${JSON.stringify([...new Set(footers.map((f) => f.h))])})`);
-  const fileFooter = await page.evaluate(`document.querySelector('[role="option"][aria-label=' + ${q(LONG)} + '] .tile-footer')?.textContent ?? null`);
+  const fileFooter = await page.evaluate(`document.querySelector('[role="option"][aria-label=${q(LONG)}] .tile-footer')?.textContent ?? null`);
   check(fileFooter !== null && fileFooter.includes('5 bytes'), `a file's footer has its size (${fileFooter})`);
   // The footer text reads 4.5:1 or more on its tile in light.
   const lightFooter = await contrastOf(page, '[role="option"] .tile-info', 'color', ['[role="option"]']);

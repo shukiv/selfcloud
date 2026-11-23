@@ -1408,6 +1408,7 @@
   "files.drag.no.move": "Вы не можете перемещать эти элементы. Удерживайте Ctrl, чтобы копировать их.",
   "files.tree.label": "Папки",
   "files.tile.menu": "Другие действия для {name}",
+  "files.tile.modified": "Изменено {date}",
   "files.tree.expand": "Развернуть {name}",
   "files.tree.collapse": "Свернуть {name}",
   "files.tree.failed": "Не удалось загрузить папки.",

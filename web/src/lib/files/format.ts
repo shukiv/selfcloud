@@ -81,6 +81,15 @@ export function formatDate(iso: string | null | undefined, lang: string): string
   return cached(`date|${lang}|${zoneNow()}`, () => new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short' })).format(d);
 }
 
+// formatDay formats an RFC 3339 time's day for lang, without the time (a tile's footer, decision 241). A time that does not
+// parse is shown as an empty string, as formatDate's is.
+export function formatDay(iso: string | null | undefined, lang: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return cached(`day|${lang}|${zoneNow()}`, () => new Intl.DateTimeFormat(lang, { dateStyle: 'medium' })).format(d);
+}
+
 // daysUntil is the whole days from now until iso, rounded up, never below 0.
 export function daysUntil(iso: string, now: number = Date.now()): number {
   const t = new Date(iso).getTime();

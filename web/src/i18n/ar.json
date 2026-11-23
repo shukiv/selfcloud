@@ -1408,6 +1408,7 @@
   "files.drag.no.move": "لا يمكنك نقل هذه العناصر. اضغط Ctrl لنسخها.",
   "files.tree.label": "المجلدات",
   "files.tile.menu": "إجراءات أخرى لـ {name}",
+  "files.tile.modified": "عُدّل في {date}",
   "files.tree.expand": "توسيع {name}",
   "files.tree.collapse": "طيّ {name}",
   "files.tree.failed": "تعذّر تحميل المجلدات.",

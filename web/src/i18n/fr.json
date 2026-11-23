@@ -1408,6 +1408,7 @@
   "files.drag.no.move": "Vous ne pouvez pas déplacer ces éléments. Maintenez Ctrl pour les copier.",
   "files.tree.label": "Dossiers",
   "files.tile.menu": "Plus d’actions pour {name}",
+  "files.tile.modified": "Modifié le {date}",
   "files.tree.expand": "Développer {name}",
   "files.tree.collapse": "Réduire {name}",
   "files.tree.failed": "Impossible de charger les dossiers.",

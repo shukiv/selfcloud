@@ -1408,6 +1408,7 @@
   "files.drag.no.move": "אין לכם הרשאה להעביר את הפריטים האלה. החזיקו Ctrl כדי להעתיק אותם.",
   "files.tree.label": "תיקיות",
   "files.tile.menu": "פעולות נוספות עבור {name}",
+  "files.tile.modified": "עודכן ב-{date}",
   "files.tree.expand": "הרחבת {name}",
   "files.tree.collapse": "כיווץ {name}",
   "files.tree.failed": "לא ניתן היה לטעון את התיקיות.",
