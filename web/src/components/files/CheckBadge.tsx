@@ -10,8 +10,9 @@ import { useModeOrLight } from "../../theme/theme";
 // background, so the badge reads as a cut-out of it; in the light theme a thin dark rim keeps the yellow edge against a pale row.
 // pos places the badge on its icon: the bottom-end corner of a row's mark, the top-start of a tile's preview.
 // With empty, it draws the unselected item's mark instead: an empty outline circle in the header select-all mark's "none" style
-// (the same border colour and width), on the row's or tile's own background so it stays visible on a thumbnail. It shows only
-// while anything is selected, in exactly the place and size the check would have.
+// (the same border colour and width), filled with the item's own background (the container colour, not the ring, which is the
+// selected item's tint) so it stays visible on a thumbnail. It shows only while anything is selected, in exactly the place and
+// size the check would have.
 export default function CheckBadge({ size, ring, pos, empty }: { size: number; ring: string; pos: CSSProperties; empty?: boolean }) {
   const dark = useModeOrLight() === "dark";
   const { token } = antdTheme.useToken();
@@ -28,7 +29,7 @@ export default function CheckBadge({ size, ring, pos, empty }: { size: number; r
           height: size,
           borderRadius: "50%",
           boxSizing: "border-box",
-          background: ring,
+          background: token.colorBgContainer,
           border: `2px solid ${token.colorTextSecondary}`,
           pointerEvents: "none",
         }}
