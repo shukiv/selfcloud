@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { theme as antdTheme } from "antd";
 import type { Node } from "../../lib/files/types";
 import { formatBytes } from "../../lib/files/format";
 import Listing, { type ListingProps } from "./Listing";
@@ -278,6 +279,21 @@ describe("the tile view: the empty circle while anything is selected", () => {
     }
     expect(previewOf("n1").querySelector(".check-badge")).not.toBeNull();
     expect(previewOf("n1").querySelector(".empty-circle")).toBeNull();
+  });
+
+  it("the empty circle takes the item's own background, not the selected tint", () => {
+    render(<Listing {...props({ items, selected: new Set(["n1"]) })} />);
+    // The circle belongs to an unselected item: the container's background, not the selected row's tint.
+    const { colorBgContainer, colorPrimaryBg } = antdTheme.getDesignToken();
+    const rgb = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+    for (const id of ["d1", "d2", "n2"]) {
+      const circle = previewOf(id).querySelector(".empty-circle") as HTMLElement;
+      expect(circle.style.background).toBe(rgb(colorBgContainer));
+      expect(circle.style.background).not.toBe(rgb(colorPrimaryBg));
+    }
   });
 
   it("the circle is a button that is not a tab stop and says its pressed state and its item", () => {
