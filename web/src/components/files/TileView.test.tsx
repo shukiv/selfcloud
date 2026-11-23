@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The tile view (slice d1, its folder chips made cards by decision 239): folders first, in their own band of cards like the
-// files'; every card one height; no size on a tile; the star and the menu on each item; and the full name in a title.
+// The tile view (slice d1, its folder chips made cards by decision 239): folders and files in one grid, folders first; every
+// card one height with a footer line (the owner's avatar, the modified day and a file's size, decision 241); the star and the
+// menu on each item; and the full name in a title.
 
 import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { theme as antdTheme } from "antd";
 import type { Node } from "../../lib/files/types";
-import { formatBytes } from "../../lib/files/format";
+import { formatBytes, formatDate } from "../../lib/files/format";
+import { session, type Session } from "../../lib/session";
 import Listing, { type ListingProps } from "./Listing";
 
 function node(id: string, name: string, over: Partial<Node> = {}): Node {
@@ -56,25 +58,27 @@ function props(over: Partial<ListingProps> = {}): ListingProps {
 }
 
 describe("the tile view", () => {
-  it("shows the folders first, in a band of their own, then the files in the band below", () => {
+  it("holds every tile in one grid under the listbox, the folders first in it", () => {
     render(<Listing {...props()} />);
     const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
     expect(options.map((o) => o.dataset.id)).toEqual(["d1", "n1", "n2"]);
-    // Two bands: the folder band holds Docs and no file.
-    const bands = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
-    expect(bands).toHaveLength(2);
-    expect(bands[0].textContent).toContain("Docs");
-    expect(bands[0].textContent).not.toContain("plan.txt");
-    expect(bands[1].textContent).toContain("plan.txt");
+    // One grid holds every tile; the first option is the folder.
+    const grids = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
+    expect(grids).toHaveLength(1);
+    expect(grids[0].querySelectorAll('[role="option"]')).toHaveLength(3);
+    expect(grids[0].querySelector('[role="option"]')?.getAttribute("data-id")).toBe("d1");
   });
 
-  it("does not show a file's size on its tile; the list view still does", () => {
+  it("shows the modified day and the size on a file's tile, and the day alone on a folder's", () => {
     const size = formatBytes(2048, "en");
-    const { unmount } = render(<Listing {...props()} />);
-    expect(document.body.textContent).not.toContain(size);
-    unmount();
-    render(<Listing {...props({ view: "list" })} />);
-    expect(document.body.textContent).toContain(size);
+    const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date("2026-10-01T00:00:00Z"));
+    render(<Listing {...props()} />);
+    const file = document.querySelector('[data-id="n1"]') as HTMLElement;
+    expect(file.textContent).toContain(`Modified ${day}`);
+    expect(file.textContent).toContain(size);
+    const folder = document.querySelector('[data-id="d1"]') as HTMLElement;
+    expect(folder.textContent).toContain(`Modified ${day}`);
+    expect(folder.textContent).not.toContain(size);
   });
 
   it("cuts a long name on one line, with the full name in its title", () => {
@@ -138,7 +142,8 @@ describe("the tile view", () => {
 });
 
 // Decision 239: a folder's tile is the same card as a file's, not a one-line chip: the same header, the same preview height,
-// the folder's own icon in the preview, the same selected look, and the same visitor rules. The folders keep their own band.
+// the folder's own icon in the preview, the same selected look, and the same visitor rules. The folders keep the first places
+// in the one grid (decision 241).
 describe("the tile view: a folder's tile is a card (decision 239)", () => {
   const tileOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
   const headerOf = (id: string) => tileOf(id).querySelector(":scope > div:nth-child(1)") as HTMLElement;
@@ -186,11 +191,11 @@ describe("the tile view: a folder's tile is a card (decision 239)", () => {
     expect(headerOf("d1").querySelector(".check-badge")).toBeNull();
   });
 
-  it("keeps the folders first in their own band, as cards of the files' height", () => {
+  it("keeps the folders first in the one grid, as cards of the files' height", () => {
     render(<Listing {...props()} />);
-    const bands = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
-    expect(bands).toHaveLength(2);
-    expect(bands[0].querySelector('[role="option"]')?.getAttribute("data-id")).toBe("d1");
+    const grids = Array.from(document.querySelectorAll<HTMLElement>('[role="listbox"] > [role="presentation"]'));
+    expect(grids).toHaveLength(1);
+    expect(grids[0].querySelector('[role="option"]')?.getAttribute("data-id")).toBe("d1");
     const heights = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => (o.querySelector(":scope > div:nth-child(2)") as HTMLElement).style.height);
     expect(new Set(heights).size).toBe(1);
     // The folder tile keeps its drop attributes and its row role.
@@ -351,5 +356,78 @@ describe("the tile view: the empty circle while anything is selected", () => {
     expect(previewOf("d1").querySelector(".empty-circle")).not.toBeNull();
     expect(previewOf("n2").querySelector(".empty-circle")).not.toBeNull();
     expect(previewOf("n1").querySelector(".check-badge")).not.toBeNull();
+  });
+});
+
+// Decision 241: every tile carries a footer line under its preview — the owner's avatar, the modified day without the time and,
+// for a file, its size. The full date and time stay in the text's title. The avatar is the viewer's own letter with a "You"
+// tooltip when the viewer owns the item, another owner's letter and name otherwise, and nothing when no name is sent.
+describe("the tile view: the footer line (decision 241)", () => {
+  const tileOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+  const footerOf = (id: string) => tileOf(id).querySelector(".tile-footer") as HTMLElement;
+  const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date("2026-10-01T00:00:00Z"));
+
+  function signIn(id: string, display_name: string, email: string) {
+    session.set({
+      user: { id, email, display_name, role: "member", locale: "en" } as Session["user"],
+      account: null,
+      csrf: "csrf",
+      publicLinks: false,
+    });
+  }
+  afterEach(() => session.set(null));
+
+  it("keeps the full date and time, and the size, in the footer text's title", () => {
+    render(<Listing {...props()} />);
+    const full = formatDate("2026-10-01T00:00:00Z", "en");
+    expect(footerOf("n1").querySelector(".tile-info")?.getAttribute("title")).toBe(`${full} · ${formatBytes(2048, "en")}`);
+  });
+
+  it("gives every footer the same fixed height, so every tile stays one height", () => {
+    render(<Listing {...props()} />);
+    const footers = Array.from(document.querySelectorAll<HTMLElement>(".tile-footer"));
+    expect(footers).toHaveLength(3);
+    expect(new Set(footers.map((f) => f.style.height)).size).toBe(1);
+    expect(footers[0].style.height).toBe("32px");
+  });
+
+  it("shows the size alone when the modified day is empty", () => {
+    render(<Listing {...props({ items: [node("n1", "plan.txt", { modified_at: "" })] })} />);
+    const footer = footerOf("n1");
+    expect(footer.textContent).not.toContain("Modified");
+    expect(footer.textContent).toContain(formatBytes(2048, "en"));
+  });
+
+  it("shows the viewer's initial and a You tooltip when the viewer owns the item", async () => {
+    signIn("u1", "Olivia", "olivia@example.com");
+    render(<Listing {...props({ items: [node("n1", "plan.txt", { owner_id: "u1", owner_name: "Someone Else" })] })} />);
+    const avatar = footerOf("n1").querySelector(".tile-owner") as HTMLElement;
+    expect(avatar.textContent).toBe("O");
+    fireEvent.mouseEnter(avatar);
+    expect(await screen.findByRole("tooltip")).toHaveProperty("textContent", "You");
+  });
+
+  it("shows another owner's initial and name", async () => {
+    signIn("u1", "Olivia", "olivia@example.com");
+    render(<Listing {...props({ items: [node("n1", "plan.txt", { owner_id: "u2", owner_name: "Ann Example" })] })} />);
+    const avatar = footerOf("n1").querySelector(".tile-owner") as HTMLElement;
+    expect(avatar.textContent).toBe("A");
+    fireEvent.mouseEnter(avatar);
+    expect(await screen.findByRole("tooltip")).toHaveProperty("textContent", "Ann Example");
+  });
+
+  it("shows no avatar when the viewer is not the owner and no name is sent, but keeps the day and size", () => {
+    signIn("u1", "Olivia", "olivia@example.com");
+    render(<Listing {...props({ items: [node("n1", "plan.txt", { owner_id: "u2" })] })} />);
+    expect(footerOf("n1").querySelector(".tile-owner")).toBeNull();
+    expect(footerOf("n1").textContent).toContain(`Modified ${day}`);
+    expect(footerOf("n1").textContent).toContain(formatBytes(2048, "en"));
+  });
+
+  it("shows a visitor no avatar, and the day and size as for anyone", () => {
+    render(<Listing {...props({ visitor: true, items: [node("n1", "plan.txt")] })} />);
+    expect(footerOf("n1").querySelector(".tile-owner")).toBeNull();
+    expect(footerOf("n1").textContent).toContain(`Modified ${day}`);
+    expect(footerOf("n1").textContent).toContain(formatBytes(2048, "en"));
   });
 });

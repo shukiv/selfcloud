@@ -220,7 +220,7 @@ const METER = '[data-testid="sidebar-meter"]';
 // contrastOf reads a colour the way getComputedStyle gives it and the WCAG ratio of that colour on the colour it is drawn on.
 // bgs lists the layers the text sits on, top first; the last one (the bottom) must be opaque, and each layer above it is blended
 // over the one below, so an alpha colour (the track, the figures) is read as it looks. Returns null when a layer is missing.
-const contrastOf = (page, sel, prop, bgs) =>
+export const contrastOf = (page, sel, prop, bgs) =>
   page.evaluate(`(() => {
     const parse = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s); if (!m) return null; const p = m[1].split(',').map((x) => parseFloat(x)); return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; };
     const over = (top, under) => top.rgb.map((c, i) => top.a * c + (1 - top.a) * under.rgb[i]);

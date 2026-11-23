@@ -9,6 +9,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setLanguage, setPhone, setTheme } from './media.mjs';
+import { contrastOf } from './d2.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -225,25 +226,38 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   const stayedURL = await page.evaluate('location.href');
   check(dropped === true && stayedURL === dropURL && !droppedIn.items.some((n) => n.name === 'desk-drop.txt'), `a desktop file dropped on a tree row is not taken: the browser stays, nothing uploads (prevented ${dropped}, same page ${stayedURL === dropURL})`);
 
-  // ---- Tiles: folders first in a band of cards, the files as cards below, every tile one height, long and Hebrew names included.
+  // ---- Tiles: one grid holds every tile, folders first in it; every tile one height with a footer line (owner, day, size).
   const heights = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => Math.round(o.getBoundingClientRect().height))`);
   check(heights.length >= 3 && new Set(heights).size === 1, `the tiles are one height, the folder cards and the file cards alike (${JSON.stringify([...new Set(heights)])})`);
   // A folder's tile is a card: a preview area with the folder's own icon in it, and the drop attributes on the tile.
   const folderCard = await page.evaluate(`(() => { const o = document.querySelector('[role="listbox"] > [role="presentation"] [role="option"][data-drop-folder]'); if (!o) return null; const p = o.querySelector(':scope > div:nth-child(2)'); return { preview: !!p && p.style.height !== '', icon: !!p?.querySelector('svg.kind-folder') }; })()`);
   check(folderCard !== null && folderCard.preview && folderCard.icon, `the folder tile is a card with the folder's icon in its preview (${JSON.stringify(folderCard)})`);
-  // A folder's tile carries its drop attributes; a file's does not.
-  const bandsOrder = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] > [role="presentation"]')].map((b) => (b.querySelector('[role="option"]')?.hasAttribute('data-drop-folder') ? 'folders' : 'files'))`);
-  check(bandsOrder[0] === 'folders' || bandsOrder.length === 1, `the folders band comes first (${bandsOrder.join(', ')})`);
+  // Exactly one grid under the listbox, and the folders come first in it.
+  const grid = await page.evaluate(`(() => { const gs = [...document.querySelectorAll('[role="listbox"] > [role="presentation"]')]; if (gs.length !== 1) return { grids: gs.length }; const opts = [...gs[0].querySelectorAll('[role="option"]')]; return { grids: 1, count: opts.length, firstFolder: opts[0]?.hasAttribute('data-drop-folder') ?? false }; })()`);
+  check(grid.grids === 1, `one grid holds every tile (${grid.grids} grids, ${grid.count ?? 0} tiles)`);
+  check(grid.firstFolder === true, `the folders come first in the grid (first option a folder: ${grid.firstFolder})`);
   const cols = await page.evaluate(`(() => { const b = document.querySelector('[role="listbox"] > [role="presentation"]'); return b ? getComputedStyle(b).gridTemplateColumns.split(' ').length : 0; })()`);
   check(cols >= 4, `about five columns at 1920 wide (${cols})`);
-  // Down from the first folder tile moves to the file band (or to the next folder row when the folders take more than one row).
-  const folderCount = await page.evaluate(`document.querySelector('[role="listbox"] > [role="presentation"]')?.querySelectorAll('[role="option"]').length ?? 0`);
-  await page.evaluate(`document.querySelector('[role="listbox"] > [role="presentation"] [role="option"]').focus()`);
+  // When the folders do not fill a row, the first file sits in the same row as the last folder (the same top).
+  const rowShare = await page.evaluate(`(() => { const opts = [...document.querySelectorAll('[role="listbox"] > [role="presentation"] [role="option"]')]; const folders = opts.filter((o) => o.hasAttribute('data-drop-folder')); const files = opts.filter((o) => !o.hasAttribute('data-drop-folder')); if (!folders.length || !files.length) return null; const a = folders[folders.length - 1].getBoundingClientRect(); const b = files[0].getBoundingClientRect(); return { folders: folders.length, sameTop: Math.abs(a.top - b.top) <= 2 }; })()`);
+  check(rowShare !== null && (rowShare.folders >= cols || rowShare.sameTop), `the first file shares the last folder's row when the folders do not fill it (${JSON.stringify(rowShare)}, ${cols} columns)`);
+  // Down from the first tile moves to the tile cols places later when there is one (the tiles' places on screen, not a band).
+  const order = await page.evaluate(`(() => { const opts = [...document.querySelectorAll('[role="listbox"] > [role="presentation"] [role="option"]')]; opts[0]?.focus(); return opts.map((o) => o.getAttribute('data-id')); })()`);
   await sleep(200);
   await pressKey(page, 'ArrowDown', 'ArrowDown', 40);
   await sleep(300);
-  const band = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] > [role="presentation"]')].findIndex((b) => b.contains(document.activeElement))`);
-  check(band === (folderCount <= cols ? 1 : 0), `Down from a folder moves to the right band (band ${band}, ${folderCount} folders in ${cols} columns)`);
+  const activeID = await page.evaluate(`document.activeElement?.getAttribute('data-id') ?? null`);
+  const wantID = order.length > cols ? order[cols] : order[0];
+  check(activeID === wantID, `Down from the first tile moves ${cols} places when a tile is there (${activeID}, want ${wantID})`);
+  // Every tile has the footer's "Modified" line at a fixed 32 px; a file's footer has its size.
+  const footers = await page.evaluate(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => { const f = o.querySelector('.tile-footer'); return { folder: o.hasAttribute('data-drop-folder'), text: f?.textContent ?? null, h: f ? Math.round(f.getBoundingClientRect().height) : 0 }; })`);
+  check(footers.length >= 3 && footers.every((f) => f.text && f.text.includes('Modified')), `every tile has the footer's Modified line (${footers.filter((f) => !f.text || !f.text.includes('Modified')).length} of ${footers.length} without)`);
+  check(footers.every((f) => f.h === 32), `every footer is 32 pixels (${JSON.stringify([...new Set(footers.map((f) => f.h))])})`);
+  const fileFooter = await page.evaluate(`document.querySelector('[role="option"][aria-label=' + ${q(LONG)} + '] .tile-footer')?.textContent ?? null`);
+  check(fileFooter !== null && fileFooter.includes('5 bytes'), `a file's footer has its size (${fileFooter})`);
+  // The footer text reads 4.5:1 or more on its tile in light.
+  const lightFooter = await contrastOf(page, '[role="option"] .tile-info', 'color', ['[role="option"]']);
+  check(lightFooter !== null && lightFooter.ratio >= 4.5, `the tile footer reads 4.5:1 on its tile in light (${lightFooter && lightFooter.ratio.toFixed(2)})`);
   await snap('desktop-en-grid.png');
 
   // ---- The targets are 44 pixels on a finger, at rest, on hover and on focus.
@@ -316,6 +330,10 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   await snap('desktop-en-dark.png');
   const darkRatio = await sideContrast(page);
   check(darkRatio >= 3, `the unticked "Show hidden spaces" box has 3:1 against the sidebar in dark (${darkRatio && darkRatio.toFixed(2)})`);
+  // The footer text reads 4.5:1 or more on its tile in dark (the listing is still in Tiles here).
+  await page.waitFor(`!!document.querySelector('[role="option"] .tile-info')`, 15000);
+  const darkFooter = await contrastOf(page, '[role="option"] .tile-info', 'color', ['[role="option"]']);
+  check(darkFooter !== null && darkFooter.ratio >= 4.5, `the tile footer reads 4.5:1 on its tile in dark (${darkFooter && darkFooter.ratio.toFixed(2)})`);
   await setTheme(page, 'Light');
   await page.send('Emulation.setEmulatedMedia', { features: [] });
   // These checks chose Tiles, and the browser keeps the choice; the checks after these look for the list's rows, so the list

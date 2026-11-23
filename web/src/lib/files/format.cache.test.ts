@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatBytes, formatDate, formatNumber } from './format';
+import { formatBytes, formatDate, formatDay, formatNumber } from './format';
 
 // Every row of a listing formats its date and its size, so the formatters must not build an Intl object on each call
 // The constructors are counted: a call that reuses an object builds nothing.
@@ -14,6 +14,13 @@ describe('the formatters reuse their Intl objects', () => {
     formatDate('2026-10-01T10:00:00Z', 'en');
     const spy = vi.spyOn(Intl, 'DateTimeFormat');
     for (let i = 0; i < 50; i++) formatDate(`2026-10-0${(i % 9) + 1}T10:00:00Z`, 'en');
+    expect(spy.mock.calls.length).toBe(0);
+  });
+
+  it('builds no DateTimeFormat for fifty days in one language once that language is in use', () => {
+    formatDay('2026-10-01T10:00:00Z', 'en');
+    const spy = vi.spyOn(Intl, 'DateTimeFormat');
+    for (let i = 0; i < 50; i++) formatDay(`2026-10-0${(i % 9) + 1}T10:00:00Z`, 'en');
     expect(spy.mock.calls.length).toBe(0);
   });
 

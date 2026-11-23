@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { formatBytes } from "./format";
+import { formatBytes, formatDay } from "./format";
 
 const LANGS = ["en", "es", "fr", "pt", "ru", "ar", "he"];
 
@@ -49,5 +49,23 @@ describe("formatBytes", () => {
       expect(formatBytes(3_100_000, lang), lang).not.toMatch(/[\u2066-\u2069]/);
     }
     expect(formatBytes(3_100_000, "en")).toBe("3.1 MB");
+  });
+});
+
+// formatDay is the modified day without the time, for a tile's footer (decision 241). A missing or bad date is an empty string,
+// as formatDate's is.
+describe("formatDay", () => {
+  const iso = "2026-10-01T10:30:00Z";
+
+  it("gives the day without the time", () => {
+    expect(formatDay(iso, "en")).toBe(new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(iso)));
+    expect(formatDay(iso, "en")).not.toMatch(/10:30/);
+  });
+
+  it("gives an empty string for a missing or bad date", () => {
+    expect(formatDay(null, "en")).toBe("");
+    expect(formatDay(undefined, "en")).toBe("");
+    expect(formatDay("", "en")).toBe("");
+    expect(formatDay("not a date", "en")).toBe("");
   });
 });
