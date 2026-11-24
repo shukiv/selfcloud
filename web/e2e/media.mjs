@@ -613,8 +613,15 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await longPress(page, await rowPoint());
     await sleep(400);
     await setTheme(page, 'Dark');
-    const moveBtn = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    check(moveBtn !== null, 'the selection panel on a phone has a Move button');
+    // Decision 242: the count reserves its measured width, so on a 390 px phone Move may sit in More rather than on the bar
+    // (decision 68's hide order). The dialog opens from Move's icon or from its More entry; every check below is the same.
+    let moveBtn = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    if (moveBtn === null) {
+      await page.evaluate(`document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]').click()`);
+      await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((x) => x.textContent.trim() === 'Move to…')`, 10000);
+      moveBtn = await page.evaluate(`(() => { const m = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…'); if (!m) return null; const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    }
+    check(moveBtn !== null, 'the selection panel on a phone offers Move, as an icon or in More');
     await tap(page, moveBtn);
     await page.waitFor(`!!document.querySelector('[data-testid="pick"]')`, 10000);
     await sleep(500);
