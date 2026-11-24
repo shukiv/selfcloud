@@ -795,7 +795,8 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
   });
 
   // ---- 19b. the selection panel is on top, as in a file manager: in the toolbar's area, above the first row, and never in
-  // the lower half of the window, at desktop and phone width, and still so once the page is scrolled ----
+  // the lower half of the window, at desktop and phone width, and still so once the page is scrolled. The count shows its
+  // whole text at desktop and phone width, in English and Hebrew, with one item and with twelve (decision 242) ----
   await step('the selection panel is on top, above the first row, at desktop and phone width, scrolled too', async () => {
     const panelAt = () => page.evaluate(`JSON.stringify((() => {
       const panel = document.querySelector('[data-testid="selection-panel"]');
@@ -828,6 +829,41 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       check(down.scrollable && down.top >= 50 && down.top <= 110 && down.lower === 0, `scrolled on a ${label} (the page scrolls: ${down.scrollable}), the panel stays in the toolbar's area and out of the lower half (top ${down.top}, lower ${down.lower})`);
       await clearSelection(page);
     }
+    // Decision 242: the count shows its whole text. With one item and with twelve, in English and Hebrew, at desktop and
+    // phone width, the count is not cut (its scrollWidth fits its clientWidth), no icon passes the bar's edge, and the page
+    // still fits its window.
+    const countFit = () => page.evaluate(`(() => {
+      const panel = document.querySelector('[data-testid="selection-panel"]');
+      const count = panel.querySelector('span[aria-live]');
+      const pr = panel.getBoundingClientRect();
+      const out = [...panel.querySelectorAll('button')].filter((b) => { const r = b.getBoundingClientRect(); return r.left < pr.left - 0.5 || r.right > pr.right + 0.5; }).length;
+      return { sw: count.scrollWidth, cw: count.clientWidth, text: count.textContent, out, page: document.documentElement.scrollWidth, iw: window.innerWidth };
+    })()`);
+    for (const lang of ['English', 'עברית']) {
+      await setLanguage(page, lang);
+      for (const [label, width] of [['desktop', 1280], ['phone', 390]]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: label === 'phone' });
+        await open('List', longURL);
+        for (const n of [1, 12]) {
+          await click(page, await pointOf(page, itemSel('f01.txt')));
+          if (n === 12) {
+            // Shift+click takes the range from the first row: twelve selected.
+            const at = await pointOf(page, itemSel('f12.txt'));
+            await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+            await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, modifiers: MODS.shift });
+            await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1, modifiers: MODS.shift });
+          }
+          await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
+          await sleepMs(300);
+          const fit = await countFit();
+          check(fit.sw <= fit.cw, `${lang}, ${width} px, ${n} selected: the count shows its whole text, not cut (scrollWidth ${fit.sw}, clientWidth ${fit.cw}, "${fit.text}")`);
+          check(fit.out === 0, `${lang}, ${width} px, ${n} selected: no icon passes the bar's edge (${fit.out} outside)`);
+          check(fit.page <= fit.iw, `${lang}, ${width} px, ${n} selected: the page fits its window (scrollWidth ${fit.page}, innerWidth ${fit.iw})`);
+          await clearSelection(page);
+        }
+      }
+    }
+    await setLanguage(page, 'English');
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   });
 

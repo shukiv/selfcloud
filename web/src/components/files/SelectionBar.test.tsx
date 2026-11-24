@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Share2, Download, Move, Link2, Trash2 } from "lucide-react";
 import SelectionBar, { type SelectionAction } from "./SelectionBar";
@@ -41,7 +41,7 @@ describe("SelectionBar (decision 68)", () => {
   it("keeps the count from growing, so the actions sit right after it", () => {
     const { bar } = renders();
     const count = (Array.from(bar.children) as HTMLElement[])[1];
-    expect(["none", "0 0 auto"]).toContain(count.style.flex);
+    expect(count.style.flex).toBe("0 1 auto");
     const spacer = bar.querySelector('[data-slot="spacer"]') as HTMLElement;
     expect(spacer.style.flex).toMatch(/1 1 auto/);
   });
@@ -61,9 +61,10 @@ describe("SelectionBar (decision 68)", () => {
 });
 
 // Decision 185: the bar shows as many of its ordered actions as fit its own width, and the rest go to the caller's overflow
-// (the top of More), in order. The count keeps a minimum of one short word (48 px). The slot is the icon button plus the gap:
-// 44 + 4 on a coarse pointer, 40 + 4 otherwise. The fixed part is Clear + the count's minimum + More + the bar's padding + the
-// three gaps between those four: 2 * button + 48 + 2 * 4 + 3 * 4, so 156 on a finger and 148 with a mouse.
+// (the top of More), in order. The count shows its whole text, and the fit reserves its measured width (48 px floor). The
+// slot is the icon button plus the gap: 44 + 4 on a coarse pointer, 40 + 4 otherwise. The fixed part is Clear + the count +
+// More + the bar's padding + the three gaps between those four: 2 * button + count + 2 * 4 + 3 * 4, so with the 48 px floor
+// 156 on a finger and 148 with a mouse.
 describe("SelectionBar fits its own width (decision 201)", () => {
   const saved = globalThis.ResizeObserver;
   afterEach(() => {
@@ -108,14 +109,14 @@ describe("SelectionBar fits its own width (decision 201)", () => {
     </span>
   );
 
-  const fitRenders = (opts: { width?: number; coarse?: boolean; run?: () => void } = {}) => {
+  const fitRenders = (opts: { width?: number; coarse?: boolean; run?: () => void; countText?: string } = {}) => {
     const run = opts.run ?? vi.fn();
     if (opts.width !== undefined) reportWidth(opts.width);
-    render(
+    const tree = (countText: string) => (
       <ThemeProvider>
         <SelectionBar
           label="Selection"
-          countText="1 selected"
+          countText={countText}
           clearLabel="Clear selection"
           onClear={vi.fn()}
           actions={actions(run)}
@@ -124,9 +125,10 @@ describe("SelectionBar fits its own width (decision 201)", () => {
           hideOrder={["copyLink", "move", "delete", "download", "share"]}
           coarse={opts.coarse ?? false}
         />
-      </ThemeProvider>,
+      </ThemeProvider>
     );
-    return { bar: screen.getByRole("group"), run };
+    const view = render(tree(opts.countText ?? "1 selected"));
+    return { bar: screen.getByRole("group"), run, setCountText: (countText: string) => view.rerender(tree(countText)) };
   };
 
   // The bar's own buttons: Clear, the action icons, More. The overflow's entries are menuitems, not buttons of the bar.
@@ -184,5 +186,66 @@ describe("SelectionBar fits its own width (decision 201)", () => {
   it("clips its own overflow, so the unmeasured first draw cannot widen the page and clamp the scroll", () => {
     const { bar } = fitRenders({ width: undefined });
     expect(bar.style.overflow).toBe("clip");
+  });
+
+  // Decision 242: the count shows its whole text, and the fit reserves its measured width (scrollWidth, padding included),
+  // with 48 px as the floor. jsdom does not lay out, so the count's natural width is stated on the prototype here; the
+  // saved getter is restored after each test.
+  describe("the count shows its whole text (decision 242)", () => {
+    afterEach(() => {
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    });
+
+    // measureCount states the natural width jsdom cannot lay out: a number for every element, or a read per element.
+    const measureCount = (width: number | ((el: HTMLElement) => number)) => {
+      Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+        configurable: true,
+        get(this: HTMLElement) {
+          return typeof width === "function" ? width(this) : width;
+        },
+      });
+    };
+    const countOf = (bar: HTMLElement) => (Array.from(bar.children) as HTMLElement[])[1];
+
+    it("the count has no 48 px max width and holds its full text", () => {
+      const { bar } = fitRenders({ width: 800 });
+      const count = countOf(bar);
+      expect(count.style.maxWidth).toBe("");
+      expect(count.textContent).toBe("1 selected");
+      expect(count.style.minWidth).toBe("48px");
+      expect(count.style.flex).toBe("0 1 auto");
+      expect(count.style.whiteSpace).toBe("nowrap");
+      expect(count.getAttribute("title")).toBe("1 selected");
+      expect(count.getAttribute("aria-live")).toBe("polite");
+    });
+
+    it("a count measured at 90 px reserves 90: one icon fewer than with the 48 px floor, and the dropped one is in More", () => {
+      // 300 px with a mouse: floor((300 - 148) / 44) = 3 icons with the floor, floor((300 - 190) / 44) = 2 with 90.
+      const plain = fitRenders({ width: 300 });
+      expect(buttonNames(plain.bar)).toEqual(["Clear selection", "Share", "Download", "Delete", "More actions"]);
+      cleanup();
+      measureCount((el) => (el.getAttribute("aria-live") === "polite" ? 90 : 0));
+      const { bar } = fitRenders({ width: 300 });
+      expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "More actions"]);
+      expect(entryNames()).toEqual(["Copy link", "Move to…", "Delete", "Details"]);
+    });
+
+    it("a count text change measures the new text's width", () => {
+      measureCount((el) => (el.textContent === "10 selected" ? 90 : el.textContent === "1 selected" ? 60 : 0));
+      const { bar, setCountText } = fitRenders({ width: 300 });
+      // "1 selected" measures 60: floor((300 - 160) / 44) = 3 icons.
+      expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "Delete", "More actions"]);
+      setCountText("10 selected");
+      // "10 selected" measures 90: floor((300 - 190) / 44) = 2 icons, and Delete joins More.
+      expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "More actions"]);
+      expect(entryNames()).toEqual(["Copy link", "Move to…", "Delete", "Details"]);
+    });
+
+    it("a count that cannot be measured keeps the 48 px floor in the fit", () => {
+      // jsdom's scrollWidth is 0: not a measurement, so the fit keeps 48 and 300 px shows floor((300 - 148) / 44) = 3.
+      const { bar } = fitRenders({ width: 300 });
+      expect(buttonNames(bar)).toEqual(["Clear selection", "Share", "Download", "Delete", "More actions"]);
+      expect(entryNames()).toEqual(["Copy link", "Move to…", "Details"]);
+    });
   });
 });
