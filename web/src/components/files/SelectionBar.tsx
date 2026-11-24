@@ -15,9 +15,11 @@ export type SelectionAction = { key: string; label: string; icon: ReactNode; ena
 // The bar shows as many of its actions as fit its own width (decision 201): shown = floor((width - fixed) / slot), never fewer
 // than 0. The width is the bar's own border box, read by a ResizeObserver on its root, so the count comes from the room the bar
 // has, not from what it draws: hiding an icon cannot widen the bar, and the measure cannot flicker. The slot is the icon button
-// plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's minimum + More + the padding + the
-// three gaps between those four (layout.ts). The count is held to that reserved width (ellipsis, its full text in the title) and
-// does not grow or shrink, so it cannot push the icons past the edge.
+// plus one gap (44 + 4 on a finger, 40 + 4 otherwise); the fixed part is Clear + the count's width + More + the padding + the
+// three gaps between those four (layout.ts). The count shows its whole text (decision 242): the fit reserves its measured width
+// (its scrollWidth, read when the text changes, with 48 px as the floor), so a long count moves an icon into More rather than
+// cut the text. The count does not grow, and shrinks (ellipsis, its full text in the title) only when even Clear + the count +
+// More do not fit the bar, so it cannot push the icons past the edge.
 //
 // Which actions leave the bar keeps decision 68's rule: the caller gives hideOrder, the order they go (Copy link first, then
 // Move and Delete, Share and Download last). The icons that stay keep the display order, and the actions that do not fit are
@@ -47,8 +49,20 @@ export default function SelectionBar({
 }) {
   const { token } = antdTheme.useToken();
   const rootRef = useRef<HTMLDivElement>(null);
+  const countRef = useRef<HTMLSpanElement>(null);
   // null is "not measured": every action keeps its icon until the bar's width is known.
   const [width, setWidth] = useState<number | null>(null);
+  // The count's own width, reserved by the fit: its natural width once measured, COUNT_MIN_W until then.
+  const [countW, setCountW] = useState(COUNT_MIN_W);
+  useLayoutEffect(() => {
+    const el = countRef.current;
+    if (!el) return;
+    // scrollWidth includes the padding and any cut-off part, so it is the count's natural width even when the span is held
+    // narrow. A zero is not a measurement (jsdom does not lay out): the floor stays. The count's width does not depend on the
+    // icons shown, so reserving it cannot start a measure loop.
+    const natural = el.scrollWidth;
+    if (natural > 0) setCountW(Math.max(COUNT_MIN_W, natural));
+  }, [countText]);
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -69,7 +83,7 @@ export default function SelectionBar({
   const shown =
     width === null || overflow === undefined
       ? actions.length
-      : Math.max(0, Math.min(actions.length, Math.floor((width - panelFixedW(coarse)) / panelSlotW(coarse))));
+      : Math.max(0, Math.min(actions.length, Math.floor((width - panelFixedW(coarse, countW)) / panelSlotW(coarse))));
   // Decision 68's rule: hideOrder names the actions as they leave the bar; the rest keep their icons. Both the icons that stay
   // and the hidden entries keep the display order. With no hideOrder the tail of the display order leaves first.
   const present = new Set(actions.map((a) => a.key));
@@ -107,7 +121,7 @@ export default function SelectionBar({
       }}
     >
       <IconButton data-testid="selection-clear" label={clearLabel} icon={<X size={16} aria-hidden="true" focusable="false" />} onClick={onClear} />
-      <span aria-live="polite" title={countText} style={{ flex: "none", minWidth: COUNT_MIN_W, maxWidth: COUNT_MIN_W, boxSizing: "border-box", padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <span ref={countRef} aria-live="polite" title={countText} style={{ flex: "0 1 auto", minWidth: COUNT_MIN_W, boxSizing: "border-box", padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {countText}
       </span>
       {visible.map((a) => (
