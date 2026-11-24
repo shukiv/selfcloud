@@ -136,6 +136,15 @@ async function clearSelection(page) {
   }
 }
 
+// moreMoveCentre opens the selection panel's More menu and gives the centre of its Move to… entry, read only once the menu has
+// finished opening: the open dropdown carries no motion class (none holding -enter, -appear or -active) and the entry's rectangle
+// is the same in two reads 100 ms apart. A tap on a menu still in its open motion lands where the entry is not yet, and opens nothing.
+async function moreMoveCentre(page) {
+  await page.evaluate(`document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]').click()`);
+  await page.waitFor(`(() => { const d = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((x) => [...x.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'Move to…')); if (!d) return false; if ([...d.classList].some((c) => c.includes('-enter') || c.includes('-appear') || c.includes('-active'))) return false; const m = [...d.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…'); const r = m.getBoundingClientRect(); if (!(r.height > 0)) return false; const was = m.__stillRect; if (was && was.left === r.left && was.top === r.top && was.width === r.width && was.height === r.height && Date.now() - was.at >= 100) return true; m.__stillRect = { left: r.left, top: r.top, width: r.width, height: r.height, at: Date.now() }; return false; })()`, 10000);
+  return page.evaluate(`(() => { const m = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…'); if (!m) return null; const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+}
+
 // The selection actions can be read by a check as one list of buttons, whatever the width.
 export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, longPress, openedName, point, q, setLanguage, setPhone, setTheme, setWidth, shot, sleep, tap };
 
@@ -616,11 +625,11 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     // Decision 242: the count reserves its measured width, so on a 390 px phone Move may sit in More rather than on the bar
     // (decision 68's hide order). The dialog opens from Move's icon or from its More entry; every check below is the same.
     let moveBtn = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    if (moveBtn === null) {
-      await page.evaluate(`document.querySelector('[data-testid="selection-panel"] button[aria-haspopup="menu"]').click()`);
-      await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((x) => x.textContent.trim() === 'Move to…')`, 10000);
-      moveBtn = await page.evaluate(`(() => { const m = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Move to…'); if (!m) return null; const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const fromMore = moveBtn === null;
+    if (fromMore) {
+      moveBtn = await moreMoveCentre(page);
     }
+    console.log(`INFO a finger's targets in the list: Move opens from ${fromMore ? 'More' : 'its icon on the bar'}`);
     check(moveBtn !== null, 'the selection panel on a phone offers Move, as an icon or in More');
     await tap(page, moveBtn);
     await page.waitFor(`!!document.querySelector('[data-testid="pick"]')`, 10000);
@@ -647,6 +656,31 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await page.waitFor(`!document.querySelector('[data-testid="pick"]')`, 10000);
     await clearSelection(page);
     await setTheme(page, themeWas === 'dark' ? 'Dark' : 'Light');
+    await setPhone(page, false);
+  });
+
+  // ---- 2a-ter. On a narrower phone Move opens from More: at 340 px the bar cannot fit Move, so the More path runs on every
+  // machine, not only where the count's measured width happens to push Move off the bar at 390 px. ----
+  await step('on a narrower phone Move opens from More', async () => {
+    await setPhone(page, true);
+    await open('List');
+    await setWidth(page, 340);
+    await longPress(page, await point(page, 'pic.png'));
+    await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
+    await sleep(300);
+    // Decision 68's hide order is monotonic in width: Move is already in More at 360 px, so at 340 px it cannot be on the bar.
+    const onBar = await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"] button[aria-label="Move to…"]')`);
+    check(!onBar, 'at 340 px Move leaves the bar for More');
+    const at = await moreMoveCentre(page);
+    check(at !== null, 'at 340 px More offers Move to…');
+    await tap(page, at);
+    const pickOpened = await page.waitFor(`!!document.querySelector('[data-testid="pick"]')`, 10000).then(() => true).catch(() => false);
+    check(pickOpened, "at 340 px a tap on More's Move to… opens the destination picker");
+    // Close the picker with its Cancel, then restore the 390 px phone and the desktop the next step finds.
+    await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+    await page.waitFor(`!document.querySelector('[data-testid="pick"]')`, 10000);
+    await clearSelection(page);
+    await setWidth(page, 390);
     await setPhone(page, false);
   });
 
